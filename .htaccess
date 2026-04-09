@@ -1,0 +1,9 @@
+Options +ExecCGI
+AddHandler cgi-script .cgi
+
+RewriteEngine On
+RewriteBase /tst_pulleys/
+
+# Route everything to the Python CGI app unless it's a real file
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.cgi/$1 [L]

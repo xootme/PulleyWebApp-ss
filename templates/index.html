@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sketch Timing Pulley Generator — Cheap CAD Tools</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <span class="logo">⚙ Cheap CAD Tools</span>
+    <span class="header-title">Sketch Timing Pulley Generator</span>
+  </div>
+</header>
+
+<!-- ── Drive bar ── -->
+<div class="drive-bar">
+  <label class="drive-toggle">
+    <input type="checkbox" id="dual_enable" onchange="onDualToggle()">
+    <span>Two Pulley Drive</span>
+  </label>
+  <div class="drive-spacing hidden" id="spacing_row">
+    <label for="center_distance">Centre Distance (mm)</label>
+    <input type="number" id="center_distance" value="100" min="1" step="0.01"
+           oninput="onCenterDistanceInput()">
+    <span class="drive-note" id="min_distance_note"></span>
+    <label for="belt_teeth" style="margin-left:1rem">Belt Teeth</label>
+    <input type="number" id="belt_teeth" min="1" step="1" style="width:5rem"
+           oninput="onBeltTeethInput()">
+  </div>
+  <div class="drive-spacing hidden" id="ratio_row">
+    <label for="gear_ratio">Gear Ratio</label>
+    <input type="number" id="gear_ratio" value="1.500" min="0.1" step="0.001"
+           oninput="onGearRatioChange()">
+    <div class="ratio-arrows">
+      <button class="ratio-btn" onclick="stepP2Teeth(1)"  title="More teeth on Pulley 2">&#9650;</button>
+      <button class="ratio-btn" onclick="stepP2Teeth(-1)" title="Fewer teeth on Pulley 2">&#9660;</button>
+    </div>
+    <span class="drive-note" id="ratio_note"></span>
+  </div>
+  <button class="reset-btn" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
+  <div class="drive-help">
+    <button class="btn-help" onclick="window.open('/static/TwoPulleyDrive_help.html','_blank')" title="Two Pulley Drive Help">&#9432;</button>
+  </div>
+</div>
+
+<main id="main-layout">
+
+  <!-- ── PULLEY 1 PANEL ── -->
+  <aside class="controls-panel" id="panel1">
+    <div class="panel-title" id="panel1-title">Pulley</div>
+
+    <section class="card">
+      <h2>Belt Profile</h2>
+      <label for="family">Family</label>
+      <select id="family" onchange="onFamilyChange()">
+        {% for fam in families %}
+        <option value="{{ fam }}"{% if fam == 'HTD' %} selected{% endif %}>{{ fam }}</option>
+        {% endfor %}
+      </select>
+      <label for="pitch">Pitch</label>
+      <select id="pitch" onchange="onPitchChange()"></select>
+    </section>
+
+    <section class="card">
+      <h2>Size</h2>
+      <label for="teeth">Number of Teeth</label>
+      <input type="number" id="teeth" min="10" value="20" step="1" oninput="onTeethChange(1)">
+      <label for="od">Outer Diameter (mm)</label>
+      <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)">
+      <label for="bore">Bore Diameter (mm)</label>
+      <input type="number" id="bore" min="1" value="8" step="0.1" oninput="schedulePreview()">
+      <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
+    </section>
+
+    <section class="card">
+      <h2>Advanced</h2>
+      <label for="clearance_preset">Tooth Clearance</label>
+      <select id="clearance_preset" onchange="onClearancePreset(1)">
+        {% for key, label in clearance_presets.items() %}
+        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div id="clearance_custom_row" class="hidden">
+        <label for="clearance_custom">Custom offset (mm)</label>
+        <input type="number" id="clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
+      </div>
+      <div class="preset-info" id="clearance_info"></div>
+
+      <label for="backlash_preset">Backlash</label>
+      <select id="backlash_preset" onchange="onBacklashPreset(1)">
+        {% for key, label in backlash_presets.items() %}
+        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div id="backlash_custom_row" class="hidden">
+        <label for="backlash_custom">Custom offset (mm)</label>
+        <input type="number" id="backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
+      </div>
+      <div class="preset-info" id="backlash_info"></div>
+
+      <label for="print_extra">3D Print Extra (mm)</label>
+      <input type="number" id="print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
+    </section>
+
+    <section class="card download-card">
+      <h2>Download</h2>
+      <div class="dl-wrap">
+        <button class="btn-download" onclick="toggleDlMenu('dl-p1-pulley', event)">⬇ Download Pulley</button>
+        <div class="dl-menu hidden" id="dl-p1-pulley">
+          <button class="dl-item" onclick="downloadSVG(1); closeDlMenus()">SVG</button>
+          <button class="dl-item" onclick="downloadDXF(1); closeDlMenus()">DXF</button>
+        </div>
+      </div>
+      <div class="dl-wrap" id="belt-svg-wrap">
+        <button class="btn-download" style="background:#0f766e;"
+                onclick="toggleDlMenu('dl-p1-belt', event)">⬇ Download Belt</button>
+        <div class="dl-menu hidden" id="dl-p1-belt">
+          <button class="dl-item" onclick="downloadBeltSVG(); closeDlMenus()">SVG</button>
+          <button class="dl-item dl-item-soon">DXF <span class="dl-soon-tag">coming soon</span></button>
+        </div>
+      </div>
+    </section>
+
+    <div class="help-btn-row">
+      <button class="btn-help" onclick="window.open('/static/Pulley1_help.html','_blank')" title="Pulley 1 Help">&#9432;</button>
+    </div>
+  </aside>
+
+  <!-- ── PREVIEW PANEL ── -->
+  <div class="preview-panel">
+    <div class="preview-header">
+      <span id="profile-label">HTD 5M — 20T</span>
+      <span style="display:flex;gap:6px;align-items:center;">
+        <button id="tab-pulley" class="preview-tab active" onclick="setPreviewTab('pulley')">Pulley</button>
+        <button id="tab-belt"   class="preview-tab hidden"  onclick="setPreviewTab('belt')">Belt</button>
+        <span id="od-label"></span>
+      </span>
+    </div>
+    <div class="preview-box" id="preview-box">
+      <img id="preview-img" src="" alt="" style="display:none; max-width:100%; max-height:100%;">
+      <div class="preview-placeholder" id="preview-placeholder">Select a profile to preview</div>
+    </div>
+    <div class="preview-footer" id="preview-footer"></div>
+  </div>
+
+  <!-- ── PULLEY 2 PANEL (hidden until dual enabled) ── -->
+  <aside class="controls-panel hidden" id="panel2">
+    <div class="panel-title">Pulley 2</div>
+    <div class="card belt-lock-info" id="belt-lock-info">
+      Belt: <strong id="p2-belt-label">—</strong><br>
+      <span style="font-size:11px;color:#888">Family &amp; pitch locked to Pulley 1</span>
+    </div>
+
+    <section class="card">
+      <h2>Size</h2>
+      <label for="p2_teeth">Number of Teeth</label>
+      <input type="number" id="p2_teeth" min="10" value="30" step="1" oninput="onTeethChange(2)">
+      <label for="p2_od">Outer Diameter (mm)</label>
+      <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)">
+      <label for="p2_bore">Bore Diameter (mm)</label>
+      <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="schedulePreview()">
+      <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
+    </section>
+
+    <section class="card">
+      <h2>Advanced</h2>
+      <label for="p2_clearance_preset">Tooth Clearance</label>
+      <select id="p2_clearance_preset" onchange="onClearancePreset(2)">
+        {% for key, label in clearance_presets.items() %}
+        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div id="p2_clearance_custom_row" class="hidden">
+        <label for="p2_clearance_custom">Custom offset (mm)</label>
+        <input type="number" id="p2_clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
+      </div>
+      <div class="preset-info" id="p2_clearance_info"></div>
+
+      <label for="p2_backlash_preset">Backlash</label>
+      <select id="p2_backlash_preset" onchange="onBacklashPreset(2)">
+        {% for key, label in backlash_presets.items() %}
+        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div id="p2_backlash_custom_row" class="hidden">
+        <label for="p2_backlash_custom">Custom offset (mm)</label>
+        <input type="number" id="p2_backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
+      </div>
+      <div class="preset-info" id="p2_backlash_info"></div>
+
+      <label for="p2_print_extra">3D Print Extra (mm)</label>
+      <input type="number" id="p2_print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
+    </section>
+
+    <section class="card download-card">
+      <h2>Download</h2>
+      <div class="dl-wrap">
+        <button class="btn-download" onclick="toggleDlMenu('dl-p2-pulley', event)">⬇ Download Pulley</button>
+        <div class="dl-menu hidden" id="dl-p2-pulley">
+          <button class="dl-item" onclick="downloadSVG(2); closeDlMenus()">SVG</button>
+          <button class="dl-item" onclick="downloadDXF(2); closeDlMenus()">DXF</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="help-btn-row">
+      <button class="btn-help" onclick="window.open('/static/Pulley2_help.html','_blank')" title="Pulley 2 Help">&#9432;</button>
+    </div>
+  </aside>
+
+</main>
+
+<footer>
+  <a href="https://cheapcadtools.com">cheapcadtools.com</a> &nbsp;|&nbsp;
+  <a href="https://cheapcadtools.com/privacy-policy/Fusion360-privacy-policy">Privacy Policy</a>
+  &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.
+</footer>
+
+<script>
+const FAMILIES      = {{ families | tojson }};
+const BELT_FAMILIES = new Set({{ belt_families | tojson }});
+let previewTab = 'pulley';   // 'pulley' | 'belt'
+let currentSpec  = null;
+let currentSpec2 = null;
+let previewTimer       = null;
+let ratioSnapTimer     = null;
+let beltCorrectionTimer = null;
+let teethLock    = false;
+let teethLock2   = false;
+
+// ── Settings persistence (localStorage) ──────────────────────────────────────
+const SETTINGS_KEY = 'pulley_last';
+
+function saveSettings() {
+  const s = {
+    family:              document.getElementById('family').value,
+    pitch:               document.getElementById('pitch').value,
+    teeth:               document.getElementById('teeth').value,
+    bore:                document.getElementById('bore').value,
+    clearance_preset:    document.getElementById('clearance_preset').value,
+    clearance_custom:    document.getElementById('clearance_custom').value,
+    backlash_preset:     document.getElementById('backlash_preset').value,
+    backlash_custom:     document.getElementById('backlash_custom').value,
+    print_extra:         document.getElementById('print_extra').value,
+    dual_enable:         document.getElementById('dual_enable').checked,
+    center_distance:     document.getElementById('center_distance').value,
+    gear_ratio:          document.getElementById('gear_ratio').value,
+    p2_teeth:            document.getElementById('p2_teeth').value,
+    p2_bore:             document.getElementById('p2_bore').value,
+    p2_clearance_preset: document.getElementById('p2_clearance_preset').value,
+    p2_clearance_custom: document.getElementById('p2_clearance_custom').value,
+    p2_backlash_preset:  document.getElementById('p2_backlash_preset').value,
+    p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
+    p2_print_extra:      document.getElementById('p2_print_extra').value,
+  };
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
+}
+
+function _val(id, v) {
+  const el = document.getElementById(id);
+  if (el && v !== undefined && v !== null) el.value = v;
+}
+function _chk(id, v) {
+  const el = document.getElementById(id);
+  if (el && v !== undefined) el.checked = !!v;
+}
+
+async function loadSettings() {
+  let s;
+  try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch(e) {}
+  if (!s) return false;
+
+  // Family + pitch (must come before onPitchChange populates the spec)
+  const famEl = document.getElementById('family');
+  if (s.family && [...famEl.options].some(o => o.value === s.family))
+    famEl.value = s.family;
+  populatePitches(famEl.value);
+  const pitchEl = document.getElementById('pitch');
+  if (s.pitch && [...pitchEl.options].some(o => o.value === s.pitch))
+    pitchEl.value = s.pitch;
+
+  // Fetch spec so min_teeth is known before setting teeth
+  const resp = await fetch(`/api/spec?family=${famEl.value}&pitch=${pitchEl.value}`);
+  if (resp.ok) {
+    currentSpec = await resp.json();
+    const teethEl = document.getElementById('teeth');
+    teethEl.min = currentSpec.min_teeth;
+  }
+
+  _val('teeth',               s.teeth);
+  _val('bore',                s.bore);
+  _val('clearance_preset',    s.clearance_preset);
+  _val('clearance_custom',    s.clearance_custom);
+  _val('backlash_preset',     s.backlash_preset);
+  _val('backlash_custom',     s.backlash_custom);
+  _val('print_extra',         s.print_extra);
+  _val('p2_teeth',            s.p2_teeth);
+  _val('p2_bore',             s.p2_bore);
+  _val('p2_clearance_preset', s.p2_clearance_preset);
+  _val('p2_clearance_custom', s.p2_clearance_custom);
+  _val('p2_backlash_preset',  s.p2_backlash_preset);
+  _val('p2_backlash_custom',  s.p2_backlash_custom);
+  _val('p2_print_extra',      s.p2_print_extra);
+  _val('gear_ratio',          s.gear_ratio);
+
+  if (s.dual_enable) {
+    _chk('dual_enable', true);
+    const dual    = document.getElementById('dual_enable').checked;
+    document.getElementById('panel2')     .classList.toggle('hidden', !dual);
+    document.getElementById('spacing_row').classList.toggle('hidden', !dual);
+    document.getElementById('ratio_row')  .classList.toggle('hidden', !dual);
+    document.getElementById('main-layout').classList.toggle('dual',    dual);
+    document.getElementById('panel1-title').textContent = 'Pulley 1';
+    syncP2Belt();
+    // Restore center distance (already pitch-corrected when it was saved)
+    if (s.center_distance) _val('center_distance', parseFloat(s.center_distance).toFixed(2));
+  }
+
+  return true;
+}
+
+function resetSettings() {
+  try { localStorage.removeItem(SETTINGS_KEY); } catch(e) {}
+  location.reload();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.onload = async () => {
+  populatePitches('HTD');
+  const restored = await loadSettings();
+  if (!restored) {
+    await onPitchChange();
+  } else {
+    // Trigger OD/label sync for both pulleys, then preview
+    await onPitchChange();
+    if (document.getElementById('dual_enable').checked) {
+      updateMinDistance();
+      updateBeltTeethFromCenter();
+    }
+  }
+  updateBeltBtn();
+};
+
+// ── Dual toggle ───────────────────────────────────────────────────────────────
+function onDualToggle() {
+  const dual    = document.getElementById('dual_enable').checked;
+  const panel2  = document.getElementById('panel2');
+  const spacing = document.getElementById('spacing_row');
+  const ratioRow= document.getElementById('ratio_row');
+  const layout  = document.getElementById('main-layout');
+  const p1title = document.getElementById('panel1-title');
+
+  panel2  .classList.toggle('hidden', !dual);
+  spacing .classList.toggle('hidden', !dual);
+  ratioRow.classList.toggle('hidden', !dual);
+  layout  .classList.toggle('dual',   dual);
+  p1title.textContent = dual ? 'Pulley 1' : 'Pulley';
+
+  if (dual) {
+    syncP2Belt();
+    onTeethChange(2);
+    updateGearRatioFromTeeth();
+    setDefaultCenterDistance();
+  }
+  schedulePreview();
+}
+
+function syncP2Belt() {
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  document.getElementById('p2-belt-label').textContent = `${family} ${pitch}`;
+  // Apply same spec to p2
+  if (currentSpec) {
+    const el = document.getElementById('p2_teeth');
+    el.min = currentSpec.min_teeth;
+    if (parseInt(el.value) < currentSpec.min_teeth)
+      el.value = currentSpec.min_teeth;
+    currentSpec2 = currentSpec;
+    updateP2PresetInfo();
+    updateMinDistance();
+    updateGearRatioFromTeeth();
+  }
+}
+
+function updateMinDistance() {
+  const pitchMm = currentSpec ? currentSpec.pitch_mm : 0;
+  const teeth1  = parseInt(document.getElementById('teeth').value) || 0;
+  const teeth2  = parseInt(document.getElementById('p2_teeth').value) || 0;
+  const minC = pitchMm > 0
+    ? ((teeth1 + teeth2) * pitchMm / (2 * Math.PI)).toFixed(1)
+    : '—';
+  const note = document.getElementById('min_distance_note');
+  note.textContent = `min: ${minC} mm`;
+  const cdEl = document.getElementById('center_distance');
+  const cd = parseFloat(cdEl.value) || 0;
+  note.style.color = cd < parseFloat(minC) ? '#c00' : '#888';
+}
+
+async function setDefaultCenterDistance() {
+  const pitchMm = currentSpec ? currentSpec.pitch_mm : 0;
+  const teeth1  = parseInt(document.getElementById('teeth').value) || 0;
+  const teeth2  = parseInt(document.getElementById('p2_teeth').value) || 0;
+  if (pitchMm > 0) {
+    const def = Math.ceil((teeth1 + teeth2) * pitchMm / (2 * Math.PI));
+    document.getElementById('center_distance').value = def;
+  }
+  updateMinDistance();
+  await correctCenterDistance();
+}
+
+// ── Open-belt length (client-side, matches server formula) ───────────────────
+function openBeltLength(R1, R2, C) {
+  const alpha = Math.asin(Math.max(-1, Math.min(1, (R2 - R1) / C)));
+  return 2 * C * Math.cos(alpha) + R1 * (Math.PI - 2 * alpha) + R2 * (Math.PI + 2 * alpha);
+}
+
+// Immediately update belt teeth from the current center distance (no server call)
+function updateBeltTeethFromCenter() {
+  const pitchMm = currentSpec ? currentSpec.pitch_mm : 0;
+  if (pitchMm <= 0) return;
+  const t1 = parseInt(document.getElementById('teeth').value) || 0;
+  const t2 = parseInt(document.getElementById('p2_teeth').value) || 0;
+  const C  = parseFloat(document.getElementById('center_distance').value) || 0;
+  if (C <= 0 || t1 <= 0 || t2 <= 0) return;
+  const R1   = t1 * pitchMm / (2 * Math.PI);
+  const R2   = t2 * pitchMm / (2 * Math.PI);
+  const Ceff = Math.max(C, R1 + R2);
+  const L    = openBeltLength(R1, R2, Ceff);
+  document.getElementById('belt_teeth').value = Math.ceil(L / pitchMm);
+}
+
+// Called on every center-distance keystroke
+function onCenterDistanceInput() {
+  updateMinDistance();
+  updateBeltTeethFromCenter();
+  // Cancel any pending correction and reschedule for 3 s
+  clearTimeout(beltCorrectionTimer);
+  beltCorrectionTimer = setTimeout(correctCenterDistance, 3000);
+  schedulePreview();
+}
+
+// After 3 s idle: snap center distance to exact pitch-aligned value
+async function correctCenterDistance() {
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const t1 = document.getElementById('teeth').value;
+  const t2 = document.getElementById('p2_teeth').value;
+  const C  = document.getElementById('center_distance').value;
+  const resp = await fetch(
+    `/api/belt?mode=from_center&family=${family}&pitch=${pitch}&teeth1=${t1}&teeth2=${t2}&center_distance=${C}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  document.getElementById('center_distance').value = data.center_dist_mm.toFixed(2);
+  document.getElementById('belt_teeth').value = data.n_belt;
+  updateMinDistance();
+  schedulePreview();
+}
+
+// Called when the user edits belt teeth directly
+async function onBeltTeethInput() {
+  clearTimeout(beltCorrectionTimer);
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const t1 = document.getElementById('teeth').value;
+  const t2 = document.getElementById('p2_teeth').value;
+  const n  = document.getElementById('belt_teeth').value;
+  if (!n || parseInt(n) <= 0) return;
+  const resp = await fetch(
+    `/api/belt?mode=from_teeth&family=${family}&pitch=${pitch}&teeth1=${t1}&teeth2=${t2}&n_belt=${n}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  document.getElementById('center_distance').value = data.center_dist_mm.toFixed(2);
+  updateMinDistance();
+  schedulePreview();
+}
+
+// ── Family / pitch ────────────────────────────────────────────────────────────
+function populatePitches(family) {
+  const sel = document.getElementById('pitch');
+  sel.innerHTML = '';
+  (FAMILIES[family] || []).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    sel.appendChild(opt);
+  });
+}
+
+function onFamilyChange() {
+  populatePitches(document.getElementById('family').value);
+  onPitchChange();
+  updateBeltBtn();
+}
+
+async function onPitchChange() {
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const resp   = await fetch(`/api/spec?family=${family}&pitch=${pitch}`);
+  if (!resp.ok) return;
+  currentSpec = await resp.json();
+
+  const teethEl = document.getElementById('teeth');
+  teethEl.min = currentSpec.min_teeth;
+  if (parseInt(teethEl.value) < currentSpec.min_teeth)
+    teethEl.value = currentSpec.min_teeth;
+
+  updatePresetInfo(1);
+  await syncOD(1);
+
+  if (document.getElementById('dual_enable').checked) {
+    syncP2Belt();
+    await correctCenterDistance();
+  } else {
+    schedulePreview();
+  }
+}
+
+// ── Teeth ↔ OD ────────────────────────────────────────────────────────────────
+async function onTeethChange(n) {
+  if (n === 1 && teethLock)  return;
+  if (n === 2 && teethLock2) return;
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const teeth  = document.getElementById(n === 1 ? 'teeth' : 'p2_teeth').value;
+  const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${teeth}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  if (n === 1) {
+    teethLock = true;
+    document.getElementById('od').value = data.od;
+    teethLock = false;
+    updateLabels(data.teeth, data.od);
+    // Changing P1 teeth → drive P2 teeth from gear ratio (if dual)
+    if (document.getElementById('dual_enable').checked) {
+      applyRatioToP2(data.teeth);
+      return; // applyRatioToP2 calls schedulePreview
+    }
+  } else {
+    teethLock2 = true;
+    document.getElementById('p2_od').value = data.od;
+    teethLock2 = false;
+    updateP2Labels(data.teeth, data.od);
+    // Changing P2 teeth → update displayed gear ratio
+    updateGearRatioFromTeeth();
+  }
+  updateMinDistance();
+  updateBeltTeethFromCenter();
+  schedulePreview();
+}
+
+async function onODChange(n) {
+  if (n === 1 && teethLock)  return;
+  if (n === 2 && teethLock2) return;
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const od     = document.getElementById(n === 1 ? 'od' : 'p2_od').value;
+  const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=od&value=${od}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  if (n === 1) {
+    teethLock = true;
+    document.getElementById('teeth').value = data.teeth;
+    document.getElementById('od').value    = data.od;
+    teethLock = false;
+    updateLabels(data.teeth, data.od);
+  } else {
+    teethLock2 = true;
+    document.getElementById('p2_teeth').value = data.teeth;
+    document.getElementById('p2_od').value    = data.od;
+    teethLock2 = false;
+    updateP2Labels(data.teeth, data.od);
+  }
+  updateMinDistance();
+  schedulePreview();
+}
+
+async function syncOD(n) {
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const teeth  = document.getElementById(n === 1 ? 'teeth' : 'p2_teeth').value;
+  const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${teeth}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  if (n === 1) {
+    document.getElementById('od').value = data.od;
+    updateLabels(data.teeth, data.od);
+  } else {
+    document.getElementById('p2_od').value = data.od;
+    updateP2Labels(data.teeth, data.od);
+  }
+}
+
+function updateLabels(teeth, od) {
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  document.getElementById('profile-label').textContent = `${family} ${pitch} — ${teeth}T`;
+  document.getElementById('od-label').textContent      = `OD: ${od} mm`;
+  if (currentSpec) {
+    const pd = ((currentSpec.pitch_mm * teeth) / Math.PI).toFixed(3);
+    document.getElementById('pitch-circle-info').textContent = `Pitch diameter: ${pd} mm`;
+    document.getElementById('preview-footer').textContent    =
+      `${family} ${pitch} · P1: ${teeth}T OD ${od} mm · PD ${pd} mm`;
+  }
+}
+
+function updateP2Labels(teeth, od) {
+  if (!currentSpec) return;
+  const pd = ((currentSpec.pitch_mm * teeth) / Math.PI).toFixed(3);
+  document.getElementById('p2-pitch-circle-info').textContent = `Pitch diameter: ${pd} mm`;
+}
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+function onClearancePreset(n) {
+  const id = n === 1 ? 'clearance_preset' : 'p2_clearance_preset';
+  const v  = document.getElementById(id).value;
+  const rowId = n === 1 ? 'clearance_custom_row' : 'p2_clearance_custom_row';
+  document.getElementById(rowId).classList.toggle('hidden', v !== 'CUSTOM');
+  updatePresetInfo(n);
+  schedulePreview();
+}
+
+function onBacklashPreset(n) {
+  const id = n === 1 ? 'backlash_preset' : 'p2_backlash_preset';
+  const v  = document.getElementById(id).value;
+  const rowId = n === 1 ? 'backlash_custom_row' : 'p2_backlash_custom_row';
+  document.getElementById(rowId).classList.toggle('hidden', v !== 'CUSTOM');
+  updatePresetInfo(n);
+  schedulePreview();
+}
+
+function updatePresetInfo(n) {
+  const spec = n === 1 ? currentSpec : currentSpec2;
+  if (!spec) return;
+  const pfx  = n === 1 ? '' : 'p2_';
+  const cp   = document.getElementById(pfx + 'clearance_preset').value;
+  const bp   = document.getElementById(pfx + 'backlash_preset').value;
+  const ci   = document.getElementById(pfx + 'clearance_info');
+  const bi   = document.getElementById(pfx + 'backlash_info');
+  ci.textContent = (cp !== 'CUSTOM' && spec.presets.clearance[cp] !== undefined)
+    ? `Offset: ${spec.presets.clearance[cp].toFixed(3)} mm` : '';
+  bi.textContent = (bp === 'NONE') ? 'Offset: 0.000 mm'
+    : (bp !== 'CUSTOM' && spec.presets.backlash[bp] !== undefined)
+      ? `Offset: ${spec.presets.backlash[bp].toFixed(3)} mm` : '';
+}
+
+function updateP2PresetInfo() { updatePresetInfo(2); }
+
+// ── Gear Ratio ────────────────────────────────────────────────────────────────
+function updateGearRatioFromTeeth() {
+  const t1 = parseInt(document.getElementById('teeth').value)    || 1;
+  const t2 = parseInt(document.getElementById('p2_teeth').value) || 1;
+  const ratio = t2 / t1;
+  document.getElementById('gear_ratio').value = ratio.toFixed(3);
+  updateRatioNote(t1, t2, ratio);
+}
+
+function onGearRatioChange() {
+  const t1 = parseInt(document.getElementById('teeth').value) || 1;
+  // Drive P2 immediately but don't snap the ratio display yet
+  applyRatioToP2(t1, false);
+  // Snap to true ratio 3 seconds after the user stops typing
+  clearTimeout(ratioSnapTimer);
+  ratioSnapTimer = setTimeout(() => {
+    const t2 = parseInt(document.getElementById('p2_teeth').value) || 1;
+    document.getElementById('gear_ratio').value = (t2 / t1).toFixed(3);
+  }, 3000);
+}
+
+async function applyRatioToP2(t1, snapRatioDisplay = true) {
+  const ratio = parseFloat(document.getElementById('gear_ratio').value) || 1;
+  const t2    = Math.max(1, Math.round(ratio * t1));
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${t2}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  teethLock2 = true;
+  document.getElementById('p2_teeth').value = data.teeth;
+  document.getElementById('p2_od').value    = data.od;
+  teethLock2 = false;
+  updateP2Labels(data.teeth, data.od);
+  const trueRatio = data.teeth / t1;
+  if (snapRatioDisplay)
+    document.getElementById('gear_ratio').value = trueRatio.toFixed(3);
+  updateRatioNote(t1, data.teeth, trueRatio);
+  updateMinDistance();
+  await correctCenterDistance();
+}
+
+async function stepP2Teeth(delta) {
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const t2cur  = parseInt(document.getElementById('p2_teeth').value) || 1;
+  const t2new  = Math.max(currentSpec ? currentSpec.min_teeth : 1, t2cur + delta);
+  const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${t2new}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  teethLock2 = true;
+  document.getElementById('p2_teeth').value = data.teeth;
+  document.getElementById('p2_od').value    = data.od;
+  teethLock2 = false;
+  updateP2Labels(data.teeth, data.od);
+  const t1 = parseInt(document.getElementById('teeth').value) || 1;
+  const trueRatio = data.teeth / t1;
+  document.getElementById('gear_ratio').value = trueRatio.toFixed(3);
+  updateRatioNote(t1, data.teeth, trueRatio);
+  updateMinDistance();
+  await correctCenterDistance();
+}
+
+function updateRatioNote(t1, t2, ratio) {
+  const note = document.getElementById('ratio_note');
+  note.textContent = `${t1}T : ${t2}T`;
+}
+
+// ── Preview tabs ──────────────────────────────────────────────────────────────
+function setPreviewTab(tab) {
+  previewTab = tab;
+  document.getElementById('tab-pulley').classList.toggle('active', tab === 'pulley');
+  document.getElementById('tab-belt')  .classList.toggle('active', tab === 'belt');
+  schedulePreview();
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────────
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(updatePreview, 300);
+  saveSettings();
+}
+
+async function updatePreview() {
+  const img = document.getElementById('preview-img');
+  let url;
+  if (previewTab === 'belt') {
+    const family = document.getElementById('family').value;
+    const pitch  = document.getElementById('pitch').value;
+    url = '/api/belt-preview?family=' + encodeURIComponent(family)
+        + '&pitch=' + encodeURIComponent(pitch);
+  } else {
+    const params = buildParams();
+    url = '/api/preview?' + new URLSearchParams(params);
+  }
+  img.src = url;
+  img.style.display = 'block';
+  document.getElementById('preview-placeholder').style.display = 'none';
+}
+
+function buildParams() {
+  const cp   = document.getElementById('clearance_preset').value;
+  const bp   = document.getElementById('backlash_preset').value;
+  const dual = document.getElementById('dual_enable').checked;
+  const p = {
+    family:           document.getElementById('family').value,
+    pitch:            document.getElementById('pitch').value,
+    teeth:            document.getElementById('teeth').value,
+    bore:             document.getElementById('bore').value,
+    print_extra:      document.getElementById('print_extra').value,
+    clearance_preset: cp,
+    clearance_custom: document.getElementById('clearance_custom').value,
+    backlash_preset:  bp,
+    backlash_custom:  document.getElementById('backlash_custom').value,
+  };
+  if (dual) {
+    const cp2 = document.getElementById('p2_clearance_preset').value;
+    const bp2 = document.getElementById('p2_backlash_preset').value;
+    Object.assign(p, {
+      dual:              'true',
+      center_distance:   document.getElementById('center_distance').value,
+      p2_teeth:          document.getElementById('p2_teeth').value,
+      p2_bore:           document.getElementById('p2_bore').value,
+      p2_print_extra:    document.getElementById('p2_print_extra').value,
+      p2_clearance_preset: cp2,
+      p2_clearance_custom: document.getElementById('p2_clearance_custom').value,
+      p2_backlash_preset:  bp2,
+      p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
+    });
+  }
+  return p;
+}
+
+// ── Download popup menu ───────────────────────────────────────────────────────
+function toggleDlMenu(id, event) {
+  event.stopPropagation();
+  const menu = document.getElementById(id);
+  const isHidden = menu.classList.contains('hidden');
+  closeDlMenus();
+  if (isHidden) menu.classList.remove('hidden');
+}
+
+function closeDlMenus() {
+  document.querySelectorAll('.dl-menu').forEach(m => m.classList.add('hidden'));
+}
+
+document.addEventListener('click', closeDlMenus);
+
+// ── Download ──────────────────────────────────────────────────────────────────
+function downloadSVG(n) {
+  const params = buildParams();
+  if (n === 2) params.pulley = '2';
+  window.location = '/download/svg?' + new URLSearchParams(params);
+}
+
+function downloadDXF(n) {
+  const params = buildParams();
+  if (n === 2) params.pulley = '2';
+  window.location = '/download/dxf?' + new URLSearchParams(params);
+}
+
+function downloadBeltSVG() {
+  const dual = document.getElementById('dual_enable').checked;
+  if (dual) {
+    const params = buildParams();
+    params.n_belt = document.getElementById('belt_teeth').value || 0;
+    window.location = '/download/belt-svg?' + new URLSearchParams(params);
+  } else {
+    const family = document.getElementById('family').value;
+    const pitch  = document.getElementById('pitch').value;
+    window.location = '/download/belt-svg?family=' + encodeURIComponent(family)
+                    + '&pitch=' + encodeURIComponent(pitch);
+  }
+}
+
+function updateBeltBtn() {
+  const family    = document.getElementById('family').value;
+  const hasBelt   = BELT_FAMILIES.has(family);
+  document.getElementById('belt-svg-wrap').classList.toggle('hidden', !hasBelt);
+  document.getElementById('tab-belt')    .classList.toggle('hidden', !hasBelt);
+  // If switching away from a belt-only family, reset to pulley tab
+  if (!hasBelt && previewTab === 'belt') {
+    previewTab = 'pulley';
+    document.getElementById('tab-pulley').classList.add('active');
+    document.getElementById('tab-belt')  .classList.remove('active');
+  }
+}
+</script>
+
+</body>
+</html>

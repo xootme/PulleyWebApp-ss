@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Deployment Guide — PulleyWebApp</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #f0f2f5;
+      padding: 32px 24px 60px;
+    }
+    .page {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    .doc-header {
+      background: #0078d4;
+      color: #fff;
+      border-radius: 8px;
+      padding: 24px 28px 20px;
+      margin-bottom: 24px;
+    }
+    .doc-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .doc-header p  { font-size: 13px; opacity: 0.85; }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .meta-item {
+      background: rgba(255,255,255,0.15);
+      border-radius: 5px;
+      padding: 8px 12px;
+    }
+    .meta-item .label { font-size: 10px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.6px; }
+    .meta-item .value { font-size: 13px; font-weight: 600; font-family: 'Consolas', monospace; margin-top: 2px; }
+
+    /* ── Section cards ── */
+    .section {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      background: #f7f9fc;
+      border-bottom: 1px solid #dde3ea;
+    }
+    .section-num {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #0078d4;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .section-header h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+    .section-body { padding: 18px 20px; }
+
+    /* ── Flow diagram ── */
+    .flow {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0;
+      margin: 14px 0 6px;
+    }
+    .flow-box {
+      background: #eef3f9;
+      border: 1.5px solid #b8cfe8;
+      border-radius: 6px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a4a72;
+      text-align: center;
+      min-width: 100px;
+    }
+    .flow-box .sub {
+      font-size: 10px;
+      font-weight: 400;
+      color: #6a8fac;
+      margin-top: 2px;
+    }
+    .flow-arrow {
+      font-size: 20px;
+      color: #9ab5cc;
+      padding: 0 6px;
+      line-height: 1;
+    }
+
+    /* ── File table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 8px 0;
+    }
+    th {
+      background: #f0f4f9;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #555;
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid #dde3ea;
+    }
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #f0f2f5;
+      vertical-align: top;
+      line-height: 1.5;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafbfc; }
+    td code { background: #f0f2f5; padding: 1px 5px; border-radius: 3px; font-family: Consolas, monospace; font-size: 12px; }
+
+    /* ── Code blocks ── */
+    .code-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      margin-top: 14px;
+    }
+    .code-label:first-child { margin-top: 0; }
+    pre {
+      background: #1e2433;
+      color: #d4e0f0;
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 12.5px;
+      line-height: 1.65;
+      overflow-x: auto;
+      margin-bottom: 4px;
+    }
+    pre .comment { color: #6a8fac; }
+    pre .cmd     { color: #7dd3c8; }
+    pre .arg     { color: #f9c874; }
+    pre .flag    { color: #b8a0f0; }
+    pre .path    { color: #88d4a0; }
+    pre .kw      { color: #f08080; }
+
+    /* ── Steps ── */
+    .steps { counter-reset: step; list-style: none; padding: 0; }
+    .steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .steps li:last-child { margin-bottom: 0; }
+    .step-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #0078d4;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-body { flex: 1; }
+    .step-body strong { display: block; margin-bottom: 3px; font-size: 13px; }
+    .step-body p { font-size: 13px; color: #555; line-height: 1.5; }
+
+    /* ── Trouble table ── */
+    .trouble td:first-child { font-weight: 600; color: #b91c1c; white-space: nowrap; }
+    .trouble td:nth-child(2) { color: #555; }
+    .trouble td:nth-child(3) { color: #166534; }
+
+    /* ── Tip / warn boxes ── */
+    .tip, .warn {
+      border-radius: 5px;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-top: 12px;
+    }
+    .tip  { background: #eef5fc; border-left: 3px solid #0078d4; color: #1a4a72; }
+    .warn { background: #fffbeb; border-left: 3px solid #f59e0b; color: #78350f; }
+    .tip strong, .warn strong { margin-right: 4px; }
+
+    /* ── Badge ── */
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      vertical-align: middle;
+      margin-left: 4px;
+    }
+    .badge-blue   { background: #dbeafe; color: #1e40af; }
+    .badge-green  { background: #dcfce7; color: #166534; }
+    .badge-gray   { background: #f3f4f6; color: #6b7280; }
+
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 32px;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ── -->
+  <div class="doc-header">
+    <h1>⚙ Web Deployment Guide</h1>
+    <p>PulleyWebApp · Sketch Timing Pulley Generator · cheapcadtools.com</p>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <div class="label">Host</div>
+        <div class="value">GreenGeeks</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Server</div>
+        <div class="value">chi203.greengeeks.net</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">SSH User</div>
+        <div class="value">xootpro</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Remote Path</div>
+        <div class="value">~/public_html/cheapcadtools/tst_pulleys/</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Live URL</div>
+        <div class="value">cheapcadtools.com/tst_pulleys/</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">GitHub Repo</div>
+        <div class="value">github.com/xootme/PulleyWebApp</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Python</div>
+        <div class="value">/opt/alt/python311/bin/python3</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 1: How It Works ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">1</div>
+      <h2>How It Works</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#555; line-height:1.6;">
+        GreenGeeks uses <strong>LiteSpeed</strong> as the web server. LiteSpeed does not support WSGI
+        natively, so a <strong>CGI bridge</strong> is used to translate web requests into the format
+        Flask understands. Every request goes through this chain:
+      </p>
+      <div class="flow">
+        <div class="flow-box">Browser<div class="sub">HTTP request</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">LiteSpeed<div class="sub">web server</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">index.cgi<div class="sub">CGI bridge</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">wsgiref<div class="sub">WSGI adapter</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">app.py<div class="sub">Flask app</div></div>
+      </div>
+      <div class="tip" style="margin-top:16px;">
+        <strong>Subfolder note:</strong>
+        The app lives under <code>/tst_pulleys/</code>, not the domain root.
+        <code>index.cgi</code> sets <code>SCRIPT_NAME=/tst_pulleys</code> so Flask generates
+        correct URLs for CSS, JavaScript, and image assets automatically.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 2: Deployment Files ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">2</div>
+      <h2>Deployment Files</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#555; margin-bottom:12px;">Three files handle the entire deployment pipeline:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Runs On</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>index.cgi</code> <span class="badge badge-blue">server</span></td>
+            <td>Server</td>
+            <td>LiteSpeed entry point. Activates the venv, sets <code>SCRIPT_NAME</code>, and hands off to Flask via <code>wsgiref</code>. Must be <code>chmod 755</code>.</td>
+          </tr>
+          <tr>
+            <td><code>provision_remote.sh</code> <span class="badge badge-blue">server</span></td>
+            <td>Server</td>
+            <td>Creates the virtual environment, installs all Python dependencies, sets file permissions, and verifies the install. Run once after first upload, and again whenever <code>requirements.txt</code> changes.</td>
+          </tr>
+          <tr>
+            <td><code>deploy.sh</code> <span class="badge badge-green">local</span></td>
+            <td>Local (Git Bash / WSL)</td>
+            <td>Syncs project files to the server via <code>rsync</code>, then SSH-triggers <code>provision_remote.sh</code> automatically. One command does a full deploy.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Section 3: First-Time Setup ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">3</div>
+      <h2>First-Time Setup</h2>
+    </div>
+    <div class="section-body">
+      <ul class="steps">
+        <li>
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <strong>Upload the project files to the server</strong>
+            <p>Use the deploy script from Git Bash on your Windows machine. Open Git Bash, navigate to the project folder, and run:</p>
+            <div class="code-label">Git Bash — project root</div>
+            <pre><span class="comment"># Full deploy: sync files + run provisioner</span>
+<span class="cmd">bash</span> <span class="path">deploy.sh</span></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <strong>Provisioner runs automatically</strong>
+            <p>
+              <code>deploy.sh</code> SSH-triggers <code>provision_remote.sh</code> on the server.
+              It creates the Python virtual environment, installs Flask, Pillow, and ezdxf,
+              and sets <code>chmod 755</code> on <code>index.cgi</code>.
+              You will see output like:
+            </p>
+            <pre><span class="comment">======================================================
+  PulleyWebApp — Remote Provisioning
+  Target: ~/public_html/cheapcadtools/tst_pulleys
+======================================================</span>
+
+<span class="kw">[1/4]</span> Creating virtual environment...
+<span class="kw">[2/4]</span> Installing dependencies...
+<span class="kw">[3/4]</span> Setting permissions...
+<span class="kw">[4/4]</span> Verifying install...
+      Flask 3.x.x
+      Pillow 10.x.x
+      ezdxf 1.4.x
+
+<span class="comment">======================================================
+  Provisioning complete.
+  App URL: https://cheapcadtools.com/tst_pulleys/
+======================================================</span></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <strong>Verify in the browser</strong>
+            <p>Open <strong>https://cheapcadtools.com/tst_pulleys/</strong> — the pulley generator should load with the full UI.</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ── Section 4: Routine Deploys ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">4</div>
+      <h2>Routine Deploys (After Code Changes)</h2>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead>
+          <tr><th>What Changed</th><th>Command</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Python code, exporters, geometry</td>
+            <td><code>bash deploy.sh</code></td>
+            <td>Full sync + provisioner. Safe to run every time.</td>
+          </tr>
+          <tr>
+            <td>Templates, static files (HTML/CSS/JS)</td>
+            <td><code>bash deploy.sh --sync</code></td>
+            <td>Sync only — skips the provisioner (faster).</td>
+          </tr>
+          <tr>
+            <td><code>requirements.txt</code> changed</td>
+            <td><code>bash deploy.sh</code></td>
+            <td>Must run provisioner so new packages are installed in the venv.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-label" style="margin-top:16px;">What deploy.sh excludes (never uploaded)</div>
+      <pre><span class="flag">venv/</span>          <span class="comment"># server builds its own venv</span>
+<span class="flag">__pycache__/</span>   <span class="comment"># compiled bytecode</span>
+<span class="flag">*.pyc</span>
+<span class="flag">tests/</span>         <span class="comment"># unit tests not needed on server</span>
+<span class="flag">*.md</span>           <span class="comment"># documentation</span>
+<span class="flag">deploy.sh</span>      <span class="comment"># local script only</span>
+<span class="flag">testing.html</span>   <span class="comment"># local dev file</span></pre>
+    </div>
+  </div>
+
+  <!-- ── Section 5: GitHub Source Control ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">5</div>
+      <h2>GitHub Source Control</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#555; line-height:1.6; margin-bottom:14px;">
+        The project is stored in a <strong>private GitHub repository</strong> at
+        <code>github.com/xootme/PulleyWebApp</code>.
+        Always commit and push to GitHub before deploying to the server —
+        GitHub is the source of truth.
+      </p>
+
+      <div class="code-label">One-time setup (Git Bash, project root)</div>
+      <pre><span class="cmd">git</span> init
+<span class="cmd">git</span> add .
+<span class="cmd">git</span> commit <span class="flag">-m</span> <span class="arg">"Initial commit — Sketch Timing Pulley Generator"</span>
+<span class="cmd">git</span> remote add origin <span class="path">https://github.com/xootme/PulleyWebApp.git</span>
+<span class="cmd">git</span> push <span class="flag">-u</span> origin main</pre>
+
+      <div class="code-label">Normal commit workflow</div>
+      <pre><span class="cmd">git</span> add .
+<span class="cmd">git</span> commit <span class="flag">-m</span> <span class="arg">"describe what changed"</span>
+<span class="cmd">git</span> push</pre>
+
+      <div class="code-label">Recommended deploy sequence</div>
+      <pre><span class="comment"># 1. Save your work to GitHub</span>
+<span class="cmd">git</span> add .
+<span class="cmd">git</span> commit <span class="flag">-m</span> <span class="arg">"your message"</span>
+<span class="cmd">git</span> push
+
+<span class="comment"># 2. Push to production server</span>
+<span class="cmd">bash</span> <span class="path">deploy.sh</span></pre>
+
+      <div class="tip">
+        <strong>Authentication:</strong> GitHub no longer accepts account passwords over HTTPS.
+        Use a <strong>Personal Access Token</strong> when Git prompts for a password.<br>
+        GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token → check <strong>repo</strong> scope.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 6: Manual Commands ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">6</div>
+      <h2>Manual SSH Commands</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#555; margin-bottom:12px;">
+        If you need to run steps individually (e.g. debugging or partial update):
+      </p>
+
+      <div class="code-label">SSH into the server</div>
+      <pre><span class="cmd">ssh</span> <span class="arg">xootpro@chi203.greengeeks.net</span></pre>
+
+      <div class="code-label">Sync files only (no provisioner)</div>
+      <pre><span class="cmd">rsync</span> <span class="flag">-avz</span> \
+  <span class="flag">--exclude</span> <span class="arg">'venv/'</span> <span class="flag">--exclude</span> <span class="arg">'__pycache__/'</span> <span class="flag">--exclude</span> <span class="arg">'*.pyc'</span> \
+  <span class="flag">--exclude</span> <span class="arg">'tests/'</span> <span class="flag">--exclude</span> <span class="arg">'*.md'</span> <span class="flag">--exclude</span> <span class="arg">'deploy.sh'</span> \
+  <span class="path">./</span> <span class="arg">xootpro@chi203.greengeeks.net:~/public_html/cheapcadtools/tst_pulleys/</span></pre>
+
+      <div class="code-label">Run provisioner on server</div>
+      <pre><span class="cmd">ssh</span> <span class="arg">xootpro@chi203.greengeeks.net</span> \
+  <span class="arg">"bash ~/public_html/cheapcadtools/tst_pulleys/provision_remote.sh"</span></pre>
+
+      <div class="code-label">One-liner: sync + provision</div>
+      <pre><span class="cmd">rsync</span> <span class="flag">-avz</span> <span class="flag">--exclude</span> <span class="arg">'venv/'</span> <span class="flag">--exclude</span> <span class="arg">'__pycache__/'</span> <span class="flag">--exclude</span> <span class="arg">'*.pyc'</span> \
+  <span class="flag">--exclude</span> <span class="arg">'tests/'</span> <span class="flag">--exclude</span> <span class="arg">'*.md'</span> <span class="flag">--exclude</span> <span class="arg">'deploy.sh'</span> \
+  <span class="path">./</span> <span class="arg">xootpro@chi203.greengeeks.net:~/public_html/cheapcadtools/tst_pulleys/</span> \
+&& <span class="cmd">ssh</span> <span class="arg">xootpro@chi203.greengeeks.net</span> \
+  <span class="arg">"bash ~/public_html/cheapcadtools/tst_pulleys/provision_remote.sh"</span></pre>
+
+      <div class="code-label">Fix permissions manually (if 500 error after upload)</div>
+      <pre><span class="cmd">ssh</span> <span class="arg">xootpro@chi203.greengeeks.net</span> \
+  <span class="arg">"chmod 755 ~/public_html/cheapcadtools/tst_pulleys/index.cgi"</span></pre>
+    </div>
+  </div>
+
+  <!-- ── Section 7: Troubleshooting ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">7</div>
+      <h2>Troubleshooting</h2>
+    </div>
+    <div class="section-body">
+      <table class="trouble">
+        <thead>
+          <tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>500 Internal Server Error</td>
+            <td><code>index.cgi</code> not executable</td>
+            <td><code>chmod 755 index.cgi</code> on server — or re-run provisioner</td>
+          </tr>
+          <tr>
+            <td>CSS / JS not loading (404)</td>
+            <td>Wrong <code>SCRIPT_NAME</code> or static path</td>
+            <td>Confirm <code>SCRIPT_NAME=/tst_pulleys</code> is set in <code>index.cgi</code></td>
+          </tr>
+          <tr>
+            <td><code>ModuleNotFoundError</code></td>
+            <td>Venv not activated or dep missing</td>
+            <td>Re-run <code>provision_remote.sh</code></td>
+          </tr>
+          <tr>
+            <td>Blank page / import error</td>
+            <td>Python version mismatch</td>
+            <td>Confirm <code>/opt/alt/python311/bin/python3</code> exists on server</td>
+          </tr>
+          <tr>
+            <td><code>ezdxf</code> missing</td>
+            <td>New dependency not yet installed</td>
+            <td>Re-run <code>provision_remote.sh</code> (installs from <code>requirements.txt</code>)</td>
+          </tr>
+          <tr>
+            <td>Images / previews broken</td>
+            <td>Pillow missing or wrong arch</td>
+            <td>Re-run provisioner; check <code>pip install pillow</code> output for errors</td>
+          </tr>
+          <tr>
+            <td>Old code still showing</td>
+            <td>Browser cache or rsync skipped files</td>
+            <td>Hard-refresh browser (Ctrl+Shift+R); confirm rsync output shows updated files</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="warn" style="margin-top:16px;">
+        <strong>Important:</strong> The venv is never synced from local to server.
+        Always build it on the server by running <code>provision_remote.sh</code>.
+        Uploading a local venv will cause binary compatibility errors on Linux.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 8: How app.py Handles the Subfolder ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">8</div>
+      <h2>How app.py Handles the Subfolder</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#555; line-height:1.6; margin-bottom:12px;">
+        When <code>index.cgi</code> sets <code>SCRIPT_NAME=/tst_pulleys</code>,
+        <code>app.py</code> detects this environment variable at startup and automatically
+        applies <code>ProxyFix</code> middleware. This means:
+      </p>
+      <ul style="color:#555; line-height:2; padding-left:20px;">
+        <li>Static asset URLs (<code>/static/style.css</code>) resolve correctly under the subfolder</li>
+        <li>Flask redirects include the <code>/tst_pulleys/</code> prefix</li>
+        <li>API endpoints (<code>/api/preview</code>, <code>/download/svg</code>, etc.) all work</li>
+        <li><strong>No change is needed for local development</strong> — the env var is absent locally so Flask runs normally on <code>localhost:5000</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc. &nbsp;|&nbsp; Internal documentation
+  </footer>
+
+</div>
+</body>
+</html>

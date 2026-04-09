@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pulley 1 Help — Cheap CAD Tools</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #f0f2f5;
+      padding: 24px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    header {
+      background: #0078d4;
+      color: #fff;
+      padding: 14px 20px;
+      border-radius: 8px 8px 0 0;
+      margin-bottom: 0;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+
+    .card {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 0 0 6px 6px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .card:not(:last-child) { border-radius: 0; }
+    .card + .card { border-top: none; }
+    header + .card { border-radius: 0; }
+
+    section {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+    }
+    section h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #0078d4;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 3px;
+    }
+    .field-desc {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .field-tip {
+      font-size: 12px;
+      color: #0078d4;
+      background: #eef5fc;
+      border-left: 3px solid #0078d4;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .tag-auto  { background: #dcfce7; color: #166534; }
+    .tag-input { background: #dbeafe; color: #1e40af; }
+    .tag-read  { background: #f3f4f6; color: #6b7280; }
+
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚙ Pulley 1 — Help Guide</h1>
+  <p>Cheap CAD Tools · Sketch Timing Pulley Generator</p>
+</header>
+
+<section>
+  <h2>Belt Profile</h2>
+  <div class="field">
+    <div class="field-name">Family</div>
+    <div class="field-desc">
+      Selects the belt standard family. Each family defines the tooth shape and pitch range.
+      Common families include:
+      <ul style="margin: 6px 0 0 18px; line-height: 1.8;">
+        <li><strong>HTD</strong> — High Torque Drive; rounded tooth profile, widely used in robotics and 3D printers.</li>
+        <li><strong>GT / GT2 / GT3</strong> — Gates Tooth profile; improved accuracy over HTD, common in precision motion.</li>
+        <li><strong>T-series (T2.5, T5, T10)</strong> — Trapezoidal profile; older standard, lower backlash at slow speeds.</li>
+        <li><strong>MXL / XL / L / H</strong> — Imperial trapezoidal series; common in legacy and US-market equipment.</li>
+      </ul>
+    </div>
+    <div class="field-tip">Changing the Family resets the Pitch options to only those available for that family.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Pitch</div>
+    <div class="field-desc">
+      The center-to-center distance between adjacent belt teeth, in millimetres (e.g. <em>5M</em> = 5 mm pitch).
+      A larger pitch means a coarser, higher-torque belt; a smaller pitch gives finer resolution and quieter operation.
+    </div>
+    <div class="field-tip">Pitch is locked to Family — choose your Family first, then select the Pitch.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Size</h2>
+  <div class="field">
+    <div class="field-name">Number of Teeth <span class="tag tag-input">Input</span></div>
+    <div class="field-desc">
+      The number of teeth on the pulley. Determines the pulley diameter directly — more teeth = larger pulley.
+      A minimum tooth count is enforced per belt spec to prevent undercutting.
+    </div>
+    <div class="field-tip">Changing Teeth auto-updates Outer Diameter. Minimum value depends on the selected belt profile.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Outer Diameter (mm) <span class="tag tag-auto">Auto</span></div>
+    <div class="field-desc">
+      The overall outside diameter of the pulley, calculated automatically from the tooth count and pitch.
+      You can also type directly into this field — the tooth count will round to the nearest whole number and update accordingly.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Bore Diameter (mm) <span class="tag tag-input">Input</span></div>
+    <div class="field-desc">
+      The diameter of the central shaft hole. Set this to match your shaft. The bore must be smaller than the pitch diameter.
+    </div>
+    <div class="field-tip">For 3D-printed pulleys, add 0.2–0.4 mm to account for printing tolerance.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Pitch Diameter <span class="tag tag-read">Read-only</span></div>
+    <div class="field-desc">
+      The theoretical diameter at which the belt pitch line runs. Used internally for belt length calculations.
+      Pitch diameter = (Teeth × Pitch) / π.
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Advanced</h2>
+  <div class="field">
+    <div class="field-name">Tooth Clearance</div>
+    <div class="field-desc">
+      Controls how much extra room exists at the tip of each belt tooth inside the pulley groove.
+      <ul style="margin: 6px 0 0 18px; line-height: 1.8;">
+        <li><strong>Tight</strong> — Minimal clearance; best for precision drives, harder to assemble.</li>
+        <li><strong>Standard</strong> — Recommended default; works well for most applications.</li>
+        <li><strong>Loose</strong> — More clearance; easier assembly, slightly more noise.</li>
+        <li><strong>Custom</strong> — Enter an exact offset in mm. Positive values increase groove depth.</li>
+      </ul>
+    </div>
+    <div class="field-tip">Use Standard unless you are tuning for a specific fit or 3D print tolerance issue.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Backlash</div>
+    <div class="field-desc">
+      Controls the side-to-side play between belt teeth and pulley grooves.
+      <ul style="margin: 6px 0 0 18px; line-height: 1.8;">
+        <li><strong>None</strong> — Zero extra gap; maximum positional accuracy, risk of binding if belt is not perfectly aligned.</li>
+        <li><strong>Tight</strong> — Minimal play; suitable for precision servo drives.</li>
+        <li><strong>Standard</strong> — Safe default for most applications.</li>
+        <li><strong>Loose</strong> — More play; reduces binding risk at the cost of positioning accuracy.</li>
+        <li><strong>Custom</strong> — Enter an exact tooth-width offset in mm.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">3D Print Extra (mm)</div>
+    <div class="field-desc">
+      Adds a uniform outward offset to all non-bore surfaces. Use this to compensate for filament over-extrusion
+      or shrinkage on FDM printers. Typical range: 0.05 – 0.2 mm.
+    </div>
+    <div class="field-tip">Set to 0 for laser-cut or machined parts. For FDM prints, start with 0.1 mm and iterate.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Download</h2>
+  <div class="field">
+    <div class="field-name">Download Pulley SVG</div>
+    <div class="field-desc">
+      Downloads a 2D SVG sketch of the pulley profile (teeth, bore, and outer diameter) ready to import
+      into CAD tools such as Fusion 360, FreeCAD, Inkscape, or Illustrator. The geometry is drawn at a 1:1 mm scale.
+    </div>
+    <div class="field-tip">In Fusion 360: Insert → Insert SVG → select the file → scale should be 1 mm/unit.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Download Belt SVG</div>
+    <div class="field-desc">
+      Downloads a 2D SVG cross-section of one belt tooth. Useful for verifying belt compatibility or
+      creating custom belt profiles. Only available for belt-profile families.
+    </div>
+  </div>
+</section>
+
+<footer>
+  Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.
+</footer>
+
+</body>
+</html>
