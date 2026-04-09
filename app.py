@@ -19,6 +19,15 @@ from exporters.dxf_exporter import generate_dxf
 
 app = Flask(__name__)
 
+# u2500u2500 Reverse-proxy / subfolder support u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+# Use ProxyFix so Flask knows it is behind Cloudflare and handles the path correctly.
+from werkzeug.middleware.proxy_fix import ProxyFix
+import os
+
+# This tells Flask to prepend this path to all url_for() calls (like static assets)
+app.config["APPLICATION_ROOT"] = os.getenv("APPLICATION_ROOT", "/")
+app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1, x_host=1)
+
 # ── Reverse-proxy / subfolder support ────────────────────────────────────────
 # When running on GreenGeeks under /tst_pulleys/, index.cgi sets SCRIPT_NAME
 # so Flask generates correct URLs for static assets and redirects.
