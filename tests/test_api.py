@@ -118,9 +118,10 @@ def test_preview_dual(client, family, pitch):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize('family,pitch', BELT_CASES)
 def test_belt_preview(client, family, pitch):
+    """belt-preview returns SVG (belt tooth cross-section), not PNG."""
     r = client.get(f'/api/belt-preview?family={family}&pitch={pitch}')
     assert r.status_code == 200
-    assert r.data[:4] == b'\x89PNG'
+    assert b'<svg' in r.data
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +160,7 @@ def test_download_belt_svg_single(client, family, pitch):
     pytest.param('AT',       'AT5', id='AT-AT5'),
 ])
 def test_download_belt_svg_dual(client, family, pitch):
+
     spec  = get_spec(family, pitch)
     t1, t2 = spec['min_teeth'], spec['min_teeth'] * 2
     r = client.get(
@@ -171,3 +173,69 @@ def test_download_belt_svg_dual(client, family, pitch):
     assert r.status_code == 200
     assert b'<?xml' in r.data
     assert b'<path' in r.data   # belt ring path present
+
+
+# ---------------------------------------------------------------------------
+# /api/preview-stl
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize('family,pitch', [
+    pytest.param('HTD',      '5M', id='HTD-5M'),
+    pytest.param('T',        'T5', id='T-T5'),
+    pytest.param('Imperial', 'XL', id='Imperial-XL'),
+])
+def test_api_preview_stl_single(client, family, pitch):
+    spec  = get_spec(family, pitch)
+    teeth = spec['min_teeth']
+    r = client.get(
+        f'/api/preview-stl?family={family}&pitch={pitch}&teeth={teeth}'
+        '&bore=8&belt_height=10&print_extra=0'
+        '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+    )
+    assert r.status_code == 200
+    assert r.content_type.startswith('model/stl') or r.content_type.startswith('application/octet-stream')
+    assert len(r.data) > 84, 'STL response too short'
+
+
+@pytest.mark.parametrize('part', ['all', 'pulleys', 'belt'])
+def test_api_preview_stl_dual_parts(client, part):
+    r = client.get(
+        '/api/preview-stl?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=10'
+        '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        f'&dual=true&center_distance=120&p2_teeth=30&p2_bore=8'
+        '&p2_print_extra=0&p2_clearance_preset=STANDARD&p2_backlash_preset=STANDARD'
+        f'&part={part}'
+    )
+    assert r.status_code == 200
+    assert len(r.data) > 84
+
+
+# ---------------------------------------------------------------------------
+# /download/stl
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize('family,pitch', [
+    pytest.param('HTD',      '5M', id='HTD-5M'),
+    pytest.param('Imperial', 'XL', id='Imperial-XL'),
+])
+def test_download_stl_single(client, family, pitch):
+    spec  = get_spec(family, pitch)
+    teeth = spec['min_teeth']
+    r = client.get(
+        f'/download/stl?family={family}&pitch={pitch}&teeth={teeth}'
+        '&bore=8&belt_height=10&print_extra=0'
+        '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+    )
+    assert r.status_code == 200
+    assert 'attachment' in r.headers.get('Content-Disposition', '')
+    assert len(r.data) > 84
+
+
+# ---------------------------------------------------------------------------
+# /download/step  (expected 501 — cadquery-ocp unavailable on Python 3.14)
+# ---------------------------------------------------------------------------
+def test_download_step_returns_501(client):
+    r = client.get(
+        '/download/step?family=HTD&pitch=5M&teeth=20'
+        '&bore=8&belt_height=10&print_extra=0'
+        '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+    )
+    assert r.status_code == 501

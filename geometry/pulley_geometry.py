@@ -1663,7 +1663,7 @@ def _build_s_belt_tooth(belt_spec, res=24):
     a_R4_s = math.atan2(T14y-C4y, T14x-C4x);  a_R4_e = -math.pi/2.0
 
     left = []
-    _bextend(left, _bsamp_line((-pitch/2, 0), (-C2x, 0), res=2))
+    _bextend(left, _bsamp_line((-pitch/2, 0), (C2x, 0), res=2))
     _bextend(left, _bsamp_arc((C2x, C2y), r2, a_R2_s, a_R2_e, ccw=False, res=max(4, res//4)))
     _bextend(left, _bsamp_arc((C1x, C1y), r1, a_R1_s, a_R1_e, ccw=True, res=res*2))
     _bextend(left, _bsamp_arc((C4x, C4y), r4, a_R4_s, a_R4_e, ccw=True, res=res))

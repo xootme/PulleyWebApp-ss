@@ -321,11 +321,11 @@ class TestBeltEdgeCases:
         r = client.get('/api/belt-preview?family=BOGUS&pitch=5M')
         assert r.status_code == 200
 
-    def test_belt_preview_valid_family_bad_pitch_returns_png(self, client):
-        """Belt-preview with valid family but bad pitch returns error PNG, not 500."""
+    def test_belt_preview_valid_family_bad_pitch_returns_svg(self, client):
+        """Belt-preview with valid family but bad pitch returns error SVG, not 500."""
         r = client.get('/api/belt-preview?family=HTD&pitch=999M')
         assert r.status_code == 200
-        assert _is_png(r.data)
+        assert b'<svg' in r.data
 
     def test_belt_svg_bad_pitch_for_family(self, client):
         r = client.get('/download/belt-svg?family=HTD&pitch=999M')

@@ -101,12 +101,15 @@ def generate_belt_svg(family: str, pitch: str, n_teeth: int = 3) -> str:
     vw = x1 - x0;  vh = y1 - y0
 
     # ── Pixel canvas ─────────────────────────────────────────────────────────
-    OUT_W    = 700
-    PAD_PX   = 32
-    LABEL_H  = 72      # pixels below belt for title + spec rows
-    s        = (OUT_W - 2 * PAD_PX) / vw
+    # Belt content is always 636px wide; extra right margin for dim annotations
+    PAD_PX    = 32
+    BELT_PX   = 636
+    DIM_R     = 72         # right margin for ht / aa dimension arrows
+    LABEL_H   = 52         # pixels below belt for title + ref rows
+    OUT_W     = PAD_PX + BELT_PX + DIM_R
+    s         = BELT_PX / vw
     content_h = vh * s
-    OUT_H    = int(PAD_PX + content_h + PAD_PX + LABEL_H)
+    OUT_H     = int(PAD_PX + content_h + PAD_PX + LABEL_H)
 
     def px(x_mm):  return PAD_PX + (x_mm - x0) * s
     def py(y_mm):  return PAD_PX + (y1 - y_mm) * s   # y-up → y-down
@@ -117,16 +120,18 @@ def generate_belt_svg(family: str, pitch: str, n_teeth: int = 3) -> str:
 
     # ── Reference lines ───────────────────────────────────────────────────────
     lx = PAD_PX
-    rx = OUT_W - PAD_PX
+    rx = PAD_PX + BELT_PX   # right edge of belt area
 
     od_scr   = py(0.0)
     pl_scr   = py(aa)
     back_scr = py(belt_y)
+    tip_scr  = py(min(ys))  # tooth tip screen y
 
-    fs = max(9, int(pitch_val * s * 0.12))
+    fs     = 10   # fixed reference-line label font size
+    fs_dim = 9    # fixed dimension annotation font size
 
     def ref_line(y_scr, color, dash, label, y_mm):
-        lbl_x = rx + 6
+        lbl_x = rx + DIM_R + 6
         lbl_y = y_scr + fs * 0.35
         return (
             f'<line x1="{lx}" y1="{y_scr:.1f}" x2="{rx}" y2="{y_scr:.1f}"'
@@ -136,13 +141,64 @@ def generate_belt_svg(family: str, pitch: str, n_teeth: int = 3) -> str:
             f'{label}  y={y_mm:.3f}</text>'
         )
 
+    # ── Dimension annotations ─────────────────────────────────────────────────
+    dc   = "#0078d4"   # dimension colour
+    tick = 5           # fixed half-length of end ticks (px)
+
+    def dim_h(x1d, x2d, yd, label, above=True):
+        """Horizontal dimension line with end ticks and a label."""
+        lbl_y = yd - 5 if above else yd + fs_dim + 2
+        return (
+            f'<line x1="{x1d:.1f}" y1="{yd:.1f}" x2="{x2d:.1f}" y2="{yd:.1f}"'
+            f' stroke="{dc}" stroke-width="1.2"/>\n'
+            f'  <line x1="{x1d:.1f}" y1="{yd-tick:.1f}" x2="{x1d:.1f}" y2="{yd+tick:.1f}"'
+            f' stroke="{dc}" stroke-width="1.2"/>\n'
+            f'  <line x1="{x2d:.1f}" y1="{yd-tick:.1f}" x2="{x2d:.1f}" y2="{yd+tick:.1f}"'
+            f' stroke="{dc}" stroke-width="1.2"/>\n'
+            f'  <text x="{(x1d+x2d)/2:.1f}" y="{lbl_y:.1f}" text-anchor="middle"'
+            f' fill="{dc}" font-size="{fs_dim}" font-family="Helvetica,Arial,sans-serif"'
+            f' font-weight="600">{label}</text>'
+        )
+
+    def dim_v(xd, y1d, y2d, label, right=True):
+        """Vertical dimension line with end ticks and a rotated label."""
+        mid_y  = (y1d + y2d) / 2
+        lbl_x  = xd + fs_dim + 3 if right else xd - fs_dim - 3
+        return (
+            f'<line x1="{xd:.1f}" y1="{y1d:.1f}" x2="{xd:.1f}" y2="{y2d:.1f}"'
+            f' stroke="{dc}" stroke-width="1.2"/>\n'
+            f'  <line x1="{xd-tick:.1f}" y1="{y1d:.1f}" x2="{xd+tick:.1f}" y2="{y1d:.1f}"'
+            f' stroke="{dc}" stroke-width="1.2"/>\n'
+            f'  <line x1="{xd-tick:.1f}" y1="{y2d:.1f}" x2="{xd+tick:.1f}" y2="{y2d:.1f}"'
+            f' stroke="{dc}" stroke-width="1.2"/>\n'
+            f'  <text x="{lbl_x:.1f}" y="{mid_y:.1f}" text-anchor="middle"'
+            f' fill="{dc}" font-size="{fs_dim}" font-family="Helvetica,Arial,sans-serif"'
+            f' font-weight="600"'
+            f' transform="rotate(-90,{lbl_x:.1f},{mid_y:.1f})">{label}</text>'
+        )
+
+    # Pitch arrow: horizontal, centred on middle tooth, placed in gap below teeth
+    p_y   = tip_scr + (py(y0) - tip_scr) * 0.45
+    p_dim = dim_h(px(-pitch_val / 2), px(pitch_val / 2), p_y,
+                  f'p = {pitch_val} mm')
+
+    # ht arrow: vertical, right of belt (OD to tooth tip)
+    ht_x  = rx + 22
+    ht_dim = dim_v(ht_x, od_scr, tip_scr,
+                   f'ht = {ht} mm')
+
+    # aa arrow: pitch line offset (OD to pitch line) — skip if too small to draw
+    aa_x   = rx + 48
+    if abs(pl_scr - od_scr) >= 8:
+        aa_dim = dim_v(aa_x, od_scr, pl_scr,
+                       f'aa = {aa} mm')
+    else:
+        aa_dim = ''
+
     # ── Info panel ────────────────────────────────────────────────────────────
     panel_y  = int(PAD_PX + content_h + PAD_PX * 0.6)
-    fs_t     = max(11, fs + 2)
-    fs_s     = max(9,  fs)
-    fs_ref   = max(8,  fs - 1)
-
-    spec_row = (f'pitch={pitch_val}mm  ht={ht}mm  hs={hs}mm  aa={aa}mm  {extra_row}')
+    fs_t     = 11
+    fs_ref   = 9
     std_ref  = _BELT_STD_REF.get(family, '')
 
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -162,19 +218,21 @@ def generate_belt_svg(family: str, pitch: str, n_teeth: int = 3) -> str:
            fill="#e2e8f0" stroke="#1e293b"
            stroke-width="{sw:.2f}" stroke-linejoin="round"/>
 
+  <!-- Dimension annotations -->
+  {p_dim}
+  {ht_dim}
+  {aa_dim}
+
   <!-- Info -->
-  <text x="{PAD_PX}" y="{panel_y}"
-        fill="#0f172a" font-size="{fs_t}" font-weight="bold"
+  <text x="{PAD_PX + BELT_PX // 2}" y="{panel_y}"
+        fill="#0f172a" font-size="{fs_t}" font-weight="bold" text-anchor="middle"
         font-family="Helvetica, Arial, sans-serif">
     {family} {pitch} Belt Cross-Section — {n_teeth} tooth pitches
   </text>
-  <text x="{PAD_PX}" y="{panel_y + fs_t + 4}"
-        fill="#475569" font-size="{fs_s}"
-        font-family="Helvetica, Arial, sans-serif">{spec_row}</text>
-  <text x="{PAD_PX}" y="{panel_y + fs_t + 4 + fs_s + 3}"
-        fill="#94a3b8" font-size="{fs_ref}"
+  <text x="{PAD_PX + BELT_PX // 2}" y="{panel_y + fs_t + 4}"
+        fill="#94a3b8" font-size="{fs_ref}" text-anchor="middle"
         font-family="Helvetica, Arial, sans-serif">{std_ref}</text>
-  <text x="{OUT_W // 2}" y="{panel_y + fs_t + 4 + fs_s + 3 + fs_ref + 2}"
+  <text x="{PAD_PX + BELT_PX // 2}" y="{panel_y + fs_t + 4 + fs_ref + 3}"
         fill="#0078d4" font-size="{fs_ref}" text-anchor="middle"
         font-family="Helvetica, Arial, sans-serif">
     Generated by Timing Pulley Generator · cheapcadtools.com

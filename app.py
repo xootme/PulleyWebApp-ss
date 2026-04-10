@@ -16,6 +16,10 @@ from exporters.svg_exporter import generate_svg, generate_svg_dual
 from exporters.png_exporter import generate_png, generate_png_dual
 from exporters.belt_svg_exporter import generate_belt_svg, generate_belt_png
 from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_belt_dxf_dual
+from exporters.step_exporter import (
+    generate_pulley_stl, generate_pulley_stl_preview,
+    generate_drive_stl_preview,
+)
 
 app = Flask(__name__)
 # ─── Cloudflare Worker proxy support ──────
@@ -400,21 +404,17 @@ def _build_png_dual_from_request(args, size_px=480):
 
 @app.route('/api/belt-preview')
 def api_belt_preview():
-    """Return PNG of belt tooth cross-section for live preview."""
+    """Return SVG of belt tooth cross-section for live preview."""
     try:
         family = request.args.get('family', 'HTD')
         pitch  = request.args.get('pitch',  '5M')
         if family not in BELT_FAMILIES:
-            return Response(b'', mimetype='image/png')
-        png = generate_belt_png(family, pitch, n_teeth=3, size_px=1000)
-        return Response(png, mimetype='image/png')
+            return Response('', mimetype='image/svg+xml')
+        svg = generate_belt_svg(family, pitch, n_teeth=3)
+        return Response(svg, mimetype='image/svg+xml')
     except Exception as e:
-        from PIL import Image, ImageDraw
-        import io as _io
-        img = Image.new('RGB', (1000, 400), (250, 251, 252))
-        ImageDraw.Draw(img).text((10, 10), f'Error: {e}', fill=(200, 0, 0))
-        buf = _io.BytesIO();  img.save(buf, 'PNG');  buf.seek(0)
-        return Response(buf.read(), mimetype='image/png')
+        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100"><text x="10" y="20" fill="red">Error: {e}</text></svg>'
+        return Response(svg, mimetype='image/svg+xml')
 
 
 @app.route('/download/belt-svg')
@@ -478,6 +478,120 @@ def download_belt_svg():
     except Exception as e:
         return f'Error generating belt SVG: {e}', 400
 
+
+def _parse_stl_params(args, pulley='1'):
+    """Extract and validate STL export parameters for one pulley."""
+    family = args.get('family', 'HTD')
+    pitch  = args.get('pitch',  '5M')
+    key    = _resolve_key(family, pitch)
+    if key is None or key not in PULLEY_SPECS:
+        raise ValueError(f'Unknown profile {family}/{pitch}')
+    spec = PULLEY_SPECS[key]
+
+    if pulley == '2':
+        num_teeth = max(spec['min_teeth'], int(args.get('p2_teeth', spec['min_teeth'])))
+        bore_mm   = _get_bore(args, 'p2_bore')
+        pr_ex     = float(args.get('p2_print_extra', 0.0))
+        cl_mm = _get_preset_value(spec, 'clearances',
+                                  args.get('p2_clearance_preset', 'STANDARD'),
+                                  args.get('p2_clearance_custom', 0.0))
+        bl_mm = _get_preset_value(spec, 'backlash',
+                                  args.get('p2_backlash_preset', 'STANDARD'),
+                                  args.get('p2_backlash_custom', 0.0))
+    else:
+        num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
+        bore_mm   = _get_bore(args, 'bore')
+        pr_ex     = float(args.get('print_extra', 0.0))
+        cl_mm = _get_preset_value(spec, 'clearances',
+                                  args.get('clearance_preset', 'STANDARD'),
+                                  args.get('clearance_custom', 0.0))
+        bl_mm = _get_preset_value(spec, 'backlash',
+                                  args.get('backlash_preset', 'STANDARD'),
+                                  args.get('backlash_custom', 0.0))
+
+    belt_height = max(1.0, float(args.get('belt_height', 10.0)))
+    return family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex
+
+
+@app.route('/api/preview-stl')
+def api_preview_stl():
+    """Return binary STL for the Three.js 3D viewer (centred at origin)."""
+    try:
+        dual = request.args.get('dual') == 'true'
+        if dual:
+            family, pitch, num_teeth1, bore1, belt_height, cl1, bl1, pe1 = \
+                _parse_stl_params(request.args, '1')
+            key  = _resolve_key(family, pitch)
+            spec = PULLEY_SPECS[key]
+            num_teeth2 = max(spec['min_teeth'],
+                             int(request.args.get('p2_teeth', spec['min_teeth'])))
+            bore2 = _get_bore(request.args, 'p2_bore')
+            pe2   = float(request.args.get('p2_print_extra', 0.0))
+            cl2   = _get_preset_value(spec, 'clearances',
+                                      request.args.get('p2_clearance_preset', 'STANDARD'),
+                                      request.args.get('p2_clearance_custom', 0.0))
+            bl2   = _get_preset_value(spec, 'backlash',
+                                      request.args.get('p2_backlash_preset', 'STANDARD'),
+                                      request.args.get('p2_backlash_custom', 0.0))
+            center_dist = float(request.args.get('center_distance', 100.0))
+            part = request.args.get('part', 'all')
+            stl = generate_drive_stl_preview(
+                family, pitch,
+                num_teeth1, bore1, num_teeth2, bore2,
+                center_dist, belt_height,
+                cl1, bl1, pe1, cl2, bl2, pe2,
+                part=part,
+            )
+        else:
+            pulley = request.args.get('pulley', '1')
+            family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+                _parse_stl_params(request.args, pulley)
+            stl = generate_pulley_stl_preview(
+                family, pitch, num_teeth, bore_mm, belt_height,
+                cl_mm, bl_mm, pr_ex,
+            )
+        return Response(stl, mimetype='model/stl',
+                        headers={'Cache-Control': 'no-store'})
+    except Exception as e:
+        return f'Error generating STL preview: {e}', 400
+
+
+@app.route('/download/stl')
+def download_stl():
+    """Return binary STL file download."""
+    try:
+        pulley = request.args.get('pulley', '1')
+        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(request.args, pulley)
+        stl = generate_pulley_stl(
+            family, pitch, num_teeth, bore_mm, belt_height,
+            cl_mm, bl_mm, pr_ex,
+        )
+        suffix  = '-P2' if pulley == '2' else ''
+        fname   = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
+        return Response(stl, mimetype='model/stl',
+                        headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+    except Exception as e:
+        return f'Error generating STL: {e}', 400
+
+
+@app.route('/download/step')
+def download_step():
+    return Response(
+        'STEP export requires cadquery-ocp (Python ≤3.12). '
+        'Use STL for now or run on Python 3.11.',
+        status=501, mimetype='text/plain',
+    )
+
+
+@app.route('/download/belt-step')
+def download_belt_step():
+    return Response('Belt STEP export — coming soon', status=501, mimetype='text/plain')
+
+
+@app.route('/download/belt-stl')
+def download_belt_stl():
+    return Response('Belt STL export — coming soon', status=501, mimetype='text/plain')
 
 @app.route('/download/belt-dxf')
 def download_belt_dxf():

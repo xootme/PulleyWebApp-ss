@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=2">
+  <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 
@@ -18,10 +18,18 @@
 <!-- ── Drive bar ── -->
 <div class="drive-bar">
   <label class="drive-toggle">
+    <input type="checkbox" id="feature_build" onchange="onFeatureBuildToggle()">
+    <span>Feature Build</span>
+  </label>
+  <div class="drive-spacing fb-3d" id="belt_height_row">
+    <label for="belt_height" style="margin:0;white-space:nowrap">Belt Height (mm)</label>
+    <input type="number" id="belt_height" value="10" min="1" step="0.5" style="width:80px">
+  </div>
+  <label class="drive-toggle fb-2d">
     <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
     <span>Two Pulley Drive</span>
   </label>
-  <div class="drive-spacing" id="spacing_row">
+  <div class="drive-spacing fb-2d" id="spacing_row">
     <label for="center_distance">Centre Distance (mm)</label>
     <input type="number" id="center_distance" value="100" min="1" step="0.01"
            oninput="onCenterDistanceInput()">
@@ -30,7 +38,7 @@
     <input type="number" id="belt_teeth" min="1" step="1" style="width:5rem"
            oninput="onBeltTeethInput()">
   </div>
-  <div class="drive-spacing" id="ratio_row">
+  <div class="drive-spacing fb-2d" id="ratio_row">
     <label for="gear_ratio">Gear Ratio</label>
     <input type="number" id="gear_ratio" value="1.500" min="0.1" step="0.001"
            oninput="onGearRatioChange()">
@@ -40,9 +48,12 @@
     </div>
     <span class="drive-note" id="ratio_note"></span>
   </div>
-  <button class="reset-btn" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
-  <div class="drive-help">
-    <button class="btn-help" onclick="window.open('/static/TwoPulleyDrive_help.html','_blank')" title="Two Pulley Drive Help">&#9432;</button>
+  <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
+  <div class="drive-help fb-2d">
+    <button class="btn-help"
+            data-help-2d="/static/TwoPulleyDrive_help.html"
+            data-help-3d="/static/TwoPulleyDrive_help.html"
+            onclick="openHelp(this)" title="Two Pulley Drive Help">&#9432;</button>
   </div>
 </div>
 
@@ -52,10 +63,13 @@
   <aside class="controls-panel" id="panel1">
     <div class="panel-title">
       <span id="panel1-title">Pulley</span>
-      <button class="btn-help" onclick="window.open('/static/Pulley1_help.html','_blank')" title="Pulley 1 Help">&#9432;</button>
+      <button class="btn-help"
+              data-help-2d="/static/Pulley1_help.html"
+              data-help-3d="/static/Pulley1_help.html"
+              onclick="openHelp(this)" title="Help">&#9432;</button>
     </div>
 
-    <section class="card">
+    <section class="card fb-2d">
       <h2>Belt Profile</h2>
       <label for="family">Family</label>
       <select id="family" onchange="onFamilyChange()">
@@ -67,7 +81,7 @@
       <select id="pitch" onchange="onPitchChange()"></select>
     </section>
 
-    <section class="card">
+    <section class="card fb-2d">
       <h2>Size</h2>
       <label for="teeth">Number of Teeth</label>
       <input type="number" id="teeth" min="10" value="20" step="1" oninput="onTeethChange(1)">
@@ -78,7 +92,7 @@
       <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
     </section>
 
-    <section class="card">
+    <section class="card fb-2d">
       <h2>Advanced</h2>
       <label for="clearance_preset">Tooth Clearance</label>
       <select id="clearance_preset" onchange="onClearancePreset(1)">
@@ -113,16 +127,20 @@
       <div class="dl-wrap">
         <button class="btn-download" onclick="toggleDlMenu('dl-p1-pulley', event)">⬇ Download Pulley</button>
         <div class="dl-menu hidden" id="dl-p1-pulley">
-          <button class="dl-item" onclick="downloadSVG(1); closeDlMenus()">SVG</button>
-          <button class="dl-item" onclick="downloadDXF(1); closeDlMenus()">DXF</button>
+          <button class="dl-item fb-2d" onclick="downloadSVG(1); closeDlMenus()">SVG</button>
+          <button class="dl-item fb-2d" onclick="downloadDXF(1); closeDlMenus()">DXF</button>
+          <button class="dl-item fb-3d" onclick="downloadSTEP(1); closeDlMenus()">STEP</button>
+          <button class="dl-item fb-3d" onclick="downloadSTL(1); closeDlMenus()">STL</button>
         </div>
       </div>
       <div class="dl-wrap" id="belt-svg-wrap">
         <button class="btn-download" style="background:#0f766e;"
                 onclick="toggleDlMenu('dl-p1-belt', event)">⬇ Download Belt</button>
         <div class="dl-menu hidden" id="dl-p1-belt">
-          <button class="dl-item" onclick="downloadBeltSVG(); closeDlMenus()">SVG</button>
-          <button class="dl-item" onclick="downloadBeltDXF(); closeDlMenus()">DXF</button>
+          <button class="dl-item fb-2d" onclick="downloadBeltSVG(); closeDlMenus()">SVG</button>
+          <button class="dl-item fb-2d" onclick="downloadBeltDXF(); closeDlMenus()">DXF</button>
+          <button class="dl-item fb-3d" onclick="downloadBeltSTEP(); closeDlMenus()">STEP</button>
+          <button class="dl-item fb-3d" onclick="downloadBeltSTL(); closeDlMenus()">STL</button>
         </div>
       </div>
     </section>
@@ -132,16 +150,19 @@
   <!-- ── PREVIEW PANEL ── -->
   <div class="preview-panel">
     <div class="preview-header">
-      <span id="profile-label">HTD 5M — 20T</span>
+      <span id="profile-label" class="fb-2d">HTD 5M — 20T</span>
+      <span class="fb-3d" id="fb-preview-label" style="font-weight:600;color:#555;">Feature Build — 3D</span>
       <span style="display:flex;gap:6px;align-items:center;">
-        <button id="tab-pulley" class="preview-tab active" onclick="setPreviewTab('pulley')">Pulley</button>
-        <button id="tab-belt"   class="preview-tab hidden"  onclick="setPreviewTab('belt')">Belt</button>
-        <span id="od-label"></span>
+        <button id="tab-pulley" class="preview-tab active fb-2d" onclick="setPreviewTab('pulley')">Pulley</button>
+        <button id="tab-belt"   class="preview-tab hidden fb-2d"  onclick="setPreviewTab('belt')">Belt</button>
+        <button id="tab-3d"     class="preview-tab hidden fb-3d"  onclick="setPreviewTab('3d')">3D</button>
+        <span id="od-label" class="fb-2d"></span>
       </span>
     </div>
     <div class="preview-box" id="preview-box">
       <img id="preview-img" src="" alt="" style="display:none;">
       <div class="preview-placeholder" id="preview-placeholder">Select a profile to preview</div>
+      <canvas id="three-canvas" style="display:none;"></canvas>
     </div>
     <div class="preview-footer" id="preview-footer"></div>
   </div>
@@ -150,14 +171,17 @@
   <aside class="controls-panel" id="panel2">
     <div class="panel-title">
       Pulley 2
-      <button class="btn-help" onclick="window.open('/static/Pulley2_help.html','_blank')" title="Pulley 2 Help">&#9432;</button>
+      <button class="btn-help"
+              data-help-2d="/static/Pulley2_help.html"
+              data-help-3d="/static/Pulley2_help.html"
+              onclick="openHelp(this)" title="Help">&#9432;</button>
     </div>
-    <div class="card belt-lock-info" id="belt-lock-info">
+    <div class="card belt-lock-info fb-2d" id="belt-lock-info">
       Belt: <strong id="p2-belt-label">—</strong><br>
       <span style="font-size:11px;color:#888">Family &amp; pitch locked to Pulley 1</span>
     </div>
 
-    <section class="card">
+    <section class="card fb-2d">
       <h2>Size</h2>
       <label for="p2_teeth">Number of Teeth</label>
       <input type="number" id="p2_teeth" min="10" value="30" step="1" oninput="onTeethChange(2)">
@@ -168,7 +192,7 @@
       <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
     </section>
 
-    <section class="card">
+    <section class="card fb-2d">
       <h2>Advanced</h2>
       <label for="p2_clearance_preset">Tooth Clearance</label>
       <select id="p2_clearance_preset" onchange="onClearancePreset(2)">
@@ -203,8 +227,10 @@
       <div class="dl-wrap">
         <button class="btn-download" onclick="toggleDlMenu('dl-p2-pulley', event)">⬇ Download Pulley</button>
         <div class="dl-menu hidden" id="dl-p2-pulley">
-          <button class="dl-item" onclick="downloadSVG(2); closeDlMenus()">SVG</button>
-          <button class="dl-item" onclick="downloadDXF(2); closeDlMenus()">DXF</button>
+          <button class="dl-item fb-2d" onclick="downloadSVG(2); closeDlMenus()">SVG</button>
+          <button class="dl-item fb-2d" onclick="downloadDXF(2); closeDlMenus()">DXF</button>
+          <button class="dl-item fb-3d" onclick="downloadSTEP(2); closeDlMenus()">STEP</button>
+          <button class="dl-item fb-3d" onclick="downloadSTL(2); closeDlMenus()">STL</button>
         </div>
       </div>
     </section>
@@ -255,6 +281,8 @@ function saveSettings() {
     p2_backlash_preset:  document.getElementById('p2_backlash_preset').value,
     p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
     p2_print_extra:      document.getElementById('p2_print_extra').value,
+    feature_build:       document.getElementById('feature_build').checked,
+    belt_height:         document.getElementById('belt_height').value,
   };
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
 }
@@ -320,6 +348,13 @@ async function loadSettings() {
     }
   }
 
+  if (s.feature_build !== undefined) {
+    _chk('feature_build', s.feature_build);
+    document.body.classList.toggle('feature-build', !!s.feature_build);
+    if (s.feature_build) previewTab = '3d';
+  }
+  if (s.belt_height !== undefined) _val('belt_height', s.belt_height);
+
   return true;
 }
 
@@ -332,10 +367,17 @@ function resetSettings() {
 window.onload = async () => {
   populatePitches('HTD');
   const restored = await loadSettings();
+
+  // Apply Feature Build tab state now that the DOM is fully ready.
+  // loadSettings() sets previewTab but doesn't call setPreviewTab().
+  const fb = document.getElementById('feature_build').checked;
+  if (fb) {
+    setPreviewTab('3d');   // shows canvas, hides placeholder
+  }
+
   if (!restored) {
     await onPitchChange();
   } else {
-    // Trigger OD/label sync for both pulleys, then preview
     await onPitchChange();
     if (document.getElementById('dual_enable').checked) {
       updateMinDistance();
@@ -740,7 +782,22 @@ function setPreviewTab(tab) {
   previewTab = tab;
   document.getElementById('tab-pulley').classList.toggle('active', tab === 'pulley');
   document.getElementById('tab-belt')  .classList.toggle('active', tab === 'belt');
-  schedulePreview();
+  document.getElementById('tab-3d')    .classList.toggle('active', tab === '3d');
+
+  const canvas = document.getElementById('three-canvas');
+  const img    = document.getElementById('preview-img');
+  const box = document.getElementById('preview-box');
+  if (tab === '3d') {
+    canvas.style.display = 'block';
+    img.style.display    = 'none';
+    document.getElementById('preview-placeholder').style.display = 'none';
+    box.classList.add('preview-box-3d');
+    schedulePreview3D();
+  } else {
+    canvas.style.display = 'none';
+    box.classList.remove('preview-box-3d');
+    schedulePreview();
+  }
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
@@ -751,6 +808,7 @@ function schedulePreview() {
 }
 
 async function updatePreview() {
+  if (previewTab === '3d') { schedulePreview3D(); return; }
   const img = document.getElementById('preview-img');
   let url;
   if (previewTab === 'belt') {
@@ -829,30 +887,36 @@ function downloadDXF(n) {
 }
 
 function downloadBeltSVG() {
+  window.location = '/download/belt-svg?' + new URLSearchParams(buildBeltParams());
+}
+
+function downloadBeltSTEP() {
+  const params = buildBeltParams();
+  params.belt_height = document.getElementById('belt_height').value;
+  window.location = '/download/belt-step?' + new URLSearchParams(params);
+}
+
+function downloadBeltSTL() {
+  const params = buildBeltParams();
+  params.belt_height = document.getElementById('belt_height').value;
+  window.location = '/download/belt-stl?' + new URLSearchParams(params);
+}
+
+function buildBeltParams() {
   const dual = document.getElementById('dual_enable').checked;
   if (dual) {
     const params = buildParams();
     params.n_belt = document.getElementById('belt_teeth').value || 0;
-    window.location = '/download/belt-svg?' + new URLSearchParams(params);
-  } else {
-    const family = document.getElementById('family').value;
-    const pitch  = document.getElementById('pitch').value;
-    window.location = '/download/belt-svg?family=' + encodeURIComponent(family)
-                    + '&pitch=' + encodeURIComponent(pitch);
+    return params;
   }
+  return {
+    family: document.getElementById('family').value,
+    pitch:  document.getElementById('pitch').value,
+  };
 }
 
 function downloadBeltDXF() {
-  const dual = document.getElementById('dual_enable').checked;
-  if (dual) {
-    const params = buildParams();
-    window.location = '/download/belt-dxf?' + new URLSearchParams(params);
-  } else {
-    const family = document.getElementById('family').value;
-    const pitch  = document.getElementById('pitch').value;
-    window.location = '/download/belt-dxf?family=' + encodeURIComponent(family)
-                    + '&pitch=' + encodeURIComponent(pitch);
-  }
+  window.location = '/download/belt-dxf?' + new URLSearchParams(buildBeltParams());
 }
 
 function updateBeltBtn() {
@@ -865,6 +929,209 @@ function updateBeltBtn() {
     previewTab = 'pulley';
     document.getElementById('tab-pulley').classList.add('active');
     document.getElementById('tab-belt')  .classList.remove('active');
+  }
+}
+
+// ── Feature Build ─────────────────────────────────────────────────────────────
+function onFeatureBuildToggle() {
+  const fb = document.getElementById('feature_build').checked;
+  document.body.classList.toggle('feature-build', fb);
+  if (fb) {
+    setPreviewTab('3d');
+  } else {
+    setPreviewTab('pulley');
+  }
+  saveSettings();
+}
+
+function openHelp(btn) {
+  const fb = document.getElementById('feature_build').checked;
+  window.open(fb ? btn.dataset.help3d : btn.dataset.help2d, '_blank');
+}
+
+function downloadSTEP(n) {
+  const params = buildParams();
+  params.belt_height = document.getElementById('belt_height').value;
+  if (n === 2) params.pulley = '2';
+  window.location = '/download/step?' + new URLSearchParams(params);
+}
+
+function downloadSTL(n) {
+  const params = buildParams();
+  params.belt_height = document.getElementById('belt_height').value;
+  if (n === 2) params.pulley = '2';
+  window.location = '/download/stl?' + new URLSearchParams(params);
+}
+
+// ── Three.js 3D preview ───────────────────────────────────────────────────────
+let threeRenderer = null;
+let threeScene    = null;
+let threeCamera   = null;
+let threeControls = null;
+let threeModel    = null;
+let threeBelt     = null;
+let three3dTimer  = null;
+
+function schedulePreview3D() {
+  clearTimeout(three3dTimer);
+  three3dTimer = setTimeout(update3DPreview, 400);
+}
+
+async function update3DPreview() {
+  if (previewTab !== '3d') return;
+  try {
+    const params = buildParams();
+    params.belt_height = document.getElementById('belt_height').value;
+    const url = '/api/preview-stl?' + new URLSearchParams(params);
+    await init3D();
+    load3DModel(url);
+  } catch (e) {
+    console.error('3D preview error:', e);
+    document.getElementById('preview-footer').textContent = '3D error: ' + e.message;
+  }
+}
+
+async function init3D() {
+  if (threeRenderer) return;   // already initialised
+
+  document.getElementById('preview-footer').textContent = 'Loading 3D viewer…';
+
+  // Lazy-load Three.js from local static files
+  const THREE             = await import('/static/three.module.js');
+  const { STLLoader }     = await import('/static/jsm/loaders/STLLoader.js');
+  const { OrbitControls } = await import('/static/jsm/controls/OrbitControls.js');
+
+  window._THREE         = THREE;
+  window._STLLoader     = STLLoader;
+  window._OrbitControls = OrbitControls;
+
+  // Wait two frames so the canvas is fully laid out after display:block
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => requestAnimationFrame(r));
+
+  const canvas = document.getElementById('three-canvas');
+  const box    = canvas.getBoundingClientRect();
+  const W      = Math.max(box.width,  400);
+  const H      = Math.max(box.height, 300);
+  console.log('Three.js canvas size:', W, 'x', H, box);
+
+  threeRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  threeRenderer.setSize(W, H, false);
+  threeRenderer.setClearColor(0xfafbfc, 1);
+
+  threeScene = new THREE.Scene();
+
+  threeCamera = new THREE.PerspectiveCamera(40, W / H, 0.1, 10000);
+
+  // Lights
+  threeScene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+  dir.position.set(1, -1.5, 2).normalize();
+  threeScene.add(dir);
+  const fill = new THREE.DirectionalLight(0xddeeff, 0.4);
+  fill.position.set(-1, 1, 0.5).normalize();
+  threeScene.add(fill);
+
+  threeControls = new OrbitControls(threeCamera, canvas);
+  threeControls.enableDamping     = true;
+  threeControls.dampingFactor     = 0.08;
+  threeControls.screenSpacePanning = true;
+  threeControls.minDistance       = 1;
+  threeControls.maxDistance       = 2000;
+
+  // Keep renderer sized to canvas element
+  const resizeObs = new ResizeObserver(() => {
+    const b = canvas.getBoundingClientRect();
+    const W2 = Math.max(b.width, 1);
+    const H2 = Math.max(b.height, 1);
+    threeRenderer.setSize(W2, H2, false);
+    threeCamera.aspect = W2 / H2;
+    threeCamera.updateProjectionMatrix();
+  });
+  resizeObs.observe(canvas);
+
+  function animate() {
+    requestAnimationFrame(animate);
+    threeControls.update();
+    threeRenderer.render(threeScene, threeCamera);
+  }
+  animate();
+}
+
+function _loadSTL(url, material, onLoaded, onError) {
+  const STLLoader = window._STLLoader;
+  const THREE     = window._THREE;
+  const loader = new STLLoader();
+  loader.load(url, (geometry) => {
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    threeScene.add(mesh);
+    onLoaded(mesh, geometry);
+  }, null, onError || ((e) => console.error('STL error', e)));
+}
+
+function _fitCamera(geometry) {
+  const THREE = window._THREE;
+  geometry.computeBoundingBox();
+  const box    = geometry.boundingBox;
+  const centre = new THREE.Vector3();
+  box.getCenter(centre);
+  const size   = new THREE.Vector3();
+  box.getSize(size);
+  const radius = size.length() * 0.5;
+  const dist   = radius * 3.2;
+  threeCamera.position.set(
+    centre.x + dist * 0.55,
+    centre.y - dist * 0.9,
+    centre.z + dist * 0.65,
+  );
+  threeCamera.up.set(0, 0, 1);
+  threeCamera.lookAt(centre);
+  threeControls.target.copy(centre);
+  threeControls.update();
+  return size;
+}
+
+function load3DModel(url) {
+  const THREE     = window._THREE;
+  const STLLoader = window._STLLoader;
+  if (!THREE || !STLLoader || !threeScene) return;
+
+  // Remove previous models
+  if (threeModel) { threeScene.remove(threeModel); threeModel = null; }
+  if (threeBelt)  { threeScene.remove(threeBelt);  threeBelt  = null; }
+
+  document.getElementById('preview-footer').textContent = 'Loading 3D…';
+
+  const isDual = url.includes('dual=true');
+  const pulleyMat = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55 });
+  const beltMat   = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.05, roughness: 0.80 });
+
+  if (isDual) {
+    // Load pulleys first (for camera fit), then belt
+    const pulleyUrl = url + '&part=pulleys';
+    const beltUrl   = url + '&part=belt';
+
+    _loadSTL(pulleyUrl, pulleyMat, (mesh, geo) => {
+      threeModel = mesh;
+      const size = _fitCamera(geo);
+      document.getElementById('preview-footer').textContent =
+        `3D drive  ·  ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm  ·  drag to orbit`;
+    });
+
+    _loadSTL(beltUrl, beltMat, (mesh) => { threeBelt = mesh; });
+
+  } else {
+    _loadSTL(url, pulleyMat, (mesh, geo) => {
+      threeModel = mesh;
+      const size = _fitCamera(geo);
+      document.getElementById('preview-footer').textContent =
+        `3D  ·  ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm  ·  drag to orbit`;
+    }, (err) => {
+      console.error('STL load error:', err);
+      document.getElementById('preview-footer').textContent = '3D load error — check console';
+    });
   }
 }
 </script>
