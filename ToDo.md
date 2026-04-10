@@ -34,5 +34,5 @@ New panel / tab for generating 3D-ready profiles with the following options:
 - [ ] PyArmor — time-expiring licence install
 
 ### Infrastructure
-- [ ] Add code to private GitHub repo
-- [ ] Evaluate cloud offload for geometry calculations (AWS Lambda / similar)
+- [x] Add code to private GitHub repo
+- [x] Evaluate cloud offload for geometry calculations (AWS Lambda / similar)

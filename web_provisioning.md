@@ -18,12 +18,37 @@ We have moved away from subfolder routing (`/tools/pulleys`) and GreenGeeks CGI 
 
 ---
 
-## 2. One-Command Deployment
+## 2. Deployment Checklist
 
-Because we have linked the **Windows Credential Manager** to the local environment, deployments are fully automated.
+Because we have linked the **Windows Credential Manager** to the local environment, deployments are fully automated once the checklist is complete.
 
-**To deploy a change:**  
-From your local terminal (WSL, Git Bash, or VS Code):
+### Step 1 — Review the diff
+Run the following to see everything that changed since the last commit:
+
+```bash
+git diff --stat HEAD
+git diff HEAD
+```
+
+### Step 2 — Update docs to match the diff
+Before committing, ensure these files reflect every user-facing change:
+
+| File | Update when… |
+|---|---|
+| `static/Pulley1_help.html` | Pulley 1 panel controls, download options, or bore limits change |
+| `static/Pulley2_help.html` | Pulley 2 panel controls, download options, or bore limits change |
+| `static/TwoPulleyDrive_help.html` | Drive bar, spacing/ratio controls, or belt export options change |
+| `ToDo.md` | Any backlog item is completed or a new item is added |
+| `web_provisioning.md` | Deployment process or infrastructure changes |
+
+**Checklist:**
+- [ ] New or changed features described in the relevant help file(s)
+- [ ] Removed features or "coming soon" stubs cleared from help files
+- [ ] Minimum/maximum input values updated if limits changed
+- [ ] Download format options (SVG / DXF) accurate in all three help files
+- [ ] `ToDo.md` Completed section updated
+
+### Step 3 — Commit and push
 
 ```bash
 git add .
