@@ -280,36 +280,47 @@ def generate_drive_stl_preview(
             family, pitch, num_teeth1, num_teeth2, center_dist_mm, x_offset=cx1,
         )
 
+    # ── Build ALL parts unconditionally so the centroid is always computed
+    #    from the full scene.  This is required so that part='pulleys' and
+    #    part='belt' land at exactly the same origin in Three.js.
     # ── Pulley meshes ─────────────────────────────────────────────────────────
-    if part in ('all', 'pulleys'):
-        p1 = _build_pulley_mesh(family, pitch, num_teeth1, bore_mm1, belt_height_mm,
-                                clearance_mm1, backlash_mm1, print_extra_mm1,
-                                phase=phi_left)
-        p1.apply_translation([cx1, 0.0, 0.0])
+    p1 = _build_pulley_mesh(family, pitch, num_teeth1, bore_mm1, belt_height_mm,
+                            clearance_mm1, backlash_mm1, print_extra_mm1,
+                            phase=phi_left)
+    p1.apply_translation([cx1, 0.0, 0.0])
 
-        p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
-                                clearance_mm2, backlash_mm2, print_extra_mm2,
-                                phase=phi_right)
-        p2.apply_translation([cx2, 0.0, 0.0])
-        pulley_parts = [p1, p2]
-    else:
-        pulley_parts = []
+    p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
+                            clearance_mm2, backlash_mm2, print_extra_mm2,
+                            phase=phi_right)
+    p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────
-    belt_mesh = None
-    if part in ('all', 'belt'):
-        belt_mesh = _build_belt_mesh(
-            family, pitch, num_teeth1, num_teeth2, center_dist_mm, belt_height_mm, cx1
-        )
+    belt_mesh = _build_belt_mesh(
+        family, pitch, num_teeth1, num_teeth2, center_dist_mm, belt_height_mm, cx1
+    )
 
-    # ── Combine and centre ────────────────────────────────────────────────────
-    parts = pulley_parts + ([belt_mesh] if belt_mesh else [])
-    if not parts:
+    # ── Compute centroid from the full scene (pulleys + belt) ─────────────────
+    all_meshes = [p1, p2] + ([belt_mesh] if belt_mesh else [])
+    offset = -trimesh.util.concatenate(all_meshes).centroid
+
+    # Apply the shared offset to every part so all responses share one origin
+    p1.apply_translation(offset)
+    p2.apply_translation(offset)
+    if belt_mesh:
+        belt_mesh.apply_translation(offset)
+
+    # ── Return the requested subset ───────────────────────────────────────────
+    if part == 'pulleys':
+        export_parts = [p1, p2]
+    elif part == 'belt':
+        export_parts = [belt_mesh] if belt_mesh else []
+    else:
+        export_parts = [p1, p2] + ([belt_mesh] if belt_mesh else [])
+
+    if not export_parts:
         raise ValueError('No geometry to export')
 
-    combined = trimesh.util.concatenate(parts)
-    combined.apply_translation(-combined.centroid)
-    return combined.export(file_type='stl')
+    return trimesh.util.concatenate(export_parts).export(file_type='stl')
 
 
 def generate_pulley_stl_preview(
