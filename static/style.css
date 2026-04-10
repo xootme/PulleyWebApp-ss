@@ -6,9 +6,10 @@ body {
   font-size: 14px;
   color: #1a1a1a;
   background: #f0f2f5;
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ── Header ── */
@@ -28,7 +29,7 @@ main {
   flex: 1;
   gap: 0;
   overflow: hidden;
-  height: calc(100vh - 48px - 36px); /* viewport minus header and footer */
+  min-height: 0;
 }
 
 /* ── Controls panel ── */
@@ -182,6 +183,8 @@ select:focus, input[type="number"]:focus {
 /* ── Preview panel ── */
 .preview-panel {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: #fff;
@@ -221,6 +224,7 @@ select:focus, input[type="number"]:focus {
 
 .preview-box {
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -232,6 +236,7 @@ select:focus, input[type="number"]:focus {
 #preview-img {
   width: 100%;
   height: 100%;
+  min-height: 0;
   object-fit: contain;
   display: block;
 }

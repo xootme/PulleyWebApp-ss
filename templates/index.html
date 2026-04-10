@@ -104,7 +104,7 @@
       </div>
       <div class="preset-info" id="backlash_info"></div>
 
-      <label for="print_extra">3D Print Extra (mm)</label>
+      <label for="print_extra">3D Print Compensation (mm)</label>
       <input type="number" id="print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
     </section>
 
@@ -194,7 +194,7 @@
       </div>
       <div class="preset-info" id="p2_backlash_info"></div>
 
-      <label for="p2_print_extra">3D Print Extra (mm)</label>
+      <label for="p2_print_extra">3D Print Compensation (mm)</label>
       <input type="number" id="p2_print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
     </section>
 
@@ -306,17 +306,18 @@ async function loadSettings() {
   _val('p2_print_extra',      s.p2_print_extra);
   _val('gear_ratio',          s.gear_ratio);
 
-  if (s.dual_enable) {
-    _chk('dual_enable', true);
-    const dual    = document.getElementById('dual_enable').checked;
+  if (s.dual_enable !== undefined) {
+    _chk('dual_enable', s.dual_enable);
+    const dual = s.dual_enable;
     document.getElementById('panel2')     .classList.toggle('hidden', !dual);
     document.getElementById('spacing_row').classList.toggle('hidden', !dual);
     document.getElementById('ratio_row')  .classList.toggle('hidden', !dual);
     document.getElementById('main-layout').classList.toggle('dual',    dual);
-    document.getElementById('panel1-title').textContent = 'Pulley 1';  // span only — button preserved
-    syncP2Belt();
-    // Restore center distance (already pitch-corrected when it was saved)
-    if (s.center_distance) _val('center_distance', parseFloat(s.center_distance).toFixed(2));
+    document.getElementById('panel1-title').textContent = dual ? 'Pulley 1' : 'Pulley';
+    if (dual) {
+      syncP2Belt();
+      if (s.center_distance) _val('center_distance', parseFloat(s.center_distance).toFixed(2));
+    }
   }
 
   return true;
