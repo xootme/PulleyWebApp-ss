@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tools Hub Architecture — Cheap CAD Tools</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #f0f2f5;
+      padding: 32px 24px 60px;
+    }
+    .page { max-width: 960px; margin: 0 auto; }
+
+    /* ── Header ── */
+    .doc-header {
+      background: #0078d4;
+      color: #fff;
+      border-radius: 8px;
+      padding: 24px 28px 20px;
+      margin-bottom: 24px;
+    }
+    .doc-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .doc-header p  { font-size: 13px; opacity: 0.85; }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .meta-item { background: rgba(255,255,255,0.15); border-radius: 5px; padding: 8px 12px; }
+    .meta-item .label { font-size: 10px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.6px; }
+    .meta-item .value { font-size: 13px; font-weight: 600; font-family: Consolas, monospace; margin-top: 2px; }
+
+    /* ── Section cards ── */
+    .section {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f7f9fc;
+      border-bottom: 1px solid #dde3ea;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-header h2 {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #0078d4;
+    }
+    .section-header .step-num {
+      background: #0078d4;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .section-body { padding: 18px 20px; }
+
+    /* ── Fields ── */
+    .field { margin-bottom: 14px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-name { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
+    .field-desc { font-size: 13px; color: #444; line-height: 1.6; }
+    .field-tip {
+      font-size: 12px; color: #0078d4;
+      background: #eef5fc; border-left: 3px solid #0078d4;
+      padding: 5px 10px; border-radius: 0 4px 4px 0; margin-top: 6px;
+    }
+    .field-warn {
+      font-size: 12px; color: #92400e;
+      background: #fffbeb; border-left: 3px solid #f59e0b;
+      padding: 5px 10px; border-radius: 0 4px 4px 0; margin-top: 6px;
+    }
+    .field-note {
+      font-size: 12px; color: #374151;
+      background: #f3f4f6; border-left: 3px solid #9ca3af;
+      padding: 5px 10px; border-radius: 0 4px 4px 0; margin-top: 6px;
+    }
+
+    /* ── Code blocks ── */
+    pre {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 12.5px;
+      line-height: 1.7;
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+    code {
+      font-family: Consolas, monospace;
+      font-size: 12.5px;
+      background: #eef0f4;
+      color: #1a1a1a;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    pre code { background: none; color: inherit; padding: 0; }
+    .cm  { color: #6c7086; }
+    .key { color: #89b4fa; }
+    .str { color: #a6e3a1; }
+    .kw  { color: #cba6f7; }
+
+    /* ── Comparison table ── */
+    .comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 10px 0;
+    }
+    .comp-table th {
+      background: #f0f4f8;
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #555;
+      border-bottom: 2px solid #dde3ea;
+    }
+    .comp-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #eef0f4;
+      vertical-align: top;
+      line-height: 1.5;
+    }
+    .comp-table tr:last-child td { border-bottom: none; }
+    .comp-table td:first-child { font-weight: 600; color: #333; width: 32%; }
+    .winner { color: #166534; font-weight: 700; }
+    .loser  { color: #991b1b; }
+
+    /* ── General table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 10px 0;
+    }
+    th {
+      background: #f0f4f8;
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #555;
+      border-bottom: 2px solid #dde3ea;
+    }
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #eef0f4;
+      vertical-align: top;
+      color: #333;
+      line-height: 1.5;
+    }
+    tr:last-child td { border-bottom: none; }
+    .tag {
+      display: inline-block;
+      font-size: 11px; font-weight: 600;
+      padding: 1px 7px; border-radius: 10px;
+    }
+    .tag-once   { background: #dcfce7; color: #166534; }
+    .tag-auto   { background: #dbeafe; color: #1e40af; }
+    .tag-manual { background: #fef9c3; color: #713f12; }
+
+    /* ── Flow diagram ── */
+    .flow {
+      display: flex; align-items: center; flex-wrap: wrap;
+      gap: 0; margin: 14px 0;
+    }
+    .flow-box {
+      background: #eef5fc; border: 1.5px solid #90bfe8;
+      border-radius: 6px; padding: 8px 14px;
+      font-size: 12px; font-weight: 600; color: #1a4a7a;
+      text-align: center; white-space: nowrap;
+    }
+    .flow-arrow { font-size: 18px; color: #0078d4; padding: 0 6px; flex-shrink: 0; }
+
+    /* ── Arch diagram ── */
+    .arch-diagram {
+      background: #f7f9fc; border: 1px solid #dde3ea; border-radius: 6px;
+      padding: 16px 20px; margin: 10px 0;
+      font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.9; color: #334;
+    }
+    .arch-diagram .dir  { color: #0078d4; font-weight: 700; }
+    .arch-diagram .url  { color: #166534; }
+    .arch-diagram .note { color: #888; font-style: italic; }
+
+    footer { text-align: center; font-size: 12px; color: #999; margin-top: 32px; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ── -->
+  <div class="doc-header">
+    <h1>Tools Hub Architecture</h1>
+    <p>Multi-tool deployment strategy for Cheap CAD Tools — two options compared, with full implementation detail for the recommended approach.</p>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <div class="label">Hub URL</div>
+        <div class="value">tools.cheapcadtools.com</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Hosting</div>
+        <div class="value">Render.com</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Routing</div>
+        <div class="value">Cloudflare Worker</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Automation</div>
+        <div class="value">GitHub Actions + Render API</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Option comparison ── -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Option Comparison</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-desc">
+          Two viable architectures exist. Both achieve the same URL structure
+          (<code>tools.cheapcadtools.com/pulleys</code>, <code>/gears</code>, etc.).
+          The routing problem Render cannot solve natively is handled by a <strong>Cloudflare Worker</strong>
+          — which is free, unlimited, and entirely separate from the 3 Page Rule limit.
+        </div>
+        <div class="field-tip">
+          <strong>Cloudflare Workers ≠ Page Rules.</strong> Workers run on Cloudflare's edge network and have
+          100,000 free requests/day with no script limit. They are not affected by the 3-rule cap.
+        </div>
+      </div>
+
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th>Criteria</th>
+            <th>Option C — Independent Services + Worker</th>
+            <th>Option D — Monorepo / Flask Blueprints</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>URL structure</td>
+            <td class="winner">tools.cheapcadtools.com/pulleys ✓</td>
+            <td class="winner">tools.cheapcadtools.com/pulleys ✓</td>
+          </tr>
+          <tr>
+            <td>Existing app refactor</td>
+            <td class="winner">None — PulleyWebApp works as-is</td>
+            <td class="loser">Yes — convert to Flask Blueprint</td>
+          </tr>
+          <tr>
+            <td>Adding a new tool</td>
+            <td class="winner">Fully automated via GitHub Action</td>
+            <td class="loser">Manual — edit app.py + registry.json</td>
+          </tr>
+          <tr>
+            <td>Tool isolation</td>
+            <td class="winner">Full — tools fail independently</td>
+            <td class="loser">None — one crash affects all tools</td>
+          </tr>
+          <tr>
+            <td>Independent deploys</td>
+            <td class="winner">Yes — push to any tool repo</td>
+            <td class="loser">No — all tools redeploy together</td>
+          </tr>
+          <tr>
+            <td>Infrastructure</td>
+            <td>Worker script + Render API key + one service per tool</td>
+            <td class="winner">Single Render service, no extra tokens</td>
+          </tr>
+          <tr>
+            <td>Render free-tier services</td>
+            <td>1 per tool (hub + N tools)</td>
+            <td class="winner">1 total</td>
+          </tr>
+          <tr>
+            <td>Best for</td>
+            <td>5+ tools, multiple contributors, long-term growth</td>
+            <td>2–3 tools, solo developer, fast start</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="field-note">
+        <strong>Recommendation:</strong> Option C. The existing PulleyWebApp requires no changes,
+        deployment of every future tool is fully automated, and tools are isolated from each other.
+        The Cloudflare Worker is ~15 lines of code and costs nothing.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Overview: Option C ── -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Option C — How It Works</h2>
+    </div>
+    <div class="section-body">
+      <div class="flow">
+        <div class="flow-box">Push new tool<br>repo to GitHub</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">GitHub Action<br>triggers</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">Render API<br>creates service</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">registry.json<br>updated</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">Cloudflare Worker<br>routes new path</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">Tool live at<br>/slug</div>
+      </div>
+
+      <div class="arch-diagram">
+        <span class="dir">GitHub Org: xootme</span><br>
+        ├── <span class="dir">tools-hub</span>           → <span class="url">tools.cheapcadtools.com/</span>  &nbsp;<span class="note">← hub selector + registry (Render service 1)</span><br>
+        ├── <span class="dir">PulleyWebApp</span>         → <span class="url">tools.cheapcadtools.com/pulleys</span>  &nbsp;<span class="note">← existing tool, no changes needed</span><br>
+        ├── <span class="dir">GearGenerator</span>        → <span class="url">tools.cheapcadtools.com/gears</span>    &nbsp;<span class="note">← future tool</span><br>
+        └── <span class="dir">.github/tool-template</span>  &nbsp;<span class="note">← cookiecutter template for new tools</span><br>
+        <br>
+        <span class="dir">Cloudflare</span><br>
+        └── Worker at tools.cheapcadtools.com  &nbsp;<span class="note">← routes /pulleys → Render service 1, /gears → service 2, etc.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 1: Cloudflare Worker ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">1</div>
+      <h2>Cloudflare Worker — Path Routing</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-desc">
+          A single Cloudflare Worker sits in front of all Render services and routes requests by path.
+          It is deployed once to <code>tools.cheapcadtools.com</code> and updated whenever a new tool is added.
+          It runs on Cloudflare's global edge — zero latency overhead, zero cost on the free tier.
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-name">worker.js</div>
+        <pre><span class="kw">export default</span> {
+  <span class="kw">async</span> fetch(request) {
+    <span class="kw">const</span> url = <span class="kw">new</span> URL(request.url);
+    <span class="kw">const</span> path = url.pathname;
+
+    <span class="cm">// Route each tool path to its Render service</span>
+    <span class="kw">if</span> (path.startsWith(<span class="str">'/pulleys'</span>))
+      <span class="kw">return</span> fetch(<span class="str">'https://pulleywebapp.onrender.com'</span> + path, request);
+
+    <span class="kw">if</span> (path.startsWith(<span class="str">'/gears'</span>))
+      <span class="kw">return</span> fetch(<span class="str">'https://gearapp.onrender.com'</span> + path, request);
+
+    <span class="cm">// Default: hub selector</span>
+    <span class="kw">return</span> fetch(<span class="str">'https://tools-hub.onrender.com'</span> + path, request);
+  }
+}</pre>
+        <div class="field-tip">
+          Adding a new tool = adding one <code>if</code> block and redeploying the Worker.
+          This can itself be automated by the GitHub Action (Step 3).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Tool repo structure ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">2</div>
+      <h2>Standardised Tool Repo Structure</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-desc">
+          Every tool repo follows the same layout. The critical file is <code>tool.json</code> —
+          it is what the hub reads to build the selector page, and what the GitHub Action reads
+          to know what to name the Render service.
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-name">Directory layout</div>
+        <pre>my-new-tool/
+├── app.py              <span class="cm"># Flask app — must have @app.route('/')</span>
+├── requirements.txt
+├── tool.json           <span class="cm"># metadata read by hub and GitHub Action</span>
+├── Procfile            <span class="cm"># web: gunicorn app:app</span>
+└── .github/
+    └── workflows/
+        └── deploy.yml  <span class="cm"># copy from template — no edits needed</span></pre>
+      </div>
+      <div class="field">
+        <div class="field-name">tool.json</div>
+        <pre>{
+  <span class="key">"name"</span>:        <span class="str">"Timing Pulley Generator"</span>,
+  <span class="key">"slug"</span>:        <span class="str">"pulleys"</span>,
+  <span class="key">"description"</span>: <span class="str">"SVG, DXF, and STEP exports for timing belt pulleys"</span>,
+  <span class="key">"icon"</span>:        <span class="str">"⚙"</span>,
+  <span class="key">"url"</span>:         <span class="str">"https://tools.cheapcadtools.com/pulleys"</span>,
+  <span class="key">"status"</span>:      <span class="str">"live"</span>
+}</pre>
+        <div class="field-tip">
+          The <code>slug</code> becomes the Render service name and the URL path.
+          Keep it short, lowercase, no spaces. The PulleyWebApp only needs this file added — nothing else changes.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 3: GitHub Action ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">3</div>
+      <h2>GitHub Action — Auto-Provision on Push</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-desc">
+          Each tool repo contains a workflow at <code>.github/workflows/deploy.yml</code>.
+          When code is pushed to <code>main</code>, the action creates (or redeploys) the Render
+          service and notifies the hub registry to update.
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-name">.github/workflows/deploy.yml</div>
+        <pre><span class="key">name</span>: Deploy to Render
+
+<span class="key">on</span>:
+  push:
+    branches: [main]
+
+<span class="key">jobs</span>:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Read slug from tool.json
+        id: meta
+        run: echo "slug=$(jq -r .slug tool.json)" >> $GITHUB_OUTPUT
+
+      - name: Create or redeploy Render service
+        run: |
+          curl -sf -X POST https://api.render.com/v1/services \
+            -H "Authorization: Bearer ${{ "{{" }} secrets.RENDER_API_KEY {{ "}}" }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "name":         "${{ "{{" }} steps.meta.outputs.slug {{ "}}" }}",
+              "type":         "web_service",
+              "repo":         "${{ "{{" }} github.repository {{ "}}" }}",
+              "branch":       "main",
+              "buildCommand": "pip install -r requirements.txt",
+              "startCommand": "gunicorn app:app",
+              "plan":         "free"
+            }'
+
+      - name: Notify hub to refresh registry
+        run: |
+          curl -sf -X POST \
+            https://api.github.com/repos/xootme/tools-hub/dispatches \
+            -H "Authorization: Bearer ${{ "{{" }} secrets.HUB_DISPATCH_TOKEN {{ "}}" }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d '{"event_type":"tool-registered",
+                 "client_payload":{"slug":"${{ "{{" }} steps.meta.outputs.slug {{ "}}" }}"}}'</pre>
+        <div class="field-tip">
+          <code>RENDER_API_KEY</code> and <code>HUB_DISPATCH_TOKEN</code> are stored as GitHub
+          repository secrets — never in code.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 4: Hub registry ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">4</div>
+      <h2>Hub Registry — registry.json</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-desc">
+          The <code>tools-hub</code> repo maintains a <code>registry.json</code> listing every live tool.
+          When a tool repo fires the <code>tool-registered</code> dispatch event, a second Action in
+          <code>tools-hub</code> fetches that tool's <code>tool.json</code>, merges it into
+          <code>registry.json</code>, and pushes — which triggers a Render redeploy of the hub.
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-name">registry.json</div>
+        <pre>[
+  {
+    <span class="key">"name"</span>:        <span class="str">"Timing Pulley Generator"</span>,
+    <span class="key">"slug"</span>:        <span class="str">"pulleys"</span>,
+    <span class="key">"description"</span>: <span class="str">"SVG, DXF, and STEP exports for timing belt pulleys"</span>,
+    <span class="key">"icon"</span>:        <span class="str">"⚙"</span>,
+    <span class="key">"url"</span>:         <span class="str">"https://tools.cheapcadtools.com/pulleys"</span>,
+    <span class="key">"status"</span>:      <span class="str">"live"</span>
+  },
+  {
+    <span class="key">"name"</span>:        <span class="str">"Gear Generator"</span>,
+    <span class="key">"slug"</span>:        <span class="str">"gears"</span>,
+    <span class="key">"description"</span>: <span class="str">"Involute spur and helical gear profiles for CAD"</span>,
+    <span class="key">"icon"</span>:        <span class="str">"🔩"</span>,
+    <span class="key">"url"</span>:         <span class="str">"https://tools.cheapcadtools.com/gears"</span>,
+    <span class="key">"status"</span>:      <span class="str">"coming_soon"</span>
+  }
+]</pre>
+      </div>
+      <div class="field">
+        <div class="field-name">tools-hub/.github/workflows/update-registry.yml</div>
+        <pre><span class="key">on</span>:
+  repository_dispatch:
+    types: [tool-registered]
+
+<span class="key">jobs</span>:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Fetch tool.json from source repo
+        run: |
+          SLUG="${{ "{{" }} github.event.client_payload.slug {{ "}}" }}"
+          curl -sf https://raw.githubusercontent.com/xootme/${SLUG}/main/tool.json \
+            -o /tmp/tool.json
+
+      - name: Merge into registry.json
+        run: python scripts/update_registry.py /tmp/tool.json registry.json
+
+      - name: Commit and push
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name  "GitHub Actions"
+          git add registry.json
+          git commit -m "Register tool: ${{ "{{" }} github.event.client_payload.slug {{ "}}" }}"
+          git push</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 5: Hub app ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">5</div>
+      <h2>Hub App — Flask Selector Page</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-name">tools-hub/app.py</div>
+        <pre><span class="kw">import</span> json
+<span class="kw">from</span> flask <span class="kw">import</span> Flask, render_template
+
+app = Flask(__name__)
+
+<span class="kw">def</span> load_registry():
+    <span class="kw">with</span> open(<span class="str">'registry.json'</span>) <span class="kw">as</span> f:
+        <span class="kw">return</span> json.load(f)
+
+@app.route(<span class="str">'/'</span>)
+<span class="kw">def</span> hub():
+    tools = load_registry()
+    <span class="kw">return</span> render_template(<span class="str">'hub.html'</span>, tools=tools)</pre>
+      </div>
+      <div class="field">
+        <div class="field-name">templates/hub.html (simplified)</div>
+        <pre><span class="cm">&lt;!-- One card per tool, built from registry.json --&gt;</span>
+{% for tool in tools %}
+  &lt;div class="tool-card"&gt;
+    &lt;div class="tool-icon"&gt;{{ tool.icon }}&lt;/div&gt;
+    &lt;div class="tool-name"&gt;{{ tool.name }}&lt;/div&gt;
+    &lt;div class="tool-desc"&gt;{{ tool.description }}&lt;/div&gt;
+    {% if tool.status == 'live' %}
+      &lt;a href="{{ tool.url }}" class="btn-launch"&gt;Open →&lt;/a&gt;
+    {% else %}
+      &lt;span class="btn-soon"&gt;Coming Soon&lt;/span&gt;
+    {% endif %}
+  &lt;/div&gt;
+{% endfor %}</pre>
+        <div class="field-tip">
+          Tools with <code>"status": "coming_soon"</code> appear as greyed-out teaser cards —
+          useful for announcing tools before they are ready.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 6: One-time setup ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">6</div>
+      <h2>One-Time Setup Requirements</h2>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Where</th><th>How</th><th>Frequency</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>RENDER_API_KEY</code></td>
+            <td>GitHub Secrets (each tool repo)</td>
+            <td>Render dashboard → Account → API Keys</td>
+            <td><span class="tag tag-once">Once</span></td>
+          </tr>
+          <tr>
+            <td><code>HUB_DISPATCH_TOKEN</code></td>
+            <td>GitHub Secrets (each tool repo)</td>
+            <td>GitHub → Settings → Developer Settings → PAT (repo scope)</td>
+            <td><span class="tag tag-once">Once</span></td>
+          </tr>
+          <tr>
+            <td><code>tools-hub</code> repo</td>
+            <td>GitHub: xootme/tools-hub</td>
+            <td>Create repo, add Flask app, <code>registry.json</code>, update-registry Action</td>
+            <td><span class="tag tag-once">Once</span></td>
+          </tr>
+          <tr>
+            <td>Render service for hub</td>
+            <td>Render dashboard</td>
+            <td>Connect <code>tools-hub</code> repo, start command: <code>gunicorn app:app</code></td>
+            <td><span class="tag tag-once">Once</span></td>
+          </tr>
+          <tr>
+            <td>Cloudflare Worker</td>
+            <td>Cloudflare dashboard → Workers</td>
+            <td>Paste <code>worker.js</code>, route <code>tools.cheapcadtools.com/*</code> to it</td>
+            <td><span class="tag tag-once">Once</span></td>
+          </tr>
+          <tr>
+            <td><code>tool.json</code> in each tool repo</td>
+            <td>Repo root</td>
+            <td>Add file, fill in name / slug / description / icon / url / status</td>
+            <td><span class="tag tag-manual">Per tool</span></td>
+          </tr>
+          <tr>
+            <td><code>deploy.yml</code> Action</td>
+            <td><code>.github/workflows/</code> in each tool repo</td>
+            <td>Copy from template — reads slug from <code>tool.json</code>, no edits needed</td>
+            <td><span class="tag tag-manual">Per tool</span></td>
+          </tr>
+          <tr>
+            <td>Worker path entry</td>
+            <td><code>worker.js</code></td>
+            <td>Add one <code>if</code> block per new tool and redeploy Worker</td>
+            <td><span class="tag tag-manual">Per tool</span></td>
+          </tr>
+          <tr>
+            <td>Render auto-deploy</td>
+            <td>Ongoing</td>
+            <td>Triggered automatically on every push to <code>main</code></td>
+            <td><span class="tag tag-auto">Automatic</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Step 7: Adding a new tool ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">7</div>
+      <h2>Adding a New Tool — End-to-End</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-name">After one-time setup, adding a tool is 4 steps:</div>
+      </div>
+      <div class="field">
+        <div class="field-name">1 — Create the repo from the template</div>
+        <pre>cookiecutter gh:xootme/.github --directory=tool-template
+<span class="cm"># Prompts for: name, slug, description, icon
+# Generates: app.py stub, requirements.txt, tool.json, deploy.yml</span></pre>
+      </div>
+      <div class="field">
+        <div class="field-name">2 — Write the tool</div>
+        <div class="field-desc">Build the Flask app. Only requirement: <code>@app.route('/')</code> returns the tool's main UI.</div>
+      </div>
+      <div class="field">
+        <div class="field-name">3 — Add a path entry to the Cloudflare Worker</div>
+        <pre><span class="kw">if</span> (path.startsWith(<span class="str">'/new-tool-slug'</span>))
+  <span class="kw">return</span> fetch(<span class="str">'https://new-tool.onrender.com'</span> + path, request);</pre>
+      </div>
+      <div class="field">
+        <div class="field-name">4 — Push to GitHub</div>
+        <pre>git add .
+git commit -m "Initial release"
+git push origin main</pre>
+        <div class="field-tip">
+          This single push triggers everything — Render provisioning, registry update, and hub redeploy
+          are all automatic. Within ~3 minutes the tool is live and the hub card appears.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Updating an existing tool ── -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Updating an Existing Tool</h2>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <div class="field-desc">
+          No extra steps — push to <code>main</code> as normal.
+          The <code>deploy.yml</code> Action redeploys only that tool's Render service.
+          All other tools stay up and unaffected.
+        </div>
+      </div>
+      <pre>git add .
+git commit -m "Update: describe change"
+git push origin main
+<span class="cm"># Only this tool's Render service redeploys — live in ~2 minutes</span></pre>
+    </div>
+  </div>
+
+  <footer>
+    Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc. &nbsp;|&nbsp; Internal architecture document
+  </footer>
+
+</div>
+</body>
+</html>

@@ -19,7 +19,7 @@ header {
   flex-shrink: 0;
 }
 .header-inner { display: flex; align-items: center; gap: 16px; }
-.logo         { font-weight: 700; font-size: 16px; letter-spacing: 0.5px; }
+.logo         { height: 28px; width: auto; display: block; }
 .header-title { font-size: 14px; opacity: 0.88; }
 
 /* ── Main layout ── */
