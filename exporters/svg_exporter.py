@@ -259,6 +259,16 @@ def _poly_points(pts, cx, cy):
     return " ".join(f"{cx + x:.4f},{cy - y:.4f}" for x, y in pts)
 
 
+def _pts_to_path_d(pts, cx, cy):
+    """Convert (x,y) mm list to a closed SVG path subpath (M...L...Z)."""
+    it = iter(pts)
+    first = next(it)
+    d = f"M {cx + first[0]:.4f},{cy - first[1]:.4f}"
+    for x, y in it:
+        d += f" L {cx + x:.4f},{cy - y:.4f}"
+    return d + " Z"
+
+
 def generate_svg_dual(
     family: str,
     pitch: str,
@@ -449,25 +459,20 @@ def generate_svg_dual(
     path1 = _pulley_path_d(wrapped1, R_OD1, edge_a1, num_teeth1, cx1, cy, phi=phi_left)
     path2 = _pulley_path_d(wrapped2, R_OD2, edge_a2, num_teeth2, cx2, cy, phi=phi_right)
 
-    # Belt ring: closed polygon
+    # Belt: outer (back_path) + inner (toothed profile) as two evenodd subpaths.
+    # The outer path fills the whole belt area; the inner path punches out the
+    # groove cavities and loop interior — no seam needed.
     belt_el = ''
     tooth_els = ''
     if belt_ring:
-        bp = _poly_points(belt_ring, 0, cy)
+        d_outer = _pts_to_path_d(belt_ring, 0, cy)
+        d_inner = _pts_to_path_d(tooth_polys[0], 0, cy) if tooth_polys else ''
         belt_el = (
-            f'<polygon points="{bp}" '
+            f'<path fill-rule="evenodd" '
+            f'd="{d_outer} {d_inner}" '
             f'fill="#c8d6e5" stroke="#7a8a9e" stroke-width="{sw_belt:.4f}" '
             f'stroke-linejoin="round"/>'
         )
-        tp_parts = []
-        for tp in tooth_polys:
-            pp = _poly_points(tp, 0, cy)
-            tp_parts.append(
-                f'<polygon points="{pp}" '
-                f'fill="#8a9ab2" stroke="#5a6a82" stroke-width="{sw_belt * 0.7:.4f}" '
-                f'stroke-linejoin="round"/>'
-            )
-        tooth_els = '\n  '.join(tp_parts)
 
     bore1_el = (
         f'<circle cx="{cx1:.4f}" cy="{cy:.4f}" r="{bore_mm1/2:.4f}" '

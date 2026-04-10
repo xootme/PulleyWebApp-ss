@@ -2068,8 +2068,7 @@ def build_two_pulley_belt(family: str, pitch: str, left_teeth: int, right_teeth:
 
     offset_back = hs - ht - aa
     back_path   = _offset_path(offset_back)
-    od_path     = _offset_path(-aa)
-    belt_ring_poly = back_path + list(reversed(od_path))
+    od_path     = _offset_path(-aa)   # OD-land surface; used to close the tooth chain
 
     def _interp_at(s):
         s = s % total_s
@@ -2087,29 +2086,44 @@ def build_two_pulley_belt(family: str, pitch: str, left_teeth: int, right_teeth:
         if d > 1e-12: nnx, nny = nnx/d, nny/d
         return ppx, ppy, nnx, nny
 
-    tooth_polys = []
+    # Build inner (toothed) surface by concatenating all tooth profiles.
+    # Shift tooth chain by +p_mm/2 so the first tooth's left land falls exactly
+    # at s=0 (= pitch_line[0] = L_top tangent point).  This makes inner_pts[0]
+    # and inner_pts[-1] align with back_path[0] and back_path[-1] at the same
+    # belt arc-length, so the polygon closes with perpendicular cross-sections
+    # and no diagonal kink above the left pulley.
+    inner_pts = []
     for k in range(n_belt):
-        s_c = k * p_mm
-        pts = []
+        s_c = k * p_mm + p_mm * 0.5   # tooth k spans s ∈ [k·p, (k+1)·p]
+        tooth_inner = []
         for bx, by in one_tooth_pts:
             ppx, ppy, nnx, nny = _interp_at(s_c + bx)
             d = by - aa
-            pts.append((ppx + d*nnx, ppy + d*nny))
-        tooth_polys.append(pts)
+            tooth_inner.append((ppx + d*nnx, ppy + d*nny))
+        inner_pts.extend(tooth_inner if k == 0 else tooth_inner[1:])
+
+    # Return outer and inner as separate closed paths.
+    # The renderer combines them with fill-rule="evenodd" so no seam is needed:
+    # outer (back_path) fills everything inside the belt outline;
+    # inner (inner_pts) punches out the groove interiors and belt-loop cavity.
+    belt_ring_poly = back_path      # outer boundary
+    tooth_polys    = [inner_pts] if inner_pts else []   # inner boundary
 
     # ── Phase alignment ───────────────────────────────────────────────────────
+    # Teeth shifted by +p_mm/2 relative to the original s_c = k·p indexing, so
+    # the groove phase on each pulley adjusts by -(p_mm/2)/R (half a tooth angle).
     s_right_start = s_tangent
     s_left_start  = s_tangent + R_right*sweep_right + s_tangent
 
     a_rt_std = math.atan2(R_top[1], R_top[0] - (ox+C))
     theta_right_start = math.pi/2.0 - a_rt_std
     t_ang_right = 2.0 * math.pi / right_teeth
-    phi_right = (theta_right_start - s_right_start / R_right) % t_ang_right
+    phi_right = (theta_right_start - (s_right_start - p_mm * 0.5) / R_right) % t_ang_right
 
     a_lb_std = math.atan2(L_bot[1], L_bot[0] - ox)
     theta_left_start = math.pi/2.0 - a_lb_std
     t_ang_left = 2.0 * math.pi / left_teeth
-    phi_left = (theta_left_start - s_left_start / R_left) % t_ang_left
+    phi_left = (theta_left_start - (s_left_start - p_mm * 0.5) / R_left) % t_ang_left
 
     return belt_ring_poly, tooth_polys, phi_left, phi_right
 

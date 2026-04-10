@@ -18,19 +18,19 @@
 <!-- ── Drive bar ── -->
 <div class="drive-bar">
   <label class="drive-toggle">
-    <input type="checkbox" id="dual_enable" onchange="onDualToggle()">
+    <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
     <span>Two Pulley Drive</span>
   </label>
-  <div class="drive-spacing hidden" id="spacing_row">
+  <div class="drive-spacing" id="spacing_row">
     <label for="center_distance">Centre Distance (mm)</label>
     <input type="number" id="center_distance" value="100" min="1" step="0.01"
            oninput="onCenterDistanceInput()">
-    <span class="drive-note" id="min_distance_note"></span>
+    <button class="min-dist-btn" id="min_distance_btn" onclick="setMinCenterDistance()" title="Set pulleys to minimum centre distance">Min</button>
     <label for="belt_teeth" style="margin-left:1rem">Belt Teeth</label>
     <input type="number" id="belt_teeth" min="1" step="1" style="width:5rem"
            oninput="onBeltTeethInput()">
   </div>
-  <div class="drive-spacing hidden" id="ratio_row">
+  <div class="drive-spacing" id="ratio_row">
     <label for="gear_ratio">Gear Ratio</label>
     <input type="number" id="gear_ratio" value="1.500" min="0.1" step="0.001"
            oninput="onGearRatioChange()">
@@ -46,11 +46,14 @@
   </div>
 </div>
 
-<main id="main-layout">
+<main id="main-layout" class="dual">
 
   <!-- ── PULLEY 1 PANEL ── -->
   <aside class="controls-panel" id="panel1">
-    <div class="panel-title" id="panel1-title">Pulley</div>
+    <div class="panel-title">
+      <span id="panel1-title">Pulley</span>
+      <button class="btn-help" onclick="window.open('/static/Pulley1_help.html','_blank')" title="Pulley 1 Help">&#9432;</button>
+    </div>
 
     <section class="card">
       <h2>Belt Profile</h2>
@@ -71,7 +74,7 @@
       <label for="od">Outer Diameter (mm)</label>
       <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)">
       <label for="bore">Bore Diameter (mm)</label>
-      <input type="number" id="bore" min="1" value="8" step="0.1" oninput="schedulePreview()">
+      <input type="number" id="bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview()">
       <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
     </section>
 
@@ -119,14 +122,11 @@
                 onclick="toggleDlMenu('dl-p1-belt', event)">⬇ Download Belt</button>
         <div class="dl-menu hidden" id="dl-p1-belt">
           <button class="dl-item" onclick="downloadBeltSVG(); closeDlMenus()">SVG</button>
-          <button class="dl-item dl-item-soon">DXF <span class="dl-soon-tag">coming soon</span></button>
+          <button class="dl-item" onclick="downloadBeltDXF(); closeDlMenus()">DXF</button>
         </div>
       </div>
     </section>
 
-    <div class="help-btn-row">
-      <button class="btn-help" onclick="window.open('/static/Pulley1_help.html','_blank')" title="Pulley 1 Help">&#9432;</button>
-    </div>
   </aside>
 
   <!-- ── PREVIEW PANEL ── -->
@@ -147,8 +147,11 @@
   </div>
 
   <!-- ── PULLEY 2 PANEL (hidden until dual enabled) ── -->
-  <aside class="controls-panel hidden" id="panel2">
-    <div class="panel-title">Pulley 2</div>
+  <aside class="controls-panel" id="panel2">
+    <div class="panel-title">
+      Pulley 2
+      <button class="btn-help" onclick="window.open('/static/Pulley2_help.html','_blank')" title="Pulley 2 Help">&#9432;</button>
+    </div>
     <div class="card belt-lock-info" id="belt-lock-info">
       Belt: <strong id="p2-belt-label">—</strong><br>
       <span style="font-size:11px;color:#888">Family &amp; pitch locked to Pulley 1</span>
@@ -161,7 +164,7 @@
       <label for="p2_od">Outer Diameter (mm)</label>
       <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)">
       <label for="p2_bore">Bore Diameter (mm)</label>
-      <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="schedulePreview()">
+      <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview()">
       <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
     </section>
 
@@ -206,9 +209,6 @@
       </div>
     </section>
 
-    <div class="help-btn-row">
-      <button class="btn-help" onclick="window.open('/static/Pulley2_help.html','_blank')" title="Pulley 2 Help">&#9432;</button>
-    </div>
   </aside>
 
 </main>
@@ -313,7 +313,7 @@ async function loadSettings() {
     document.getElementById('spacing_row').classList.toggle('hidden', !dual);
     document.getElementById('ratio_row')  .classList.toggle('hidden', !dual);
     document.getElementById('main-layout').classList.toggle('dual',    dual);
-    document.getElementById('panel1-title').textContent = 'Pulley 1';
+    document.getElementById('panel1-title').textContent = 'Pulley 1';  // span only — button preserved
     syncP2Belt();
     // Restore center distance (already pitch-corrected when it was saved)
     if (s.center_distance) _val('center_distance', parseFloat(s.center_distance).toFixed(2));
@@ -385,18 +385,32 @@ function syncP2Belt() {
   }
 }
 
-function updateMinDistance() {
+function clampBore(el) {
+  const v = parseFloat(el.value);
+  if (!isNaN(v) && v < 1) el.value = 1;
+}
+
+function _calcMinC() {
   const pitchMm = currentSpec ? currentSpec.pitch_mm : 0;
   const teeth1  = parseInt(document.getElementById('teeth').value) || 0;
   const teeth2  = parseInt(document.getElementById('p2_teeth').value) || 0;
-  const minC = pitchMm > 0
-    ? ((teeth1 + teeth2) * pitchMm / (2 * Math.PI)).toFixed(1)
-    : '—';
-  const note = document.getElementById('min_distance_note');
-  note.textContent = `min: ${minC} mm`;
-  const cdEl = document.getElementById('center_distance');
-  const cd = parseFloat(cdEl.value) || 0;
-  note.style.color = cd < parseFloat(minC) ? '#c00' : '#888';
+  return pitchMm > 0 ? (teeth1 + teeth2) * pitchMm / (2 * Math.PI) : null;
+}
+
+function updateMinDistance() {
+  const minC = _calcMinC();
+  const btn  = document.getElementById('min_distance_btn');
+  const cd   = parseFloat(document.getElementById('center_distance').value) || 0;
+  if (minC === null) { btn.classList.remove('min-dist-warn'); return; }
+  btn.classList.toggle('min-dist-warn', cd < minC);
+}
+
+function setMinCenterDistance() {
+  const minC = _calcMinC();
+  if (minC === null) return;
+  const snapped = Math.ceil(minC * 10) / 10;   // round up to nearest 0.1 mm
+  document.getElementById('center_distance').value = snapped.toFixed(2);
+  onCenterDistanceInput();
 }
 
 async function setDefaultCenterDistance() {
@@ -511,6 +525,7 @@ async function onPitchChange() {
 
   if (document.getElementById('dual_enable').checked) {
     syncP2Belt();
+    await syncOD(2);
     await correctCenterDistance();
   } else {
     schedulePreview();
@@ -521,9 +536,13 @@ async function onPitchChange() {
 async function onTeethChange(n) {
   if (n === 1 && teethLock)  return;
   if (n === 2 && teethLock2) return;
-  const family = document.getElementById('family').value;
-  const pitch  = document.getElementById('pitch').value;
-  const teeth  = document.getElementById(n === 1 ? 'teeth' : 'p2_teeth').value;
+  const family  = document.getElementById('family').value;
+  const pitch   = document.getElementById('pitch').value;
+  const spec    = n === 1 ? currentSpec : currentSpec2 || currentSpec;
+  const minT    = spec ? spec.min_teeth : 1;
+  const teethEl = document.getElementById(n === 1 ? 'teeth' : 'p2_teeth');
+  if (parseInt(teethEl.value) < minT) teethEl.value = minT;
+  const teeth   = teethEl.value;
   const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${teeth}`);
   if (!resp.ok) return;
   const data = await resp.json();
@@ -818,6 +837,19 @@ function downloadBeltSVG() {
     const family = document.getElementById('family').value;
     const pitch  = document.getElementById('pitch').value;
     window.location = '/download/belt-svg?family=' + encodeURIComponent(family)
+                    + '&pitch=' + encodeURIComponent(pitch);
+  }
+}
+
+function downloadBeltDXF() {
+  const dual = document.getElementById('dual_enable').checked;
+  if (dual) {
+    const params = buildParams();
+    window.location = '/download/belt-dxf?' + new URLSearchParams(params);
+  } else {
+    const family = document.getElementById('family').value;
+    const pitch  = document.getElementById('pitch').value;
+    window.location = '/download/belt-dxf?family=' + encodeURIComponent(family)
                     + '&pitch=' + encodeURIComponent(pitch);
   }
 }

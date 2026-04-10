@@ -170,4 +170,4 @@ def test_download_belt_svg_dual(client, family, pitch):
     )
     assert r.status_code == 200
     assert b'<?xml' in r.data
-    assert b'<polygon' in r.data   # belt ring polygon present
+    assert b'<path' in r.data   # belt ring path present

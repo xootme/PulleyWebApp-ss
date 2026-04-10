@@ -149,7 +149,7 @@
   <div class="field">
     <div class="field-name">Bore Diameter (mm) <span class="tag tag-input">Input</span></div>
     <div class="field-desc">
-      The diameter of the central shaft hole. Set this to match your shaft. The bore must be smaller than the pitch diameter.
+      The diameter of the central shaft hole. Set this to match your shaft. The bore must be smaller than the pitch diameter. Minimum bore is 1 mm.
     </div>
     <div class="field-tip">For 3D-printed pulleys, add 0.2–0.4 mm to account for printing tolerance.</div>
   </div>
@@ -211,10 +211,18 @@
     <div class="field-tip">In Fusion 360: Insert → Insert SVG → select the file → scale should be 1 mm/unit.</div>
   </div>
   <div class="field">
-    <div class="field-name">Download Belt SVG</div>
+    <div class="field-name">Download Belt</div>
     <div class="field-desc">
-      Downloads a 2D SVG cross-section of one belt tooth. Useful for verifying belt compatibility or
-      creating custom belt profiles. Only available for belt-profile families.
+      Downloads the belt in SVG or DXF format. SVG is best for CAD import. DXF exports the belt tooth
+      cross-section profile in single-pulley mode, or the complete two-pulley belt layout with separate
+      BELT_BACK and BELT_TEETH layers in Two Pulley Drive mode.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Download Pulley DXF</div>
+    <div class="field-desc">
+      Downloads a DXF file of the pulley profile and bore using true arc entities. Output is in R2010 DXF
+      format in millimetres, suitable for import into CAD applications that support DXF.
     </div>
   </div>
 </section>

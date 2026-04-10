@@ -332,6 +332,28 @@ footer a:hover { text-decoration: underline; }
   color: #444;
 }
 .ratio-btn:hover { background: #d0daea; border-color: #0078d4; color: #0078d4; }
+.min-dist-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f1f3f5;
+  border: 1px solid #c8d0db;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.min-dist-btn:hover { background: #e2e8f0; border-color: #0078d4; color: #0078d4; }
+.min-dist-btn.min-dist-warn {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
+}
+.min-dist-btn.min-dist-warn:hover {
+  background: #fecaca;
+}
+
 .reset-btn {
   margin-left: auto;
   padding: 3px 10px;
@@ -352,6 +374,9 @@ footer a:hover { text-decoration: underline; }
 
 /* ── Panel title ── */
 .panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 13px;
   font-weight: 700;
   color: #0078d4;

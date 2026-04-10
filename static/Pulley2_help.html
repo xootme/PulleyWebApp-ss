@@ -149,7 +149,7 @@
     <div class="field-name">Bore Diameter (mm) <span class="tag tag-input">Input</span></div>
     <div class="field-desc">
       The shaft hole diameter for Pulley 2. This is independent of Pulley 1 — the two pulleys can sit on
-      different shaft sizes (e.g. motor shaft vs. output shaft).
+      different shaft sizes (e.g. motor shaft vs. output shaft). Minimum bore is 1 mm.
     </div>
     <div class="field-tip">For 3D-printed pulleys, add 0.2–0.4 mm to account for FDM printing tolerance.</div>
   </div>
@@ -213,10 +213,18 @@
     <div class="field-tip">In Fusion 360: Insert → Insert SVG → scale should be 1 mm/unit. The sketch can then be extruded to create a solid body.</div>
   </div>
   <div class="field">
-    <div class="field-name">Belt Drive SVG</div>
+    <div class="field-name">Download Pulley DXF</div>
     <div class="field-desc">
-      To download the complete two-pulley belt drive SVG (both pulleys and belt path in one drawing),
-      use the <strong>Download Belt SVG</strong> button in the Pulley 1 panel on the left.
+      Downloads a DXF file of the Pulley 2 profile and bore using true arc entities. Output is in R2010
+      DXF format in millimetres, suitable for import into CAD applications that support DXF.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Belt Drive (SVG or DXF)</div>
+    <div class="field-desc">
+      To download the complete two-pulley belt drive (both pulleys and belt path in one drawing),
+      use the <strong>Download Belt (SVG or DXF)</strong> button in the Pulley 1 panel on the left.
+      SVG is best for CAD import; DXF exports the full belt layout with separate BELT_BACK and BELT_TEETH layers.
     </div>
   </div>
 </section>

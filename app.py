@@ -15,7 +15,7 @@ from geometry.pulley_geometry import (
 from exporters.svg_exporter import generate_svg, generate_svg_dual
 from exporters.png_exporter import generate_png, generate_png_dual
 from exporters.belt_svg_exporter import generate_belt_svg, generate_belt_png
-from exporters.dxf_exporter import generate_dxf
+from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_belt_dxf_dual
 
 app = Flask(__name__)
 
@@ -56,6 +56,14 @@ def _resolve_key(family, pitch):
         return None   # pitch not valid for this family
     prefix = PROFILE_KEY_PREFIX[family]
     return prefix + pitch
+
+
+def _get_bore(args, key='bore', default=8.0):
+    """Parse bore diameter from request args, clamped to minimum 1 mm."""
+    try:
+        return max(1.0, float(args.get(key, default)))
+    except (ValueError, TypeError):
+        return default
 
 
 def _get_preset_value(spec, preset_type, preset_key, custom_val):
@@ -162,7 +170,7 @@ def api_od():
     mode      = request.args.get('mode', 'teeth')   # 'teeth' or 'od'
     try:
         if mode == 'teeth':
-            n  = int(request.args.get('value', spec['min_teeth']))
+            n  = max(spec['min_teeth'], int(request.args.get('value', spec['min_teeth'])))
             od = round(getOuterDiameter(n, spec['pitch'], spec['pitch_line_diff']), 3)
             return jsonify({'teeth': n, 'od': od})
         else:
@@ -234,7 +242,7 @@ def download_dxf():
 
         if pulley == '2':
             num_teeth = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
-            bore_mm   = float(request.args.get('p2_bore', 8.0))
+            bore_mm   = _get_bore(request.args, 'p2_bore')
             pr_ex     = float(request.args.get('p2_print_extra', 0.0))
             cl_preset = request.args.get('p2_clearance_preset', 'STANDARD')
             bl_preset = request.args.get('p2_backlash_preset',  'STANDARD')
@@ -243,7 +251,7 @@ def download_dxf():
             filename = f'{family}-{pitch}-{num_teeth}T-P2.dxf'
         else:
             num_teeth = max(spec['min_teeth'], int(request.args.get('teeth', spec['min_teeth'])))
-            bore_mm   = float(request.args.get('bore', 8.0))
+            bore_mm   = _get_bore(request.args, 'bore')
             pr_ex     = float(request.args.get('print_extra', 0.0))
             cl_preset = request.args.get('clearance_preset', 'STANDARD')
             bl_preset = request.args.get('backlash_preset',  'STANDARD')
@@ -273,7 +281,7 @@ def _build_png_from_request(args, size_px=480):
         raise ValueError(f'Unknown profile {family}/{pitch}')
     spec       = PULLEY_SPECS[key]
     num_teeth  = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
-    bore_mm    = float(args.get('bore', 8.0))
+    bore_mm    = _get_bore(args, 'bore')
     pr_ex      = float(args.get('print_extra', 0.0))
     cl_preset  = args.get('clearance_preset', 'STANDARD')
     bl_preset  = args.get('backlash_preset', 'STANDARD')
@@ -295,7 +303,7 @@ def _build_svg_from_request(args):
     spec    = PULLEY_SPECS[key]
 
     num_teeth  = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
-    bore_mm    = float(args.get('bore', 8.0))
+    bore_mm    = _get_bore(args, 'bore')
     pr_ex      = float(args.get('print_extra', 0.0))
 
     cl_preset  = args.get('clearance_preset', 'STANDARD')
@@ -329,7 +337,7 @@ def _build_svg_from_request_p2(args):
     spec    = PULLEY_SPECS[key]
 
     num_teeth  = max(spec['min_teeth'], int(args.get('p2_teeth', spec['min_teeth'])))
-    bore_mm    = float(args.get('p2_bore', 8.0))
+    bore_mm    = _get_bore(args, 'p2_bore')
     pr_ex      = float(args.get('p2_print_extra', 0.0))
 
     cl_preset  = args.get('p2_clearance_preset', 'STANDARD')
@@ -362,13 +370,13 @@ def _build_png_dual_from_request(args, size_px=480):
     spec = PULLEY_SPECS[key]
 
     num_teeth1 = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
-    bore1      = float(args.get('bore', 8.0))
+    bore1      = _get_bore(args, 'bore')
     pr_ex1     = float(args.get('print_extra', 0.0))
     cl1 = _get_preset_value(spec, 'clearances', args.get('clearance_preset', 'STANDARD'), args.get('clearance_custom', 0.0))
     bl1 = _get_preset_value(spec, 'backlash',   args.get('backlash_preset',  'STANDARD'), args.get('backlash_custom',  0.0))
 
     num_teeth2 = max(spec['min_teeth'], int(args.get('p2_teeth', spec['min_teeth'])))
-    bore2      = float(args.get('p2_bore', 8.0))
+    bore2      = _get_bore(args, 'p2_bore')
     pr_ex2     = float(args.get('p2_print_extra', 0.0))
     cl2 = _get_preset_value(spec, 'clearances', args.get('p2_clearance_preset', 'STANDARD'), args.get('p2_clearance_custom', 0.0))
     bl2 = _get_preset_value(spec, 'backlash',   args.get('p2_backlash_preset',  'STANDARD'), args.get('p2_backlash_custom',  0.0))
@@ -423,8 +431,8 @@ def download_belt_svg():
 
             num_teeth1 = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
             num_teeth2 = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
-            bore1      = float(request.args.get('bore',    8.0))
-            bore2      = float(request.args.get('p2_bore', 8.0))
+            bore1      = _get_bore(request.args, 'bore')
+            bore2      = _get_bore(request.args, 'p2_bore')
             pe1        = float(request.args.get('print_extra',    0.0))
             pe2        = float(request.args.get('p2_print_extra', 0.0))
             cl1_preset = request.args.get('clearance_preset',    'STANDARD')
@@ -464,6 +472,64 @@ def download_belt_svg():
         )
     except Exception as e:
         return f'Error generating belt SVG: {e}', 400
+
+
+@app.route('/download/belt-dxf')
+def download_belt_dxf():
+    """Return belt DXF download.
+    In dual mode: two-pulley belt layout DXF.
+    In single mode: belt tooth cross-section DXF.
+    """
+    try:
+        family = request.args.get('family', 'HTD')
+        pitch  = request.args.get('pitch',  '5M')
+        dual   = request.args.get('dual') == 'true'
+
+        if dual:
+            key = _resolve_key(family, pitch)
+            if key is None or key not in PULLEY_SPECS:
+                return f'Unknown profile {family}/{pitch}', 400
+            spec = PULLEY_SPECS[key]
+
+            num_teeth1 = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
+            num_teeth2 = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
+            bore1      = _get_bore(request.args, 'bore')
+            bore2      = _get_bore(request.args, 'p2_bore')
+            pe1        = float(request.args.get('print_extra',    0.0))
+            pe2        = float(request.args.get('p2_print_extra', 0.0))
+            cl1_preset = request.args.get('clearance_preset',    'STANDARD')
+            bl1_preset = request.args.get('backlash_preset',     'STANDARD')
+            cl2_preset = request.args.get('p2_clearance_preset', 'STANDARD')
+            bl2_preset = request.args.get('p2_backlash_preset',  'STANDARD')
+            cl1 = _get_preset_value(spec, 'clearances', cl1_preset, request.args.get('clearance_custom',    0.0))
+            bl1 = _get_preset_value(spec, 'backlash',   bl1_preset, request.args.get('backlash_custom',     0.0))
+            cl2 = _get_preset_value(spec, 'clearances', cl2_preset, request.args.get('p2_clearance_custom', 0.0))
+            bl2 = _get_preset_value(spec, 'backlash',   bl2_preset, request.args.get('p2_backlash_custom',  0.0))
+            _default_c = (num_teeth1 + num_teeth2) * spec['pitch'] / (2.0 * math.pi)
+            center_dist = float(request.args.get('center_distance', _default_c))
+
+            dxf_bytes = generate_belt_dxf_dual(
+                family=family, pitch=pitch,
+                num_teeth1=num_teeth1, num_teeth2=num_teeth2,
+                bore_mm1=bore1, bore_mm2=bore2,
+                clearance_mm1=cl1, backlash_mm1=bl1, print_extra_mm1=pe1,
+                clearance_mm2=cl2, backlash_mm2=bl2, print_extra_mm2=pe2,
+                center_dist_mm=center_dist,
+            )
+            filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.dxf'
+        else:
+            if family not in BELT_FAMILIES:
+                return f'Belt DXF not available for family {family}', 400
+            dxf_bytes = generate_belt_dxf(family, pitch, n_teeth=3)
+            filename  = f'{family}-{pitch}-belt-profile.dxf'
+
+        return Response(
+            dxf_bytes,
+            mimetype='application/dxf',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        return f'Error generating belt DXF: {e}', 400
 
 
 if __name__ == '__main__':

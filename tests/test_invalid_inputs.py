@@ -228,8 +228,8 @@ class TestOutOfRangeNumbers:
         assert r.status_code != 500
 
     # Zero / negative bore
-    @pytest.mark.parametrize('bore', [0, -1, -0.001, 0.0])
-    def test_preview_bore_zero_or_negative(self, client, bore):
+    @pytest.mark.parametrize('bore', [0, -1, -0.001, 0.0, 0.5, 0.9])
+    def test_preview_bore_below_minimum(self, client, bore):
         r = client.get(
             f'/api/preview?family=HTD&pitch=5M&teeth=20&bore={bore}'
             '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
@@ -462,7 +462,219 @@ class TestUnknownPresets:
 
 
 # ===========================================================================
-# 7. Extreme custom preset values
+# 7. Minimum-teeth auto-correction  (regression for UI fix)
+# ===========================================================================
+class TestMinTeethCorrection:
+    """
+    When a user types a tooth count below the profile minimum the server must
+    clamp to min_teeth and return valid geometry — never a 500 or corrupt output.
+
+    This mirrors the client-side fix in onTeethChange() that snaps the input
+    field to currentSpec.min_teeth before sending to the API.
+    """
+
+    # Profiles and their known min_teeth values
+    _PROFILES = [
+        ('HTD',      '3M',  10),
+        ('HTD',      '5M',  12),
+        ('HTD',      '8M',  15),
+        ('HTD',      '14M', 17),
+        ('GT',       '2M',  10),
+        ('GT',       '3M',  10),
+        ('T',        'T5',  10),
+        ('Imperial', 'XL',  10),
+    ]
+
+    @pytest.mark.parametrize('family,pitch,min_t', _PROFILES,
+                             ids=[f'{f}-{p}' for f, p, _ in _PROFILES])
+    def test_api_od_below_min_clamped(self, client, family, pitch, min_t):
+        """
+        /api/od with teeth=1 (always below any profile min) must return the OD
+        for min_teeth, not an error and not a zero/negative diameter.
+        """
+        r = client.get(
+            f'/api/od?family={family}&pitch={pitch}&mode=teeth&value=1'
+        )
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['od'] > 0, "OD must be positive when teeth clamped to min"
+        assert data['teeth'] >= min_t, (
+            f"Returned teeth {data['teeth']} is below profile min {min_t}"
+        )
+
+    @pytest.mark.parametrize('family,pitch,min_t', _PROFILES,
+                             ids=[f'{f}-{p}' for f, p, _ in _PROFILES])
+    def test_download_svg_below_min_succeeds(self, client, family, pitch, min_t):
+        """
+        /download/svg with teeth below minimum must produce a valid SVG,
+        not a 400/500.  The server clamps to min_teeth.
+        """
+        below = max(0, min_t - 1)
+        r = client.get(
+            f'/download/svg?family={family}&pitch={pitch}&teeth={below}'
+            '&bore=6&print_extra=0'
+            '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert b'<svg' in r.data
+
+    @pytest.mark.parametrize('family,pitch,min_t', _PROFILES,
+                             ids=[f'{f}-{p}' for f, p, _ in _PROFILES])
+    def test_download_dxf_below_min_succeeds(self, client, family, pitch, min_t):
+        """
+        /download/dxf with teeth below minimum must produce a valid DXF,
+        not a 400/500.
+        """
+        below = max(0, min_t - 1)
+        r = client.get(
+            f'/download/dxf?family={family}&pitch={pitch}&teeth={below}'
+            '&bore=6&print_extra=0'
+            '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert len(r.data) > 0
+
+    @pytest.mark.parametrize('teeth', [0, -1, -100, 1])
+    def test_preview_various_below_min_never_500(self, client, teeth):
+        """
+        Preview with multiple below-minimum values must always return a PNG,
+        never a 500.  Covers the common accidental inputs (0, negative, 1).
+        """
+        r = client.get(
+            f'/api/preview?family=HTD&pitch=5M&teeth={teeth}'
+            '&bore=8&print_extra=0'
+            '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert r.data[:4] == b'\x89PNG'
+
+    def test_api_od_exactly_at_min_is_accepted(self, client):
+        """teeth == min_teeth must pass through unchanged (no off-by-one clamping)."""
+        from tests.conftest import get_spec
+        spec = get_spec('HTD', '5M')
+        min_t = spec['min_teeth']
+        r = client.get(
+            f'/api/od?family=HTD&pitch=5M&mode=teeth&value={min_t}'
+        )
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['teeth'] == min_t
+
+    def test_api_od_one_above_min_unchanged(self, client):
+        """teeth == min_teeth + 1 must not be altered by any clamping logic."""
+        from tests.conftest import get_spec
+        spec  = get_spec('HTD', '5M')
+        above = spec['min_teeth'] + 1
+        r = client.get(
+            f'/api/od?family=HTD&pitch=5M&mode=teeth&value={above}'
+        )
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['teeth'] == above
+
+    def test_p2_teeth_below_min_svg_succeeds(self, client):
+        """
+        Pulley 2 below-min teeth in a dual-mode belt SVG must not crash.
+        Mirrors the P2 branch of the onTeethChange() fix.
+        """
+        r = client.get(
+            '/download/belt-svg?family=HTD&pitch=5M&dual=true'
+            '&teeth=20&p2_teeth=1'          # P2 teeth = 1, below HTD-5M min of 12
+            '&bore=8&p2_bore=8&center_distance=120'
+            '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+            '&p2_clearance_preset=STANDARD&p2_backlash_preset=STANDARD'
+            '&print_extra=0&p2_print_extra=0'
+        )
+        assert r.status_code != 500
+
+    def test_p2_teeth_below_min_dxf_succeeds(self, client):
+        """Pulley 2 DXF download with below-min teeth must not crash."""
+        r = client.get(
+            '/download/dxf?family=HTD&pitch=5M&pulley=2'
+            '&p2_teeth=1&p2_bore=6&p2_print_extra=0'
+            '&p2_clearance_preset=STANDARD&p2_backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert len(r.data) > 0
+
+
+# ===========================================================================
+# 8. Bore diameter validation  (regression — negative bore was accepted)
+# ===========================================================================
+class TestBoreValidation:
+    """
+    Bore diameter must be clamped to a minimum of 0.1 mm server-side.
+    Negative, zero, and near-zero values must never crash the server or
+    produce corrupt geometry.
+    """
+
+    _BAD_BORES = [-10, -1, -0.001, 0, 0.0, 0.5, 0.9]
+    _ENDPOINTS = [
+        ('/api/preview',   '&clearance_preset=STANDARD&backlash_preset=STANDARD'),
+        ('/download/svg',  '&clearance_preset=STANDARD&backlash_preset=STANDARD'),
+        ('/download/dxf',  '&clearance_preset=STANDARD&backlash_preset=STANDARD'),
+    ]
+
+    @pytest.mark.parametrize('bore', _BAD_BORES)
+    def test_preview_negative_bore_returns_png(self, client, bore):
+        r = client.get(
+            f'/api/preview?family=HTD&pitch=5M&teeth=20&bore={bore}'
+            '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert r.data[:4] == b'\x89PNG'
+
+    @pytest.mark.parametrize('bore', _BAD_BORES)
+    def test_download_svg_negative_bore_succeeds(self, client, bore):
+        r = client.get(
+            f'/download/svg?family=HTD&pitch=5M&teeth=20&bore={bore}'
+            '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert b'<svg' in r.data
+
+    @pytest.mark.parametrize('bore', _BAD_BORES)
+    def test_download_dxf_negative_bore_succeeds(self, client, bore):
+        r = client.get(
+            f'/download/dxf?family=HTD&pitch=5M&teeth=20&bore={bore}'
+            '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert len(r.data) > 0
+
+    @pytest.mark.parametrize('bore', _BAD_BORES)
+    def test_p2_negative_bore_preview_returns_png(self, client, bore):
+        """Pulley 2 bore clamped in dual preview."""
+        r = client.get(
+            f'/api/preview?family=HTD&pitch=5M&teeth=20&bore=8&print_extra=0'
+            '&clearance_preset=STANDARD&backlash_preset=STANDARD'
+            f'&dual=true&center_distance=120'
+            f'&p2_teeth=30&p2_bore={bore}&p2_print_extra=0'
+            '&p2_clearance_preset=STANDARD&p2_backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert r.data[:4] == b'\x89PNG'
+
+    def test_bore_non_numeric_preview_returns_png(self, client):
+        r = client.get(
+            '/api/preview?family=HTD&pitch=5M&teeth=20&bore=abc'
+            '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert r.data[:4] == b'\x89PNG'
+
+    def test_bore_minimum_valid_value_accepted(self, client):
+        """bore=1.0 is the clamped minimum — must produce valid output."""
+        r = client.get(
+            '/download/svg?family=HTD&pitch=5M&teeth=20&bore=1.0'
+            '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
+        )
+        assert r.status_code == 200
+        assert b'<svg' in r.data
+
+
+# ===========================================================================
+# 9. Extreme custom preset values
 # ===========================================================================
 class TestExtremeCustomValues:
     """Custom clearance/backlash mm values at extremes."""

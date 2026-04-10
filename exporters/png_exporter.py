@@ -286,16 +286,16 @@ def generate_png_dual(
     TOOTH_STROKE= (90, 106, 130)
 
     if belt_ring:
-        sp = ss_pts(belt_ring)
-        draw.polygon(sp, fill=BELT_FILL)
-        draw.line(sp + [sp[0]], fill=BELT_STROKE,
+        # Outer boundary: fill entire belt area
+        sp_outer = ss_pts(belt_ring)
+        draw.polygon(sp_outer, fill=BELT_FILL)
+        # Inner boundary: punch out groove cavities and loop interior
+        for tp in tooth_polys:
+            sp_inner = ss_pts(tp)
+            draw.polygon(sp_inner, fill=bg_color)
+        # Stroke outer outline on top
+        draw.line(sp_outer + [sp_outer[0]], fill=BELT_STROKE,
                   width=max(1, int(scale * SS * 0.10)), joint='curve')
-
-    for tp in tooth_polys:
-        sp = ss_pts(tp)
-        draw.polygon(sp, fill=TOOTH_FILL)
-        draw.line(sp + [sp[0]], fill=TOOTH_STROKE,
-                  width=max(1, int(scale * SS * 0.08)), joint='curve')
 
     # ── Pulleys (on top of belt) ──────────────────────────────────────────────
     PULLEY_FILL   = (203, 213, 225)   # slate-300

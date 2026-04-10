@@ -1,28 +1,26 @@
 #!/bin/bash
-# deploy.sh - Local deployment script for PulleyWebApp
+# deploy.sh - Convenience wrapper for Git-based deployment to Render
 
-SYNC_ONLY=0
-if [ "$1" == "--sync" ]; then
-    SYNC_ONLY=1
+if [ -z "$1" ]; then
+    echo "Usage: ./deploy.sh \"Your commit message\""
+    exit 1
 fi
 
-echo "Syncing files to GreenGeeks..."
-rsync -avz \
-    --exclude 'venv/' \
-    --exclude '__pycache__/' \
-    --exclude '*.pyc' \
-    --exclude 'tests/' \
-    --exclude '*.md' \
-    --exclude 'deploy.sh' \
-    --exclude '.pytest_cache/' \
-    --exclude '.vscode/' \
-    --exclude '.claude/' \
-    --exclude 'testing.html' \
-    ./ xootpro@chi203.greengeeks.net:~/public_html/cheapcadtools/tst_pulleys/
+COMMIT_MSG=$1
 
-if [ $SYNC_ONLY -eq 0 ]; then
-    echo "Running provisioner on remote server..."
-    ssh xootpro@chi203.greengeeks.net "bash ~/public_html/cheapcadtools/tst_pulleys/provision_remote.sh"
-else
-    echo "Sync complete. Skipping remote provisioning."
-fi
+echo "--- Starting Deployment to Render ---"
+
+# 1. Add all changes
+echo "Step 1: Staging changes..."
+git add .
+
+# 2. Commit
+echo "Step 2: Committing changes..."
+git commit -m "$COMMIT_MSG"
+
+# 3. Push (Triggers Render build)
+echo "Step 3: Pushing to GitHub..."
+git push origin main
+
+echo "--- Deployment Triggered! ---"
+echo "Check progress at: https://dashboard.render.com"

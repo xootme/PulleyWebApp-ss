@@ -33,6 +33,12 @@ from geometry.pulley_geometry import (
     wrap_groove_to_pulley,
     PULLEY_SPECS,
     PROFILE_KEY_PREFIX,
+    build_two_pulley_belt,
+    H_BELT_SPECS, S_BELT_SPECS, R_BELT_SPECS, G_BELT_SPECS,
+    T_BELT_SPECS, AT_BELT_SPECS, IMPERIAL_BELT_SPECS, BELT_FAMILIES,
+    generate_h_belt_profile, generate_s_belt_profile, generate_r_belt_profile,
+    generate_g_belt_profile, generate_t_belt_profile, generate_at_belt_profile,
+    generate_imperial_belt_profile,
 )
 
 
@@ -173,3 +179,112 @@ def generate_dxf(
     text_buf = io.StringIO()
     doc.write(text_buf)
     return text_buf.getvalue().encode('utf-8')
+
+
+def _serialise_dxf(doc) -> bytes:
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode('utf-8')
+
+
+def generate_belt_dxf(
+    family: str,
+    pitch: str,
+    n_teeth: int = 3,
+) -> bytes:
+    """
+    DXF export of the belt tooth cross-section profile (single-pulley / belt-profile view).
+    Exports the belt outline as a closed LWPOLYLINE on layer BELT_PROFILE.
+    """
+    if family == 'HTD':
+        pts, _ = generate_h_belt_profile('H' + pitch, n_teeth=n_teeth)
+    elif family == 'GT':
+        pts, _ = generate_g_belt_profile('G' + pitch, n_teeth=n_teeth)
+    elif family == 'STD':
+        pts, _ = generate_s_belt_profile('S' + pitch, n_teeth=n_teeth)
+    elif family == 'RPP':
+        pts, _ = generate_r_belt_profile('R' + pitch, n_teeth=n_teeth)
+    elif family == 'T':
+        pts, _ = generate_t_belt_profile(pitch, n_teeth=n_teeth)
+    elif family == 'AT':
+        pts, _ = generate_at_belt_profile(pitch, n_teeth=n_teeth)
+    elif family == 'Imperial':
+        pts, _ = generate_imperial_belt_profile(pitch, n_teeth=n_teeth)
+    else:
+        raise ValueError(f"Belt DXF not supported for family '{family}'")
+
+    doc = ezdxf.new('R2010')
+    doc.header['$INSUNITS'] = 4
+    doc.header['$MEASUREMENT'] = 1
+    msp = doc.modelspace()
+    doc.layers.new('BELT_PROFILE', dxfattribs={'color': 5, 'linetype': 'Continuous'})
+
+    msp.add_lwpolyline(
+        [(x, y) for x, y in pts],
+        format='xy',
+        close=True,
+        dxfattribs={'layer': 'BELT_PROFILE'},
+    )
+    return _serialise_dxf(doc)
+
+
+def generate_belt_dxf_dual(
+    family: str,
+    pitch: str,
+    num_teeth1: int,
+    num_teeth2: int,
+    bore_mm1: float,
+    bore_mm2: float,
+    clearance_mm1: float = 0.0,
+    backlash_mm1: float = 0.0,
+    print_extra_mm1: float = 0.0,
+    clearance_mm2: float = 0.0,
+    backlash_mm2: float = 0.0,
+    print_extra_mm2: float = 0.0,
+    center_dist_mm: float = 100.0,
+) -> bytes:
+    """
+    DXF export of the two-pulley belt layout.
+    Exports:
+      BELT_BACK   — outer belt surface polyline
+      BELT_TEETH  — inner toothed surface polyline
+    Both closed. Geometry centred so pulley 1 is at x_offset (left), pulley 2 at right.
+    """
+    from geometry.pulley_geometry import PULLEY_SPECS, PROFILE_KEY_PREFIX
+    key  = PROFILE_KEY_PREFIX.get(family, '') + pitch
+    spec = PULLEY_SPECS[key]
+    pitch_val = spec['pitch']
+
+    R_pitch1 = num_teeth1 * pitch_val / (2.0 * math.pi)
+    R_pitch2 = num_teeth2 * pitch_val / (2.0 * math.pi)
+    min_c = R_pitch1 + R_pitch2
+    center_dist_mm = max(center_dist_mm, min_c)
+
+    cx1 = -center_dist_mm / 2.0
+
+    belt_ring, tooth_polys, _phi_l, _phi_r = build_two_pulley_belt(
+        family, pitch, num_teeth1, num_teeth2,
+        center_dist_mm, x_offset=cx1,
+    )
+
+    doc = ezdxf.new('R2010')
+    doc.header['$INSUNITS'] = 4
+    doc.header['$MEASUREMENT'] = 1
+    msp = doc.modelspace()
+    doc.layers.new('BELT_BACK',  dxfattribs={'color': 5, 'linetype': 'Continuous'})
+    doc.layers.new('BELT_TEETH', dxfattribs={'color': 3, 'linetype': 'Continuous'})
+
+    if belt_ring:
+        msp.add_lwpolyline(
+            [(x, y) for x, y in belt_ring],
+            format='xy', close=True,
+            dxfattribs={'layer': 'BELT_BACK'},
+        )
+    for tp in tooth_polys:
+        msp.add_lwpolyline(
+            [(x, y) for x, y in tp],
+            format='xy', close=True,
+            dxfattribs={'layer': 'BELT_TEETH'},
+        )
+
+    return _serialise_dxf(doc)
