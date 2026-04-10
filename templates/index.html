@@ -971,6 +971,7 @@ let threeControls = null;
 let threeModel    = null;
 let threeBelt     = null;
 let three3dTimer  = null;
+let _loadGen      = 0;   // increments on every load3DModel call; callbacks check this to discard stale meshes
 
 function schedulePreview3D() {
   clearTimeout(three3dTimer);
@@ -1098,6 +1099,10 @@ function load3DModel(url) {
   const STLLoader = window._STLLoader;
   if (!THREE || !STLLoader || !threeScene) return;
 
+  // Claim this generation — any in-flight callbacks from a previous call
+  // will see a stale gen and discard their meshes automatically.
+  const gen = ++_loadGen;
+
   // Remove previous models
   if (threeModel) { threeScene.remove(threeModel); threeModel = null; }
   if (threeBelt)  { threeScene.remove(threeBelt);  threeBelt  = null; }
@@ -1109,21 +1114,25 @@ function load3DModel(url) {
   const beltMat   = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.05, roughness: 0.80 });
 
   if (isDual) {
-    // Load pulleys first (for camera fit), then belt
     const pulleyUrl = url + '&part=pulleys';
     const beltUrl   = url + '&part=belt';
 
     _loadSTL(pulleyUrl, pulleyMat, (mesh, geo) => {
+      if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeModel = mesh;
       const size = _fitCamera(geo);
       document.getElementById('preview-footer').textContent =
         `3D drive  ·  ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm  ·  drag to orbit`;
     });
 
-    _loadSTL(beltUrl, beltMat, (mesh) => { threeBelt = mesh; });
+    _loadSTL(beltUrl, beltMat, (mesh) => {
+      if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
+      threeBelt = mesh;
+    });
 
   } else {
     _loadSTL(url, pulleyMat, (mesh, geo) => {
+      if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeModel = mesh;
       const size = _fitCamera(geo);
       document.getElementById('preview-footer').textContent =
