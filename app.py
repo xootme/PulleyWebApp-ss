@@ -18,6 +18,10 @@ from exporters.belt_svg_exporter import generate_belt_svg, generate_belt_png
 from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_belt_dxf_dual
 
 app = Flask(__name__)
+# ─── Cloudflare Worker proxy support ──────
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1, x_host=1)
+# ──────────────────────────────────────────
 
 
 # u2500u2500 Reverse-proxy / subfolder support u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
