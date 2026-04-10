@@ -19,9 +19,6 @@ from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_bel
 
 app = Flask(__name__)
 
-# u2500u2500 Cloudflare Worker proxy support u2500u2500u2500u2500u2500u2500
-from werkzeug.middleware.proxy_fix import ProxyFix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1, x_host=1)
 
 # u2500u2500 Reverse-proxy / subfolder support u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
 # Use ProxyFix so Flask knows it is behind Cloudflare and handles the path correctly.
