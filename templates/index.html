@@ -23,7 +23,7 @@
   </label>
   <div class="drive-spacing fb-3d" id="belt_height_row">
     <label for="belt_height" style="margin:0;white-space:nowrap">Belt Height (mm)</label>
-    <input type="number" id="belt_height" value="10" min="1" step="0.5" style="width:80px">
+    <input type="number" id="belt_height" value="10" min="1" step="0.5" style="width:80px" oninput="schedulePreview()">
   </div>
   <label class="drive-toggle fb-2d">
     <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
