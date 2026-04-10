@@ -1,20 +1,31 @@
 # Web Provisioning & Deployment (Final Architecture)
 
 **Platform:** Render.com (Containerized Cloud Hosting)  
-**Primary URL:** `https://tools.cheapcadtools.com`  
+**Primary URL:** `https://cheapcadtools.com/tools/pulleys`  
 **Repo:** `https://github.com/xootme/PulleyWebApp`  
 **Branch:** `main`
 
 ---
 
-## 1. Current Architecture: Subdomain Strategy
+## 1. Current Architecture: Cloudflare Worker + Render
 
-We have moved away from subfolder routing (`/tools/pulleys`) and GreenGeeks CGI to a dedicated subdomain strategy. This bypasses Cloudflare's free-tier rule limits and GreenGeeks' restrictive LiteSpeed environment.
+Tools are served at `cheapcadtools.com/tools/<slug>` using a Cloudflare Worker to route requests
+from the main domain to individual Render services. GreenGeeks continues to serve the main
+`cheapcadtools.com` website — the Worker intercepts only paths it recognises and passes everything
+else through to GreenGeeks unchanged.
 
 **How it works:**
-1. **GitHub** acts as the source of truth.
-2. **Render** automatically deploys every push to the `main` branch.
-3. **Cloudflare DNS** routes `tools.cheapcadtools.com` to Render via a CNAME record.
+1. **GitHub** acts as the source of truth — every push to `main` triggers a Render redeploy.
+2. **Render** hosts each tool as an independent web service (Python/Flask + gunicorn).
+3. **Cloudflare Worker** (`cct-tools-router`) intercepts all requests to `cheapcadtools.com/*`
+   and routes tool paths to the correct Render service.
+
+```
+User → cheapcadtools.com/tools/pulleys
+     → Cloudflare Worker (cct-tools-router)
+     → pulleywebapp.onrender.com
+     → Response served at cheapcadtools.com/tools/pulleys
+```
 
 ---
 
@@ -61,32 +72,86 @@ git push origin main
 
 ## 3. Infrastructure Settings
 
+### Cloudflare Worker — `cct-tools-router`
+- **Route:** `cheapcadtools.com/*` (catches all requests — Worker decides pass-through vs. route)
+- **Zone:** `cheapcadtools.com`
+
+Worker script routes the following paths to Render; everything else passes through to GreenGeeks:
+
+```javascript
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // Tool routing table — add one line per new tool
+    const tools = {
+      '/tools/pulleys': 'https://pulleywebapp.onrender.com',
+    };
+
+    if (path === '/tools' || path === '/tools/') {
+      return fetch('https://tools-hub.onrender.com/', request);
+    }
+
+    for (const [prefix, origin] of Object.entries(tools)) {
+      if (path.startsWith(prefix)) {
+        const stripped = path.slice(prefix.length) || '/';
+        const target = new URL(origin);
+        target.pathname = stripped;
+        target.search = url.search;
+        return fetch(new Request(target.toString(), request));
+      }
+    }
+
+    // Render-only paths (static assets, API, downloads) — route to Render unconditionally
+    const renderOnly = ['/static/', '/api/', '/download/', '/preview/'];
+    if (renderOnly.some(p => path.startsWith(p))) {
+      return fetch('https://pulleywebapp.onrender.com' + path + url.search, request);
+    }
+
+    // Everything else — pass through to GreenGeeks
+    return fetch(request);
+  }
+}
+```
+
+> **Important:** The route must be `cheapcadtools.com/*` (not `/tools*`). The Worker handles
+> pass-through to GreenGeeks for all non-tool paths, so this is safe.
+
+### Render Configuration (per tool service)
+- **Runtime:** Python 3
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `gunicorn app:app`
+- **Custom Domain:** none required — Worker handles routing
+
 ### DNS (Cloudflare)
-The following record is required for the subdomain to function:
-*   **Type:** `CNAME`
-*   **Name:** `tools`
-*   **Target:** `pulleywebapp.onrender.com`
-*   **Proxy Status:** Proxied (Orange Cloud)
-
-### Render Configuration
-*   **Runtime:** `Python 3`
-*   **Build Command:** `pip install -r requirements.txt`
-*   **Start Command:** `gunicorn app:app`
-*   **Custom Domain:** `tools.cheapcadtools.com` (Added in Render Settings)
+No CNAME record for `tools` is required. The Worker runs on the root domain proxy.
 
 ---
 
-## 4. Why we chose this (Architecture Lessons)
+## 4. Adding a New Tool
 
-*   **Bypassing LiteSpeed (GreenGeeks):** Shared hosts kill Python processes that output to `stderr` and break `venv` permissions during security sweeps. Render's isolated containers prevent this.
-*   **Removing ProxyFix:** Since we aren't using a subfolder reverse-proxy, the complex `ProxyFix` middleware and `SCRIPT_NAME` hacks were removed from `app.py` for better stability.
-*   **Cloudflare Rule Limits:** Cloudflare only allows 3 free Page Rules. Using a subdomain saves these rules for other critical site functions.
+1. Create the tool as a standalone Flask app in its own GitHub repo
+2. Deploy to Render (connect the new repo, start command: `gunicorn app:app`)
+3. Add one line to the Worker's `tools` object:
+   ```javascript
+   '/tools/gears': 'https://gearapp.onrender.com',
+   ```
+4. Click **Save and Deploy** in the Cloudflare Worker editor
+5. The tool is live at `cheapcadtools.com/tools/gears`
+
+See `tools_hub_architecture.html` for the full automated deployment plan (GitHub Actions + registry).
 
 ---
 
-## 5. Adding New Tools
-To add a new tool (e.g., "Gear Generator") to the Hub:
-1. Create the new code in a subfolder or as a Flask Blueprint.
-2. Update `app.py` with the new route.
-3. Push to GitHub.
-4. The new tool will instantly be available at `tools.cheapcadtools.com/gears`.
+## 5. Architecture Lessons
+
+- **Cloudflare Workers ≠ Page Rules.** Workers have 100,000 free requests/day with no script
+  limit. The 3-rule cap applies only to Page Rules — a separate product.
+- **Route must be `/*` not `/tools*`.** Static assets (`/static/`), API calls (`/api/`), and
+  downloads (`/download/`) are requested at the root path by the browser. The Worker must see
+  these to forward them to Render.
+- **GreenGeeks pass-through is safe.** The Worker's final `return fetch(request)` forwards
+  unmatched requests to GreenGeeks unchanged — the main website is unaffected.
+- **Tool isolation.** Each tool is a separate Render service. A crash in one tool does not
+  affect any other tool or the main website.
