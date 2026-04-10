@@ -193,14 +193,14 @@ def api_preview():
     try:
         dual = request.args.get('dual') == 'true'
         if dual:
-            png = _build_png_dual_from_request(request.args, size_px=480)
+            png = _build_png_dual_from_request(request.args, size_px=1000)
         else:
-            png = _build_png_from_request(request.args, size_px=480)
+            png = _build_png_from_request(request.args, size_px=1000)
         return Response(png, mimetype='image/png')
     except Exception as e:
         from PIL import Image, ImageDraw
         import io
-        img = Image.new('RGB', (480, 480), (250, 251, 252))
+        img = Image.new('RGB', (1000, 1000), (250, 251, 252))
         d = ImageDraw.Draw(img)
         d.text((10, 10), f'Error: {e}', fill=(200, 0, 0))
         buf = io.BytesIO()
@@ -406,12 +406,12 @@ def api_belt_preview():
         pitch  = request.args.get('pitch',  '5M')
         if family not in BELT_FAMILIES:
             return Response(b'', mimetype='image/png')
-        png = generate_belt_png(family, pitch, n_teeth=3, size_px=480)
+        png = generate_belt_png(family, pitch, n_teeth=3, size_px=1000)
         return Response(png, mimetype='image/png')
     except Exception as e:
         from PIL import Image, ImageDraw
         import io as _io
-        img = Image.new('RGB', (480, 200), (250, 251, 252))
+        img = Image.new('RGB', (1000, 400), (250, 251, 252))
         ImageDraw.Draw(img).text((10, 10), f'Error: {e}', fill=(200, 0, 0))
         buf = _io.BytesIO();  img.save(buf, 'PNG');  buf.seek(0)
         return Response(buf.read(), mimetype='image/png')
