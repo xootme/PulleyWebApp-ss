@@ -229,46 +229,122 @@
   <div class="field">
     <div class="field-name">Download Pulley STL</div>
     <div class="field-desc">
-      Downloads a binary STL file of the extruded 3D pulley solid ready for slicing or direct printing.
-      The pulley body is extruded to the <em>Belt Height</em> you specified, and the bore is subtracted
-      as a through-hole. The geometry is centred at the origin and exports in millimetres.
+      Downloads a binary STL file of the complete 3D pulley solid, including any hub boss and retention
+      features, ready for slicing or direct printing. Geometry is exported in millimetres.
     </div>
     <div class="field-tip">Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly — no CAD import required.</div>
   </div>
 </section>
 
 <section>
-  <h2>Hub</h2>
+  <h2>3D — Belt Height</h2>
   <div class="field">
-    <div class="field-name">Hub (checkbox)</div>
+    <div class="field-name">Belt Height (mm)</div>
     <div class="field-desc">
-      Enable the checkbox in the Hub section header to add a cylindrical boss on top of the toothed section.
-      The hub OD may be smaller or larger than the pulley OD. When disabled, no hub geometry is generated.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Hub OD / Hub Height</div>
-    <div class="field-desc">
-      <strong>OD</strong> — outer diameter of the hub boss (mm). May exceed pulley OD.<br>
-      <strong>Height</strong> — axial height of the hub boss above the toothed section (mm).
-      The bore runs through the full combined height (belt + hub).
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Retention Method</div>
-    <div class="field-desc">
-      <ul style="margin: 4px 0 0 18px; line-height: 1.9;">
-        <li><strong>Set Screw (std.)</strong> — Radial set screw(s) drilled through the hub wall.
-            Two screws are placed 90° apart.</li>
-        <li><strong>Set Screw (captured nut)</strong> — Radial set screw retained by a hex nut captured
-            in a pocket that opens from the top face of the hub. The nut sits against the shaft bore.
-            Two nuts are placed 180° apart. The hub OD is automatically extended with a lobe if there
-            is insufficient wall material beyond the nut. Hub height is auto-raised if needed to fully
-            enclose the nut pocket.</li>
-        <li><strong>D-Shaft</strong> — Adds a flat chord cut to the bore for a D-profile shaft.</li>
+      The axial thickness of the toothed pulley body — how tall the pulley is in the direction of the shaft.
+      This is the extrusion depth of the toothed section. Set it to match the width of your belt.
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li>Common belt widths: 6 mm, 9 mm, 10 mm, 15 mm.</li>
+        <li>Add 0.5–1 mm over the nominal belt width to avoid the belt rubbing on flanges.</li>
+        <li>When a hub is enabled, the hub height is added <em>on top</em> of Belt Height — the total
+            part height is Belt Height + Hub Height.</li>
       </ul>
     </div>
-    <div class="field-tip">For captured nut: choose the screw size first — the tool sizes the pocket and lobe automatically.</div>
+    <div class="field-tip">Belt Height affects both the 3D preview and all STL downloads. Change it and the preview updates automatically.</div>
+  </div>
+</section>
+
+<section>
+  <h2>3D — Hub</h2>
+  <div class="field">
+    <div class="field-name">Enabling the Hub</div>
+    <div class="field-desc">
+      The Hub section has a checkbox in its header. When checked, a cylindrical boss is built on top of
+      the toothed section and included in the 3D preview and STL export. When unchecked, no hub geometry
+      is generated — the pulley is a plain toothed ring with a through bore.
+    </div>
+    <div class="field-tip">The Hub section is only visible when Feature Build — 3D is active.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Hub OD (mm)</div>
+    <div class="field-desc">
+      The outer diameter of the hub boss. The hub may be <em>narrower or wider</em> than the pulley OD
+      — there is no restriction. A hub narrower than the pulley sits recessed inside the tooth rim;
+      a hub wider than the pulley creates a flange that overhangs the teeth.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Hub Height (mm)</div>
+    <div class="field-desc">
+      The axial height of the hub boss above the top of the toothed section. The bore is subtracted
+      through the full combined height (Belt Height + Hub Height) so the shaft hole runs uninterrupted
+      from bottom to top of the finished part.
+    </div>
+    <div class="field-tip">If a captured nut is selected and the hub height you enter is too short to fit the nut pocket, the height is raised automatically to the minimum required.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention Method — Set Screw (std.)</div>
+    <div class="field-desc">
+      Drills one or two radial screw holes straight through the hub wall. The hole passes through the
+      full hub diameter so the set screw can be driven from either side with a hex key.
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>1 screw</strong> — single hole perpendicular to the shaft.</li>
+        <li><strong>2 screws</strong> — holes at 90° apart for a more secure grip.</li>
+      </ul>
+      Choose the screw size (M3 – M10) to set the hole diameter.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention Method — Set Screw (captured nut)</div>
+    <div class="field-desc">
+      A stronger retention arrangement. Each screw is retained by a standard ISO hex nut that sits
+      in a precision pocket in the hub boss.
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Pocket geometry</strong> — The pocket opens from the <em>top face</em> of the hub.
+            The nut is dropped in from above; two vertical flat faces of the nut locate against the
+            pocket walls to prevent rotation. The nut sits against the shaft bore, and the screw enters
+            from the hub OD, passes through the hub wall, threads into the nut, and its tip contacts
+            the shaft.</li>
+        <li><strong>Screw entry hole</strong> — A single-sided radial clearance hole is drilled from
+            the hub OD inward to the nut pocket. There is no exit hole on the opposite wall.</li>
+        <li><strong>Angular spacing</strong> — 2 screws are placed 180° apart (directly opposite).</li>
+        <li><strong>Auto hub height</strong> — If the hub height is shorter than the nut requires,
+            it is raised automatically.</li>
+        <li><strong>Auto oblong lobe</strong> — If the hub OD does not provide at least two nut
+            thicknesses of wall material outside the nut, the hub grows a rounded lobe in the screw
+            direction to ensure adequate material.</li>
+      </ul>
+      Choose the screw size first — nut pocket dimensions are calculated automatically from the
+      ISO standard for that size.
+    </div>
+    <div class="field-tip">Captured nut retention is stronger than a plain set screw and can be retightened after printing without stripping the plastic bore wall.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention Method — D-Shaft</div>
+    <div class="field-desc">
+      Adds a flat chord cut to the bore, matching a D-profile motor shaft. Enter the flat depth —
+      the distance from the bore wall to the flat surface. Measure your actual shaft; a typical
+      value is 0.5 mm for small shafts.
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>3D — Preview</h2>
+  <div class="field">
+    <div class="field-name">3D Viewer</div>
+    <div class="field-desc">
+      Click the <strong>3D</strong> tab in the preview panel to open the interactive Three.js viewer.
+      The pulley — including hub boss and all retention features — is rendered in real time and updates
+      automatically as you change any setting.
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Orbit</strong> — Left-click and drag to rotate the view.</li>
+        <li><strong>Zoom</strong> — Scroll wheel to zoom in and out.</li>
+        <li><strong>Pan</strong> — Right-click and drag (or two-finger drag on a trackpad) to pan.</li>
+      </ul>
+      The model is centred at the origin so it fits the view automatically after each update.
+    </div>
+    <div class="field-tip">The preview geometry is exactly what the STL download produces — if it looks right in the viewer, the STL is correct.</div>
   </div>
 </section>
 

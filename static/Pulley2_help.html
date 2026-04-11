@@ -232,10 +232,86 @@
   <div class="field">
     <div class="field-name">Download Pulley STL</div>
     <div class="field-desc">
-      Downloads a binary STL file of the extruded 3D solid for Pulley 2. The geometry is identical to
-      the 3D preview — bore through-hole included, extruded to the current Belt Height, exported in millimetres.
+      Downloads a binary STL file of the complete 3D solid for Pulley 2, including any hub boss and
+      retention features. Geometry is exported in millimetres at the current Belt Height.
     </div>
-    <div class="field-tip">Pulley 1 and Pulley 2 each have their own STL download so you can print them separately with different settings.</div>
+    <div class="field-tip">Pulley 1 and Pulley 2 each have their own STL download so you can slice and print them separately with different settings.</div>
+  </div>
+</section>
+
+<section>
+  <h2>3D — Hub</h2>
+  <div class="field">
+    <div class="field-name">Enabling the Hub</div>
+    <div class="field-desc">
+      The Hub section has a checkbox in its header. When checked, a cylindrical boss is built on top of
+      Pulley 2's toothed section and included in the 3D preview and STL export. When unchecked the
+      pulley is a plain toothed ring with a through bore.
+    </div>
+    <div class="field-tip">Pulley 2's hub settings are completely independent of Pulley 1's. Each pulley can have a different hub OD, height, and retention method.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Hub OD (mm)</div>
+    <div class="field-desc">
+      The outer diameter of the hub boss. May be smaller or larger than the pulley OD — no restriction.
+      A hub narrower than the pulley tucks inside the tooth rim; a hub wider than the pulley creates a
+      flange that overhangs the teeth.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Hub Height (mm)</div>
+    <div class="field-desc">
+      Axial height of the hub boss above the toothed section (mm). The bore runs through the full
+      combined height (Belt Height + Hub Height). For a captured nut, the height is auto-raised if
+      the nut pocket requires more space than entered.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention Method — Set Screw (std.)</div>
+    <div class="field-desc">
+      Drills one or two radial screw holes through the hub wall. The hole spans the full hub diameter
+      so the set screw can be driven from either side with a hex key.
+      Two screws are placed 90° apart. Choose the screw size (M3 – M10) to set the hole diameter.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention Method — Set Screw (captured nut)</div>
+    <div class="field-desc">
+      A hex nut is captured in a top-opening pocket in the hub boss. The nut drops in from the hub top
+      face and is located by two vertical flat faces; the screw enters from the hub OD, threads into the
+      nut, and contacts the shaft. Two screws are placed 180° apart (directly opposite).
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li>Hub height is auto-raised if too short for the nut pocket.</li>
+        <li>A rounded lobe is added to the hub in the screw direction if there is insufficient wall
+            material outside the nut — ensuring at least two nut-thicknesses of material.</li>
+      </ul>
+      Select the screw size (M3 – M10); pocket dimensions are calculated automatically.
+    </div>
+    <div class="field-tip">Captured nut retention is stronger than a plain set screw and survives multiple tighten/loosen cycles without stripping a printed hub.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention Method — D-Shaft</div>
+    <div class="field-desc">
+      Adds a flat chord cut to the bore for a D-profile shaft. Enter the flat depth in mm —
+      measure your actual shaft; a typical value is 0.5 mm.
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>3D — Preview</h2>
+  <div class="field">
+    <div class="field-name">Viewing Pulley 2 in 3D</div>
+    <div class="field-desc">
+      When Two Pulley Drive is enabled, click the <strong>3D</strong> tab to open the interactive drive
+      preview. Both pulleys and the belt are shown together, phase-aligned. To inspect Pulley 2 in
+      isolation, use the Download STL to load the individual file in a slicer.
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Orbit</strong> — Left-click and drag.</li>
+        <li><strong>Zoom</strong> — Scroll wheel.</li>
+        <li><strong>Pan</strong> — Right-click and drag.</li>
+      </ul>
+    </div>
   </div>
 </section>
 

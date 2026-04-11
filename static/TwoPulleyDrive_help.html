@@ -451,13 +451,67 @@
   </div>
   <div class="field">
     <div class="field-desc">
-      <strong>Downloading:</strong> Each pulley has its own Download SVG, Download DXF, and Download STL button in its panel. For the complete belt drive drawing, use the Download Belt button in the Pulley 1 panel — it offers both SVG and DXF formats. SVG is best for CAD import; DXF exports the full belt layout with separate BELT_BACK and BELT_TEETH layers.
+      <strong>Downloading files:</strong> Each pulley panel has its own Download SVG, DXF, and STL buttons. Use the Download Belt button in the Pulley 1 panel for the full two-pulley belt drive drawing (SVG or DXF). See the <em>3D Preview</em> section below for STL details.
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>3D Preview</h2>
+  <div class="field">
+    <div class="field-name">Viewer Controls</div>
+    <div class="field-desc">
+      Click the <strong>3D</strong> tab in the preview panel to open the interactive Three.js drive viewer.
+      The full belt drive — both pulleys and the belt body — renders in real time and updates automatically
+      whenever any setting changes.
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Orbit</strong> — Left-click and drag to rotate the view freely.</li>
+        <li><strong>Zoom</strong> — Scroll wheel to zoom in and out.</li>
+        <li><strong>Pan</strong> — Right-click and drag (or two-finger drag on a trackpad) to pan.</li>
+      </ul>
+      All geometry is centred at the shared origin so both pulleys and the belt remain in frame after
+      every update.
     </div>
   </div>
   <div class="field">
+    <div class="field-name">What is Shown</div>
     <div class="field-desc">
-      <strong>3D Preview:</strong> When Two Pulley Drive is enabled, the preview panel shows a live interactive 3D view. Both pulleys (blue) and the belt (black) are rendered phase-aligned — the tooth grooves mesh with the belt teeth exactly as they would on a real drive. Orbit with the left mouse button, zoom with the scroll wheel, pan with the right mouse button.
+      The drive preview renders three distinct parts in a single scene:
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Pulley 1</strong> (left) and <strong>Pulley 2</strong> (right) — shown in blue,
+            including any hub boss and retention features configured in each pulley panel.</li>
+        <li><strong>Belt</strong> — shown in dark grey/black, wrapping around both pulleys with the
+            correct arc of contact on each side.</li>
+      </ul>
+      The pulleys are <em>phase-rotated</em> so their tooth grooves mesh precisely with the belt teeth,
+      exactly as they would on a physical drive.
     </div>
+    <div class="field-tip">The preview geometry is exactly what the STL downloads produce — if the drive looks right in the viewer, the parts are correct.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Belt Height (mm)</div>
+    <div class="field-desc">
+      The belt height control (in the drive bar) sets the axial thickness of both pulleys and the belt
+      body shown in the 3D preview. Set it to match your belt's nominal width, then add 0.5–1 mm so
+      the belt does not rub on any flange or hub step.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Download Drive STL</div>
+    <div class="field-desc">
+      Three STL files are available for a two-pulley drive:
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Pulley 1 STL</strong> — toothed body + hub for Pulley 1 only.
+            Download button is in the Pulley 1 panel.</li>
+        <li><strong>Pulley 2 STL</strong> — toothed body + hub for Pulley 2 only.
+            Download button is in the Pulley 2 panel.</li>
+        <li><strong>Belt STL</strong> — the belt loop solid (the rubber/urethane belt body,
+            useful for assembly visualisation in CAD).
+            Download from the Belt drop-down in the Pulley 1 panel.</li>
+      </ul>
+      Each file is a standalone binary STL in millimetres, ready to open in a slicer or import into CAD.
+    </div>
+    <div class="field-tip">Print the two pulleys separately — they may have different bore sizes and hub configurations. The belt STL is for visualisation; don't try to print it as a functional belt.</div>
   </div>
 </section>
 
