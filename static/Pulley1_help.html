@@ -137,13 +137,14 @@
       The number of teeth on the pulley. Determines the pulley diameter directly — more teeth = larger pulley.
       A minimum tooth count is enforced per belt spec to prevent undercutting.
     </div>
-    <div class="field-tip">Changing Teeth auto-updates Outer Diameter. Minimum value depends on the selected belt profile.</div>
+    <div class="field-tip">In Two Pulley Drive mode, Pulley 1 has the highest edit priority. Changing its teeth keeps the Gear Ratio fixed and recalculates Pulley 2 automatically.</div>
   </div>
   <div class="field">
     <div class="field-name">Outer Diameter (mm) <span class="tag tag-auto">Auto</span></div>
     <div class="field-desc">
-      The overall outside diameter of the pulley, calculated automatically from the tooth count and pitch.
-      You can also type directly into this field — the tooth count will round to the nearest whole number and update accordingly.
+      Calculated automatically from the tooth count and pitch. You can also type a diameter here —
+      the tool finds the nearest whole-number tooth count and updates accordingly.
+      In Two Pulley Drive mode, editing the OD here also recalculates Pulley 2 (same as editing teeth directly).
     </div>
   </div>
   <div class="field">
@@ -233,6 +234,41 @@
       as a through-hole. The geometry is centred at the origin and exports in millimetres.
     </div>
     <div class="field-tip">Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly — no CAD import required.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Hub</h2>
+  <div class="field">
+    <div class="field-name">Hub (checkbox)</div>
+    <div class="field-desc">
+      Enable the checkbox in the Hub section header to add a cylindrical boss on top of the toothed section.
+      The hub OD may be smaller or larger than the pulley OD. When disabled, no hub geometry is generated.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Hub OD / Hub Height</div>
+    <div class="field-desc">
+      <strong>OD</strong> — outer diameter of the hub boss (mm). May exceed pulley OD.<br>
+      <strong>Height</strong> — axial height of the hub boss above the toothed section (mm).
+      The bore runs through the full combined height (belt + hub).
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention Method</div>
+    <div class="field-desc">
+      <ul style="margin: 4px 0 0 18px; line-height: 1.9;">
+        <li><strong>Set Screw (std.)</strong> — Radial set screw(s) drilled through the hub wall.
+            Two screws are placed 90° apart.</li>
+        <li><strong>Set Screw (captured nut)</strong> — Radial set screw retained by a hex nut captured
+            in a pocket that opens from the top face of the hub. The nut sits against the shaft bore.
+            Two nuts are placed 180° apart. The hub OD is automatically extended with a lobe if there
+            is insufficient wall material beyond the nut. Hub height is auto-raised if needed to fully
+            enclose the nut pocket.</li>
+        <li><strong>D-Shaft</strong> — Adds a flat chord cut to the bore for a D-profile shaft.</li>
+      </ul>
+    </div>
+    <div class="field-tip">For captured nut: choose the screw size first — the tool sizes the pocket and lobe automatically.</div>
   </div>
 </section>
 

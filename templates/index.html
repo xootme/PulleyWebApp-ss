@@ -51,8 +51,8 @@
   <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
   <div class="drive-help fb-2d">
     <button class="btn-help"
-            data-help-2d="/static/TwoPulleyDrive_help.html"
-            data-help-3d="/static/TwoPulleyDrive_help.html"
+            data-help2d="/static/TwoPulleyDrive_help.html"
+            data-help3d="/static/TwoPulleyDrive_help.html"
             onclick="openHelp(this, event)" title="Two Pulley Drive Help">&#9432;</button>
   </div>
 </div>
@@ -64,8 +64,8 @@
     <div class="panel-title">
       <span id="panel1-title">Pulley</span>
       <button class="btn-help"
-              data-help-2d="/static/Pulley1_help.html"
-              data-help-3d="/static/Pulley1_help.html"
+              data-help2d="/static/Pulley1_help.html"
+              data-help3d="/static/Pulley1_help.html"
               onclick="openHelp(this, event)" title="Help">&#9432;</button>
     </div>
 
@@ -124,13 +124,20 @@
 
     <section class="card fb-3d">
       <div class="hub-header" onclick="toggleHub(1)">
-        <span>Hub</span>
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="hub1_enabled"
+                 onclick="event.stopPropagation()"
+                 onchange="onHubEnabledChange(1)"
+                 style="width:auto;accent-color:#0078d4;cursor:pointer;margin:0;">
+          Hub
+        </span>
         <span class="hub-arrow" id="hub1-arrow">&#9660;</span>
       </div>
       <div class="hub-body" id="hub1-body">
         <label for="hub1_retention">Retention Method</label>
         <select id="hub1_retention" onchange="onHubChange(1)">
-          <option value="set_screw">Set Screw (captured nut)</option>
+          <option value="set_screw_nut">Set Screw (captured nut)</option>
+          <option value="set_screw_std">Set Screw (std.)</option>
           <option value="d_shaft">D-Shaft</option>
           <option value="keyway">Keyway</option>
           <option value="none">None</option>
@@ -149,7 +156,7 @@
           <label for="hub1_screw_count">Number of Screws</label>
           <select id="hub1_screw_count" onchange="onHubChange(1)">
             <option value="1">1</option>
-            <option value="2" selected>2 (90° apart)</option>
+            <option value="2" selected>2 (90° std / 180° captured)</option>
           </select>
         </div>
 
@@ -220,8 +227,8 @@
     <div class="panel-title">
       Pulley 2
       <button class="btn-help"
-              data-help-2d="/static/Pulley2_help.html"
-              data-help-3d="/static/Pulley2_help.html"
+              data-help2d="/static/Pulley2_help.html"
+              data-help3d="/static/Pulley2_help.html"
               onclick="openHelp(this, event)" title="Help">&#9432;</button>
     </div>
     <div class="card belt-lock-info fb-2d" id="belt-lock-info">
@@ -272,13 +279,20 @@
 
     <section class="card fb-3d">
       <div class="hub-header" onclick="toggleHub(2)">
-        <span>Hub</span>
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="hub2_enabled"
+                 onclick="event.stopPropagation()"
+                 onchange="onHubEnabledChange(2)"
+                 style="width:auto;accent-color:#0078d4;cursor:pointer;margin:0;">
+          Hub
+        </span>
         <span class="hub-arrow" id="hub2-arrow">&#9660;</span>
       </div>
       <div class="hub-body" id="hub2-body">
         <label for="hub2_retention">Retention Method</label>
         <select id="hub2_retention" onchange="onHubChange(2)">
-          <option value="set_screw">Set Screw (captured nut)</option>
+          <option value="set_screw_nut">Set Screw (captured nut)</option>
+          <option value="set_screw_std">Set Screw (std.)</option>
           <option value="d_shaft">D-Shaft</option>
           <option value="keyway">Keyway</option>
           <option value="none">None</option>
@@ -297,7 +311,7 @@
           <label for="hub2_screw_count">Number of Screws</label>
           <select id="hub2_screw_count" onchange="onHubChange(2)">
             <option value="1">1</option>
-            <option value="2" selected>2 (90° apart)</option>
+            <option value="2" selected>2 (90° std / 180° captured)</option>
           </select>
         </div>
 
@@ -748,14 +762,22 @@ async function _doODChange(n) {
     document.getElementById('od').value    = data.od;
     teethLock = false;
     updateLabels(data.teeth, data.od);
+    // P1 drives GR: keep GR, update P2
+    if (document.getElementById('dual_enable').checked) {
+      applyRatioToP2(data.teeth);
+      return; // applyRatioToP2 handles updateMinDistance + schedulePreview
+    }
   } else {
     teethLock2 = true;
     document.getElementById('p2_teeth').value = data.teeth;
     document.getElementById('p2_od').value    = data.od;
     teethLock2 = false;
     updateP2Labels(data.teeth, data.od);
+    // P2 edited: update GR to reflect new P2/P1 ratio
+    updateGearRatioFromTeeth();
   }
   updateMinDistance();
+  updateBeltTeethFromCenter();
   schedulePreview();
 }
 
@@ -950,6 +972,7 @@ function buildParams() {
   const cp   = document.getElementById('clearance_preset').value;
   const bp   = document.getElementById('backlash_preset').value;
   const dual = document.getElementById('dual_enable').checked;
+  const fb   = document.getElementById('feature_build').checked;
   const p = {
     family:           document.getElementById('family').value,
     pitch:            document.getElementById('pitch').value,
@@ -961,6 +984,17 @@ function buildParams() {
     backlash_preset:  bp,
     backlash_custom:  document.getElementById('backlash_custom').value,
   };
+  if (fb && document.getElementById('hub1_enabled').checked) {
+    p.hub_od     = document.getElementById('hub1_od').value;
+    p.hub_height = document.getElementById('hub1_height').value;
+    const r1 = document.getElementById('hub1_retention').value;
+    if (r1 === 'set_screw_nut' || r1 === 'set_screw_std') {
+      const sz1 = document.getElementById('hub1_screw_size').value;
+      p.hub_screw_dia     = HUB_SCREW_DIA[sz1] || 5;
+      p.hub_screw_count   = parseInt(document.getElementById('hub1_screw_count').value) || 1;
+      p.hub_captured_nut  = r1 === 'set_screw_nut' ? '1' : '0';
+    }
+  }
   if (dual) {
     const cp2 = document.getElementById('p2_clearance_preset').value;
     const bp2 = document.getElementById('p2_backlash_preset').value;
@@ -975,6 +1009,17 @@ function buildParams() {
       p2_backlash_preset:  bp2,
       p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
     });
+    if (fb && document.getElementById('hub2_enabled').checked) {
+      p.p2_hub_od     = document.getElementById('hub2_od').value;
+      p.p2_hub_height = document.getElementById('hub2_height').value;
+      const r2 = document.getElementById('hub2_retention').value;
+      if (r2 === 'set_screw_nut' || r2 === 'set_screw_std') {
+        const sz2 = document.getElementById('hub2_screw_size').value;
+        p.p2_hub_screw_dia     = HUB_SCREW_DIA[sz2] || 5;
+        p.p2_hub_screw_count   = parseInt(document.getElementById('hub2_screw_count').value) || 1;
+        p.p2_hub_captured_nut  = r2 === 'set_screw_nut' ? '1' : '0';
+      }
+    }
   }
   return p;
 }
@@ -1299,10 +1344,27 @@ function onHubChange(n) {
   const ssOpts    = document.getElementById(`hub${n}_setscrew_opts`);
   const dsOpts    = document.getElementById(`hub${n}_dshaft_opts`);
 
-  ssOpts.classList.toggle('hidden', retention !== 'set_screw');
+  const isSetScrew = retention === 'set_screw_nut' || retention === 'set_screw_std';
+  ssOpts.classList.toggle('hidden', !isSetScrew);
   dsOpts.classList.toggle('hidden', retention !== 'd_shaft');
 
   _validateHub(n);
+
+  if (document.getElementById('feature_build').checked &&
+      document.getElementById(`hub${n}_enabled`).checked) {
+    schedulePreview();
+  }
+}
+
+function onHubEnabledChange(n) {
+  const enabled = document.getElementById(`hub${n}_enabled`).checked;
+  const body    = document.getElementById(`hub${n}-body`);
+  // Dim the body when hub is disabled so the state is visually clear
+  body.style.opacity       = enabled ? '' : '0.45';
+  body.style.pointerEvents = enabled ? '' : 'none';
+  if (document.getElementById('feature_build').checked) {
+    schedulePreview();
+  }
 }
 
 function _validateHub(n) {
@@ -1315,7 +1377,7 @@ function _validateHub(n) {
 
   const warnings = [];
 
-  if (retention === 'set_screw') {
+  if (retention === 'set_screw_nut' || retention === 'set_screw_std') {
     const screwSize = document.getElementById(`hub${n}_screw_size`).value;
     const sd   = HUB_SCREW_DIA[screwSize] || 5;
     const minWallToBore = sd * 2;

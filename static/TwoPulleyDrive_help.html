@@ -344,6 +344,44 @@
 </section>
 
 <section>
+  <h2>Edit Priority — How the Three Values Interact</h2>
+  <div class="field">
+    <div class="field-desc">
+      The drive has three linked values: <strong>Pulley 1 size</strong>, <strong>Gear Ratio</strong>,
+      and <strong>Pulley 2 size</strong>. Editing any one of them fixes it as the anchor and
+      recalculates the lowest-priority value. The priority order is:
+    </div>
+  </div>
+  <div class="diagram">
+    P1 (highest) → Gear Ratio → P2 (lowest)
+  </div>
+  <div class="field">
+    <div class="field-name">Edit Pulley 1 (teeth or OD)</div>
+    <div class="field-desc">
+      Pulley 1 is the anchor. The Gear Ratio stays fixed and <strong>Pulley 2 is recalculated</strong>
+      to satisfy that ratio with the new P1 size.
+    </div>
+    <div class="field-tip">Use this when P1 is dictated by your motor shaft or available pulley, and you want to keep the same drive ratio.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Edit Gear Ratio</div>
+    <div class="field-desc">
+      The ratio becomes the anchor. Pulley 1 stays fixed and <strong>Pulley 2 is recalculated</strong>
+      to produce the closest achievable ratio with whole-number teeth.
+    </div>
+    <div class="field-tip">After you stop typing the ratio field snaps to the exact achievable value — e.g. a target of 1.500 with a 20T driver gives exactly 30T on P2.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Edit Pulley 2 (teeth or OD)</div>
+    <div class="field-desc">
+      Pulley 2 is the anchor. Pulley 1 stays fixed and <strong>the Gear Ratio is recalculated</strong>
+      to reflect the new P2/P1 relationship. The ratio display updates immediately.
+    </div>
+    <div class="field-tip">Use this when you have a specific driven pulley size or space constraint, and want to know what ratio that gives you.</div>
+  </div>
+</section>
+
+<section>
   <h2>Ratio Controls</h2>
   <div class="field">
     <div class="field-name">Gear Ratio <span class="tag tag-auto">Auto</span></div>
@@ -364,20 +402,20 @@
         </span>
       </div>
     </div>
-    <div class="field-tip">After you stop typing, the ratio snaps to the true ratio achievable with whole-number tooth counts.</div>
+    <div class="field-tip">Editing this field keeps P1 fixed and drives P2. After you stop typing, the display snaps to the exact ratio achievable with whole-number teeth.</div>
   </div>
   <div class="field">
     <div class="field-name">▲ / ▼ Arrow Buttons</div>
     <div class="field-desc">
-      Increments or decrements the Pulley 2 tooth count by one tooth, providing fine control over the gear ratio.
-      Use these to step through ratio options while keeping Pulley 1 fixed.
+      Steps the Pulley 2 tooth count up or down by one tooth, then updates the Gear Ratio to match.
+      Pulley 1 is always unchanged. Useful for fine-tuning the ratio when exact tooth counts matter.
     </div>
   </div>
   <div class="field">
     <div class="field-name">Ratio Note (e.g. "20T : 30T")</div>
     <div class="field-desc">
-      Shows the actual tooth counts for Pulley 1 and Pulley 2 that produce the displayed ratio.
-      This is the ground truth — the ratio field rounds for display but the tooth counts are exact.
+      Shows the actual tooth counts for Pulley 1 and Pulley 2. The ratio field rounds to three decimal
+      places for readability but the tooth counts shown here are the ground truth.
     </div>
   </div>
 </section>
@@ -403,7 +441,12 @@
   </div>
   <div class="field">
     <div class="field-desc">
-      <strong>Designing for a target ratio:</strong> Set Pulley 1 teeth, enter your desired ratio, and the Pulley 2 teeth will update. Then set your centre distance. Fine-tune with the ▲ / ▼ buttons.
+      <strong>Designing for a target ratio:</strong> Set Pulley 1 teeth first (it anchors the drive), then type the desired ratio — Pulley 2 updates automatically. Fine-tune with the ▲ / ▼ buttons. Then set your centre distance to match your available belt.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-desc">
+      <strong>Working from a size constraint on P2:</strong> If you know your output pulley must fit a specific diameter or tooth count, set Pulley 2 directly — the Gear Ratio field will update to show what ratio you actually get.
     </div>
   </div>
   <div class="field">

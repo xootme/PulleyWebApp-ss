@@ -4,7 +4,7 @@ Serves the pulley generator UI and returns SVG downloads.
 """
 import math
 import io
-from flask import Flask, render_template, request, Response, jsonify
+from flask import Flask, render_template, request, Response, jsonify, send_from_directory
 
 from geometry.pulley_geometry import (
     PULLEY_SPECS, PROFILE_KEY_PREFIX, PROFILE_PITCHES,
@@ -96,6 +96,11 @@ def index():
         backlash_presets=BACKLASH_PRESETS,
         belt_families=sorted(BELT_FAMILIES),
     )
+
+
+@app.route('/help/<path:filename>')
+def help_page(filename):
+    return send_from_directory('static', filename)
 
 
 @app.route('/api/spec')
@@ -513,6 +518,16 @@ def _parse_stl_params(args, pulley='1'):
     return family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex
 
 
+def _parse_hub_params(args, prefix=''):
+    """Return (hub_od_mm, hub_height_mm, screw_dia_mm, screw_count, captured_nut) from request args."""
+    hub_od       = max(0.0, float(args.get(f'{prefix}hub_od',           0.0)))
+    hub_height   = max(0.0, float(args.get(f'{prefix}hub_height',       0.0)))
+    screw_dia    = max(0.0, float(args.get(f'{prefix}hub_screw_dia',    0.0)))
+    screw_count  = max(0,   int(float(args.get(f'{prefix}hub_screw_count', 0))))
+    captured_nut = args.get(f'{prefix}hub_captured_nut', '0') == '1'
+    return hub_od, hub_height, screw_dia, screw_count, captured_nut
+
+
 @app.route('/api/preview-stl')
 def api_preview_stl():
     """Return binary STL for the Three.js 3D viewer (centred at origin)."""
@@ -535,20 +550,27 @@ def api_preview_stl():
                                       request.args.get('p2_backlash_custom', 0.0))
             center_dist = float(request.args.get('center_distance', 100.0))
             part = request.args.get('part', 'all')
+            hub_od1, hub_h1, sd1, sc1, cn1 = _parse_hub_params(request.args, '')
+            hub_od2, hub_h2, sd2, sc2, cn2 = _parse_hub_params(request.args, 'p2_')
             stl = generate_drive_stl_preview(
                 family, pitch,
                 num_teeth1, bore1, num_teeth2, bore2,
                 center_dist, belt_height,
                 cl1, bl1, pe1, cl2, bl2, pe2,
+                hub_od_mm1=hub_od1, hub_height_mm1=hub_h1,
+                hub_od_mm2=hub_od2, hub_height_mm2=hub_h2,
+                screw_dia_mm1=sd1, screw_count1=sc1, captured_nut1=cn1,
+                screw_dia_mm2=sd2, screw_count2=sc2, captured_nut2=cn2,
                 part=part,
             )
         else:
             pulley = request.args.get('pulley', '1')
             family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
                 _parse_stl_params(request.args, pulley)
+            hub_od, hub_h, sd, sc, cn = _parse_hub_params(request.args, '')
             stl = generate_pulley_stl_preview(
                 family, pitch, num_teeth, bore_mm, belt_height,
-                cl_mm, bl_mm, pr_ex,
+                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn,
             )
         return Response(stl, mimetype='model/stl',
                         headers={'Cache-Control': 'no-store'})
@@ -563,9 +585,10 @@ def download_stl():
         pulley = request.args.get('pulley', '1')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
+        hub_od, hub_h, sd, sc, cn = _parse_hub_params(request.args, '')
         stl = generate_pulley_stl(
             family, pitch, num_teeth, bore_mm, belt_height,
-            cl_mm, bl_mm, pr_ex,
+            cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn,
         )
         suffix  = '-P2' if pulley == '2' else ''
         fname   = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'

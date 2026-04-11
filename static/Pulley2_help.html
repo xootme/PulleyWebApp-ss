@@ -130,19 +130,21 @@
   <div class="field">
     <div class="field-name">Number of Teeth <span class="tag tag-input">Input</span></div>
     <div class="field-desc">
-      The number of teeth on Pulley 2. This is the primary way to set the gear ratio — more teeth on
-      Pulley 2 relative to Pulley 1 means a lower output speed and higher output torque.
+      The number of teeth on Pulley 2. Pulley 2 has the lowest edit priority — editing it keeps
+      Pulley 1 fixed and <strong>updates the Gear Ratio</strong> to reflect the new P2/P1 relationship.
+      More teeth on P2 = lower output speed, higher output torque.
     </div>
     <div class="field-tip">
-      You can also adjust Pulley 2 teeth using the ▲ / ▼ arrow buttons in the Two Pulley Drive bar,
-      or by typing a ratio directly into the Gear Ratio field.
+      To drive P2 from a target ratio instead, type the ratio into the Gear Ratio field in the drive bar —
+      that keeps the ratio fixed and recalculates P2. The ▲ / ▼ arrow buttons also step P2 by one tooth at a time.
     </div>
   </div>
   <div class="field">
     <div class="field-name">Outer Diameter (mm) <span class="tag tag-auto">Auto</span></div>
     <div class="field-desc">
       Calculated automatically from the tooth count and pitch. You can type a diameter here to reverse-calculate
-      the nearest whole-number tooth count — useful when you have a space constraint.
+      the nearest whole-number tooth count — useful when you have a space constraint. The Gear Ratio
+      updates to match, just as if you had typed the tooth count directly.
     </div>
   </div>
   <div class="field">

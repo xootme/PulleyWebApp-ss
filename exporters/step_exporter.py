@@ -19,7 +19,7 @@ import io
 
 import numpy as np
 import trimesh
-from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
 from shapely.geometry.polygon import orient as shapely_orient
 
 from geometry.pulley_geometry import (
@@ -31,6 +31,22 @@ from geometry.pulley_geometry import (
 # ── Arc sample resolution ─────────────────────────────────────────────────────
 _ARC_STEP_MM = 0.5        # target chord length on OD arc samples (mm)
 _BORE_SECTIONS = 64       # facets on bore cylinder
+
+# ── ISO hex nut dimensions: screw_dia_mm → (width_across_flats_mm, nut_height_mm)
+_NUT_DIMS_BY_DIA = {
+    3:  (5.5,  2.4),
+    4:  (7.0,  3.2),
+    5:  (8.0,  4.0),
+    6:  (10.0, 5.0),
+    8:  (13.0, 6.5),
+    10: (17.0, 8.0),
+}
+
+
+def _nut_dims(screw_dia_mm: float):
+    """Return (waf_mm, nut_height_mm) for the nearest standard metric nut."""
+    nominal = min(_NUT_DIMS_BY_DIA, key=lambda k: abs(k - screw_dia_mm))
+    return _NUT_DIMS_BY_DIA[nominal]
 
 
 def _profile_key(family: str, pitch: str) -> str:
@@ -108,6 +124,167 @@ def _build_outline_points(family, pitch, num_teeth,
     return cleaned, R_OD, spec
 
 
+def _add_hub_and_bore(body: trimesh.Trimesh,
+                      belt_height_mm: float,
+                      bore_mm: float,
+                      hub_od_mm: float = 0.0,
+                      hub_height_mm: float = 0.0,
+                      screw_dia_mm: float = 0.0,
+                      screw_count: int = 0,
+                      captured_nut: bool = False) -> trimesh.Trimesh:
+    """
+    Union a hub boss onto `body`, subtract the bore through the full height,
+    then optionally drill radial set-screw holes and (for captured_nut=True)
+    rectangular nut pockets that open from the hub top face.
+
+    Captured nut geometry
+    ---------------------
+    The nut axis is radial (same as the set screw).  The nut sits against the
+    shaft (inner face at bore_r).  The pocket opens from the hub top face so
+    the nut can be inserted axially (dropped in from above).  Two flat hex
+    faces are vertical (perpendicular to the hub top), guiding the nut in.
+
+      Hex orientation: "pointy top" when looking along nut axis
+          → flat faces face ±tangential (Y), vertices face ±Z
+          → the two ±Y flat faces are vertical = perpendicular to hub top ✓
+
+      Pocket shape  (rectangular box, drops from hub top):
+          radial depth  (X) = t_nut + 0.5 clearance   (nut thickness)
+          tangential width (Y) = waf  + 0.5 clearance  (flat-to-flat)
+          axial depth   (Z) = 2·R_circ + 0.5           (vertex-to-vertex)
+
+      Hub height auto-raised if shorter than 2·R_circ + 0.5.
+
+      Hub wall requirement: ≥ 2 × t_nut of material between nut outer face
+      and hub OD.  If hub_r < bore_r + 3·t_nut the hub becomes oblong:
+      Shapely lobes extend the boss in each screw direction so the outer
+      wall has enough material.
+
+    Screw angular spacing:
+      captured_nut = True  → 180°  (screws opposite each other)
+      captured_nut = False → 90°
+    """
+    R_bore    = bore_mm / 2.0
+    hub_valid = hub_height_mm > 0.0 and hub_od_mm > bore_mm
+    R_hub     = hub_od_mm / 2.0 if hub_valid else 0.0
+
+    do_screws = hub_valid and screw_dia_mm > 0.0 and screw_count > 0
+
+    # ── Captured nut pre-calculations ────────────────────────────────────────
+    if do_screws and captured_nut:
+        waf, t_nut = _nut_dims(screw_dia_mm)
+        R_circ  = waf / math.sqrt(3)          # hex circumradius (centre→vertex)
+        nut_z   = 2.0 * R_circ                # vertex-to-vertex Z extent
+        pkt_z   = nut_z + 0.5                 # pocket axial depth with clearance
+
+        # Auto-raise hub height so nut fits fully inside the hub boss
+        min_hub_h = pkt_z
+        if hub_height_mm < min_hub_h:
+            hub_height_mm = min_hub_h
+
+        # Require 2 × t_nut of wall outside the nut
+        min_hub_r = R_bore + 3.0 * t_nut
+        need_oblong = R_hub < min_hub_r
+        eff_r = max(R_hub, min_hub_r)
+
+        step = math.pi                        # 180° between captured-nut screws
+    else:
+        waf = t_nut = R_circ = nut_z = pkt_z = 0.0
+        min_hub_r = 0.0
+        need_oblong = False
+        eff_r = R_hub
+        step = math.pi / 2.0                  # 90° between standard screws
+
+    screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
+
+    hub_top      = belt_height_mm + hub_height_mm
+    total_height = belt_height_mm
+
+    # ── Hub boss ──────────────────────────────────────────────────────────────
+    if hub_valid and body.is_watertight:
+        if captured_nut and need_oblong:
+            # Extend hub with lobes in each screw direction
+            hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
+            for angle in screw_angles:
+                offset  = min_hub_r - R_hub
+                hub_poly = hub_poly.union(
+                    ShapelyPoint(offset * math.cos(angle),
+                                 offset * math.sin(angle)).buffer(
+                        R_hub, resolution=_BORE_SECTIONS))
+            hub_poly = shapely_orient(hub_poly, sign=1.0)
+            hub_mesh = trimesh.creation.extrude_polygon(hub_poly, hub_height_mm)
+            hub_mesh.apply_translation([0.0, 0.0, belt_height_mm])
+        else:
+            hub_mesh = trimesh.creation.cylinder(
+                radius=R_hub, height=hub_height_mm, sections=_BORE_SECTIONS)
+            hub_mesh.apply_translation([0.0, 0.0, belt_height_mm + hub_height_mm / 2.0])
+
+        hub_mesh.fix_normals()
+        body         = trimesh.boolean.union([body, hub_mesh], engine='manifold')
+        total_height = hub_top
+
+    # ── Bore ──────────────────────────────────────────────────────────────────
+    if R_bore > 0.5 and body.is_watertight:
+        extra    = 0.5
+        bore_cyl = trimesh.creation.cylinder(
+            radius=R_bore, height=total_height + extra * 2,
+            sections=_BORE_SECTIONS)
+        bore_cyl.apply_translation([0.0, 0.0, total_height / 2.0])
+        bore_cyl.fix_normals()
+        body = trimesh.boolean.difference([body, bore_cyl], engine='manifold')
+
+    # ── Set-screw holes + nut pockets ─────────────────────────────────────────
+    if do_screws and body.is_watertight:
+        R_screw = screw_dia_mm / 2.0
+
+        if captured_nut:
+            # Screw aligns with nut centre in Z
+            z_screw = hub_top - nut_z / 2.0
+
+            # One-sided hole: screw enters from hub OD, stops at bore.
+            # The cylinder is NOT centred at the hub centre — its centre sits
+            # at the mid-point of the hub wall so it only cuts from OD to bore.
+            hole_len = eff_r - R_bore + 1.0          # hub wall thickness + margin
+            hole_cx  = (eff_r + R_bore) / 2.0        # mid-point of wall, along X
+
+            # Pocket (rectangular box that drops from hub top)
+            pkt_x = t_nut + 0.5   # radial depth   — nut against bore, flush inward
+            pkt_y = waf   + 0.5   # tangential width — matches flat-to-flat
+            # Pocket radial centre: inner face at bore_r (nut flush to bore)
+            pkt_cx = R_bore + pkt_x / 2.0
+            pkt_cz = hub_top - pkt_z / 2.0   # top of pocket flush with hub top
+        else:
+            z_screw  = belt_height_mm + hub_height_mm / 2.0
+            hole_len = R_hub * 2.0 + 2.0
+            hole_cx  = 0.0   # centred — full-diameter hole for standard set screw
+
+        for angle in screw_angles:
+            # ── Radial screw hole ─────────────────────────────────────────────
+            hole = trimesh.creation.cylinder(radius=R_screw, height=hole_len,
+                                             sections=32)
+            hole.apply_transform(
+                trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
+            hole.apply_translation([hole_cx, 0.0, z_screw])
+            if abs(angle) > 1e-9:
+                hole.apply_transform(
+                    trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
+            hole.fix_normals()
+            if body.is_watertight:
+                body = trimesh.boolean.difference([body, hole], engine='manifold')
+
+            # ── Nut pocket (opens from hub top, nut drops in along Z) ─────────
+            if captured_nut and body.is_watertight:
+                pocket = trimesh.creation.box([pkt_x, pkt_y, pkt_z])
+                pocket.apply_translation([pkt_cx, 0.0, pkt_cz])
+                if abs(angle) > 1e-9:
+                    pocket.apply_transform(
+                        trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
+                pocket.fix_normals()
+                body = trimesh.boolean.difference([body, pocket], engine='manifold')
+
+    return body
+
+
 def generate_pulley_stl(
     family: str,
     pitch: str,
@@ -117,16 +294,23 @@ def generate_pulley_stl(
     clearance_mm: float = 0.0,
     backlash_mm: float = 0.0,
     print_extra_mm: float = 0.0,
+    hub_od_mm: float = 0.0,
+    hub_height_mm: float = 0.0,
+    screw_dia_mm: float = 0.0,
+    screw_count: int = 0,
+    captured_nut: bool = False,
 ) -> bytes:
     """
     Return binary STL bytes of an extruded timing pulley solid.
 
-    The pulley body is centred at the origin in X-Y; it is extruded from
-    z = 0 to z = belt_height_mm.  The bore hole is centred on the Z axis.
+    The toothed body is extruded from z=0 to z=belt_height_mm.
+    If hub_od_mm and hub_height_mm are given, a hub cylinder is unioned on top
+    (z=belt_height_mm to z=belt_height_mm+hub_height_mm).  The hub OD may
+    exceed the pulley OD.  The bore is subtracted through the full height.
     """
-    outline, R_OD, spec = _build_outline_points(
+    outline = _build_outline_points(
         family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
-    )
+    )[0]
 
     # ── 2D profile → extruded solid ──────────────────────────────────────────
     poly = ShapelyPolygon(outline)
@@ -134,22 +318,9 @@ def generate_pulley_stl(
     body = trimesh.creation.extrude_polygon(poly, belt_height_mm)
     body.fix_normals()
 
-    # ── Bore subtraction ─────────────────────────────────────────────────────
-    R_bore = bore_mm / 2.0
-    if R_bore > 0.5 and body.is_watertight:
-        # Make bore cylinder slightly taller so cap faces clear the body.
-        extra  = 0.5
-        bore   = trimesh.creation.cylinder(
-            radius   = R_bore,
-            height   = belt_height_mm + extra * 2,
-            sections = _BORE_SECTIONS,
-        )
-        bore.apply_translation([0.0, 0.0, belt_height_mm / 2.0])
-        bore.fix_normals()
-        result = trimesh.boolean.difference([body, bore], engine='manifold')
-    else:
-        result = body
-
+    result = _add_hub_and_bore(body, belt_height_mm, bore_mm,
+                               hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
+                               captured_nut)
     return result.export(file_type='stl')
 
 
@@ -163,32 +334,27 @@ def _rot2d(pts, angle):
 
 def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                        clearance_mm=0.0, backlash_mm=0.0, print_extra_mm=0.0,
-                       phase=0.0):
+                       phase=0.0, hub_od_mm=0.0, hub_height_mm=0.0,
+                       screw_dia_mm=0.0, screw_count=0, captured_nut=False):
     """
     Build a single watertight pulley trimesh solid centred at the origin in X-Y,
-    extruded from z=0 to z=belt_height_mm, with bore subtracted.
+    extruded from z=0 to z=belt_height_mm, with optional hub boss on top and
+    bore subtracted through the full height.
     `phase` (radians) rotates the tooth pattern to mesh with the belt.
     Returns a trimesh.Trimesh.
     """
-    outline, _R_OD, _spec = _build_outline_points(
+    outline = _build_outline_points(
         family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
-    )
+    )[0]
     outline = _rot2d(outline, phase)
     poly = ShapelyPolygon(outline)
     poly = shapely_orient(poly, sign=1.0)
     body = trimesh.creation.extrude_polygon(poly, belt_height_mm)
     body.fix_normals()
 
-    R_bore = bore_mm / 2.0
-    if R_bore > 0.5 and body.is_watertight:
-        bore_cyl = trimesh.creation.cylinder(
-            radius=R_bore, height=belt_height_mm + 1.0, sections=_BORE_SECTIONS
-        )
-        bore_cyl.apply_translation([0.0, 0.0, belt_height_mm / 2.0])
-        bore_cyl.fix_normals()
-        body = trimesh.boolean.difference([body, bore_cyl], engine='manifold')
-
-    return body
+    return _add_hub_and_bore(body, belt_height_mm, bore_mm,
+                             hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
+                             captured_nut)
 
 
 def _dedupe_pts(pts):
@@ -258,6 +424,16 @@ def generate_drive_stl_preview(
     clearance_mm2: float = 0.0,
     backlash_mm2:  float = 0.0,
     print_extra_mm2: float = 0.0,
+    hub_od_mm1: float = 0.0,
+    hub_height_mm1: float = 0.0,
+    hub_od_mm2: float = 0.0,
+    hub_height_mm2: float = 0.0,
+    screw_dia_mm1: float = 0.0,
+    screw_count1: int = 0,
+    captured_nut1: bool = False,
+    screw_dia_mm2: float = 0.0,
+    screw_count2: int = 0,
+    captured_nut2: bool = False,
     part: str = 'all',
 ) -> bytes:
     """
@@ -286,12 +462,18 @@ def generate_drive_stl_preview(
     # ── Pulley meshes ─────────────────────────────────────────────────────────
     p1 = _build_pulley_mesh(family, pitch, num_teeth1, bore_mm1, belt_height_mm,
                             clearance_mm1, backlash_mm1, print_extra_mm1,
-                            phase=phi_left)
+                            phase=phi_left,
+                            hub_od_mm=hub_od_mm1, hub_height_mm=hub_height_mm1,
+                            screw_dia_mm=screw_dia_mm1, screw_count=screw_count1,
+                            captured_nut=captured_nut1)
     p1.apply_translation([cx1, 0.0, 0.0])
 
     p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
                             clearance_mm2, backlash_mm2, print_extra_mm2,
-                            phase=phi_right)
+                            phase=phi_right,
+                            hub_od_mm=hub_od_mm2, hub_height_mm=hub_height_mm2,
+                            screw_dia_mm=screw_dia_mm2, screw_count=screw_count2,
+                            captured_nut=captured_nut2)
     p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────
@@ -332,6 +514,11 @@ def generate_pulley_stl_preview(
     clearance_mm: float = 0.0,
     backlash_mm: float = 0.0,
     print_extra_mm: float = 0.0,
+    hub_od_mm: float = 0.0,
+    hub_height_mm: float = 0.0,
+    screw_dia_mm: float = 0.0,
+    screw_count: int = 0,
+    captured_nut: bool = False,
 ) -> bytes:
     """
     Same as generate_pulley_stl but centres the mesh at the origin so
@@ -340,6 +527,7 @@ def generate_pulley_stl_preview(
     stl_bytes = generate_pulley_stl(
         family, pitch, num_teeth, bore_mm, belt_height_mm,
         clearance_mm, backlash_mm, print_extra_mm,
+        hub_od_mm, hub_height_mm, screw_dia_mm, screw_count, captured_nut,
     )
     mesh = trimesh.load(io.BytesIO(stl_bytes), file_type='stl')
     mesh.apply_translation(-mesh.centroid)
