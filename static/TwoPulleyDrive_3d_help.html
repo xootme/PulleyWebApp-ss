@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two Pulley Drive — 3D Help</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #f0f2f5;
+      padding: 24px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    header {
+      background: #0078d4;
+      color: #fff;
+      padding: 14px 20px;
+      border-radius: 8px 8px 0 0;
+      margin-bottom: 0;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+    section {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      margin-top: 14px;
+    }
+    section h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #0078d4;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 3px;
+    }
+    .field-desc {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .field-tip {
+      font-size: 12px;
+      color: #0078d4;
+      background: #eef5fc;
+      border-left: 3px solid #0078d4;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .field-warn {
+      font-size: 12px;
+      color: #92400e;
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .field-lock {
+      font-size: 12px;
+      color: #5b21b6;
+      background: #f5f3ff;
+      border-left: 3px solid #7c3aed;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .tag-auto   { background: #dcfce7; color: #166534; }
+    .tag-input  { background: #dbeafe; color: #1e40af; }
+    .tag-read   { background: #f3f4f6; color: #6b7280; }
+    .tag-locked { background: #f5f3ff; color: #5b21b6; }
+    .diagram {
+      background: #f7f9fc;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin: 12px 0;
+      font-family: monospace;
+      font-size: 13px;
+      color: #334;
+      line-height: 1.8;
+    }
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#9881; Two Pulley Drive — 3D Guide</h1>
+  <p>Cheap CAD Tools · Timing Pulley Generator</p>
+</header>
+
+<section>
+  <h2>Belt Height</h2>
+  <div class="field">
+    <div class="field-name">Belt Height (mm)</div>
+    <div class="field-desc">
+      Axial thickness of both pulleys and the belt body in the 3D preview. Set to match your belt's nominal
+      width, then add 0.5–1 mm so the belt does not rub on any flange or hub step.<br><br>
+      Belt Height is <strong>shared by both pulleys</strong> — it is set once in the drive bar and applies
+      to the entire assembly. Common belt widths: 6 mm, 9 mm, 10 mm, 15 mm.
+    </div>
+    <div class="field-tip">Belt Height affects the 3D preview and all STL downloads — change it and the preview updates automatically.</div>
+  </div>
+</section>
+
+<section>
+  <h2>3D Preview</h2>
+  <div class="field">
+    <div class="field-name">Viewer Controls</div>
+    <div class="field-desc">
+      Click the <strong>3D</strong> tab in the preview panel to open the interactive Three.js drive viewer.
+      The full belt drive — both pulleys and the belt body — renders in real time and updates automatically
+      whenever any setting changes. All geometry is centred at the shared origin so both pulleys and the belt
+      remain in frame after every update.<br><br>
+      <strong>Orbit:</strong> left-click and drag.&nbsp;&nbsp;
+      <strong>Zoom:</strong> scroll wheel.&nbsp;&nbsp;
+      <strong>Pan:</strong> right-click and drag (or two-finger drag on trackpad).
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">What is Shown</div>
+    <div class="field-desc">
+      The drive preview renders three parts in a single scene:
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Pulley 1</strong> (left) and <strong>Pulley 2</strong> (right) in blue — including any hub boss and retention features.</li>
+        <li><strong>Belt</strong> in dark grey/black, wrapping both pulleys with correct arc of contact on each side.</li>
+      </ul>
+      <br>
+      Pulleys are phase-rotated so their tooth grooves mesh precisely with the belt teeth — exactly as they
+      would on a physical drive.
+    </div>
+    <div class="field-tip">The preview geometry is exactly what the STL downloads produce — if the drive looks right in the viewer, the parts are correct.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Hub (per pulley)</h2>
+  <div class="field">
+    <div class="field-desc">
+      Each pulley panel has its own <strong>Hub</strong> section. The hub settings in the Pulley 1 and
+      Pulley 2 panels are completely independent — open the &#9432; help button on each pulley panel for
+      full Hub documentation for that pulley.<br><br>
+      A brief summary: check the <strong>Hub</strong> checkbox to add a cylindrical boss on top of the
+      toothed section. Choose <strong>Retention Method</strong> (Set Screw std., Set Screw captured nut,
+      or D-Shaft), <strong>Hub OD</strong>, and <strong>Hub Height</strong>. Hub geometry is shown in the
+      drive preview and included in that pulley's STL download.
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Download — STL</h2>
+  <div class="field">
+    <div class="field-desc">
+      Three STL files are available for a two-pulley drive:
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Pulley 1 STL</div>
+    <div class="field-desc">
+      Toothed body + hub for Pulley 1 only. Download button in the Pulley 1 panel.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Pulley 2 STL</div>
+    <div class="field-desc">
+      Toothed body + hub for Pulley 2 only. Download button in the Pulley 2 panel.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Belt STL</div>
+    <div class="field-desc">
+      The belt loop solid — useful for assembly visualisation in CAD. Download from the Belt drop-down in
+      the Pulley 1 panel.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-desc">
+      Each file is a standalone binary STL in millimetres, ready to open in a slicer or import into CAD.
+    </div>
+    <div class="field-tip">Print the two pulleys separately — they may have different bore sizes and hub configurations. The Belt STL is for visualisation; don't try to print it as a functional belt.</div>
+  </div>
+</section>
+
+<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+
+</body>
+</html>

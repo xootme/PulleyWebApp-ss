@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pulley 1 — 2D Help</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #f0f2f5;
+      padding: 24px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    header {
+      background: #0078d4;
+      color: #fff;
+      padding: 14px 20px;
+      border-radius: 8px 8px 0 0;
+      margin-bottom: 0;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+    section {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      margin-top: 14px;
+    }
+    section h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #0078d4;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 3px;
+    }
+    .field-desc {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .field-tip {
+      font-size: 12px;
+      color: #0078d4;
+      background: #eef5fc;
+      border-left: 3px solid #0078d4;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .field-warn {
+      font-size: 12px;
+      color: #92400e;
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .field-lock {
+      font-size: 12px;
+      color: #5b21b6;
+      background: #f5f3ff;
+      border-left: 3px solid #7c3aed;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .tag-auto   { background: #dcfce7; color: #166534; }
+    .tag-input  { background: #dbeafe; color: #1e40af; }
+    .tag-read   { background: #f3f4f6; color: #6b7280; }
+    .tag-locked { background: #f5f3ff; color: #5b21b6; }
+    .diagram {
+      background: #f7f9fc;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin: 12px 0;
+      font-family: monospace;
+      font-size: 13px;
+      color: #334;
+      line-height: 1.8;
+    }
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#9881; Pulley 1 — 2D Guide</h1>
+  <p>Cheap CAD Tools · Timing Pulley Generator</p>
+</header>
+
+<section>
+  <h2>Belt Profile</h2>
+  <div class="field">
+    <div class="field-name">Family</div>
+    <div class="field-desc">
+      <strong>HTD</strong> — high-torque drive, common in robotics and 3D printers.<br>
+      <strong>GT / GT2 / GT3</strong> — Gates tooth profile, precision motion control.<br>
+      <strong>T-series (T2.5 / T5 / T10)</strong> — trapezoidal tooth, lower backlash at slow speeds.<br>
+      <strong>MXL / XL / L / H</strong> — Imperial trapezoidal, US-market and legacy equipment.
+    </div>
+    <div class="field-tip">Changing Family resets Pitch to only the available options for that family.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Pitch</div>
+    <div class="field-desc">
+      Centre-to-centre distance between belt teeth in mm (e.g. 5M = 5 mm). Larger pitch = coarser drive,
+      higher torque capacity. Smaller pitch = finer resolution, quieter operation.
+    </div>
+    <div class="field-lock">Locked to Family — choose Family first, then Pitch.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Size</h2>
+  <div class="field">
+    <div class="field-name"><span class="tag tag-input">Input</span> Number of Teeth</div>
+    <div class="field-desc">
+      Determines pulley diameter directly — more teeth = larger pulley. A minimum tooth count is enforced
+      per belt specification to prevent undercutting of the tooth profile.
+    </div>
+    <div class="field-tip">In Two Pulley Drive mode, Pulley 1 has highest edit priority — changing its teeth keeps
+      the Gear Ratio fixed and recalculates Pulley 2 automatically.</div>
+  </div>
+  <div class="field">
+    <div class="field-name"><span class="tag tag-auto">Auto</span> Outer Diameter (mm)</div>
+    <div class="field-desc">
+      Calculated from tooth count and pitch. Can also be typed directly — the tool finds the nearest
+      whole-number tooth count that matches the entered diameter. In Two Pulley Drive mode, editing OD here
+      also recalculates Pulley 2.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name"><span class="tag tag-input">Input</span> Bore Diameter (mm)</div>
+    <div class="field-desc">
+      Central shaft hole diameter. Must be smaller than the pitch diameter. Minimum 1 mm.
+    </div>
+    <div class="field-tip">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter to account for FDM printing tolerance.</div>
+  </div>
+  <div class="field">
+    <div class="field-name"><span class="tag tag-read">Read-only</span> Pitch Diameter</div>
+    <div class="field-desc">
+      Theoretical belt pitch-line diameter. Used for belt length calculations.<br>
+      Formula: (Teeth &times; Pitch) / &pi;
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Advanced</h2>
+  <div class="field">
+    <div class="field-name">Tooth Clearance</div>
+    <div class="field-desc">
+      Extra room at the tip of each belt tooth in the groove.
+      <strong>Tight</strong> = minimal clearance for precision fit.
+      <strong>Standard</strong> = recommended default.
+      <strong>Loose</strong> = easier assembly, slightly more noise.
+      <strong>Custom</strong> = exact mm offset (positive = deeper groove).
+    </div>
+    <div class="field-tip">Use Standard unless tuning for a specific belt fit or FDM dimensional tolerance.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Backlash</div>
+    <div class="field-desc">
+      Side-to-side play between belt teeth and pulley grooves.
+      <strong>None</strong> = zero gap, maximum accuracy, binding risk.
+      <strong>Tight</strong> = minimal play, for precision servos.
+      <strong>Standard</strong> = safe default.
+      <strong>Loose</strong> = reduces binding risk.
+      <strong>Custom</strong> = exact mm offset.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">3D Print Compensation (mm)</div>
+    <div class="field-desc">
+      Uniform outward offset applied to all non-bore surfaces. Compensates for FDM over-extrusion or material
+      shrinkage. Typical range: 0.05–0.2 mm.
+    </div>
+    <div class="field-tip">Set to 0 for laser-cut or machined parts. For FDM, start with 0.1 mm and iterate with a test print.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Download — 2D</h2>
+  <div class="field">
+    <div class="field-name">Download Pulley SVG</div>
+    <div class="field-desc">
+      2D SVG sketch of the pulley profile — teeth, bore, and outer diameter — at 1:1 mm scale.
+      Import into Fusion 360 (Insert &rarr; Insert SVG, scale 1 mm/unit), FreeCAD, Inkscape, or Illustrator.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Download Pulley DXF</div>
+    <div class="field-desc">
+      DXF of the pulley profile and bore using true arc entities. R2010 DXF format, dimensions in millimetres.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Download Belt (SVG or DXF)</div>
+    <div class="field-desc">
+      In single-pulley mode: belt tooth cross-section profile only.
+      In Two Pulley Drive mode: the complete two-pulley belt layout with separate
+      <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.
+    </div>
+  </div>
+</section>
+
+<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+
+</body>
+</html>

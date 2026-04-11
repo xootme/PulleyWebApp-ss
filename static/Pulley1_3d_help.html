@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pulley 1 — 3D Help</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #f0f2f5;
+      padding: 24px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    header {
+      background: #0078d4;
+      color: #fff;
+      padding: 14px 20px;
+      border-radius: 8px 8px 0 0;
+      margin-bottom: 0;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+    section {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      margin-top: 14px;
+    }
+    section h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #0078d4;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 3px;
+    }
+    .field-desc {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .field-tip {
+      font-size: 12px;
+      color: #0078d4;
+      background: #eef5fc;
+      border-left: 3px solid #0078d4;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .field-warn {
+      font-size: 12px;
+      color: #92400e;
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .field-lock {
+      font-size: 12px;
+      color: #5b21b6;
+      background: #f5f3ff;
+      border-left: 3px solid #7c3aed;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .tag-auto   { background: #dcfce7; color: #166534; }
+    .tag-input  { background: #dbeafe; color: #1e40af; }
+    .tag-read   { background: #f3f4f6; color: #6b7280; }
+    .tag-locked { background: #f5f3ff; color: #5b21b6; }
+    .diagram {
+      background: #f7f9fc;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin: 12px 0;
+      font-family: monospace;
+      font-size: 13px;
+      color: #334;
+      line-height: 1.8;
+    }
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#9881; Pulley 1 — 3D Guide</h1>
+  <p>Cheap CAD Tools · Timing Pulley Generator</p>
+</header>
+
+<section>
+  <h2>Belt Height</h2>
+  <div class="field">
+    <div class="field-name">Belt Height (mm)</div>
+    <div class="field-desc">
+      Axial thickness of the toothed pulley body — how tall the pulley is along the shaft axis. This is the
+      extrusion depth of the toothed section. Set to match the width of your belt.
+      Common belt widths: 6 mm, 9 mm, 10 mm, 15 mm. Add 0.5–1 mm over the nominal belt width to avoid
+      the belt rubbing on flanges or hub steps.<br><br>
+      When a hub is enabled, hub height is added on top of the belt height —
+      total part height = Belt Height + Hub Height.
+    </div>
+    <div class="field-tip">Belt Height affects both the 3D preview and all STL downloads — change it and the preview updates automatically.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Hub</h2>
+  <div class="field">
+    <div class="field-name">Enabling the Hub</div>
+    <div class="field-desc">
+      Checkbox in the Hub section header. When checked, a cylindrical boss is built on top of the toothed
+      section and included in the 3D preview and STL export. When unchecked, no hub geometry is generated.
+    </div>
+    <div class="field-tip">The Hub section is only visible when Feature Build — 3D is active.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Hub OD (mm)</div>
+    <div class="field-desc">
+      Outer diameter of the hub boss. May be narrower or wider than the pulley OD — no restriction.
+      Narrower = hub boss recessed inside the tooth rim. Wider = hub flange overhanging the teeth.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Hub Height (mm)</div>
+    <div class="field-desc">
+      Axial height of the hub boss above the toothed section. The bore runs through the full combined
+      height (Belt Height + Hub Height). For captured nut retention, the height is auto-raised if the nut
+      pocket requires more space than the entered value.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention — Set Screw (std.)</div>
+    <div class="field-desc">
+      Radial screw hole(s) drilled through the full hub diameter — the screw can be driven from either side
+      with a hex key. <strong>1 screw</strong> = single perpendicular hole.
+      <strong>2 screws</strong> = holes placed 90&deg; apart for more secure grip.
+      Select screw size M3–M10 to set the hole diameter.
+    </div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention — Set Screw (captured nut)</div>
+    <div class="field-desc">
+      A stronger arrangement. A standard ISO hex nut is captured in a pocket that opens from the top face
+      of the hub. The nut drops in from above; two vertical flat faces locate against the pocket walls to
+      prevent rotation. The nut sits against the shaft bore. The screw enters from the hub OD, passes
+      through the hub wall, threads into the nut, and contacts the shaft.<br><br>
+      Screw entry is a one-sided radial clearance hole — no exit hole on the opposite wall.
+      2 screws are placed 180&deg; apart (directly opposite).<br><br>
+      <strong>Auto hub height:</strong> if the entered hub height is shorter than the nut requires, it is raised
+      automatically. <strong>Auto oblong lobe:</strong> if the hub OD does not provide at least two nut-thicknesses
+      of wall material outside the nut, the hub grows a rounded lobe in the screw direction.<br><br>
+      Select screw size first — nut pocket dimensions are calculated automatically from the ISO standard for
+      that size.
+    </div>
+    <div class="field-tip">Captured nut retention is stronger than a plain set screw and can be retightened after printing without stripping the plastic bore wall.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">Retention — D-Shaft</div>
+    <div class="field-desc">
+      Adds a flat chord cut to the bore for a D-profile shaft. Enter the flat depth — distance from the bore
+      wall to the flat. Measure your actual shaft; typical value 0.5 mm.
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>3D Preview</h2>
+  <div class="field">
+    <div class="field-name">Viewer</div>
+    <div class="field-desc">
+      Click the <strong>3D</strong> tab in the preview panel to open the interactive Three.js viewer.
+      The pulley — including hub boss and all retention features — renders in real time and updates
+      automatically as settings change.<br><br>
+      <strong>Orbit:</strong> left-click and drag.&nbsp;&nbsp;
+      <strong>Zoom:</strong> scroll wheel.&nbsp;&nbsp;
+      <strong>Pan:</strong> right-click and drag (or two-finger drag on trackpad).<br><br>
+      Model is centred at origin and fits the view automatically.
+    </div>
+    <div class="field-tip">The preview geometry is exactly what the STL download produces — if it looks right in the viewer, the STL is correct.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Download — STL</h2>
+  <div class="field">
+    <div class="field-name">Download Pulley STL</div>
+    <div class="field-desc">
+      Binary STL of the complete 3D pulley solid — toothed body plus any hub boss and retention features.
+      Bore subtracted as a through-hole. Exported in millimetres.
+      Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly — no CAD import required.
+    </div>
+  </div>
+</section>
+
+<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+
+</body>
+</html>
