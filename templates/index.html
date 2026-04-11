@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
 
@@ -88,7 +88,7 @@
       <label for="od">Outer Diameter (mm)</label>
       <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)">
       <label for="bore">Bore Diameter (mm)</label>
-      <input type="number" id="bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview()">
+      <input type="number" id="bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(1)">
       <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
     </section>
 
@@ -120,6 +120,54 @@
 
       <label for="print_extra">3D Print Compensation (mm)</label>
       <input type="number" id="print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
+    </section>
+
+    <section class="card fb-3d">
+      <div class="hub-header" onclick="toggleHub(1)">
+        <span>Hub</span>
+        <span class="hub-arrow" id="hub1-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body" id="hub1-body">
+        <label for="hub1_retention">Retention Method</label>
+        <select id="hub1_retention" onchange="onHubChange(1)">
+          <option value="set_screw">Set Screw (captured nut)</option>
+          <option value="d_shaft">D-Shaft</option>
+          <option value="keyway">Keyway</option>
+          <option value="none">None</option>
+        </select>
+
+        <div id="hub1_setscrew_opts">
+          <label for="hub1_screw_size">Set Screw Size</label>
+          <select id="hub1_screw_size" onchange="onHubChange(1)">
+            <option value="M3">M3</option>
+            <option value="M4">M4</option>
+            <option value="M5" selected>M5</option>
+            <option value="M6">M6</option>
+            <option value="M8">M8</option>
+            <option value="M10">M10</option>
+          </select>
+          <label for="hub1_screw_count">Number of Screws</label>
+          <select id="hub1_screw_count" onchange="onHubChange(1)">
+            <option value="1">1</option>
+            <option value="2" selected>2 (90° apart)</option>
+          </select>
+        </div>
+
+        <div id="hub1_dshaft_opts" class="hidden">
+          <label for="hub1_flat_depth">Flat Depth (mm)</label>
+          <input type="number" id="hub1_flat_depth" value="0.5" min="0.1" step="0.05" style="width:100%">
+          <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
+        </div>
+
+        <label for="hub1_height">Hub Height (mm)</label>
+        <input type="number" id="hub1_height" value="10" min="1" step="0.5" oninput="onHubChange(1)" style="width:100%">
+
+        <label for="hub1_od">Hub OD (mm)</label>
+        <input type="number" id="hub1_od" value="20" min="1" step="0.5" oninput="onHubChange(1)" style="width:100%">
+
+        <div class="hub-info" id="hub1_info"></div>
+        <div class="hub-warn hidden" id="hub1_warn"></div>
+      </div>
     </section>
 
     <section class="card download-card">
@@ -188,7 +236,7 @@
       <label for="p2_od">Outer Diameter (mm)</label>
       <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)">
       <label for="p2_bore">Bore Diameter (mm)</label>
-      <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview()">
+      <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(2)">
       <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
     </section>
 
@@ -220,6 +268,54 @@
 
       <label for="p2_print_extra">3D Print Compensation (mm)</label>
       <input type="number" id="p2_print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
+    </section>
+
+    <section class="card fb-3d">
+      <div class="hub-header" onclick="toggleHub(2)">
+        <span>Hub</span>
+        <span class="hub-arrow" id="hub2-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body" id="hub2-body">
+        <label for="hub2_retention">Retention Method</label>
+        <select id="hub2_retention" onchange="onHubChange(2)">
+          <option value="set_screw">Set Screw (captured nut)</option>
+          <option value="d_shaft">D-Shaft</option>
+          <option value="keyway">Keyway</option>
+          <option value="none">None</option>
+        </select>
+
+        <div id="hub2_setscrew_opts">
+          <label for="hub2_screw_size">Set Screw Size</label>
+          <select id="hub2_screw_size" onchange="onHubChange(2)">
+            <option value="M3">M3</option>
+            <option value="M4">M4</option>
+            <option value="M5" selected>M5</option>
+            <option value="M6">M6</option>
+            <option value="M8">M8</option>
+            <option value="M10">M10</option>
+          </select>
+          <label for="hub2_screw_count">Number of Screws</label>
+          <select id="hub2_screw_count" onchange="onHubChange(2)">
+            <option value="1">1</option>
+            <option value="2" selected>2 (90° apart)</option>
+          </select>
+        </div>
+
+        <div id="hub2_dshaft_opts" class="hidden">
+          <label for="hub2_flat_depth">Flat Depth (mm)</label>
+          <input type="number" id="hub2_flat_depth" value="0.5" min="0.1" step="0.05" style="width:100%">
+          <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
+        </div>
+
+        <label for="hub2_height">Hub Height (mm)</label>
+        <input type="number" id="hub2_height" value="10" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+
+        <label for="hub2_od">Hub OD (mm)</label>
+        <input type="number" id="hub2_od" value="20" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+
+        <div class="hub-info" id="hub2_info"></div>
+        <div class="hub-warn hidden" id="hub2_warn"></div>
+      </div>
     </section>
 
     <section class="card download-card">
@@ -1143,6 +1239,81 @@ function load3DModel(url) {
     });
   }
 }
+
+// ── Hub section ───────────────────────────────────────────────────────────────
+
+// Set screw diameter in mm keyed by size label
+const HUB_SCREW_DIA = { M3:3, M4:4, M5:5, M6:6, M8:8, M10:10 };
+
+// Minimum wall to bore = 2× screw dia; min hub height = 2× screw dia
+function toggleHub(n) {
+  const body  = document.getElementById(`hub${n}-body`);
+  const arrow = document.getElementById(`hub${n}-arrow`);
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+  if (open) _initHubDefaults(n);
+}
+
+function onHubChange(n) {
+  const retention = document.getElementById(`hub${n}_retention`).value;
+  const ssOpts    = document.getElementById(`hub${n}_setscrew_opts`);
+  const dsOpts    = document.getElementById(`hub${n}_dshaft_opts`);
+
+  ssOpts.classList.toggle('hidden', retention !== 'set_screw');
+  dsOpts.classList.toggle('hidden', retention !== 'd_shaft');
+
+  _validateHub(n);
+}
+
+function _validateHub(n) {
+  const info    = document.getElementById(`hub${n}_info`);
+  const warn    = document.getElementById(`hub${n}_warn`);
+  const bore    = parseFloat(document.getElementById(n === 1 ? 'bore' : 'p2_bore').value) || 0;
+  const hubOD   = parseFloat(document.getElementById(`hub${n}_od`).value) || 0;
+  const hubH    = parseFloat(document.getElementById(`hub${n}_height`).value) || 0;
+  const retention = document.getElementById(`hub${n}_retention`).value;
+
+  const warnings = [];
+
+  if (retention === 'set_screw') {
+    const screwSize = document.getElementById(`hub${n}_screw_size`).value;
+    const sd   = HUB_SCREW_DIA[screwSize] || 5;
+    const minWallToBore = sd * 2;
+    const minHubH       = sd * 2;
+    const wall = (hubOD - bore) / 2;
+
+    if (wall < minWallToBore)
+      warnings.push(`Wall too thin: ${wall.toFixed(1)} mm (need ≥ ${minWallToBore} mm for ${screwSize})`);
+    if (hubH < minHubH)
+      warnings.push(`Hub height too short: ${hubH.toFixed(1)} mm (need ≥ ${minHubH} mm for ${screwSize})`);
+
+    info.textContent = `Wall: ${wall.toFixed(1)} mm · Min wall: ${minWallToBore} mm · Min height: ${minHubH} mm`;
+  } else if (retention === 'd_shaft') {
+    const wall = (hubOD - bore) / 2;
+    info.textContent = `Wall: ${wall.toFixed(1)} mm`;
+  } else {
+    info.textContent = '';
+  }
+
+  if (hubOD <= bore)
+    warnings.push(`Hub OD (${hubOD} mm) must be larger than bore (${bore} mm)`);
+
+  warn.textContent = warnings.join(' · ');
+  warn.classList.toggle('hidden', warnings.length === 0);
+}
+
+function _initHubDefaults(n) {
+  // Auto-set hub OD to 2× bore and hub height to 2× screw dia on first open
+  const bore = parseFloat(document.getElementById(n === 1 ? 'bore' : 'p2_bore').value) || 8;
+  const odEl = document.getElementById(`hub${n}_od`);
+  const hEl  = document.getElementById(`hub${n}_height`);
+  if (!odEl._userSet) odEl.value = (bore * 2).toFixed(1);
+  if (!hEl._userSet)  hEl.value  = '10';
+  _validateHub(n);
+}
+
+// Re-validate when bore changes
+function _onBoreChangeHub(n) { if (document.getElementById(`hub${n}-body`).classList.contains('open')) _validateHub(n); }
 </script>
 
 </body>

@@ -485,3 +485,43 @@ main.dual #panel2 {
 /* ── Feature Build mode visibility ── */
 body.feature-build .fb-2d { display: none !important; }
 body:not(.feature-build) .fb-3d { display: none !important; }
+
+/* ── Hub section collapsible ── */
+.hub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #0078d4;
+  margin-bottom: 0;
+}
+.hub-header:hover { color: #005fa3; }
+.hub-arrow {
+  font-size: 10px;
+  transition: transform 0.2s;
+  color: #0078d4;
+}
+.hub-arrow.open { transform: rotate(180deg); }
+.hub-body {
+  display: none;
+  margin-top: 10px;
+}
+.hub-body.open { display: block; }
+.hub-info {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+.hub-warn {
+  font-size: 11px;
+  color: #b91c1c;
+  background: #fee2e2;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 6px;
+}
