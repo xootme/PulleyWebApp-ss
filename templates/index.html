@@ -350,6 +350,10 @@ let currentSpec2 = null;
 let previewTimer       = null;
 let ratioSnapTimer     = null;
 let beltCorrectionTimer = null;
+let teethTimer1  = null;
+let teethTimer2  = null;
+let odTimer1     = null;
+let odTimer2     = null;
 let teethLock    = false;
 let teethLock2   = false;
 
@@ -672,7 +676,14 @@ async function onPitchChange() {
 }
 
 // ── Teeth ↔ OD ────────────────────────────────────────────────────────────────
-async function onTeethChange(n) {
+// Debounce: wait 600 ms after last keystroke before firing the API call so the
+// user can finish typing without the field being overwritten mid-entry.
+function onTeethChange(n) {
+  if (n === 1) { clearTimeout(teethTimer1); teethTimer1 = setTimeout(() => _doTeethChange(1), 600); }
+  else         { clearTimeout(teethTimer2); teethTimer2 = setTimeout(() => _doTeethChange(2), 600); }
+}
+
+async function _doTeethChange(n) {
   if (n === 1 && teethLock)  return;
   if (n === 2 && teethLock2) return;
   const family  = document.getElementById('family').value;
@@ -681,8 +692,8 @@ async function onTeethChange(n) {
   const minT    = spec ? spec.min_teeth : 1;
   const teethEl = document.getElementById(n === 1 ? 'teeth' : 'p2_teeth');
   if (parseInt(teethEl.value) < minT) teethEl.value = minT;
-  const teeth   = teethEl.value;
-  const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${teeth}`);
+  const teeth = teethEl.value;
+  const resp  = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${teeth}`);
   if (!resp.ok) return;
   const data = await resp.json();
   if (n === 1) {
@@ -690,7 +701,6 @@ async function onTeethChange(n) {
     document.getElementById('od').value = data.od;
     teethLock = false;
     updateLabels(data.teeth, data.od);
-    // Changing P1 teeth → drive P2 teeth from gear ratio (if dual)
     if (document.getElementById('dual_enable').checked) {
       applyRatioToP2(data.teeth);
       return; // applyRatioToP2 calls schedulePreview
@@ -700,7 +710,6 @@ async function onTeethChange(n) {
     document.getElementById('p2_od').value = data.od;
     teethLock2 = false;
     updateP2Labels(data.teeth, data.od);
-    // Changing P2 teeth → update displayed gear ratio
     updateGearRatioFromTeeth();
   }
   updateMinDistance();
@@ -708,7 +717,12 @@ async function onTeethChange(n) {
   schedulePreview();
 }
 
-async function onODChange(n) {
+function onODChange(n) {
+  if (n === 1) { clearTimeout(odTimer1); odTimer1 = setTimeout(() => _doODChange(1), 600); }
+  else         { clearTimeout(odTimer2); odTimer2 = setTimeout(() => _doODChange(2), 600); }
+}
+
+async function _doODChange(n) {
   if (n === 1 && teethLock)  return;
   if (n === 2 && teethLock2) return;
   const family = document.getElementById('family').value;
