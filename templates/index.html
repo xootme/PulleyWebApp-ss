@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
 
@@ -1295,7 +1295,10 @@ function snapView(view) {
   threeScene.traverse(obj => { if (obj.isMesh) box3.expandByObject(obj); });
   const size   = new THREE.Vector3();
   box3.getSize(size);
-  const dist = size.length() * 0.6;
+  // Compute distance so the bounding sphere fills the view at the camera FOV.
+  // FOV = 40°, half-angle = 20°.  dist = radius / tan(20°), + 15% margin.
+  const radius = size.length() * 0.5;
+  const dist   = (radius / Math.tan(20 * Math.PI / 180)) * 1.15;
 
   const positions = {
     top:     [0,  0,  dist],

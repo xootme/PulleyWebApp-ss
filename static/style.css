@@ -437,14 +437,14 @@ main.dual #panel2 {
 
 /* ── Pulley 2 accent colour (amber/orange) ── */
 #panel2 .panel-title {
-  color: #c2590a;
-  border-bottom-color: #c2590a;
+  color: #761516 !important;
+  border-bottom-color: #761516 !important;
 }
 #panel2 .btn-download {
-  background: #c2590a;
+  background: #761516 !important;
 }
 #panel2 .btn-download:hover {
-  background: #9e4608;
+  background: #5a0f10 !important;
 }
 
 /* ── 3D view-snap button overlay ── */
