@@ -173,9 +173,12 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
     # ── Captured nut pre-calculations ────────────────────────────────────────
     if do_screws and captured_nut:
         waf, t_nut = _nut_dims(screw_dia_mm)
-        R_circ  = waf / math.sqrt(3)          # hex circumradius (centre→vertex)
-        nut_z   = 2.0 * R_circ                # vertex-to-vertex Z extent
-        pkt_z   = nut_z + 0.5                 # pocket axial depth with clearance
+        R_circ  = waf / math.sqrt(3)   # hex circumradius (centre→vertex)
+        # Pocket circumradius: add 0.2 mm clearance so nut slides in freely.
+        # The pocket cross-section is hexagonal (matches nut profile exactly),
+        # so the bottom of the pocket has angled faces — no flat floor.
+        R_pkt   = R_circ + 0.2
+        pkt_z   = 2.0 * R_pkt         # tip-to-tip pocket depth (vertex-to-vertex)
 
         # Auto-raise hub height so nut fits fully inside the hub boss
         min_hub_h = pkt_z
@@ -187,13 +190,13 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         need_oblong = R_hub < min_hub_r
         eff_r = max(R_hub, min_hub_r)
 
-        step = math.pi                        # 180° between captured-nut screws
+        step = math.pi                 # 180° between captured-nut screws
     else:
-        waf = t_nut = R_circ = nut_z = pkt_z = 0.0
+        waf = t_nut = R_circ = R_pkt = pkt_z = 0.0
         min_hub_r = 0.0
         need_oblong = False
         eff_r = R_hub
-        step = math.pi / 2.0                  # 90° between standard screws
+        step = math.pi / 2.0          # 90° between standard screws
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
 
@@ -238,25 +241,33 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         R_screw = screw_dia_mm / 2.0
 
         if captured_nut:
-            # Screw aligns with nut centre in Z
-            z_screw = hub_top - nut_z / 2.0
+            # Screw sits at Z centre of the nut pocket
+            z_screw = hub_top - pkt_z / 2.0
 
-            # One-sided hole: screw enters from hub OD, stops at bore.
-            # The cylinder is NOT centred at the hub centre — its centre sits
-            # at the mid-point of the hub wall so it only cuts from OD to bore.
-            hole_len = eff_r - R_bore + 1.0          # hub wall thickness + margin
-            hole_cx  = (eff_r + R_bore) / 2.0        # mid-point of wall, along X
+            # One-sided hole: enters from hub OD, stops at bore.
+            hole_len = eff_r - R_bore + 1.0
+            hole_cx  = (eff_r + R_bore) / 2.0
 
-            # Pocket (rectangular box that drops from hub top)
-            pkt_x = t_nut + 0.5   # radial depth   — nut against bore, flush inward
-            pkt_y = waf   + 0.5   # tangential width — matches flat-to-flat
-            # Pocket radial centre: inner face at bore_r (nut flush to bore)
-            pkt_cx = R_bore + pkt_x / 2.0
-            pkt_cz = hub_top - pkt_z / 2.0   # top of pocket flush with hub top
+            # Hex pocket cross-section in the XY plane — vertices at ±X,
+            # flat faces at ±Y.  After rotation_matrix(π/2, Y-axis) the
+            # mapping is: old X → new -Z, old Y → new Y, old Z → new X.
+            # Result: vertices end up at ±Z (angled bottom, open top),
+            # flat faces at ±Y (guide walls that locate the nut as it
+            # slides in from the hub top face).
+            hex_xy = [(R_pkt * math.cos(k * math.pi / 3),
+                       R_pkt * math.sin(k * math.pi / 3))
+                      for k in range(6)]
+            hex_poly = shapely_orient(ShapelyPolygon(hex_xy), sign=1.0)
+
+            # Radial depth: nut thickness + 0.5 mm clearance.
+            # After rotation the extrusion runs along X from 0 to pkt_x,
+            # so translate by R_bore to place the inner face at the bore wall.
+            pkt_x = t_nut + 0.5
+
         else:
             z_screw  = belt_height_mm + hub_height_mm / 2.0
             hole_len = R_hub * 2.0 + 2.0
-            hole_cx  = 0.0   # centred — full-diameter hole for standard set screw
+            hole_cx  = 0.0   # centred — full-diameter for standard set screw
 
         for angle in screw_angles:
             # ── Radial screw hole ─────────────────────────────────────────────
@@ -272,10 +283,21 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
             if body.is_watertight:
                 body = trimesh.boolean.difference([body, hole], engine='manifold')
 
-            # ── Nut pocket (opens from hub top, nut drops in along Z) ─────────
+            # ── Hex nut pocket (drops in from hub top) ────────────────────────
+            # Cross-section is the hex nut profile (in YZ), extruded along X
+            # (radially) so the pocket bottom has the angled vertex shape of
+            # the nut — no flat floor.
             if captured_nut and body.is_watertight:
-                pocket = trimesh.creation.box([pkt_x, pkt_y, pkt_z])
-                pocket.apply_translation([pkt_cx, 0.0, pkt_cz])
+                pocket = trimesh.creation.extrude_polygon(hex_poly, pkt_x)
+                # extrude_polygon extrudes along Z; rotate so it runs along X
+                pocket.apply_transform(
+                    trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
+                # Now pocket runs from x=0 to x=pkt_x; shift so inner face
+                # is at bore_r and outer face at bore_r + pkt_x.
+                # X: [0, pkt_x] + R_bore → inner face at bore_r, outer at bore_r+pkt_x
+                # Z: [-R_pkt, R_pkt] + (hub_top-R_pkt) → [hub_top-pkt_z, hub_top]
+                #    top of pocket (open end) is flush with the hub top face
+                pocket.apply_translation([R_bore, 0.0, hub_top - R_pkt])
                 if abs(angle) > 1e-9:
                     pocket.apply_transform(
                         trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
