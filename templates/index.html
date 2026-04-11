@@ -676,11 +676,11 @@ async function onPitchChange() {
 }
 
 // ── Teeth ↔ OD ────────────────────────────────────────────────────────────────
-// Debounce: wait 600 ms after last keystroke before firing the API call so the
+// Debounce: wait 1000 ms after last keystroke before firing the API call so the
 // user can finish typing without the field being overwritten mid-entry.
 function onTeethChange(n) {
-  if (n === 1) { clearTimeout(teethTimer1); teethTimer1 = setTimeout(() => _doTeethChange(1), 600); }
-  else         { clearTimeout(teethTimer2); teethTimer2 = setTimeout(() => _doTeethChange(2), 600); }
+  if (n === 1) { clearTimeout(teethTimer1); teethTimer1 = setTimeout(() => _doTeethChange(1), 1000); }
+  else         { clearTimeout(teethTimer2); teethTimer2 = setTimeout(() => _doTeethChange(2), 1000); }
 }
 
 async function _doTeethChange(n) {
@@ -718,8 +718,8 @@ async function _doTeethChange(n) {
 }
 
 function onODChange(n) {
-  if (n === 1) { clearTimeout(odTimer1); odTimer1 = setTimeout(() => _doODChange(1), 600); }
-  else         { clearTimeout(odTimer2); odTimer2 = setTimeout(() => _doODChange(2), 600); }
+  if (n === 1) { clearTimeout(odTimer1); odTimer1 = setTimeout(() => _doODChange(1), 1000); }
+  else         { clearTimeout(odTimer2); odTimer2 = setTimeout(() => _doODChange(2), 1000); }
 }
 
 async function _doODChange(n) {
