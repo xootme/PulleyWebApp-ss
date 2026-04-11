@@ -11,7 +11,11 @@
 - [x] STL export — single pulley (trimesh + manifold3d, watertight, bore subtracted)
 - [x] STL export — dual-pulley drive (both pulleys + belt, phase-aligned to belt teeth)
 - [x] Interactive 3D preview — Three.js WebGL viewer (orbit / zoom / pan)
-- [x] Dual-pulley 3D preview — pulleys rendered blue, belt rendered black, two-material scene
+- [x] Dual-pulley 3D preview — pulleys rendered blue (P1) and red (P2), two-material scene
+- [x] Hub boss — cylindrical boss on top of pulley body with bore subtracted through full height
+- [x] Hub retention — radial set-screw holes (standard) or captured hex nut pockets (pentagon profile, open top)
+- [x] Hub settings persisted in localStorage across page reloads
+- [x] STEP export — cadquery B-rep solid via Python 3.12 subprocess; includes all hub features
 
 ---
 
@@ -20,12 +24,8 @@
 ### 3D Export — Advanced Features
 Enhanced pulley solid with:
 - [ ] Spoke count and style
-- [ ] Hub diameter and length
 - [ ] Shaft keying (key slot dimensions)
 - [ ] Flange options (diameter, thickness)
-
-### 3D File Formats
-- [ ] STEP (.step) export — blocked on cadquery-ocp Python 3.14 wheel availability
 
 ---
 

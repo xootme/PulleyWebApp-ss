@@ -600,11 +600,39 @@ def download_stl():
 
 @app.route('/download/step')
 def download_step():
-    return Response(
-        'STEP export requires cadquery-ocp (Python ≤3.12). '
-        'Use STL for now or run on Python 3.11.',
-        status=501, mimetype='text/plain',
-    )
+    try:
+        import subprocess, json, os
+        pulley = request.args.get('pulley', '1')
+        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(request.args, pulley)
+        hub_od, hub_h, sd, sc, cn = _parse_hub_params(request.args, '')
+
+        params = json.dumps({
+            'family': family, 'pitch': pitch, 'num_teeth': num_teeth,
+            'bore_mm': bore_mm, 'belt_height_mm': belt_height,
+            'clearance_mm': cl_mm, 'backlash_mm': bl_mm, 'print_extra_mm': pr_ex,
+            'hub_od_mm': hub_od, 'hub_height_mm': hub_h,
+            'screw_dia_mm': sd, 'screw_count': sc,
+            'captured_nut': cn,
+        })
+
+        root      = os.path.dirname(os.path.abspath(__file__))
+        venv_py   = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
+        worker    = os.path.join(root, 'exporters', 'step_worker.py')
+
+        result = subprocess.run(
+            [venv_py, worker, params],
+            capture_output=True, cwd=root
+        )
+        if result.returncode != 0:
+            return f'STEP error: {result.stderr.decode()}', 400
+
+        suffix = '-P2' if pulley == '2' else ''
+        fname  = f'{family}-{pitch}-{num_teeth}T{suffix}.step'
+        return Response(result.stdout, mimetype='application/step',
+                        headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+    except Exception as e:
+        return f'Error generating STEP: {e}', 400
 
 
 @app.route('/download/belt-step')

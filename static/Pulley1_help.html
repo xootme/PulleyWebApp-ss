@@ -234,25 +234,17 @@
     </div>
     <div class="field-tip">Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly — no CAD import required.</div>
   </div>
-</section>
-
-<section>
-  <h2>3D — Belt Height</h2>
   <div class="field">
-    <div class="field-name">Belt Height (mm)</div>
+    <div class="field-name">Download Pulley STEP</div>
     <div class="field-desc">
-      The axial thickness of the toothed pulley body — how tall the pulley is in the direction of the shaft.
-      This is the extrusion depth of the toothed section. Set it to match the width of your belt.
-      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
-        <li>Common belt widths: 6 mm, 9 mm, 10 mm, 15 mm.</li>
-        <li>Add 0.5–1 mm over the nominal belt width to avoid the belt rubbing on flanges.</li>
-        <li>When a hub is enabled, the hub height is added <em>on top</em> of Belt Height — the total
-            part height is Belt Height + Hub Height.</li>
-      </ul>
+      Downloads a STEP (AP214) file of the complete 3D pulley solid as a proper B-rep solid, including
+      hub boss, bore, set-screw holes, and captured nut pockets. Import directly into Fusion 360,
+      SolidWorks, FreeCAD, or any CAD tool that accepts STEP files.
     </div>
-    <div class="field-tip">Belt Height affects both the 3D preview and all STL downloads. Change it and the preview updates automatically.</div>
+    <div class="field-tip">STEP is the best format for CAD editing — it imports as a solid body, not a mesh, so you can sketch on faces, add features, and modify dimensions.</div>
   </div>
 </section>
+
 
 <section>
   <h2>3D — Hub</h2>

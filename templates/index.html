@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
 
@@ -189,7 +189,7 @@
         </div>
       </div>
       <div class="dl-wrap" id="belt-svg-wrap">
-        <button class="btn-download" style="background:#0f766e;"
+        <button class="btn-download" style="background:#0f766e;border:3px solid #064e3b;"
                 onclick="toggleDlMenu('dl-p1-belt', event)">⬇ Download Belt</button>
         <div class="dl-menu hidden" id="dl-p1-belt">
           <button class="dl-item fb-2d" onclick="downloadBeltSVG(); closeDlMenus()">SVG</button>
@@ -233,7 +233,7 @@
 
   <!-- ── PULLEY 2 PANEL (hidden until dual enabled) ── -->
   <aside class="controls-panel" id="panel2">
-    <div class="panel-title" style="color:#761516;border-bottom-color:#761516;">
+    <div class="panel-title panel-title-p2">
       Pulley 2
       <button class="btn-help"
               data-help2d="/static/Pulley2_2d_help.html"
@@ -344,7 +344,7 @@
     <section class="card download-card">
       <h2>Download</h2>
       <div class="dl-wrap">
-        <button class="btn-download" style="background:#761516;" onclick="toggleDlMenu('dl-p2-pulley', event)">⬇ Download Pulley</button>
+        <button class="btn-download-p2" onclick="toggleDlMenu('dl-p2-pulley', event)">⬇ Download Pulley</button>
         <div class="dl-menu hidden" id="dl-p2-pulley">
           <button class="dl-item fb-2d" onclick="downloadSVG(2); closeDlMenus()">SVG</button>
           <button class="dl-item fb-2d" onclick="downloadDXF(2); closeDlMenus()">DXF</button>
@@ -417,6 +417,22 @@ function saveSettings() {
     p2_print_extra:      document.getElementById('p2_print_extra').value,
     feature_build:       document.getElementById('feature_build').checked,
     belt_height:         document.getElementById('belt_height').value,
+    hub1_enabled:        document.getElementById('hub1_enabled').checked,
+    hub1_open:           document.getElementById('hub1-body').classList.contains('open'),
+    hub1_retention:      document.getElementById('hub1_retention').value,
+    hub1_screw_size:     document.getElementById('hub1_screw_size').value,
+    hub1_screw_count:    document.getElementById('hub1_screw_count').value,
+    hub1_flat_depth:     document.getElementById('hub1_flat_depth').value,
+    hub1_height:         document.getElementById('hub1_height').value,
+    hub1_od:             document.getElementById('hub1_od').value,
+    hub2_enabled:        document.getElementById('hub2_enabled').checked,
+    hub2_open:           document.getElementById('hub2-body').classList.contains('open'),
+    hub2_retention:      document.getElementById('hub2_retention').value,
+    hub2_screw_size:     document.getElementById('hub2_screw_size').value,
+    hub2_screw_count:    document.getElementById('hub2_screw_count').value,
+    hub2_flat_depth:     document.getElementById('hub2_flat_depth').value,
+    hub2_height:         document.getElementById('hub2_height').value,
+    hub2_od:             document.getElementById('hub2_od').value,
   };
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
 }
@@ -488,6 +504,40 @@ async function loadSettings() {
     if (s.feature_build) previewTab = '3d';
   }
   if (s.belt_height !== undefined) _val('belt_height', s.belt_height);
+
+  // Restore hub settings
+  for (const n of [1, 2]) {
+    const en = s[`hub${n}_enabled`];
+    if (en !== undefined) {
+      _chk(`hub${n}_enabled`, en);
+      const body = document.getElementById(`hub${n}-body`);
+      body.style.opacity      = en ? '' : '0.45';
+      body.style.pointerEvents = en ? '' : 'none';
+    }
+    if (s[`hub${n}_open`]) {
+      document.getElementById(`hub${n}-body`).classList.add('open');
+      document.getElementById(`hub${n}-arrow`).classList.add('open');
+    }
+    _val(`hub${n}_retention`,   s[`hub${n}_retention`]);
+    _val(`hub${n}_screw_size`,  s[`hub${n}_screw_size`]);
+    _val(`hub${n}_screw_count`, s[`hub${n}_screw_count`]);
+    _val(`hub${n}_flat_depth`,  s[`hub${n}_flat_depth`]);
+    if (s[`hub${n}_height`] !== undefined) {
+      const hEl = document.getElementById(`hub${n}_height`);
+      hEl.value = s[`hub${n}_height`];
+      hEl._userSet = true;
+    }
+    if (s[`hub${n}_od`] !== undefined) {
+      const odEl = document.getElementById(`hub${n}_od`);
+      odEl.value = s[`hub${n}_od`];
+      odEl._userSet = true;
+    }
+    // Restore screw/dshaft option visibility
+    const ret = document.getElementById(`hub${n}_retention`).value;
+    const isSS = ret === 'set_screw_nut' || ret === 'set_screw_std';
+    document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSS);
+    document.getElementById(`hub${n}_dshaft_opts`).classList.toggle('hidden', ret !== 'd_shaft');
+  }
 
   return true;
 }
@@ -1162,6 +1212,7 @@ let threeScene    = null;
 let threeCamera   = null;
 let threeControls = null;
 let threeModel    = null;
+let threeModel2   = null;
 let threeBelt     = null;
 let three3dTimer  = null;
 let _loadGen      = 0;   // increments on every load3DModel call; callbacks check this to discard stale meshes
@@ -1287,6 +1338,29 @@ function _fitCamera(geometry) {
   return size;
 }
 
+function _fitCameraToScene() {
+  const THREE = window._THREE;
+  const box3  = new THREE.Box3();
+  threeScene.traverse(obj => { if (obj.isMesh) box3.expandByObject(obj); });
+  if (box3.isEmpty()) return;
+  const centre = new THREE.Vector3();
+  box3.getCenter(centre);
+  const size = new THREE.Vector3();
+  box3.getSize(size);
+  const radius = size.length() * 0.5;
+  const dist   = radius * 3.2;
+  threeCamera.position.set(
+    centre.x + dist * 0.55,
+    centre.y - dist * 0.9,
+    centre.z + dist * 0.65,
+  );
+  threeCamera.up.set(0, 0, 1);
+  threeCamera.lookAt(centre);
+  threeControls.target.copy(centre);
+  threeControls.update();
+  return size;
+}
+
 function snapView(view) {
   if (!threeCamera || !threeControls) return;
   const THREE  = window._THREE;
@@ -1336,25 +1410,34 @@ function load3DModel(url) {
   const gen = ++_loadGen;
 
   // Remove previous models
-  if (threeModel) { threeScene.remove(threeModel); threeModel = null; }
-  if (threeBelt)  { threeScene.remove(threeBelt);  threeBelt  = null; }
+  if (threeModel)  { threeScene.remove(threeModel);  threeModel  = null; }
+  if (threeModel2) { threeScene.remove(threeModel2); threeModel2 = null; }
+  if (threeBelt)   { threeScene.remove(threeBelt);   threeBelt   = null; }
 
   document.getElementById('preview-footer').textContent = 'Loading 3D…';
 
   const isDual = url.includes('dual=true');
-  const pulleyMat = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55 });
-  const beltMat   = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.05, roughness: 0.80 });
+  const pulleyMat  = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55 });
+  const pulley2Mat = new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.10, roughness: 0.55 });
+  const beltMat    = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.05, roughness: 0.80 });
 
   if (isDual) {
-    const pulleyUrl = url + '&part=pulleys';
-    const beltUrl   = url + '&part=belt';
+    const p1Url   = url + '&part=p1';
+    const p2Url   = url + '&part=p2';
+    const beltUrl = url + '&part=belt';
 
-    _loadSTL(pulleyUrl, pulleyMat, (mesh, geo) => {
+    _loadSTL(p1Url, pulleyMat, (mesh) => {
       if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeModel = mesh;
-      const size = _fitCamera(geo);
-      document.getElementById('preview-footer').textContent =
+      const size = _fitCameraToScene();
+      if (size) document.getElementById('preview-footer').textContent =
         `3D drive  ·  ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm  ·  drag to orbit`;
+    });
+
+    _loadSTL(p2Url, pulley2Mat, (mesh) => {
+      if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
+      threeModel2 = mesh;
+      _fitCameraToScene();
     });
 
     _loadSTL(beltUrl, beltMat, (mesh) => {
@@ -1388,6 +1471,7 @@ function toggleHub(n) {
   const open  = body.classList.toggle('open');
   arrow.classList.toggle('open', open);
   if (open) _initHubDefaults(n);
+  saveSettings();
 }
 
 function onHubChange(n) {
@@ -1401,6 +1485,7 @@ function onHubChange(n) {
 
   _validateHub(n);
 
+  saveSettings();
   if (document.getElementById('feature_build').checked &&
       document.getElementById(`hub${n}_enabled`).checked) {
     schedulePreview();
@@ -1413,6 +1498,7 @@ function onHubEnabledChange(n) {
   // Dim the body when hub is disabled so the state is visually clear
   body.style.opacity       = enabled ? '' : '0.45';
   body.style.pointerEvents = enabled ? '' : 'none';
+  saveSettings();
   if (document.getElementById('feature_build').checked) {
     schedulePreview();
   }

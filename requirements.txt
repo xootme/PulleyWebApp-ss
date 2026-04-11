@@ -7,3 +7,4 @@ shapely>=2.0
 scipy>=1.10
 numpy>=1.24
 manifold3d>=3.0
+cadquery>=2.7

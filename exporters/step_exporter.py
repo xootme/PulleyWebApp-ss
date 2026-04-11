@@ -54,13 +54,19 @@ def _profile_key(family: str, pitch: str) -> str:
 
 
 def _build_outline_points(family, pitch, num_teeth,
-                          clearance_mm=0.0, backlash_mm=0.0, print_extra_mm=0.0):
+                          clearance_mm=0.0, backlash_mm=0.0, print_extra_mm=0.0,
+                          arc_step_mm=None):
     """
     Return a closed list of (x, y) mm points forming the full pulley outline:
       tooth groove segments (dense sampled)  +  OD arc lands (arc-sampled).
 
+    arc_step_mm overrides _ARC_STEP_MM for OD arc sampling (use larger values
+    for STEP export to reduce entity count without affecting groove accuracy).
+
     The pulley is centred at the origin; x-right, y-up (same as SVG / DXF).
     """
+    arc_step = arc_step_mm if arc_step_mm is not None else _ARC_STEP_MM
+
     key  = _profile_key(family, pitch)
     spec = PULLEY_SPECS[key]
     pv   = spec['pitch']
@@ -101,7 +107,7 @@ def _build_outline_points(family, pitch, num_teeth,
             continue   # teeth so close together there is no OD land
 
         arc_len = R_OD * arc_span
-        n_arc   = max(2, int(math.ceil(arc_len / _ARC_STEP_MM)))
+        n_arc   = max(2, int(math.ceil(arc_len / arc_step)))
 
         for k in range(1, n_arc + 1):
             a = arc_a_start + arc_span * k / n_arc
@@ -148,10 +154,10 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
           → flat faces face ±tangential (Y), vertices face ±Z
           → the two ±Y flat faces are vertical = perpendicular to hub top ✓
 
-      Pocket shape  (rectangular box, drops from hub top):
+      Pocket shape  (hex prism, drops from hub top):
           radial depth  (X) = t_nut + 0.5 clearance   (nut thickness)
           tangential width (Y) = waf  + 0.5 clearance  (flat-to-flat)
-          axial depth   (Z) = 2·R_circ + 0.5           (vertex-to-vertex)
+          axial depth   (Z) = 2·R_pkt                  (hex circumradius × 2, tip-to-tip with clearance)
 
       Hub height auto-raised if shorter than 2·R_circ + 0.5.
 
@@ -187,6 +193,14 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         pkt_y = waf + 0.5              # flat-to-flat + clearance
         pkt_x = t_nut + 0.5           # nut thickness + clearance
 
+        # Hex pocket circumradius and actual axial depth
+        R_pkt     = pkt_y / math.sqrt(3)   # circumradius of clearance hex
+        pkt_depth = 2.0 * R_pkt            # tip-to-tip depth of hex pocket
+
+        # Auto-raise hub height so nut pocket fits fully inside the hub boss
+        if hub_height_mm < pkt_depth:
+            hub_height_mm = pkt_depth
+
         # Require 2 × t_nut of wall outside the nut
         min_hub_r = R_bore + 3.0 * t_nut
         need_oblong = R_hub < min_hub_r
@@ -194,7 +208,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
         step = math.pi                 # 180° between captured-nut screws
     else:
-        waf = t_nut = R_circ = pkt_z = pkt_y = pkt_x = 0.0
+        waf = t_nut = R_circ = pkt_z = pkt_y = pkt_x = R_pkt = pkt_depth = 0.0
         min_hub_r = 0.0
         need_oblong = False
         eff_r = R_hub
@@ -243,16 +257,15 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         R_screw = screw_dia_mm / 2.0
 
         if captured_nut:
-            # Screw at Z centre of the pocket
-            z_screw = hub_top - pkt_z / 2.0
+            # Screw at centre of the nut (hub_top minus hex circumradius)
+            z_screw = hub_top - R_circ        # nut centre in Z
 
             # One-sided hole: enters from hub OD, stops at bore
             hole_len = eff_r - R_bore + 1.0
             hole_cx  = (eff_r + R_bore) / 2.0
 
-            # Box pocket centre: inner face at bore_r, top face flush with hub top
-            pkt_cx = R_bore + pkt_x / 2.0
-            pkt_cz = hub_top - pkt_z / 2.0
+            # Hex pocket: inner face at bore
+            pkt_cx = R_bore
 
         else:
             z_screw  = belt_height_mm + hub_height_mm / 2.0
@@ -273,13 +286,38 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
             if body.is_watertight:
                 body = trimesh.boolean.difference([body, hole], engine='manifold')
 
-            # ── Nut pocket (box, opens from hub top face) ─────────────────────
-            # pkt_x = radial (nut thickness), pkt_y = tangential (flat-to-flat),
-            # pkt_z = axial depth = tip-to-tip + clearance.
-            # Top of pocket is flush with hub top so nut slides straight in.
+            # ── Nut pocket (opens from hub top face) ──────────────────────────
+            # Profile in Shapely XY plane (X_s→Y_world tangential,
+            #                              Y_s→Z_world axial):
+            #   TOP: rectangular (±half_y wide) from 1 mm above hub_top
+            #        down to the lower hex corners (hub_top - 1.5·R_pkt).
+            #   BOTTOM: V-shape from lower corners to bottom tip,
+            #           matching the hex nut's lower profile.
+            # Z coords are embedded in the polygon so no Z translation needed.
             if captured_nut and body.is_watertight:
-                pocket = trimesh.creation.box([pkt_x, pkt_y, pkt_z])
-                pocket.apply_translation([pkt_cx, 0.0, pkt_cz])
+                half_y = pkt_y / 2.0
+                top_z  = hub_top + 1.0          # 1 mm overshoot → clean open top
+                low_z  = hub_top - 1.5 * R_pkt  # lower hex corners
+                tip_z  = hub_top - 2.0 * R_pkt  # bottom tip
+
+                pocket_verts = [
+                    ( half_y, top_z),   # top-right
+                    (-half_y, top_z),   # top-left
+                    (-half_y, low_z),   # lower-left hex corner
+                    ( 0.0,    tip_z),   # bottom tip (hex point)
+                    ( half_y, low_z),   # lower-right hex corner
+                ]
+                pocket_poly = ShapelyPolygon(pocket_verts)
+                pocket = trimesh.creation.extrude_polygon(pocket_poly, pkt_x)
+
+                # Rotate Shapely (X_s, Y_s, Z_s) → world (Y_w, Z_w, X_w)
+                rot = np.array([[0, 0, 1, 0],
+                                [1, 0, 0, 0],
+                                [0, 1, 0, 0],
+                                [0, 0, 0, 1]], dtype=float)
+                pocket.apply_transform(rot)
+                # Z already in polygon — only shift X to place inner face at bore
+                pocket.apply_translation([pkt_cx, 0.0, 0.0])
                 if abs(angle) > 1e-9:
                     pocket.apply_transform(
                         trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
@@ -326,6 +364,167 @@ def generate_pulley_stl(
                                hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
                                captured_nut)
     return result.export(file_type='stl')
+
+
+def generate_pulley_step(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    bore_mm: float,
+    belt_height_mm: float,
+    clearance_mm: float = 0.0,
+    backlash_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+    hub_od_mm: float = 0.0,
+    hub_height_mm: float = 0.0,
+    screw_dia_mm: float = 0.0,
+    screw_count: int = 0,
+    captured_nut: bool = False,
+) -> bytes:
+    """
+    Return STEP bytes of a timing pulley with all hub features using cadquery B-rep.
+
+    Builds the geometry natively in cadquery (proper solid B-rep, not mesh),
+    producing a compact STEP file that loads instantly in Fusion 360 / eDrawings.
+    """
+    import cadquery as cq
+    import tempfile, os
+
+    # ── 2D toothed outline ────────────────────────────────────────────────────
+    outline, _R_OD, _spec = _build_outline_points(
+        family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm,
+    )
+    # Simplify the profile for STEP: 0.05 mm tolerance reduces hundreds of
+    # near-collinear points without noticeably changing the tooth geometry.
+    _step_poly = ShapelyPolygon(outline).simplify(0.05, preserve_topology=True)
+    outline = list(_step_poly.exterior.coords[:-1])
+
+    # ── Toothed body (extrude 2D profile) ────────────────────────────────────
+    result = (cq.Workplane('XY')
+              .polyline(outline)
+              .close()
+              .extrude(belt_height_mm))
+
+    # ── Hub pre-calculations (mirrors _add_hub_and_bore logic) ───────────────
+    R_bore    = bore_mm / 2.0
+    hub_valid = hub_height_mm > 0.0 and hub_od_mm > bore_mm
+    R_hub     = hub_od_mm / 2.0 if hub_valid else 0.0
+    do_screws = hub_valid and screw_dia_mm > 0.0 and screw_count > 0
+
+    if do_screws and captured_nut:
+        waf, t_nut = _nut_dims(screw_dia_mm)
+        R_circ    = waf / math.sqrt(3)
+        pkt_y     = waf + 0.5
+        pkt_x     = t_nut + 0.5
+        R_pkt     = pkt_y / math.sqrt(3)
+        pkt_depth = 2.0 * R_pkt
+        if hub_height_mm < pkt_depth:
+            hub_height_mm = pkt_depth
+        min_hub_r  = R_bore + 3.0 * t_nut
+        need_oblong = R_hub < min_hub_r
+        eff_r = max(R_hub, min_hub_r)
+        step  = math.pi
+    else:
+        waf = t_nut = R_circ = pkt_y = pkt_x = R_pkt = pkt_depth = 0.0
+        min_hub_r   = 0.0
+        need_oblong = False
+        eff_r = R_hub
+        step  = math.pi / 2.0
+
+    screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
+    hub_top      = belt_height_mm + hub_height_mm
+    total_height = belt_height_mm
+
+    # ── Hub boss ──────────────────────────────────────────────────────────────
+    if hub_valid:
+        if captured_nut and need_oblong:
+            # Build oblong profile via Shapely, then extrude in cadquery
+            hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
+            for angle in screw_angles:
+                offset   = min_hub_r - R_hub
+                hub_poly = hub_poly.union(
+                    ShapelyPoint(offset * math.cos(angle),
+                                 offset * math.sin(angle)).buffer(
+                        R_hub, resolution=_BORE_SECTIONS))
+            hub_pts = list(hub_poly.exterior.coords[:-1])  # drop repeated closing pt
+            hub_boss = (cq.Workplane('XY')
+                        .workplane(offset=belt_height_mm)
+                        .polyline(hub_pts)
+                        .close()
+                        .extrude(hub_height_mm))
+        else:
+            hub_boss = (cq.Workplane('XY')
+                        .workplane(offset=belt_height_mm)
+                        .circle(R_hub)
+                        .extrude(hub_height_mm))
+        result       = result.union(hub_boss)
+        total_height = hub_top
+
+    # ── Bore ──────────────────────────────────────────────────────────────────
+    if R_bore > 0.5:
+        bore_cyl = (cq.Workplane('XY')
+                    .circle(R_bore)
+                    .extrude(total_height + 1.0)
+                    .translate((0.0, 0.0, -0.5)))
+        result = result.cut(bore_cyl)
+
+    # ── Set-screw holes + nut pockets ─────────────────────────────────────────
+    if do_screws:
+        R_screw = screw_dia_mm / 2.0
+
+        if captured_nut:
+            z_screw  = hub_top - R_circ
+            hole_len = eff_r - R_bore + 1.0
+            hole_cx  = (eff_r + R_bore) / 2.0
+            pkt_cx   = R_bore
+        else:
+            z_screw  = belt_height_mm + hub_height_mm / 2.0
+            hole_len = R_hub * 2.0 + 2.0
+            hole_cx  = 0.0
+
+        for angle in screw_angles:
+            # Radial screw hole: cylinder along X, centred at (hole_cx, 0, z_screw)
+            x_start = hole_cx - hole_len / 2.0
+            hole = (cq.Workplane('YZ')
+                    .circle(R_screw)
+                    .extrude(hole_len)
+                    .translate((x_start, 0.0, z_screw)))
+            if abs(angle) > 1e-9:
+                hole = hole.rotate((0, 0, 0), (0, 0, 1), math.degrees(angle))
+            result = result.cut(hole)
+
+            # Nut pocket: pentagon in YZ plane, extruded along +X from bore face
+            if captured_nut:
+                half_y = pkt_y / 2.0
+                top_z  = hub_top + 1.0          # 1 mm overshoot → clean open top
+                low_z  = hub_top - 1.5 * R_pkt  # lower hex corners
+                tip_z  = hub_top - 2.0 * R_pkt  # bottom V tip
+
+                pkt_pts = [
+                    ( half_y, top_z),
+                    (-half_y, top_z),
+                    (-half_y, low_z),
+                    ( 0.0,    tip_z),
+                    ( half_y, low_z),
+                ]
+                pocket = (cq.Workplane('YZ')
+                          .workplane(offset=pkt_cx)
+                          .polyline(pkt_pts)
+                          .close()
+                          .extrude(pkt_x))
+                if abs(angle) > 1e-9:
+                    pocket = pocket.rotate((0, 0, 0), (0, 0, 1), math.degrees(angle))
+                result = result.cut(pocket)
+
+    # ── Export to STEP ────────────────────────────────────────────────────────
+    tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
+    tmp.close()
+    try:
+        cq.exporters.export(result, tmp.name)
+        with open(tmp.name, 'rb') as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
 
 
 def _rot2d(pts, angle):
@@ -498,6 +697,10 @@ def generate_drive_stl_preview(
     # ── Return the requested subset ───────────────────────────────────────────
     if part == 'pulleys':
         export_parts = [p1, p2]
+    elif part == 'p1':
+        export_parts = [p1]
+    elif part == 'p2':
+        export_parts = [p2]
     elif part == 'belt':
         export_parts = [belt_mesh] if belt_mesh else []
     else:
