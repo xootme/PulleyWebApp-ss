@@ -53,7 +53,7 @@
     <button class="btn-help"
             data-help-2d="/static/TwoPulleyDrive_help.html"
             data-help-3d="/static/TwoPulleyDrive_help.html"
-            onclick="openHelp(this)" title="Two Pulley Drive Help">&#9432;</button>
+            onclick="openHelp(this, event)" title="Two Pulley Drive Help">&#9432;</button>
   </div>
 </div>
 
@@ -66,7 +66,7 @@
       <button class="btn-help"
               data-help-2d="/static/Pulley1_help.html"
               data-help-3d="/static/Pulley1_help.html"
-              onclick="openHelp(this)" title="Help">&#9432;</button>
+              onclick="openHelp(this, event)" title="Help">&#9432;</button>
     </div>
 
     <section class="card fb-2d">
@@ -222,7 +222,7 @@
       <button class="btn-help"
               data-help-2d="/static/Pulley2_help.html"
               data-help-3d="/static/Pulley2_help.html"
-              onclick="openHelp(this)" title="Help">&#9432;</button>
+              onclick="openHelp(this, event)" title="Help">&#9432;</button>
     </div>
     <div class="card belt-lock-info fb-2d" id="belt-lock-info">
       Belt: <strong id="p2-belt-label">—</strong><br>
@@ -1054,9 +1054,11 @@ function onFeatureBuildToggle() {
   saveSettings();
 }
 
-function openHelp(btn) {
+function openHelp(btn, evt) {
+  evt.stopPropagation();   // prevent closeDlMenus document handler from firing
   const fb = document.getElementById('feature_build').checked;
-  window.open(fb ? btn.dataset.help3d : btn.dataset.help2d, '_blank');
+  const url = fb ? btn.dataset.help3d : btn.dataset.help2d;
+  window.open(url, '_blank');
 }
 
 function downloadSTEP(n) {
