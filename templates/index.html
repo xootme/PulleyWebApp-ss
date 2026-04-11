@@ -218,6 +218,15 @@
       <img id="preview-img" src="" alt="" style="display:none;">
       <div class="preview-placeholder" id="preview-placeholder">Select a profile to preview</div>
       <canvas id="three-canvas" style="display:none;"></canvas>
+      <div class="view-snap-bar" id="view-snap-bar" style="display:none;">
+        <button class="view-snap-btn" onclick="snapView('top')"      title="View from top">Top</button>
+        <button class="view-snap-btn" onclick="snapView('bottom')"   title="View from bottom">Bot</button>
+        <button class="view-snap-btn" onclick="snapView('front')"    title="View from front">Front</button>
+        <button class="view-snap-btn" onclick="snapView('back')"     title="View from back">Back</button>
+        <button class="view-snap-btn" onclick="snapView('left')"     title="View from left">Left</button>
+        <button class="view-snap-btn" onclick="snapView('right')"    title="View from right">Right</button>
+        <button class="view-snap-btn" onclick="snapView('oblique')"  title="Oblique view">Oblique</button>
+      </div>
     </div>
     <div class="preview-footer" id="preview-footer"></div>
   </div>
@@ -930,14 +939,17 @@ function setPreviewTab(tab) {
   const canvas = document.getElementById('three-canvas');
   const img    = document.getElementById('preview-img');
   const box = document.getElementById('preview-box');
+  const snapBar = document.getElementById('view-snap-bar');
   if (tab === '3d') {
-    canvas.style.display = 'block';
-    img.style.display    = 'none';
+    canvas.style.display  = 'block';
+    img.style.display     = 'none';
     document.getElementById('preview-placeholder').style.display = 'none';
     box.classList.add('preview-box-3d');
+    snapBar.style.display = 'flex';
     schedulePreview3D();
   } else {
-    canvas.style.display = 'none';
+    canvas.style.display  = 'none';
+    snapBar.style.display = 'none';
     box.classList.remove('preview-box-3d');
     schedulePreview();
   }
@@ -1273,6 +1285,42 @@ function _fitCamera(geometry) {
   threeControls.target.copy(centre);
   threeControls.update();
   return size;
+}
+
+function snapView(view) {
+  if (!threeCamera || !threeControls) return;
+  const THREE  = window._THREE;
+  const target = threeControls.target.clone();
+  const box3   = new THREE.Box3();
+  threeScene.traverse(obj => { if (obj.isMesh) box3.expandByObject(obj); });
+  const size   = new THREE.Vector3();
+  box3.getSize(size);
+  const dist = size.length() * 0.6;
+
+  const positions = {
+    top:     [0,  0,  dist],
+    bottom:  [0,  0, -dist],
+    front:   [0, -dist, 0],
+    back:    [0,  dist, 0],
+    left:    [-dist, 0, 0],
+    right:   [ dist, 0, 0],
+    oblique: [dist * 0.55, -dist * 0.9, dist * 0.65],
+  };
+  const ups = {
+    top:     [0,  1, 0],
+    bottom:  [0, -1, 0],
+    front:   [0,  0, 1],
+    back:    [0,  0, 1],
+    left:    [0,  0, 1],
+    right:   [0,  0, 1],
+    oblique: [0,  0, 1],
+  };
+  const [px, py, pz] = positions[view] || positions.oblique;
+  const [ux, uy, uz] = ups[view]       || ups.oblique;
+  threeCamera.position.set(target.x + px, target.y + py, target.z + pz);
+  threeCamera.up.set(ux, uy, uz);
+  threeCamera.lookAt(target);
+  threeControls.update();
 }
 
 function load3DModel(url) {

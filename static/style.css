@@ -231,6 +231,7 @@ select:focus, input[type="number"]:focus {
   overflow: hidden;
   padding: 12px;
   background: #fafbfc;
+  position: relative;
 }
 
 #preview-img {
@@ -432,6 +433,48 @@ main.dual .controls-panel {
 main.dual #panel2 {
   border-left: 1px solid #dde3ea;
   border-right: none;
+}
+
+/* ── Pulley 2 accent colour (amber/orange) ── */
+#panel2 .panel-title {
+  color: #c2590a;
+  border-bottom-color: #c2590a;
+}
+#panel2 .btn-download {
+  background: #c2590a;
+}
+#panel2 .btn-download:hover {
+  background: #9e4608;
+}
+
+/* ── 3D view-snap button overlay ── */
+.view-snap-bar {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+  pointer-events: auto;
+}
+.view-snap-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.82);
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #333;
+  white-space: nowrap;
+  backdrop-filter: blur(2px);
+  transition: background 0.12s;
+}
+.view-snap-btn:hover {
+  background: rgba(0,120,212,0.15);
+  border-color: #0078d4;
+  color: #0078d4;
 }
 
 /* ── Help button ── */
