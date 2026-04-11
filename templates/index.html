@@ -335,6 +335,17 @@
 
 </main>
 
+<!-- ── Help modal ── -->
+<div id="help-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:8px;width:min(720px,95vw);height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.3);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #dde3ea;background:#f7f9fc;flex-shrink:0;">
+      <span style="font-size:13px;font-weight:600;color:#333;" id="help-modal-title">Help</span>
+      <button onclick="closeHelp()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#555;line-height:1;padding:0 4px;" title="Close">&times;</button>
+    </div>
+    <iframe id="help-iframe" src="" style="flex:1;border:none;min-height:0;"></iframe>
+  </div>
+</div>
+
 <footer>
   <a href="https://cheapcadtools.com">cheapcadtools.com</a> &nbsp;|&nbsp;
   <a href="https://cheapcadtools.com/privacy-policy/Fusion360-privacy-policy">Privacy Policy</a>
@@ -1055,11 +1066,24 @@ function onFeatureBuildToggle() {
 }
 
 function openHelp(btn, evt) {
-  evt.stopPropagation();   // prevent closeDlMenus document handler from firing
-  const fb = document.getElementById('feature_build').checked;
+  evt.stopPropagation();
+  const fb  = document.getElementById('feature_build').checked;
   const url = fb ? btn.dataset.help3d : btn.dataset.help2d;
-  window.open(url, '_blank');
+  document.getElementById('help-iframe').src = url;
+  document.getElementById('help-overlay').style.display = 'flex';
 }
+function closeHelp() {
+  document.getElementById('help-overlay').style.display = 'none';
+  document.getElementById('help-iframe').src = '';
+}
+// Close on overlay background click
+document.getElementById('help-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeHelp();
+});
+// Close on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeHelp();
+});
 
 function downloadSTEP(n) {
   const params = buildParams();
