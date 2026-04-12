@@ -124,22 +124,50 @@
 <section>
   <h2>Belt Profile</h2>
   <div class="field">
-    <div class="field-name">Family</div>
+    <div class="field-name">Family &amp; Pitch</div>
     <div class="field-desc">
-      <strong>HTD</strong> — high-torque drive, common in robotics and 3D printers.<br>
-      <strong>GT / GT2 / GT3</strong> — Gates tooth profile, precision motion control.<br>
-      <strong>T-series (T2.5 / T5 / T10)</strong> — trapezoidal tooth, lower backlash at slow speeds.<br>
-      <strong>MXL / XL / L / H</strong> — Imperial trapezoidal, US-market and legacy equipment.
+      Select the belt <strong>family</strong> then the <strong>pitch</strong>. The pitch is the centre-to-centre distance between adjacent belt teeth in millimetres.
+      <table style="margin: 10px 0; font-size: 12px; border-collapse: collapse; width: 100%;">
+        <tr style="background:#0f766e; color:#fff;">
+          <th style="padding:5px 8px; text-align:left;">Family</th>
+          <th style="padding:5px 8px; text-align:left;">Pitches</th>
+          <th style="padding:5px 8px; text-align:left;">Profile shape</th>
+          <th style="padding:5px 8px; text-align:left;">Standard</th>
+        </tr>
+        <tr><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">HTD</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">3M, 5M, 8M, 14M, 20M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Curvilinear arc flanks</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 13050:2014</td></tr>
+        <tr style="background:#f8fafc;"><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">GT</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">2M, 3M, 5M, 8M, 14M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Gates PowerGrip GT2/GT3 curvilinear arc flanks</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Gates</td></tr>
+        <tr><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">STD / S-series</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">S2M, S3M, S5M, S8M, S14M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Large-radius arc flanks with intentional tip crush</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 13050:2014 S-series</td></tr>
+        <tr style="background:#f8fafc;"><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">RPP</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">R3M, R5M, R8M, R14M, R20M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Parabolic flanks with tip fillet</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 13050:2014 Section 8</td></tr>
+        <tr><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Imperial</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">MXL, XXL, XL, L, H, XH, XXH</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Trapezoidal flanks, 40° included angle</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 5294:2012</td></tr>
+        <tr style="background:#f8fafc;"><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">T</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">T2.5, T5, T10, T20</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Trapezoidal flanks, 50° included angle</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 17396:2017</td></tr>
+        <tr><td style="padding:4px 8px;">AT</td><td style="padding:4px 8px;">AT3, AT5, AT10, AT20</td><td style="padding:4px 8px;">Trapezoidal flanks, 50° included angle</td><td style="padding:4px 8px;">ISO 17396:2017</td></tr>
+      </table>
     </div>
-    <div class="field-tip">Changing Family resets Pitch to only the available options for that family.</div>
+    <div class="field-tip">Changing the Family resets the Pitch options to only those available for that family.</div>
   </div>
   <div class="field">
-    <div class="field-name">Pitch</div>
+    <div class="field-name">STD / S-series — alternate names</div>
     <div class="field-desc">
-      Centre-to-centre distance between belt teeth in mm (e.g. 5M = 5 mm). Larger pitch = coarser drive,
-      higher torque capacity. Smaller pitch = finer resolution, quieter operation.
+      These profiles appear under several names depending on the manufacturer or region. All refer to the same ISO 13050 S-series large-radius arc-flank geometry:
+      <ul style="margin: 6px 0 0 18px; line-height: 1.8;">
+        <li><strong>S-series</strong> — ISO 13050 official designation (S2M, S3M, S5M, S8M, S14M)</li>
+        <li><strong>STD</strong> — Super Torque Drive, used by several European and Asian belt manufacturers</li>
+        <li><strong>S-HTD</strong> — occasionally used to distinguish S-series from standard HTD curvilinear profiles</li>
+        <li><strong>Synchroflex S</strong> — ContiTech / Continental trade name for their S-series belts</li>
+      </ul>
+      The "S" prefix in the pitch code (e.g. <code>S8M</code>) comes directly from the ISO S-series classification. If a belt datasheet lists an S-series pitch code, it is compatible with this profile family regardless of the trade name used.
     </div>
-    <div class="field-lock">Locked to Family — choose Family first, then Pitch.</div>
+  </div>
+  <div class="field">
+    <div class="field-name">RPP vs STD — not the same profile</div>
+    <div class="field-desc">
+      Brecoflex and Breco use the name "RPP" (Rubber Positive Profile) for their belts, and some sources describe STD/S-series belts as "RPP S-series". However, ISO 13050 defines <em>two distinct profile families</em>:
+      <ul style="margin: 6px 0 0 18px; line-height: 1.8;">
+        <li><strong>STD / S-series</strong> — groove flanks defined by a large-radius circular arc (<code>Rbb</code>)</li>
+        <li><strong>RPP</strong> — groove flanks defined by a parabolic curve (<code>y' = K·x'²</code>) with a tip fillet radius</li>
+      </ul>
+      Check your belt datasheet: if the pitch code starts with <code>R</code> (e.g. <code>R8M</code>), select <strong>RPP</strong>. If it starts with <code>S</code> (e.g. <code>S8M</code>), select <strong>STD / S-series</strong>.
+    </div>
   </div>
 </section>
 
@@ -151,15 +179,13 @@
       Determines pulley diameter directly — more teeth = larger pulley. A minimum tooth count is enforced
       per belt specification to prevent undercutting of the tooth profile.
     </div>
-    <div class="field-tip">In Two Pulley Drive mode, Pulley 1 has highest edit priority — changing its teeth keeps
-      the Gear Ratio fixed and recalculates Pulley 2 automatically.</div>
+    <div class="field-tip">A minimum tooth count is enforced per belt specification to prevent undercutting of the tooth profile.</div>
   </div>
   <div class="field">
     <div class="field-name"><span class="tag tag-auto">Auto</span> Outer Diameter (mm)</div>
     <div class="field-desc">
       Calculated from tooth count and pitch. Can also be typed directly — the tool finds the nearest
-      whole-number tooth count that matches the entered diameter. In Two Pulley Drive mode, editing OD here
-      also recalculates Pulley 2.
+      whole-number tooth count that matches the entered diameter.
     </div>
   </div>
   <div class="field">
@@ -183,32 +209,29 @@
   <div class="field">
     <div class="field-name">Tooth Clearance</div>
     <div class="field-desc">
-      Extra room at the tip of each belt tooth in the groove.
-      <strong>Tight</strong> = minimal clearance for precision fit.
-      <strong>Standard</strong> = recommended default.
-      <strong>Loose</strong> = easier assembly, slightly more noise.
-      <strong>Custom</strong> = exact mm offset (positive = deeper groove).
+      Radial gap between the belt tooth tip and the groove bottom.
+      <strong>Tight</strong> — groove depth reduced to contact the belt tooth tip.
+      <strong>Std.</strong> — exactly per the applicable standard; correct for most applications.
+      <strong>Loose</strong> — groove deepened 5% beyond Std.; easier belt seating, tolerates printed dimensional variation.
+      <strong>Custom</strong> — enter any mm value (positive = deeper groove, negative = shallower).
     </div>
-    <div class="field-tip">Use Standard unless tuning for a specific belt fit or FDM dimensional tolerance.</div>
+    <div class="field-tip">Too little clearance makes the belt hard to seat and increases wear. Too much increases backlash.</div>
   </div>
   <div class="field">
     <div class="field-name">Backlash</div>
     <div class="field-desc">
-      Side-to-side play between belt teeth and pulley grooves.
-      <strong>None</strong> = zero gap, maximum accuracy, binding risk.
-      <strong>Tight</strong> = minimal play, for precision servos.
-      <strong>Standard</strong> = safe default.
-      <strong>Loose</strong> = reduces binding risk.
-      <strong>Custom</strong> = exact mm offset.
+      Tangential play between belt tooth and groove — how much the pulley can rotate before engaging when reversing.
+      <strong>Tight</strong> — groove narrowed to match belt tooth root width; best for CNC or precision reversal.
+      <strong>Std.</strong> — per the applicable standard; suitable for most drives.
+      <strong>Loose</strong> — groove is widened by 5% of the belt's tooth width.
+      <strong>Custom</strong> — enter any mm value; groove widens by half this value per side.
     </div>
   </div>
   <div class="field">
     <div class="field-name">3D Print Compensation (mm)</div>
     <div class="field-desc">
-      Uniform outward offset applied to all non-bore surfaces. Compensates for FDM over-extrusion or material
-      shrinkage. Typical range: 0.05–0.2 mm.
+      Shrinks the groove profile inward to compensate for FDM dimensional bloat. Typical starting value: <code>0.1–0.2 mm</code>. Set to <code>0</code> for CNC or resin printing.
     </div>
-    <div class="field-tip">Set to 0 for laser-cut or machined parts. For FDM, start with 0.1 mm and iterate with a test print.</div>
   </div>
 </section>
 

@@ -349,34 +349,34 @@
   <h2>Edit Priority — How the Three Values Interact</h2>
   <div class="field">
     <div class="field-desc">
-      The drive has three linked values: Pulley 1 size, Gear Ratio, and Pulley 2 size. Editing any one fixes
-      it as the anchor and recalculates the lowest-priority value. Priority order:
-    </div>
-    <div class="diagram">
-      P1 (highest) &nbsp;&rarr;&nbsp; Gear Ratio &nbsp;&rarr;&nbsp; P2 (lowest)
+      The drive has three linked values: Pulley 1 size, Gear Ratio, and Pulley 2 size.
+      Behaviour depends on whether <strong>Lock Ratio</strong> is checked.
     </div>
   </div>
   <div class="field">
-    <div class="field-name">Edit Pulley 1 (teeth or OD)</div>
+    <div class="field-name">Lock Ratio &#9745; (checked — default)</div>
     <div class="field-desc">
-      P1 is the anchor. Gear Ratio stays fixed; Pulley 2 is recalculated.
+      The current Gear Ratio is preserved when either pulley is edited.
+      Editing P1 recalculates P2 to maintain the ratio. Editing P2 recalculates P1 to maintain the ratio.
+      If a pulley would fall below its minimum tooth count, it is clamped at the minimum and the other pulley
+      is recalculated from there.
     </div>
-    <div class="field-tip">Use when P1 is dictated by your motor shaft or available pulley and you want to keep the same drive ratio.</div>
+    <div class="field-tip">Use Lock Ratio when you have a target ratio and want both pulleys to stay consistent as you explore sizes.</div>
   </div>
   <div class="field">
-    <div class="field-name">Edit Gear Ratio</div>
+    <div class="field-name">Lock Ratio &#9744; (unchecked)</div>
     <div class="field-desc">
-      Ratio is the anchor. P1 stays fixed; Pulley 2 is recalculated to the closest achievable ratio with
-      whole-number teeth.
+      Each pulley is independent. Editing either pulley only updates the Gear Ratio display — the other
+      pulley does not change.
     </div>
-    <div class="field-tip">The ratio snaps to the exact achievable value — e.g. target 1.500 with 20T driver gives exactly 30T on P2.</div>
+    <div class="field-tip">Use when you have fixed pulley sizes and just want to know the resulting ratio.</div>
   </div>
   <div class="field">
-    <div class="field-name">Edit Pulley 2 (teeth or OD)</div>
+    <div class="field-name">Edit Gear Ratio (either mode)</div>
     <div class="field-desc">
-      P2 is the anchor. P1 stays fixed; Gear Ratio is recalculated from P2/P1.
+      P1 stays fixed; Pulley 2 is recalculated to the closest achievable ratio with whole-number teeth.
+      Snaps to the exact achievable value after entry.
     </div>
-    <div class="field-tip">Use when you have a specific driven pulley size or space constraint and want to know the resulting ratio.</div>
   </div>
 </section>
 
@@ -431,24 +431,16 @@
   <div class="field">
     <div class="field-name">Designing for a target ratio</div>
     <div class="field-desc">
-      Set Pulley 1 teeth first (it anchors the drive), type the desired ratio — Pulley 2 updates
-      automatically. Fine-tune with &#9650;/&#9660; buttons. Then set centre distance to match your
-      available belt.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Working from a P2 size constraint</div>
-    <div class="field-desc">
-      If you know the output pulley must fit a specific diameter or tooth count, set Pulley 2 directly —
-      the Gear Ratio field shows what ratio you actually get.
+      Enable <strong>Lock Ratio</strong>, set Pulley 1 teeth, then type the desired ratio — Pulley 2
+      updates automatically. Fine-tune with the &#9650;/&#9660; buttons. Then set centre distance to
+      match your available belt.
     </div>
   </div>
   <div class="field">
     <div class="field-name">Downloading 2D</div>
     <div class="field-desc">
       Each pulley panel has <strong>Download SVG</strong> and <strong>Download DXF</strong> buttons.
-      For the complete belt drive drawing use the <strong>Download Belt</strong> button in the Pulley 1
-      panel — SVG or DXF with separate <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.
+      For the complete belt drive drawing use the <strong>Download Belt</strong> button in the Pulley 1 panel.
     </div>
   </div>
 </section>

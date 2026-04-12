@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Mouse Navigation — Timing Pulleys</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #f0f2f5;
+      padding: 24px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    header {
+      background: #0078d4;
+      color: #fff;
+      padding: 14px 20px;
+      border-radius: 8px 8px 0 0;
+      margin-bottom: 0;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+    section {
+      background: #fff;
+      border: 1px solid #dde3ea;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      margin-top: 14px;
+    }
+    section h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #0078d4;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 3px;
+    }
+    .field-desc {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .field-tip {
+      font-size: 12px;
+      color: #0078d4;
+      background: #eef5fc;
+      border-left: 3px solid #0078d4;
+      padding: 5px 10px;
+      border-radius: 0 4px 4px 0;
+      margin-top: 5px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 10px 0;
+    }
+    th {
+      background: #0078d4;
+      color: #fff;
+      padding: 6px 10px;
+      text-align: left;
+    }
+    td {
+      padding: 5px 10px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: #f8fafc; }
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#128444; 3D Mouse Navigation</h1>
+  <p>Cheap CAD Tools · Timing Pulley Generator</p>
+</header>
+
+<section>
+  <h2>Viewer Controls</h2>
+  <div class="field">
+    <div class="field-desc">
+      The 3D tab shows an interactive drive preview — both pulleys and the belt in real time.
+      All geometry is centred at the shared origin so both pulleys remain in frame after every update.
+    </div>
+  </div>
+  <table>
+    <tr><th>Action</th><th>Mouse</th><th>Trackpad</th></tr>
+    <tr><td><strong>Orbit</strong> — rotate the view</td><td>Left-click &amp; drag</td><td>One-finger drag</td></tr>
+    <tr><td><strong>Zoom</strong> — move closer or farther</td><td>Scroll wheel</td><td>Two-finger pinch / scroll</td></tr>
+    <tr><td><strong>Pan</strong> — slide the view</td><td>Right-click &amp; drag</td><td>Two-finger drag</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Snap View Buttons</h2>
+  <div class="field">
+    <div class="field-desc">
+      The snap bar above the 3D view jumps the camera to a preset orientation instantly.
+      Use these to check tooth alignment, hub geometry, or belt wrap from a known viewpoint.
+    </div>
+  </div>
+  <table>
+    <tr><th>Button</th><th>Camera position</th><th>Useful for</th></tr>
+    <tr><td><strong>Top</strong></td><td>Directly above, looking down</td><td>Belt wrap, centre distance, pulley spacing</td></tr>
+    <tr><td><strong>Bot</strong></td><td>Directly below, looking up</td><td>Underside of pulleys, bore check</td></tr>
+    <tr><td><strong>Front</strong></td><td>In front of the drive, looking back</td><td>Tooth profile, belt teeth, hub height</td></tr>
+    <tr><td><strong>Back</strong></td><td>Behind the drive, looking forward</td><td>Reverse side of tooth profile</td></tr>
+    <tr><td><strong>Left</strong></td><td>Left end of the drive axle</td><td>Pulley 1 face, hub boss</td></tr>
+    <tr><td><strong>Right</strong></td><td>Right end of the drive axle</td><td>Pulley 2 face, hub boss</td></tr>
+    <tr><td><strong>Oblique</strong></td><td>45° above and to the front</td><td>General overview, default starting view</td></tr>
+  </table>
+  <div class="field-tip">After snapping to a view you can still orbit, zoom, and pan freely from that position.</div>
+</section>
+
+<section>
+  <h2>What Is Shown</h2>
+  <div class="field">
+    <div class="field-desc">
+      The drive preview renders three parts in a single scene:
+      <ul style="margin: 8px 0 0 18px; line-height: 1.8;">
+        <li><strong>Pulley 1</strong> (left) and <strong>Pulley 2</strong> (right) — including any hub boss and retention features.</li>
+        <li><strong>Belt</strong> in dark grey, wrapping both pulleys with correct arc of contact on each side.</li>
+      </ul>
+      <br>
+      Pulleys are phase-rotated so their tooth grooves mesh precisely with the belt teeth — exactly as they
+      would on a physical drive.
+    </div>
+    <div class="field-tip">The preview geometry is exactly what the STL downloads produce — if the drive looks right in the viewer, the parts are correct.</div>
+  </div>
+</section>
+
+<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+
+</body>
+</html>

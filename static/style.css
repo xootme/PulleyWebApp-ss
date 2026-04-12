@@ -207,9 +207,9 @@ select:focus, input[type="number"]:focus {
 
 .preview-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   padding: 8px 16px;
+  gap: 8px;
   border-bottom: 1px solid #dde3ea;
   background: #f7f9fc;
   font-size: 13px;
@@ -217,7 +217,6 @@ select:focus, input[type="number"]:focus {
   color: #333;
   flex-shrink: 0;
 }
-.preview-header span:last-child { font-weight: 400; color: #666; font-size: 12px; }
 
 .preview-tab {
   padding: 3px 10px;
@@ -372,6 +371,16 @@ footer a:hover { text-decoration: underline; }
   color: #444;
 }
 .ratio-btn:hover { background: #d0daea; border-color: #0078d4; color: #0078d4; }
+.lock-ratio-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
 .min-dist-btn {
   padding: 3px 10px;
   font-size: 12px;
@@ -395,7 +404,6 @@ footer a:hover { text-decoration: underline; }
 }
 
 .reset-btn {
-  margin-left: auto;
   padding: 3px 10px;
   font-size: 12px;
   background: #f1f3f5;
@@ -406,6 +414,23 @@ footer a:hover { text-decoration: underline; }
   white-space: nowrap;
 }
 .reset-btn:hover { background: #fee2e2; border-color: #f87171; color: #b91c1c; }
+.drive-info-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  background: #eef5fc;
+  border: 1px solid #90b8db;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #0078d4;
+  white-space: nowrap;
+}
+.drive-info-btn:hover { background: #0078d4; border-color: #0078d4; color: #fff; }
+.drive-bar-right {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
 .drive-note {
   font-size: 11px;
   color: #888;
@@ -455,16 +480,13 @@ main.dual #panel2 {
   border-bottom-color: #761516 !important;
 }
 
-/* ── 3D view-snap button overlay ── */
+/* ── Snap buttons container (inside preview-header) ── */
 .view-snap-bar {
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
+  flex: 1;
   display: flex;
+  justify-content: center;
+  align-items: center;
   gap: 4px;
-  z-index: 10;
-  pointer-events: auto;
 }
 .view-snap-btn {
   padding: 3px 8px;

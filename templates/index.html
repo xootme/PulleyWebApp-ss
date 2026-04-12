@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
 
@@ -46,14 +46,22 @@
       <button class="ratio-btn" onclick="stepP2Teeth(1)"  title="More teeth on Pulley 2">&#9650;</button>
       <button class="ratio-btn" onclick="stepP2Teeth(-1)" title="Fewer teeth on Pulley 2">&#9660;</button>
     </div>
+    <label class="lock-ratio-label" title="Lock Ratio: changes to either pulley adjust the other to maintain the current ratio">
+      <input type="checkbox" id="lock_ratio" checked onchange="saveSettings()">
+      Lock Ratio
+    </label>
     <span class="drive-note" id="ratio_note"></span>
   </div>
-  <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
-  <div class="drive-help fb-2d">
+  <div class="drive-bar-right">
+    <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
+    <button class="drive-info-btn fb-3d"
+            onclick="openHelpUrl('/static/3D_Print_help.html')">&#9432; 3D Print</button>
+    <button class="drive-info-btn fb-3d"
+            onclick="openHelpUrl('/static/Laser_Waterjet_help.html')">&#9432; Laser/Waterjet</button>
     <button class="btn-help"
             data-help2d="/static/TwoPulleyDrive_2d_help.html"
             data-help3d="/static/TwoPulleyDrive_3d_help.html"
-            onclick="openHelp(this, event)" title="Two Pulley Drive Help">&#9432;</button>
+            onclick="openHelp(this, event)" title="Help">&#9432;</button>
   </div>
 </div>
 
@@ -177,6 +185,32 @@
       </div>
     </section>
 
+    <section class="card fb-3d" style="opacity:0.55;">
+      <div class="hub-header" onclick="toggleTbd('flange1')">
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="flange1_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          Flanges
+        </span>
+        <span class="hub-arrow" id="flange1-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body" id="flange1-body">
+        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+      </div>
+    </section>
+
+    <section class="card fb-3d" style="opacity:0.55;">
+      <div class="hub-header" onclick="toggleTbd('spokes1')">
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="spokes1_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          Spokes
+        </span>
+        <span class="hub-arrow" id="spokes1-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body" id="spokes1-body">
+        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+      </div>
+    </section>
+
     <section class="card download-card">
       <h2>Download</h2>
       <div class="dl-wrap">
@@ -204,29 +238,34 @@
 
   <!-- ── PREVIEW PANEL ── -->
   <div class="preview-panel">
+    <!-- Combined profile + snap bar -->
     <div class="preview-header">
-      <span id="profile-label" class="fb-2d">HTD 5M — 20T</span>
-      <span class="fb-3d" id="fb-preview-label" style="font-weight:600;color:#555;">3D Features</span>
-      <span style="display:flex;gap:6px;align-items:center;">
+      <span id="profile-label">HTD 5M — 20T</span>
+      <!-- Snap buttons — centred, shown only when 3D tab is active -->
+      <div id="view-snap-bar" class="view-snap-bar" style="display:none;">
+        <button class="view-snap-btn" onclick="snapView('top')"      title="View from directly above">Top</button>
+        <button class="view-snap-btn" onclick="snapView('bottom')"   title="View from directly below">Bot</button>
+        <button class="view-snap-btn" onclick="snapView('front')"    title="View from front">Front</button>
+        <button class="view-snap-btn" onclick="snapView('back')"     title="View from back">Back</button>
+        <button class="view-snap-btn" onclick="snapView('left')"     title="View Pulley 1 face from left">Left</button>
+        <button class="view-snap-btn" onclick="snapView('right')"    title="View Pulley 2 face from right">Right</button>
+        <button class="view-snap-btn" onclick="snapView('oblique')"  title="Oblique overview">Oblique</button>
+      </div>
+      <!-- Right side controls -->
+      <span style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;">
         <button id="tab-pulley" class="preview-tab active fb-2d" onclick="setPreviewTab('pulley')">Pulley</button>
         <button id="tab-belt"   class="preview-tab hidden fb-2d"  onclick="setPreviewTab('belt')">Belt</button>
         <button id="tab-3d"     class="preview-tab hidden fb-3d"  onclick="setPreviewTab('3d')">3D</button>
         <span id="od-label" class="fb-2d"></span>
+        <button class="drive-info-btn fb-3d"
+                onclick="openHelpUrl('/static/3D_Mouse_Nav_Help.html')"
+                title="3D navigation and snap view help">&#9432; Mouse Nav</button>
       </span>
     </div>
     <div class="preview-box" id="preview-box">
       <img id="preview-img" src="" alt="" style="display:none;">
       <div class="preview-placeholder" id="preview-placeholder">Select a profile to preview</div>
       <canvas id="three-canvas" style="display:none;"></canvas>
-      <div class="view-snap-bar" id="view-snap-bar" style="display:none;">
-        <button class="view-snap-btn" onclick="snapView('top')"      title="View from top">Top</button>
-        <button class="view-snap-btn" onclick="snapView('bottom')"   title="View from bottom">Bot</button>
-        <button class="view-snap-btn" onclick="snapView('front')"    title="View from front">Front</button>
-        <button class="view-snap-btn" onclick="snapView('back')"     title="View from back">Back</button>
-        <button class="view-snap-btn" onclick="snapView('left')"     title="View from left">Left</button>
-        <button class="view-snap-btn" onclick="snapView('right')"    title="View from right">Right</button>
-        <button class="view-snap-btn" onclick="snapView('oblique')"  title="Oblique view">Oblique</button>
-      </div>
     </div>
     <div class="preview-footer" id="preview-footer"></div>
   </div>
@@ -341,6 +380,32 @@
       </div>
     </section>
 
+    <section class="card fb-3d" style="opacity:0.55;">
+      <div class="hub-header" onclick="toggleTbd('flange2')">
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="flange2_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          Flanges
+        </span>
+        <span class="hub-arrow" id="flange2-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body" id="flange2-body">
+        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+      </div>
+    </section>
+
+    <section class="card fb-3d" style="opacity:0.55;">
+      <div class="hub-header" onclick="toggleTbd('spokes2')">
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="spokes2_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          Spokes
+        </span>
+        <span class="hub-arrow" id="spokes2-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body" id="spokes2-body">
+        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+      </div>
+    </section>
+
     <section class="card download-card">
       <h2>Download</h2>
       <div class="dl-wrap">
@@ -408,6 +473,7 @@ function saveSettings() {
     dual_enable:         document.getElementById('dual_enable').checked,
     center_distance:     document.getElementById('center_distance').value,
     gear_ratio:          document.getElementById('gear_ratio').value,
+    lock_ratio:          document.getElementById('lock_ratio').checked,
     p2_teeth:            document.getElementById('p2_teeth').value,
     p2_bore:             document.getElementById('p2_bore').value,
     p2_clearance_preset: document.getElementById('p2_clearance_preset').value,
@@ -483,6 +549,7 @@ async function loadSettings() {
   _val('p2_backlash_custom',  s.p2_backlash_custom);
   _val('p2_print_extra',      s.p2_print_extra);
   _val('gear_ratio',          s.gear_ratio);
+  if (s.lock_ratio !== undefined) _chk('lock_ratio', s.lock_ratio);
 
   if (s.dual_enable !== undefined) {
     _chk('dual_enable', s.dual_enable);
@@ -780,20 +847,26 @@ async function _doTeethChange(n) {
   const resp  = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${teeth}`);
   if (!resp.ok) return;
   const data = await resp.json();
+  const locked = document.getElementById('lock_ratio').checked;
   if (n === 1) {
     teethLock = true;
     document.getElementById('od').value = data.od;
     teethLock = false;
     updateLabels(data.teeth, data.od);
-    if (document.getElementById('dual_enable').checked) {
+    if (document.getElementById('dual_enable').checked && locked) {
       applyRatioToP2(data.teeth);
       return; // applyRatioToP2 calls schedulePreview
     }
+    updateGearRatioFromTeeth();
   } else {
     teethLock2 = true;
     document.getElementById('p2_od').value = data.od;
     teethLock2 = false;
     updateP2Labels(data.teeth, data.od);
+    if (document.getElementById('dual_enable').checked && locked) {
+      applyRatioToP1(data.teeth);
+      return; // applyRatioToP1 calls schedulePreview
+    }
     updateGearRatioFromTeeth();
   }
   updateMinDistance();
@@ -815,24 +888,28 @@ async function _doODChange(n) {
   const resp   = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=od&value=${od}`);
   if (!resp.ok) return;
   const data = await resp.json();
+  const locked = document.getElementById('lock_ratio').checked;
   if (n === 1) {
     teethLock = true;
     document.getElementById('teeth').value = data.teeth;
     document.getElementById('od').value    = data.od;
     teethLock = false;
     updateLabels(data.teeth, data.od);
-    // P1 drives GR: keep GR, update P2
-    if (document.getElementById('dual_enable').checked) {
+    if (document.getElementById('dual_enable').checked && locked) {
       applyRatioToP2(data.teeth);
       return; // applyRatioToP2 handles updateMinDistance + schedulePreview
     }
+    updateGearRatioFromTeeth();
   } else {
     teethLock2 = true;
     document.getElementById('p2_teeth').value = data.teeth;
     document.getElementById('p2_od').value    = data.od;
     teethLock2 = false;
     updateP2Labels(data.teeth, data.od);
-    // P2 edited: update GR to reflect new P2/P1 ratio
+    if (document.getElementById('dual_enable').checked && locked) {
+      applyRatioToP1(data.teeth);
+      return;
+    }
     updateGearRatioFromTeeth();
   }
   updateMinDistance();
@@ -859,7 +936,10 @@ async function syncOD(n) {
 function updateLabels(teeth, od) {
   const family = document.getElementById('family').value;
   const pitch  = document.getElementById('pitch').value;
-  document.getElementById('profile-label').textContent = `${family} ${pitch} — ${teeth}T`;
+  const dual   = document.getElementById('dual_enable').checked;
+  const t2     = dual ? document.getElementById('p2_teeth').value : null;
+  const teethStr = t2 ? `${teeth}T:${t2}T` : `${teeth}T`;
+  document.getElementById('profile-label').textContent = `${family} ${pitch} — ${teethStr}`;
   document.getElementById('od-label').textContent      = `OD: ${od} mm`;
   if (currentSpec) {
     const pd = ((currentSpec.pitch_mm * teeth) / Math.PI).toFixed(3);
@@ -951,6 +1031,43 @@ async function applyRatioToP2(t1, snapRatioDisplay = true) {
   updateRatioNote(t1, data.teeth, trueRatio);
   updateMinDistance();
   await correctCenterDistance();
+}
+
+async function applyRatioToP1(t2) {
+  const ratio  = parseFloat(document.getElementById('gear_ratio').value) || 1;
+  const family = document.getElementById('family').value;
+  const pitch  = document.getElementById('pitch').value;
+  const minT   = currentSpec ? currentSpec.min_teeth : 1;
+
+  // Step 1: calculate P1 from P2/ratio, clamped to minimum
+  const t1target = Math.max(minT, Math.round(t2 / ratio));
+  const resp1 = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${t1target}`);
+  if (!resp1.ok) return;
+  const d1 = await resp1.json();
+  teethLock = true;
+  document.getElementById('teeth').value = d1.teeth;
+  document.getElementById('od').value    = d1.od;
+  teethLock = false;
+  updateLabels(d1.teeth, d1.od);
+
+  // Step 2: if P1 was clamped above t2/ratio, recalculate P2 from clamped P1 × ratio
+  const t2target = Math.max(minT, Math.round(d1.teeth * ratio));
+  const resp2 = await fetch(`/api/od?family=${family}&pitch=${pitch}&mode=teeth&value=${t2target}`);
+  if (!resp2.ok) return;
+  const d2 = await resp2.json();
+  teethLock2 = true;
+  document.getElementById('p2_teeth').value = d2.teeth;
+  document.getElementById('p2_od').value    = d2.od;
+  teethLock2 = false;
+  updateP2Labels(d2.teeth, d2.od);
+
+  const trueRatio = d2.teeth / d1.teeth;
+  document.getElementById('gear_ratio').value = trueRatio.toFixed(3);
+  updateRatioNote(d1.teeth, d2.teeth, trueRatio);
+  updateMinDistance();
+  await correctCenterDistance();
+  updateBeltTeethFromCenter();
+  schedulePreview();
 }
 
 async function stepP2Teeth(delta) {
@@ -1170,6 +1287,11 @@ function onFeatureBuildToggle() {
     setPreviewTab('pulley');
   }
   saveSettings();
+}
+
+function openHelpUrl(url) {
+  document.getElementById('help-iframe').src = url;
+  document.getElementById('help-overlay').style.display = 'flex';
 }
 
 function openHelp(btn, evt) {
@@ -1472,6 +1594,13 @@ function toggleHub(n) {
   arrow.classList.toggle('open', open);
   if (open) _initHubDefaults(n);
   saveSettings();
+}
+
+function toggleTbd(id) {
+  const body  = document.getElementById(`${id}-body`);
+  const arrow = document.getElementById(`${id}-arrow`);
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
 }
 
 function onHubChange(n) {

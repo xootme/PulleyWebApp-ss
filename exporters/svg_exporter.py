@@ -321,17 +321,25 @@ def generate_svg_dual(
 
     R_pitch1 = num_teeth1 * pitch_val / (2.0 * math.pi)
     R_pitch2 = num_teeth2 * pitch_val / (2.0 * math.pi)
-    C = max(float(center_dist_mm), R_pitch1 + R_pitch2)
+    min_c = R_pitch1 + R_pitch2
+    C = max(float(center_dist_mm), min_c)
 
-    cx1 = -C / 2.0
-    cx2 =  C / 2.0
+    # Cap render center distance so both pulleys stay visible when the actual
+    # center distance is large relative to the pulley sizes.
+    max_render_gap = 4.0 * (R_OD1 + R_OD2)
+    actual_gap     = C - R_pitch1 - R_pitch2
+    render_gap     = min(actual_gap, max_render_gap)
+    C_render       = max(min_c, R_pitch1 + R_pitch2 + render_gap)
+
+    cx1 = -C_render / 2.0
+    cx2 =  C_render / 2.0
     cy  = 0.0   # both pulleys on y=0
 
     # Belt geometry
     belt_ring, tooth_polys, phi_left, phi_right = [], [], 0.0, 0.0
     if family in BELT_FAMILIES:
         belt_ring, tooth_polys, phi_left, phi_right = build_two_pulley_belt(
-            family, pitch, num_teeth1, num_teeth2, C, x_offset=cx1,
+            family, pitch, num_teeth1, num_teeth2, C_render, x_offset=cx1,
         )
 
     # Viewport extents

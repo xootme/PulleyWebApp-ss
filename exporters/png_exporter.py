@@ -217,9 +217,18 @@ def generate_png_dual(
     min_c = R_pitch1 + R_pitch2
     center_dist_mm = max(center_dist_mm, min_c)
 
+    # For RENDERING only, cap center distance so both pulleys stay visible.
+    # When the gap is very large relative to pulley size the image becomes a
+    # thin horizontal strip and the pulleys appear as tiny dots.  The actual
+    # center distance is already displayed numerically in the UI.
+    max_render_gap  = 4.0 * (R_OD1 + R_OD2)   # gap between pulley edges
+    actual_gap      = center_dist_mm - R_pitch1 - R_pitch2
+    render_gap      = min(actual_gap, max_render_gap)
+    render_center   = max(min_c, R_pitch1 + R_pitch2 + render_gap)
+
     # Pulleys sit on y=0, P1 centred at (-d/2, 0), P2 at (+d/2, 0)
-    cx1 = -center_dist_mm / 2.0
-    cx2 =  center_dist_mm / 2.0
+    cx1 = -render_center / 2.0
+    cx2 =  render_center / 2.0
 
     # Belt geometry (only for HTD/STD families)
     belt_ring = []
@@ -228,7 +237,7 @@ def generate_png_dual(
     if family in BELT_FAMILIES:
         belt_ring, tooth_polys, phi_left, phi_right = build_two_pulley_belt(
             family, pitch, num_teeth1, num_teeth2,
-            center_dist_mm, x_offset=cx1,
+            render_center, x_offset=cx1,
         )
 
     # Viewport: bounding box covering both pulley ODs
@@ -247,6 +256,12 @@ def generate_png_dual(
     world_cx = (x_min + x_max) / 2.0   # true bbox centre (not always 0)
     vw = x_max - x_min
     vh = y_max * 2.0
+
+    # Ensure the image is never more than 3:1 wide/tall so pulleys don't
+    # become invisible strips in the preview panel.
+    max_aspect = 3.0
+    if vw / max(vh, 1.0) > max_aspect:
+        vh = vw / max_aspect
 
     padding = size_px * 0.05
     scale_x = (size_px - 2 * padding) / vw
