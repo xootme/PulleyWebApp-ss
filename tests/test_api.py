@@ -230,12 +230,14 @@ def test_download_stl_single(client, family, pitch):
 
 
 # ---------------------------------------------------------------------------
-# /download/step  (expected 501 — cadquery-ocp unavailable on Python 3.14)
+# /download/step  — cadquery available on Python 3.12 venv, expect 200
 # ---------------------------------------------------------------------------
-def test_download_step_returns_501(client):
+def test_download_step_returns_200(client):
     r = client.get(
         '/download/step?family=HTD&pitch=5M&teeth=20'
         '&bore=8&belt_height=10&print_extra=0'
         '&clearance_preset=STANDARD&backlash_preset=STANDARD'
     )
-    assert r.status_code == 501
+    assert r.status_code == 200
+    assert 'attachment' in r.headers.get('Content-Disposition', '')
+    assert len(r.data) > 1000
