@@ -15,8 +15,246 @@ from geometry.pulley_geometry import (
     wrap_groove_to_pulley, PULLEY_SPECS, PROFILE_KEY_PREFIX,
     build_two_pulley_belt, BELT_FAMILIES,
 )
+from exporters.png_exporter import _spoke_void_polygons
 
 _POLYLINE_FAMILIES = {'Imperial', 'T', 'AT'}
+
+# ── Spoke void SVG path helpers ───────────────────────────────────────────────
+# Ported from static/generate_spoked_pulley_svg.py.
+# All geometry in standard Cartesian (x=r·cos θ, y=r·sin θ), center at (cx,cy).
+
+_SV_EPS = 1e-9
+
+def _sv2_dot(ax, ay, bx, by): return ax*bx + ay*by
+def _sv2_cross(ax, ay, bx, by): return ax*by - ay*bx
+def _sv2_unit(dx, dy):
+    n = math.hypot(dx, dy)
+    return (dx/n, dy/n) if n > _SV_EPS else (1.0, 0.0)
+
+def _sv2_project(px, py, x0, y0, dx, dy):
+    dd = dx*dx + dy*dy
+    if dd < _SV_EPS: return x0, y0, 0.0
+    t = _sv2_dot(px-x0, py-y0, dx, dy) / dd
+    return x0 + t*dx, y0 + t*dy, t
+
+def _sv2_intersect(px, py, ux, uy, qx, qy, vx, vy):
+    den = _sv2_cross(ux, uy, vx, vy)
+    if abs(den) < _SV_EPS: return None
+    t = _sv2_cross(qx-px, qy-py, vx, vy) / den
+    return px + ux*t, py + uy*t
+
+def _sv2_arc_flags(cx, cy, sx, sy, ex, ey, cw):
+    import math as _m
+    a0 = _m.atan2(sy-cy, sx-cx)
+    a1 = _m.atan2(ey-cy, ex-cx)
+    if cw:
+        delta = (a0 - a1) % (2*_m.pi)
+    else:
+        delta = (a1 - a0) % (2*_m.pi)
+    large  = 1 if delta > _m.pi else 0
+    sweep  = 1 if cw else 0
+    return large, sweep
+
+def _sv2_line_circle_fillet(x0, y0, dx, dy, ccx, ccy, cr, fr,
+                             external, inward_nx, inward_ny, prefer_high_t):
+    """
+    Fillet circle of radius fr tangent to line and circle.
+    external=True: fillet outside circle (d = cr+fr) — for hub base fillets.
+    external=False: fillet inside circle (d = cr-fr) — for rim tip fillets.
+    Returns (fcx,fcy, tlx,tly, tcx,tcy, s) or None.
+    """
+    ux, uy = _sv2_unit(dx, dy)
+    nx, ny = -uy, ux
+    d = (cr + fr) if external else (cr - fr)
+    if d <= 0: return None
+
+    best = None; best_score = 1e18
+    for sign in (1.0, -1.0):
+        ox, oy = x0 + nx*sign*fr, y0 + ny*sign*fr
+        wx, wy = ox - ccx, oy - ccy
+        b = 2.0 * _sv2_dot(ux, uy, wx, wy)
+        c = wx*wx + wy*wy - d*d
+        disc = b*b - 4.0*c
+        if disc < -_SV_EPS: continue
+        sq = math.sqrt(max(0.0, disc))
+        for t_sol in ((-b+sq)/2.0, (-b-sq)/2.0):
+            fcx, fcy = ox + ux*t_sol, oy + uy*t_sol
+            tlx, tly, s = _sv2_project(fcx, fcy, x0, y0, dx, dy)
+            rdx, rdy = fcx-ccx, fcy-ccy
+            rn = math.hypot(rdx, rdy)
+            if rn < _SV_EPS: continue
+            tcx = ccx + rdx/rn*cr;  tcy = ccy + rdy/rn*cr
+            if s < -1e-3 or s > 1.0+1e-3: continue
+            if _sv2_dot(fcx-x0, fcy-y0, inward_nx, inward_ny) < -1e-6: continue
+            if prefer_high_t and s < 0.35: continue
+            if (not prefer_high_t) and s > 0.65: continue
+            score = math.hypot(tlx-x0, tly-y0) + math.hypot(tcx-x0, tcy-y0)
+            if score < best_score:
+                best_score = score; best = (fcx, fcy, tlx, tly, tcx, tcy, s)
+    return best
+
+def _sv2_line_line_fillet(rx0, ry0, rdx, rdy, lx0, ly0, ldx, ldy,
+                           in_rx, in_ry, in_lx, in_ly, fr):
+    rux, ruy = _sv2_unit(rdx, rdy); lux, luy = _sv2_unit(ldx, ldy)
+    prx, pry = rx0 + in_rx*fr, ry0 + in_ry*fr
+    plx, ply = lx0 + in_lx*fr, ly0 + in_ly*fr
+    fc = _sv2_intersect(prx, pry, rux, ruy, plx, ply, lux, luy)
+    if fc is None: return None
+    fcx, fcy = fc
+    trx, try_, _ = _sv2_project(fcx, fcy, rx0, ry0, rdx, rdy)
+    tlx, tly, _  = _sv2_project(fcx, fcy, lx0, ly0, ldx, ldy)
+    return fcx, fcy, trx, try_, tlx, tly
+
+def _sv2_void_path_d(cx, cy, theta_mid, theta_step, r_hub, r_rim,
+                      spoke_width, fillet_tip, fillet_base):
+    """Return SVG path `d` string for one spoke void gap using true arc commands."""
+    half_w = spoke_width / 2.0
+    spoke_half_hub = math.asin(min(1.0, half_w / r_hub))
+    spoke_half_rim = math.asin(min(1.0, half_w / r_rim))
+    gap_half_hub   = max(_SV_EPS, theta_step/2.0 - spoke_half_hub)
+    gap_half_rim   = max(_SV_EPS, theta_step/2.0 - spoke_half_rim)
+
+    def P(r, a): return cx + r*math.cos(a), cy + r*math.sin(a)
+
+    p_lb = P(r_hub, theta_mid - gap_half_hub)
+    p_lt = P(r_rim, theta_mid - gap_half_rim)
+    p_rt = P(r_rim, theta_mid + gap_half_rim)
+    p_rb = P(r_hub, theta_mid + gap_half_hub)
+
+    l_dx, l_dy = p_lt[0]-p_lb[0], p_lt[1]-p_lb[1]
+    r_dx, r_dy = p_rt[0]-p_rb[0], p_rt[1]-p_rb[1]
+
+    probe = P((r_hub+r_rim)*0.5, theta_mid)
+    lux, luy = _sv2_unit(l_dx, l_dy)
+    ln_a, ln_b = -luy, lux
+    in_lx = ln_a if _sv2_dot(probe[0]-p_lb[0], probe[1]-p_lb[1], ln_a, ln_b) > 0 else -ln_a
+    in_ly = ln_b if _sv2_dot(probe[0]-p_lb[0], probe[1]-p_lb[1], ln_a, ln_b) > 0 else -ln_b
+    rux, ruy = _sv2_unit(r_dx, r_dy)
+    rn_a, rn_b = -ruy, rux
+    in_rx = rn_a if _sv2_dot(probe[0]-p_rb[0], probe[1]-p_rb[1], rn_a, rn_b) > 0 else -rn_a
+    in_ry = rn_b if _sv2_dot(probe[0]-p_rb[0], probe[1]-p_rb[1], rn_a, rn_b) > 0 else -rn_b
+
+    tip_l = _sv2_line_circle_fillet(p_lb[0], p_lb[1], l_dx, l_dy,
+                                     cx, cy, r_rim, fillet_tip,
+                                     False, in_lx, in_ly, True)
+    tip_r = _sv2_line_circle_fillet(p_rb[0], p_rb[1], r_dx, r_dy,
+                                     cx, cy, r_rim, fillet_tip,
+                                     False, in_rx, in_ry, True)
+    base_l = _sv2_line_circle_fillet(p_lb[0], p_lb[1], l_dx, l_dy,
+                                      cx, cy, r_hub, fillet_base,
+                                      True, in_lx, in_ly, False)
+    base_r = _sv2_line_circle_fillet(p_rb[0], p_rb[1], r_dx, r_dy,
+                                      cx, cy, r_hub, fillet_base,
+                                      True, in_rx, in_ry, False)
+
+    use_hub = base_l is not None and base_r is not None
+    if use_hub:
+        a_hr = math.atan2(base_r[5]-cy, base_r[4]-cx)
+        a_hl = math.atan2(base_l[5]-cy, base_l[4]-cx)
+        cw_span = (a_hr - a_hl) % (2*math.pi)
+        if cw_span > math.pi or cw_span < _SV_EPS:
+            use_hub = False
+
+    def A(r, sx, sy, ex, ey, cw):
+        lg, sw = _sv2_arc_flags(cx, cy, sx, sy, ex, ey, cw)
+        return f"A {r:.4f},{r:.4f} 0 {lg} {sw} {ex:.4f},{ey:.4f}"
+
+    def Af(r, fcx, fcy, sx, sy, ex, ey):
+        # Short-arc fillet: pick the sweep that gives arc < π
+        a1 = math.atan2(sy-fcy, sx-fcx)
+        a2 = math.atan2(ey-fcy, ex-fcx)
+        diff = (a2-a1) % (2*math.pi)
+        cw = diff > math.pi   # go the short way
+        lg, sw = _sv2_arc_flags(fcx, fcy, sx, sy, ex, ey, cw)
+        return f"A {r:.4f},{r:.4f} 0 {lg} {sw} {ex:.4f},{ey:.4f}"
+
+    cmds = []
+
+    # ── Rim arc: left-tip tangency → right-tip tangency ────────────────────
+    rim_ls = tip_l[4:6] if tip_l else p_lt
+    rim_rs = tip_r[4:6] if tip_r else p_rt
+    cmds.append(f"M {rim_ls[0]:.4f},{rim_ls[1]:.4f}")
+    cmds.append(A(r_rim, rim_ls[0], rim_ls[1], rim_rs[0], rim_rs[1], cw=False))
+
+    # ── Right tip fillet: rim tangency → spoke wall tangency ───────────────
+    if tip_r:
+        fcx, fcy, tlx, tly, tcx, tcy, _ = tip_r
+        cmds.append(Af(fillet_tip, fcx, fcy, tcx, tcy, tlx, tly))
+    else:
+        cmds.append(f"L {p_rt[0]:.4f},{p_rt[1]:.4f}")
+
+    # ── Right wall + base ───────────────────────────────────────────────────
+    if use_hub:
+        fcx, fcy, tl_x, tl_y, tc_x, tc_y, _ = base_r
+        cmds.append(f"L {tl_x:.4f},{tl_y:.4f}")
+        cmds.append(Af(fillet_base, fcx, fcy, tl_x, tl_y, tc_x, tc_y))
+        # Hub arc right → left
+        fcx2, fcy2, tl_x2, tl_y2, tc_x2, tc_y2, _ = base_l
+        cmds.append(A(r_hub, tc_x, tc_y, tc_x2, tc_y2, cw=True))
+        cmds.append(Af(fillet_base, fcx2, fcy2, tc_x2, tc_y2, tl_x2, tl_y2))
+    else:
+        ll = _sv2_line_line_fillet(p_rb[0], p_rb[1], r_dx, r_dy,
+                                    p_lb[0], p_lb[1], l_dx, l_dy,
+                                    in_rx, in_ry, in_lx, in_ly, fillet_base)
+        if ll and fillet_base > 0.05:
+            fcx, fcy, trx, try_, tlx, tly = ll
+            cmds.append(f"L {trx:.4f},{try_:.4f}")
+            cmds.append(Af(fillet_base, fcx, fcy, trx, try_, tlx, tly))
+        else:
+            cmds.append(f"L {p_rb[0]:.4f},{p_rb[1]:.4f}")
+            cmds.append(A(r_hub, p_rb[0], p_rb[1], p_lb[0], p_lb[1], cw=True))
+            cmds.append(f"L {p_lb[0]:.4f},{p_lb[1]:.4f}")
+
+    # ── Left tip fillet: spoke wall tangency → rim tangency ────────────────
+    if tip_l:
+        fcx, fcy, tlx, tly, tcx, tcy, _ = tip_l
+        cmds.append(Af(fillet_tip, fcx, fcy, tlx, tly, tcx, tcy))
+
+    cmds.append("Z")
+    return " ".join(cmds)
+
+
+def _spoke_void_svg_elements(cx, cy, r_tooth_root, r_hub, spoke_count,
+                              spoke_width, rim_depth, fillet_tip, fillet_base,
+                              sw, coord_swap=False):
+    """Return SVG path elements for spoke voids.
+
+    Uses the same _spoke_void_polygons() as the PNG exporter so shapes match exactly.
+
+    coord_swap=False  → generate_svg()  coords: (cx + y_math, cy + x_math)
+                         (pulley uses sin/cos-swapped convention)
+    coord_swap=True   → generate_svg_dual() coords: (cx + x_math, cy - y_math)
+                         (standard math with y-flip)
+    """
+    if spoke_count < 2 or spoke_width <= 0.0 or r_hub <= 0.0:
+        return ''
+    r_rim = max(r_hub + 0.5, r_tooth_root - rim_depth)
+    if r_rim <= r_hub + 0.5:
+        return ''
+
+    void_polys = _spoke_void_polygons(
+        r_hub, r_rim, spoke_count, spoke_width,
+        fillet_tip_mm=fillet_tip, fillet_base_mm=fillet_base,
+    )
+
+    paths = []
+    for pts in void_polys:
+        if not pts:
+            continue
+        if coord_swap:
+            # generate_svg_dual: standard math x right, y up → svg x right, y down
+            coords = [(cx + x, cy - y) for x, y in pts]
+        else:
+            # generate_svg: pulley uses (r*sin(a), r*cos(a)) convention → swap x,y
+            coords = [(cx + y, cy + x) for x, y in pts]
+        first = coords[0]
+        d = f"M {first[0]:.4f},{first[1]:.4f}" + \
+            ''.join(f" L {p[0]:.4f},{p[1]:.4f}" for p in coords[1:]) + " Z"
+        paths.append(
+            f'<path d="{d}" fill="none" stroke="#1a1a1a" '
+            f'stroke-width="{sw:.4f}" stroke-linejoin="round"/>'
+        )
+    return '\n  '.join(paths)
 
 _STANDARD_REF = {
     'HTD':      'ISO 13050:2014 — curvilinear arc-flank',
@@ -52,6 +290,12 @@ def generate_svg(
     padding_mm: float = 3.0,
     clearance_preset: str = 'STANDARD',
     backlash_preset: str = 'STANDARD',
+    spoke_count: int = 0,
+    spoke_width_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 2.0,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
 ) -> str:
     """
     Returns an SVG string: full pulley profile + info panel.
@@ -106,6 +350,23 @@ def generate_svg(
         f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>'
         if R_bore > 0 else ''
     )
+
+    # ── Spoke voids + hub circle ──────────────────────────────────────────────
+    R_tooth_root = min(math.hypot(x, y) for x, y in wrapped) if wrapped else R_OD
+    R_hub_spoke  = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (R_bore + 1.0)
+    if spoke_count >= 2 and spoke_width_mm > 0.0:
+        spoke_el = _spoke_void_svg_elements(
+            cx=0.0, cy=0.0,
+            r_tooth_root=R_tooth_root, r_hub=R_hub_spoke,
+            spoke_count=spoke_count, spoke_width=spoke_width_mm,
+            rim_depth=rim_depth_mm, fillet_tip=fillet_tip_mm,
+            fillet_base=fillet_base_mm, sw=sw, coord_swap=False,
+        )
+        hub_el = (f'<circle cx="0" cy="0" r="{R_hub_spoke:.4f}" '
+                  f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>')
+    else:
+        spoke_el = ''
+        hub_el   = ''
 
     # ── Info panel ────────────────────────────────────────────────────────────
     # The panel has a fixed minimum width so two-column text always fits,
@@ -221,6 +482,8 @@ def generate_svg(
         fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"
         stroke-linejoin="round" stroke-linecap="round"/>
   {bore_el}
+  {hub_el}
+  {spoke_el}
   {panel_svg}
 </svg>'''
 
@@ -289,6 +552,18 @@ def generate_svg_dual(
     center_dist_mm: float = 100.0,
     n_belt_teeth: int = 0,
     padding_mm: float = 3.0,
+    spoke_count1: int = 0,
+    spoke_width_mm1: float = 0.0,
+    spoke_hub_od_mm1: float = 0.0,
+    rim_depth_mm1: float = 2.0,
+    fillet_tip_mm1: float = 0.0,
+    fillet_base_mm1: float = 0.0,
+    spoke_count2: int = 0,
+    spoke_width_mm2: float = 0.0,
+    spoke_hub_od_mm2: float = 0.0,
+    rim_depth_mm2: float = 2.0,
+    fillet_tip_mm2: float = 0.0,
+    fillet_base_mm2: float = 0.0,
 ) -> str:
     """
     SVG of two pulleys with the belt wrapped around them.
@@ -493,6 +768,38 @@ def generate_svg_dual(
         if bore_mm2 > 0 else ''
     )
 
+    # ── Spoke voids (dual) ────────────────────────────────────────────────────
+    def _dual_spokes(wrapped_pts, R_OD, bore_mm, cx_off,
+                     sc, sw_mm, hub_od, rim_d, ftip, fbase, sw_stroke):
+        if sc < 2 or sw_mm <= 0.0:
+            return ''
+        R_tr = min(math.hypot(x, y) for x, y in wrapped_pts) if wrapped_pts else R_OD
+        R_hub_s = (hub_od / 2.0) if hub_od > 0.0 else (bore_mm / 2.0 + 1.0)
+        return _spoke_void_svg_elements(
+            cx=cx_off, cy=0.0,
+            r_tooth_root=R_tr, r_hub=R_hub_s,
+            spoke_count=sc, spoke_width=sw_mm,
+            rim_depth=rim_d, fillet_tip=ftip,
+            fillet_base=fbase, sw=sw_stroke, coord_swap=True,
+        )
+
+    spokes1_el = _dual_spokes(wrapped1, R_OD1, bore_mm1, cx1,
+                               spoke_count1, spoke_width_mm1, spoke_hub_od_mm1,
+                               rim_depth_mm1, fillet_tip_mm1, fillet_base_mm1, sw1)
+    spokes2_el = _dual_spokes(wrapped2, R_OD2, bore_mm2, cx2,
+                               spoke_count2, spoke_width_mm2, spoke_hub_od_mm2,
+                               rim_depth_mm2, fillet_tip_mm2, fillet_base_mm2, sw2)
+
+    def _dual_hub_el(bore_mm, cx_off, sc, sw_mm, hub_od, sw_stroke):
+        if sc < 2 or sw_mm <= 0.0:
+            return ''
+        R_hub_s = (hub_od / 2.0) if hub_od > 0.0 else (bore_mm / 2.0 + 1.0)
+        return (f'<circle cx="{cx_off:.4f}" cy="0" r="{R_hub_s:.4f}" '
+                f'fill="none" stroke="#1a1a1a" stroke-width="{sw_stroke:.4f}"/>')
+
+    hub1_el = _dual_hub_el(bore_mm1, cx1, spoke_count1, spoke_width_mm1, spoke_hub_od_mm1, sw1)
+    hub2_el = _dual_hub_el(bore_mm2, cx2, spoke_count2, spoke_width_mm2, spoke_hub_od_mm2, sw2)
+
     panel_svg = '\n  '.join(panel_els)
 
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -506,9 +813,13 @@ def generate_svg_dual(
   <path d="{path1}" fill="none" stroke="#1a1a1a" stroke-width="{sw1:.4f}"
         stroke-linejoin="round" stroke-linecap="round"/>
   {bore1_el}
+  {hub1_el}
+  {spokes1_el}
   <path d="{path2}" fill="none" stroke="#1a1a1a" stroke-width="{sw2:.4f}"
         stroke-linejoin="round" stroke-linecap="round"/>
   {bore2_el}
+  {hub2_el}
+  {spokes2_el}
   {panel_svg}
 </svg>'''
 

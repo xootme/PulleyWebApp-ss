@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=10">
 </head>
 <body>
 
@@ -146,7 +146,7 @@
         <label for="hub1_height">Hub Height (mm)</label>
         <input type="number" id="hub1_height" value="10" min="3" max="50" step="0.5" oninput="onHubChange(1)" style="width:100%">
 
-        <label for="hub1_od">Hub OD (mm)</label>
+        <label for="hub1_od" id="hub1_od_label">Hub OD (mm)</label>
         <input type="number" id="hub1_od" value="20" min="6" max="200" step="0.5" oninput="onHubChange(1)" style="width:100%">
 
         <label for="hub1_retention">Retention Method</label>
@@ -255,16 +255,49 @@
       </div>
     </section>
 
-    <section class="card fb-3d" style="opacity:0.55;">
-      <div class="hub-header" onclick="toggleTbd('spokes1')">
+    <section class="card">
+      <div class="hub-header" onclick="toggleSpokes(1)">
         <span style="display:flex;align-items:center;gap:7px;">
-          <input type="checkbox" id="spokes1_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          <input type="checkbox" id="spokes1_enabled" onclick="event.stopPropagation(); onSpokesChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
           Spokes
         </span>
         <span class="hub-arrow" id="spokes1-arrow">&#9660;</span>
       </div>
       <div class="hub-body" id="spokes1-body">
-        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
+          <input type="number" id="spokes1_hub_od" value="16" min="4" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
+          <input type="number" id="spokes1_rim_depth" value="2" min="0" max="15" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_width" style="margin:0;flex:1">Spoke Width (mm)</label>
+          <input type="number" id="spokes1_width" value="4" min="1" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
+          <input type="number" id="spokes1_fillet_tip" value="1" min="0" step="0.25" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
+          <input type="number" id="spokes1_fillet_base" value="1.5" min="0" step="0.25" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <label for="spokes1_count" style="margin:0;flex:1">Spoke Count</label>
+          <input type="number" id="spokes1_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="hub-info fb-2d" id="spokes1_count_info"></div>
+        <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <label for="spokes1_height" style="margin:0;flex:1">Spoke Height (mm)</label>
+          <input type="number" id="spokes1_height" value="0" min="0" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="hub-info fb-3d">0 = full belt height (non-split mode only)</div>
+        <label class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
+          <input type="checkbox" id="spokes1_split_layers" onchange="onSpokesChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+          Split Layers (laser / waterjet)
+        </label>
       </div>
     </section>
 
@@ -277,6 +310,28 @@
           <button class="dl-item fb-2d" onclick="downloadDXF(1); closeDlMenus()">DXF</button>
           <button class="dl-item fb-3d" onclick="downloadSTEP(1); closeDlMenus()">STEP</button>
           <button class="dl-item fb-3d" onclick="downloadSTL(1); closeDlMenus()">STL</button>
+        </div>
+      </div>
+      <!-- Layer-cake downloads — shown when Spokes + Split Layers is ON -->
+      <div id="dl-p1-split" class="hidden">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:#0078d4;margin:8px 0 4px;">Layer Cake Parts</div>
+        <div class="dl-wrap">
+          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-spoke-menu', event)">⬇ Spoke Web</button>
+          <div class="dl-menu hidden" id="dl-p1-spoke-menu">
+            <button class="dl-item fb-3d" onclick="downloadLayerPart(1,'spoke','stl'); closeDlMenus()">STL</button>
+          </div>
+        </div>
+        <div class="dl-wrap">
+          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-rim-menu', event)">⬇ Rim Ring</button>
+          <div class="dl-menu hidden" id="dl-p1-rim-menu">
+            <button class="dl-item fb-3d" onclick="downloadLayerPart(1,'rim','stl'); closeDlMenus()">STL</button>
+          </div>
+        </div>
+        <div class="dl-wrap">
+          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-hub-menu', event)">⬇ Hub Disk</button>
+          <div class="dl-menu hidden" id="dl-p1-hub-menu">
+            <button class="dl-item fb-3d" onclick="downloadLayerPart(1,'hub','stl'); closeDlMenus()">STL</button>
+          </div>
         </div>
       </div>
       <div class="dl-wrap" id="belt-svg-wrap">
@@ -398,7 +453,7 @@
         <label for="hub2_height">Hub Height (mm)</label>
         <input type="number" id="hub2_height" value="10" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
 
-        <label for="hub2_od">Hub OD (mm)</label>
+        <label for="hub2_od" id="hub2_od_label">Hub OD (mm)</label>
         <input type="number" id="hub2_od" value="20" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
 
         <label for="hub2_retention">Retention Method</label>
@@ -507,16 +562,49 @@
       </div>
     </section>
 
-    <section class="card fb-3d" style="opacity:0.55;">
-      <div class="hub-header" onclick="toggleTbd('spokes2')">
+    <section class="card">
+      <div class="hub-header" onclick="toggleSpokes(2)">
         <span style="display:flex;align-items:center;gap:7px;">
-          <input type="checkbox" id="spokes2_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          <input type="checkbox" id="spokes2_enabled" onclick="event.stopPropagation(); onSpokesChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
           Spokes
         </span>
         <span class="hub-arrow" id="spokes2-arrow">&#9660;</span>
       </div>
       <div class="hub-body" id="spokes2-body">
-        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
+          <input type="number" id="spokes2_hub_od" value="16" min="4" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
+          <input type="number" id="spokes2_rim_depth" value="2" min="0" max="15" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_width" style="margin:0;flex:1">Spoke Width (mm)</label>
+          <input type="number" id="spokes2_width" value="4" min="1" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
+          <input type="number" id="spokes2_fillet_tip" value="1" min="0" step="0.25" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
+          <input type="number" id="spokes2_fillet_base" value="1.5" min="0" step="0.25" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <label for="spokes2_count" style="margin:0;flex:1">Spoke Count</label>
+          <input type="number" id="spokes2_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="hub-info fb-2d" id="spokes2_count_info"></div>
+        <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <label for="spokes2_height" style="margin:0;flex:1">Spoke Height (mm)</label>
+          <input type="number" id="spokes2_height" value="0" min="0" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="hub-info fb-3d">0 = full belt height (non-split mode only)</div>
+        <label class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
+          <input type="checkbox" id="spokes2_split_layers" onchange="onSpokesChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+          Split Layers (laser / waterjet)
+        </label>
       </div>
     </section>
 
@@ -529,6 +617,28 @@
           <button class="dl-item fb-2d" onclick="downloadDXF(2); closeDlMenus()">DXF</button>
           <button class="dl-item fb-3d" onclick="downloadSTEP(2); closeDlMenus()">STEP</button>
           <button class="dl-item fb-3d" onclick="downloadSTL(2); closeDlMenus()">STL</button>
+        </div>
+      </div>
+      <!-- Layer-cake downloads for P2 -->
+      <div id="dl-p2-split" class="hidden">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:#0078d4;margin:8px 0 4px;">Layer Cake Parts</div>
+        <div class="dl-wrap">
+          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-spoke-menu', event)">⬇ Spoke Web</button>
+          <div class="dl-menu hidden" id="dl-p2-spoke-menu">
+            <button class="dl-item fb-3d" onclick="downloadLayerPart(2,'spoke','stl'); closeDlMenus()">STL</button>
+          </div>
+        </div>
+        <div class="dl-wrap">
+          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-rim-menu', event)">⬇ Rim Ring</button>
+          <div class="dl-menu hidden" id="dl-p2-rim-menu">
+            <button class="dl-item fb-3d" onclick="downloadLayerPart(2,'rim','stl'); closeDlMenus()">STL</button>
+          </div>
+        </div>
+        <div class="dl-wrap">
+          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-hub-menu', event)">⬇ Hub Disk</button>
+          <div class="dl-menu hidden" id="dl-p2-hub-menu">
+            <button class="dl-item fb-3d" onclick="downloadLayerPart(2,'hub','stl'); closeDlMenus()">STL</button>
+          </div>
         </div>
       </div>
     </section>
@@ -629,6 +739,26 @@ function saveSettings() {
     hub2_keyway_screw_size:   document.getElementById('hub2_keyway_screw_size').value,
     hub2_height:              document.getElementById('hub2_height').value,
     hub2_od:                  document.getElementById('hub2_od').value,
+    // Spokes P1
+    spokes1_enabled:      document.getElementById('spokes1_enabled').checked ? '1' : '0',
+    spokes1_hub_od:       document.getElementById('spokes1_hub_od').value,
+    spokes1_rim_depth:    document.getElementById('spokes1_rim_depth').value,
+    spokes1_width:        document.getElementById('spokes1_width').value,
+    spokes1_fillet_tip:   document.getElementById('spokes1_fillet_tip').value,
+    spokes1_fillet_base:  document.getElementById('spokes1_fillet_base').value,
+    spokes1_count:        document.getElementById('spokes1_count').value,
+    spokes1_height:       document.getElementById('spokes1_height').value,
+    spokes1_split_layers: document.getElementById('spokes1_split_layers').checked ? '1' : '0',
+    // Spokes P2
+    spokes2_enabled:      document.getElementById('spokes2_enabled').checked ? '1' : '0',
+    spokes2_hub_od:       document.getElementById('spokes2_hub_od').value,
+    spokes2_rim_depth:    document.getElementById('spokes2_rim_depth').value,
+    spokes2_width:        document.getElementById('spokes2_width').value,
+    spokes2_fillet_tip:   document.getElementById('spokes2_fillet_tip').value,
+    spokes2_fillet_base:  document.getElementById('spokes2_fillet_base').value,
+    spokes2_count:        document.getElementById('spokes2_count').value,
+    spokes2_height:       document.getElementById('spokes2_height').value,
+    spokes2_split_layers: document.getElementById('spokes2_split_layers').checked ? '1' : '0',
   };
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
 }
@@ -749,6 +879,35 @@ async function loadSettings() {
     const kwScrew = document.getElementById(`hub${n}_keyway_screw`).checked;
     document.getElementById(`hub${n}_keyway_screw_opts`).classList.toggle('hidden', !kwScrew);
   }
+
+  // Spokes P1
+  if (s.spokes1_enabled !== undefined)      document.getElementById('spokes1_enabled').checked = s.spokes1_enabled === '1';
+  if (s.spokes1_hub_od !== undefined)       document.getElementById('spokes1_hub_od').value = s.spokes1_hub_od;
+  if (s.spokes1_rim_depth !== undefined)    document.getElementById('spokes1_rim_depth').value = s.spokes1_rim_depth;
+  if (s.spokes1_width !== undefined)        document.getElementById('spokes1_width').value = s.spokes1_width;
+  if (s.spokes1_fillet_tip !== undefined)   document.getElementById('spokes1_fillet_tip').value = s.spokes1_fillet_tip;
+  if (s.spokes1_fillet_base !== undefined)  document.getElementById('spokes1_fillet_base').value = s.spokes1_fillet_base;
+  if (s.spokes1_count !== undefined)        document.getElementById('spokes1_count').value = s.spokes1_count;
+  if (s.spokes1_height !== undefined)       document.getElementById('spokes1_height').value = s.spokes1_height;
+  if (s.spokes1_split_layers !== undefined) document.getElementById('spokes1_split_layers').checked = s.spokes1_split_layers === '1';
+  // Spokes P2
+  if (s.spokes2_enabled !== undefined)      document.getElementById('spokes2_enabled').checked = s.spokes2_enabled === '1';
+  if (s.spokes2_hub_od !== undefined)       document.getElementById('spokes2_hub_od').value = s.spokes2_hub_od;
+  if (s.spokes2_rim_depth !== undefined)    document.getElementById('spokes2_rim_depth').value = s.spokes2_rim_depth;
+  if (s.spokes2_width !== undefined)        document.getElementById('spokes2_width').value = s.spokes2_width;
+  if (s.spokes2_fillet_tip !== undefined)   document.getElementById('spokes2_fillet_tip').value = s.spokes2_fillet_tip;
+  if (s.spokes2_fillet_base !== undefined)  document.getElementById('spokes2_fillet_base').value = s.spokes2_fillet_base;
+  if (s.spokes2_count !== undefined)        document.getElementById('spokes2_count').value = s.spokes2_count;
+  if (s.spokes2_height !== undefined)       document.getElementById('spokes2_height').value = s.spokes2_height;
+  if (s.spokes2_split_layers !== undefined) document.getElementById('spokes2_split_layers').checked = s.spokes2_split_layers === '1';
+  // Restore split-layer download visibility and hub OD lock state.
+  [1, 2].forEach(n => {
+    const splitOn = document.getElementById(`spokes${n}_enabled`).checked &&
+                    document.getElementById(`spokes${n}_split_layers`).checked;
+    const d = document.getElementById(`dl-p${n}-split`);
+    if (d) d.classList.toggle('hidden', !splitOn);
+    _syncSpokeHubLock(n);
+  });
 
   return true;
 }
@@ -1394,6 +1553,31 @@ function buildParams() {
       }
     }
   }
+  // Spoke params — P1
+  if (document.getElementById('spokes1_enabled').checked) {
+    p.spokes_enabled   = '1';
+    p.spokes_hub_od    = document.getElementById('spokes1_hub_od').value;
+    p.spokes_rim_depth = document.getElementById('spokes1_rim_depth').value;
+    p.spokes_width     = document.getElementById('spokes1_width').value;
+    p.spokes_fillet_tip  = document.getElementById('spokes1_fillet_tip').value;
+    p.spokes_fillet_base = document.getElementById('spokes1_fillet_base').value;
+    p.spokes_count     = document.getElementById('spokes1_count').value;
+    p.spokes_height    = document.getElementById('spokes1_height').value;
+    p.spokes_split     = document.getElementById('spokes1_split_layers').checked ? '1' : '0';
+  }
+  // Spoke params — P2 (only in dual mode)
+  if (document.getElementById('dual_enable').checked &&
+      document.getElementById('spokes2_enabled').checked) {
+    p.p2_spokes_enabled   = '1';
+    p.p2_spokes_hub_od    = document.getElementById('spokes2_hub_od').value;
+    p.p2_spokes_rim_depth = document.getElementById('spokes2_rim_depth').value;
+    p.p2_spokes_width     = document.getElementById('spokes2_width').value;
+    p.p2_spokes_fillet_tip  = document.getElementById('spokes2_fillet_tip').value;
+    p.p2_spokes_fillet_base = document.getElementById('spokes2_fillet_base').value;
+    p.p2_spokes_count     = document.getElementById('spokes2_count').value;
+    p.p2_spokes_height    = document.getElementById('spokes2_height').value;
+    p.p2_spokes_split     = document.getElementById('spokes2_split_layers').checked ? '1' : '0';
+  }
   return p;
 }
 
@@ -1480,6 +1664,9 @@ function onFeatureBuildToggle() {
   } else {
     setPreviewTab('pulley');
   }
+  // Re-apply spoke hub lock state when switching modes.
+  _syncSpokeHubLock(1);
+  _syncSpokeHubLock(2);
   saveSettings();
 }
 
@@ -1544,7 +1731,6 @@ async function update3DPreview() {
     const params = buildParams();
     params.belt_height = document.getElementById('belt_height').value;
     const url = '/api/preview-stl?' + new URLSearchParams(params);
-    console.log('[3D preview] hub_flat_depth:', params.hub_flat_depth, '| full URL:', url);
     await init3D();
     load3DModel(url);
   } catch (e) {
@@ -1832,6 +2018,97 @@ function toggleTbd(id) {
   const arrow = document.getElementById(`${id}-arrow`);
   const open  = body.classList.toggle('open');
   arrow.classList.toggle('open', open);
+}
+
+function toggleSpokes(n) {
+  const body  = document.getElementById(`spokes${n}-body`);
+  const arrow = document.getElementById(`spokes${n}-arrow`);
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+  if (open) _initSpokeDefaults(n);
+  saveSettings();
+}
+
+function _initSpokeDefaults(n) {
+  // Set Hub OD default = bore × 2 on first open if still at placeholder 16
+  const boreEl = document.getElementById(n === 1 ? 'bore' : 'p2_bore');
+  const hubEl  = document.getElementById(`spokes${n}_hub_od`);
+  if (boreEl && hubEl && parseFloat(hubEl.value) === 16) {
+    const bore = parseFloat(boreEl.value) || 8;
+    hubEl.value = Math.max(parseFloat(hubEl.min) || 4, Math.round(bore * 2 * 10) / 10);
+  }
+}
+
+function _updateSpokeMaxCount(n) {
+  const hubOd   = parseFloat(document.getElementById(`spokes${n}_hub_od`).value) || 0;
+  const width   = parseFloat(document.getElementById(`spokes${n}_width`).value) || 4;
+  const R_hub   = hubOd / 2;
+  const infoEl  = document.getElementById(`spokes${n}_count_info`);
+  const countEl = document.getElementById(`spokes${n}_count`);
+  if (R_hub < 2) { if (infoEl) infoEl.textContent = ''; return; }
+
+  // Spokes are allowed to overlap at the hub.
+  // Max count is only limited at the rim (gaps must exist there).
+  // We don't know R_rim_inner in JS, so use a practical cap of 36.
+  const maxCount = 36;
+  if (countEl) {
+    countEl.max = maxCount;
+  }
+
+  // Show whether current count causes hub overlap — purely informational.
+  const count  = Math.max(2, parseInt(countEl ? countEl.value : 4));
+  const half_w = width / 2;
+  const theta_hub  = Math.asin(Math.min(half_w / R_hub, 1.0));
+  const theta_step = Math.PI * 2 / count;
+  const hubOverlap = theta_hub >= theta_step / 2;
+
+  if (infoEl) {
+    infoEl.textContent = hubOverlap
+      ? 'Spokes merge at hub — base fillet spans spoke-to-spoke'
+      : '';
+  }
+}
+
+function _syncSpokeHubLock(n) {
+  // Keep the 3D Hub OD field in sync with the spoke hub OD when spokes are enabled.
+  const enabledEl = document.getElementById(`spokes${n}_enabled`);
+  const hubOdEl   = document.getElementById(`hub${n}_od`);
+  const hubOdLbl  = document.getElementById(`hub${n}_od_label`);
+  if (!enabledEl || !hubOdEl) return;
+  const spokesOn = enabledEl.checked;
+  if (spokesOn) {
+    hubOdEl.value    = document.getElementById(`spokes${n}_hub_od`).value;
+    hubOdEl.disabled = true;
+    hubOdEl.title    = 'Locked — controlled by Spokes Hub OD';
+    if (hubOdLbl) { hubOdLbl.style.opacity = '0.4'; hubOdLbl.title = 'Locked — controlled by Spokes Hub OD'; }
+    hubOdEl.style.opacity = '0.4';
+  } else {
+    hubOdEl.disabled = false;
+    hubOdEl.title    = '';
+    hubOdEl.style.opacity = '';
+    if (hubOdLbl) { hubOdLbl.style.opacity = ''; hubOdLbl.title = ''; }
+  }
+}
+
+function onSpokesChange(n) {
+  _updateSpokeMaxCount(n);
+  const spokesOn = document.getElementById(`spokes${n}_enabled`).checked;
+  const splitOn  = spokesOn && document.getElementById(`spokes${n}_split_layers`).checked;
+  const splitDiv = document.getElementById(`dl-p${n}-split`);
+  if (splitDiv) splitDiv.classList.toggle('hidden', !splitOn);
+
+  _syncSpokeHubLock(n);
+
+  schedulePreview();
+  saveSettings();
+}
+
+function downloadLayerPart(n, part, fmt) {
+  const params = buildParams();
+  params.belt_height = document.getElementById('belt_height').value;
+  if (n === 2) params.pulley = '2';
+  params.part = part;
+  window.location = '/download/' + fmt + '?' + new URLSearchParams(params);
 }
 
 function onHubChange(n) {

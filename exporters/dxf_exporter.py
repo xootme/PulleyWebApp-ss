@@ -27,6 +27,7 @@ import io
 
 import ezdxf
 
+from exporters.png_exporter import _spoke_void_polygons
 from geometry.pulley_geometry import (
     generate_profile_groove,
     _build_groove_points,
@@ -79,6 +80,12 @@ def generate_dxf(
     clearance_mm: float = 0.0,
     backlash_mm: float = 0.0,
     print_extra_mm: float = 0.0,
+    spoke_count: int = 0,
+    spoke_width_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 2.0,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
 ) -> bytes:
     """
     Return a DXF file as bytes.
@@ -115,6 +122,7 @@ def generate_dxf(
 
     doc.layers.new('PROFILE', dxfattribs={'color': 7, 'linetype': 'Continuous'})
     doc.layers.new('BORE',    dxfattribs={'color': 1, 'linetype': 'Continuous'})
+    doc.layers.new('SPOKES',  dxfattribs={'color': 3, 'linetype': 'Continuous'})
 
     prof = {'layer': 'PROFILE'}
 
@@ -173,6 +181,35 @@ def generate_dxf(
             radius=bore_mm / 2.0,
             dxfattribs={'layer': 'BORE'},
         )
+
+    # ── Hub circle ───────────────────────────────────────────────────────────
+    # ── Spoke void outlines ──────────────────────────────────────────────────
+    if spoke_count >= 2 and spoke_width_mm > 0.0:
+        R_tooth_root = min(math.hypot(x, y) for x, y in wrapped) if wrapped else R_OD
+        R_hub_spoke  = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
+        R_rim_inner  = max(R_hub_spoke + 0.5, R_tooth_root - rim_depth_mm)
+
+        # Hub circle on BORE layer
+        msp.add_circle(
+            center=(0.0, 0.0, 0.0),
+            radius=R_hub_spoke,
+            dxfattribs={'layer': 'BORE'},
+        )
+
+        # Spoke void polygons — _spoke_void_polygons uses standard math coords
+        # (x=r·cos, y=r·sin). DXF profile uses compass convention (x=r·sin, y=r·cos),
+        # so swap x↔y when writing polygon vertices.
+        void_polys = _spoke_void_polygons(
+            R_hub_spoke, R_rim_inner, spoke_count, spoke_width_mm,
+            fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
+        )
+        sp_attr = {'layer': 'SPOKES'}
+        for pts in void_polys:
+            if len(pts) < 3:
+                continue
+            # swap x,y to match DXF compass convention
+            dxf_pts = [(y, x) for x, y in pts]
+            msp.add_lwpolyline(dxf_pts, format='xy', close=True, dxfattribs=sp_attr)
 
     # ── Serialise to bytes ───────────────────────────────────────────────────
     # doc.write() requires a text stream; encode to UTF-8 bytes afterwards.

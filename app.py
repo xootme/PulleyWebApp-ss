@@ -19,6 +19,7 @@ from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_bel
 from exporters.step_exporter import (
     generate_pulley_stl, generate_pulley_stl_preview,
     generate_drive_stl_preview,
+    generate_spoke_layer_stl, generate_rim_ring_stl, generate_hub_disk_stl,
 )
 
 app = Flask(__name__)
@@ -262,6 +263,7 @@ def download_dxf():
             bl_preset = request.args.get('p2_backlash_preset',  'STANDARD')
             cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('p2_clearance_custom', 0.0))
             bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('p2_backlash_custom',  0.0))
+            sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, _, _ = _parse_spoke_params(request.args, 'p2_')
             filename = f'{family}-{pitch}-{num_teeth}T-P2.dxf'
         else:
             num_teeth = max(spec['min_teeth'], int(request.args.get('teeth', spec['min_teeth'])))
@@ -271,12 +273,16 @@ def download_dxf():
             bl_preset = request.args.get('backlash_preset',  'STANDARD')
             cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('clearance_custom', 0.0))
             bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('backlash_custom',  0.0))
+            sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, _, _ = _parse_spoke_params(request.args, '')
             filename = f'{family}-{pitch}-{num_teeth}T.dxf'
 
         dxf = generate_dxf(
             family=family, pitch=pitch, num_teeth=num_teeth,
             bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
             print_extra_mm=pr_ex,
+            spoke_count=sp_cnt if sp_en else 0,
+            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od,
+            rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
         )
         return Response(
             dxf,
@@ -301,10 +307,18 @@ def _build_png_from_request(args, size_px=480):
     bl_preset  = args.get('backlash_preset', 'STANDARD')
     cl_mm = _get_preset_value(spec, 'clearances', cl_preset, args.get('clearance_custom', 0.0))
     bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, args.get('backlash_custom',  0.0))
+    sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
+        _parse_spoke_params(args, '')
     return generate_png(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
         print_extra_mm=pr_ex, size_px=size_px,
+        spoke_count=sp_cnt if sp_en else 0,
+        spoke_width_mm=sp_w,
+        spoke_hub_od_mm=sp_hub_od,
+        rim_depth_mm=sp_rim,
+        fillet_tip_mm=sp_ft,
+        fillet_base_mm=sp_fb,
     )
 
 
@@ -327,17 +341,16 @@ def _build_svg_from_request(args):
 
     cl_mm = _get_preset_value(spec, 'clearances', cl_preset, cl_custom)
     bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, bl_custom)
+    sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
+        _parse_spoke_params(args, '')
 
     return generate_svg(
-        family=family,
-        pitch=pitch,
-        num_teeth=num_teeth,
-        bore_mm=bore_mm,
-        clearance_mm=cl_mm,
-        backlash_mm=bl_mm,
-        print_extra_mm=pr_ex,
-        clearance_preset=cl_preset,
-        backlash_preset=bl_preset,
+        family=family, pitch=pitch, num_teeth=num_teeth,
+        bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
+        print_extra_mm=pr_ex, clearance_preset=cl_preset, backlash_preset=bl_preset,
+        spoke_count=sp_cnt if sp_en else 0,
+        spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
+        fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
     )
 
 
@@ -361,17 +374,16 @@ def _build_svg_from_request_p2(args):
 
     cl_mm = _get_preset_value(spec, 'clearances', cl_preset, cl_custom)
     bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, bl_custom)
+    sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
+        _parse_spoke_params(args, 'p2_')
 
     return generate_svg(
-        family=family,
-        pitch=pitch,
-        num_teeth=num_teeth,
-        bore_mm=bore_mm,
-        clearance_mm=cl_mm,
-        backlash_mm=bl_mm,
-        print_extra_mm=pr_ex,
-        clearance_preset=cl_preset,
-        backlash_preset=bl_preset,
+        family=family, pitch=pitch, num_teeth=num_teeth,
+        bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
+        print_extra_mm=pr_ex, clearance_preset=cl_preset, backlash_preset=bl_preset,
+        spoke_count=sp_cnt if sp_en else 0,
+        spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
+        fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
     )
 
 
@@ -399,11 +411,21 @@ def _build_png_dual_from_request(args, size_px=480):
     _default_c = (num_teeth1 + num_teeth2) * spec['pitch'] / (2.0 * _math.pi)
     center_dist = float(args.get('center_distance', _default_c))
 
+    sp1_en, sp1_hub_od, sp1_rim, sp1_w, sp1_ft, sp1_fb, sp1_cnt, sp1_h, sp1_split = \
+        _parse_spoke_params(args, '')
+    sp2_en, sp2_hub_od, sp2_rim, sp2_w, sp2_ft, sp2_fb, sp2_cnt, sp2_h, sp2_split = \
+        _parse_spoke_params(args, 'p2_')
     return generate_png_dual(
         family=family, pitch=pitch,
         num_teeth1=num_teeth1, bore_mm1=bore1, clearance_mm1=cl1, backlash_mm1=bl1, print_extra_mm1=pr_ex1,
         num_teeth2=num_teeth2, bore_mm2=bore2, clearance_mm2=cl2, backlash_mm2=bl2, print_extra_mm2=pr_ex2,
         center_dist_mm=center_dist, size_px=size_px,
+        spoke_count1=sp1_cnt if sp1_en else 0,
+        spoke_width_mm1=sp1_w, spoke_hub_od_mm1=sp1_hub_od, rim_depth_mm1=sp1_rim,
+        fillet_tip_mm1=sp1_ft, fillet_base_mm1=sp1_fb,
+        spoke_count2=sp2_cnt if sp2_en else 0,
+        spoke_width_mm2=sp2_w, spoke_hub_od_mm2=sp2_hub_od, rim_depth_mm2=sp2_rim,
+        fillet_tip_mm2=sp2_ft, fillet_base_mm2=sp2_fb,
     )
 
 
@@ -458,6 +480,10 @@ def download_belt_svg():
             center_dist = float(request.args.get('center_distance', _default_c))
             n_belt      = int(request.args.get('n_belt', 0))
 
+            sp1_en, sp1_hub_od, sp1_rim, sp1_w, sp1_ft, sp1_fb, sp1_cnt, _, _ = \
+                _parse_spoke_params(request.args, '')
+            sp2_en, sp2_hub_od, sp2_rim, sp2_w, sp2_ft, sp2_fb, sp2_cnt, _, _ = \
+                _parse_spoke_params(request.args, 'p2_')
             svg      = generate_svg_dual(
                 family=family, pitch=pitch,
                 num_teeth1=num_teeth1, bore_mm1=bore1,
@@ -467,6 +493,12 @@ def download_belt_svg():
                 clearance_mm2=cl2, backlash_mm2=bl2, print_extra_mm2=pe2,
                 clearance_preset2=cl2_preset, backlash_preset2=bl2_preset,
                 center_dist_mm=center_dist, n_belt_teeth=n_belt,
+                spoke_count1=sp1_cnt if sp1_en else 0,
+                spoke_width_mm1=sp1_w, spoke_hub_od_mm1=sp1_hub_od,
+                rim_depth_mm1=sp1_rim, fillet_tip_mm1=sp1_ft, fillet_base_mm1=sp1_fb,
+                spoke_count2=sp2_cnt if sp2_en else 0,
+                spoke_width_mm2=sp2_w, spoke_hub_od_mm2=sp2_hub_od,
+                rim_depth_mm2=sp2_rim, fillet_tip_mm2=sp2_ft, fillet_base_mm2=sp2_fb,
             )
             filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.svg'
         else:
@@ -531,6 +563,22 @@ def _parse_hub_params(args, prefix=''):
     return hub_od, hub_height, screw_dia, screw_count, captured_nut, flat_depth, keyway_w, keyway_h
 
 
+def _parse_spoke_params(args, prefix=''):
+    """Return spoke params tuple from request args.
+    Returns (enabled, hub_od, rim_depth, width, fillet_tip, fillet_base, count, height, split).
+    """
+    enabled    = args.get(f'{prefix}spokes_enabled', '0') == '1'
+    hub_od     = max(0.0, float(args.get(f'{prefix}spokes_hub_od',     0.0)))
+    rim_depth  = max(0.0, float(args.get(f'{prefix}spokes_rim_depth',  2.0)))
+    width      = max(0.0, float(args.get(f'{prefix}spokes_width',      4.0)))
+    fillet_tip = max(0.0, float(args.get(f'{prefix}spokes_fillet_tip', 1.0)))
+    fillet_base= max(0.0, float(args.get(f'{prefix}spokes_fillet_base',1.5)))
+    count      = max(0,   int(float(args.get(f'{prefix}spokes_count',   4))))
+    height     = max(0.0, float(args.get(f'{prefix}spokes_height',     0.0) or 0.0))
+    split      = args.get(f'{prefix}spokes_split', '0') == '1'
+    return enabled, hub_od, rim_depth, width, fillet_tip, fillet_base, count, height, split
+
+
 @app.route('/api/preview-stl')
 def api_preview_stl():
     """Return binary STL for the Three.js 3D viewer (centred at origin)."""
@@ -555,6 +603,9 @@ def api_preview_stl():
             part = request.args.get('part', 'all')
             hub_od1, hub_h1, sd1, sc1, cn1, fd1, kw_w1, kw_h1 = _parse_hub_params(request.args, '')
             hub_od2, hub_h2, sd2, sc2, cn2, fd2, kw_w2, kw_h2 = _parse_hub_params(request.args, 'p2_')
+            sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
+                _parse_spoke_params(request.args, '')
+            sp_count = sp_cnt if sp_en else 0
             stl = generate_drive_stl_preview(
                 family, pitch,
                 num_teeth1, bore1, num_teeth2, bore2,
@@ -567,6 +618,9 @@ def api_preview_stl():
                 flat_depth_mm1=fd1, flat_depth_mm2=fd2,
                 keyway_w_mm1=kw_w1, keyway_h_mm1=kw_h1,
                 keyway_w_mm2=kw_w2, keyway_h_mm2=kw_h2,
+                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+                spoke_height_mm=sp_h if sp_en else 0.0,
                 part=part,
             )
         else:
@@ -574,9 +628,15 @@ def api_preview_stl():
             family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
                 _parse_stl_params(request.args, pulley)
             hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
+            sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
+                _parse_spoke_params(request.args, '')
+            sp_count = sp_cnt if sp_en else 0
             stl = generate_pulley_stl_preview(
                 family, pitch, num_teeth, bore_mm, belt_height,
                 cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+                spoke_height_mm=sp_h if sp_en else 0.0,
             )
         return Response(stl, mimetype='model/stl',
                         headers={'Cache-Control': 'no-store'})
@@ -589,22 +649,58 @@ def api_preview_stl():
 
 @app.route('/download/stl')
 def download_stl():
-    """Return binary STL file download."""
+    """Return binary STL file download. part=all|spoke|rim|hub selects layer-cake pieces."""
     try:
         pulley = request.args.get('pulley', '1')
+        part   = request.args.get('part', 'all')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
         hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
-        stl = generate_pulley_stl(
-            family, pitch, num_teeth, bore_mm, belt_height,
-            cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
-        )
-        suffix  = '-P2' if pulley == '2' else ''
-        fname   = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
+            _parse_spoke_params(request.args, '')
+        suffix = '-P2' if pulley == '2' else ''
+
+        if part == 'spoke' and sp_en:
+            stl   = generate_spoke_layer_stl(
+                family, pitch, num_teeth, bore_mm, belt_height, sp_h,
+                cl_mm, bl_mm, pr_ex,
+                hub_od_mm=sp_hub if sp_hub > bore_mm else hub_od,
+                rim_depth_mm=sp_rim, spoke_count=sp_cnt, spoke_width_mm=sp_w,
+                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+                hub_height_mm=hub_h, screw_dia_mm=sd, screw_count=sc,
+                captured_nut=cn, flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            )
+            fname = f'{family}-{pitch}-{num_teeth}T{suffix}-spoke.stl'
+        elif part == 'rim' and sp_en:
+            stl   = generate_rim_ring_stl(
+                family, pitch, num_teeth, belt_height, sp_h,
+                cl_mm, bl_mm, pr_ex, rim_depth_mm=sp_rim,
+            )
+            fname = f'{family}-{pitch}-{num_teeth}T{suffix}-rim.stl'
+        elif part == 'hub' and sp_en:
+            stl   = generate_hub_disk_stl(
+                bore_mm,
+                hub_od_mm=sp_hub if sp_hub > bore_mm else hub_od,
+                belt_height_mm=belt_height, spoke_height_mm=sp_h,
+                hub_height_mm=hub_h, screw_dia_mm=sd, screw_count=sc,
+                captured_nut=cn, flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            )
+            fname = f'{family}-{pitch}-{num_teeth}T{suffix}-hub.stl'
+        else:
+            sp_count = sp_cnt if sp_en else 0
+            stl   = generate_pulley_stl(
+                family, pitch, num_teeth, bore_mm, belt_height,
+                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+            )
+            fname = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
+
         return Response(stl, mimetype='model/stl',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
-        return f'Error generating STL: {e}', 400
+        import traceback
+        return f'Error generating STL: {e}\n{traceback.format_exc()}', 400
 
 
 @app.route('/download/step')

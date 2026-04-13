@@ -27,6 +27,7 @@ from geometry.pulley_geometry import (
     wrap_groove_to_pulley, PULLEY_SPECS, PROFILE_KEY_PREFIX,
     build_two_pulley_belt, BELT_FAMILIES,
 )
+from shapely.affinity import rotate as shapely_rotate
 
 # ── Arc sample resolution ─────────────────────────────────────────────────────
 _ARC_STEP_MM = 0.5        # target chord length on OD arc samples (mm)
@@ -393,6 +394,13 @@ def generate_pulley_stl(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spoke_count: int = 0,
+    spoke_width_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
+    rim_depth_mm: float = 0.0,
+    spoke_height_mm: float = 0.0,
 ) -> bytes:
     """
     Return binary STL bytes of an extruded timing pulley solid.
@@ -406,11 +414,45 @@ def generate_pulley_stl(
         family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
     )[0]
 
-    # ── 2D profile → extruded solid ──────────────────────────────────────────
-    poly = ShapelyPolygon(outline)
-    poly = shapely_orient(poly, sign=1.0)   # force CCW (positive area orientation)
-    body = trimesh.creation.extrude_polygon(poly, belt_height_mm)
+    outer_poly = ShapelyPolygon(outline)
+    outer_poly = shapely_orient(outer_poly, sign=1.0)
+
+    # ── Extrude full solid (spoke voids handled below if enabled) ─────────────
+    body = trimesh.creation.extrude_polygon(outer_poly, belt_height_mm)
     body.fix_normals()
+
+    if spoke_count > 0 and spoke_width_mm > 0.0:
+        from exporters.png_exporter import _spoke_void_polygons
+        _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
+        _R_tr    = min(math.hypot(x, y) for x, y in outline)
+        _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
+        spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
+        # Build spoke-voided 2D cross-section
+        spoke_poly = outer_poly
+        for vp in _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
+                                       fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm):
+            if len(vp) < 3:
+                continue
+            vp_shape = ShapelyPolygon(vp).simplify(0.05, preserve_topology=True).buffer(0)
+            vp_shape = shapely_orient(vp_shape, sign=1.0)
+            if vp_shape.is_valid and vp_shape.area > 0.1:
+                spoke_poly = spoke_poly.difference(vp_shape)
+                spoke_poly = _largest_poly(spoke_poly)
+        spoke_poly = shapely_orient(spoke_poly, sign=1.0)
+        # Build the spoke void slab directly at the centred position.
+        # slab_offset centres voids at belt_height/2 with total depth = spk_h.
+        slab_offset = (belt_height_mm - spk_h) / 2.0
+        slab_solid = trimesh.creation.extrude_polygon(outer_poly, spk_h)
+        slab_solid.fix_normals()
+        slab_solid.apply_translation([0.0, 0.0, slab_offset])
+        slab_spoke = trimesh.creation.extrude_polygon(spoke_poly, spk_h)
+        slab_spoke.fix_normals()
+        if not slab_spoke.is_watertight:
+            trimesh.repair.fill_holes(slab_spoke)
+            slab_spoke.fix_normals()
+        slab_spoke.apply_translation([0.0, 0.0, slab_offset])
+        voids_slab = trimesh.boolean.difference([slab_solid, slab_spoke], engine='manifold')
+        body = trimesh.boolean.difference([body, voids_slab], engine='manifold')
 
     result = _add_hub_and_bore(body, belt_height_mm, bore_mm,
                                hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
@@ -624,6 +666,71 @@ def _largest_poly(geom):
     return geom
 
 
+def _clean_void(void, min_area: float = 1.0):
+    """Drop zero-area Shapely float artifacts from a spoke void MultiPolygon.
+
+    ann.difference(spoke_web) can produce dozens of degenerate slivers with
+    area ≈ 0 alongside the 4 real void sectors.  Passing those slivers into
+    poly.difference() creates 90+ interior rings that confuse trimesh's
+    extrude_polygon triangulator, making the pulley appear solid.
+    """
+    from shapely.geometry import MultiPolygon as _MP
+    from shapely.ops import unary_union
+    if isinstance(void, _MP):
+        real = [g for g in void.geoms if g.area >= min_area]
+        if not real:
+            return void          # fall back; better than nothing
+        return unary_union(real) if len(real) > 1 else real[0]
+    return void
+
+
+def _spoke_void_sectors(R_hub, R_rim, spoke_count, spoke_width_mm,
+                        fillet_tip_mm=0.0, fillet_base_mm=0.0, n_arc=32):
+    """
+    Return one Shapely Polygon per gap between spokes for 3D boolean subtraction.
+    Tries to use _spoke_void_polygons (with fillets) first; if the resulting
+    polygon doesn't produce a clean mesh, falls back to a simple annular sector.
+    """
+    if spoke_count <= 0 or spoke_width_mm <= 0.0 or R_rim <= R_hub + 0.5:
+        return []
+
+    # ── Try fillet polygons first ─────────────────────────────────────────────
+    from exporters.png_exporter import _spoke_void_polygons
+    fillet_polys = _spoke_void_polygons(
+        R_hub, R_rim, spoke_count, spoke_width_mm,
+        fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
+    )
+    result = []
+    for vp in fillet_polys:
+        if len(vp) < 3:
+            continue
+        poly = ShapelyPolygon(vp).buffer(0)   # fix self-touches / near-dupes
+        poly = shapely_orient(poly, sign=1.0)
+        if poly.is_valid and poly.area > 0.1:
+            result.append(poly)
+
+    if len(result) == spoke_count:
+        return result   # all fillets succeeded — use them
+
+    # ── Fallback: simple annular sectors (no fillets) ─────────────────────────
+    half_w     = min(spoke_width_mm / 2.0, R_rim * 0.45)
+    theta_step = 2.0 * math.pi / spoke_count
+    theta_spk  = math.asin(min(half_w / R_rim, 0.9999))
+    gap_half   = max(1e-6, theta_step / 2.0 - theta_spk)
+    sectors = []
+    for i in range(spoke_count):
+        theta_mid = (i + 0.5) * theta_step
+        a0 = theta_mid - gap_half
+        a1 = theta_mid + gap_half
+        angles = [a0 + (a1 - a0) * k / n_arc for k in range(n_arc + 1)]
+        outer = [(R_rim * math.cos(a), R_rim * math.sin(a)) for a in angles]
+        inner = [(R_hub * math.cos(a), R_hub * math.sin(a)) for a in reversed(angles)]
+        poly = shapely_orient(ShapelyPolygon(outer + inner), sign=1.0)
+        if poly.is_valid and poly.area > 0.1:
+            sectors.append(poly)
+    return sectors
+
+
 def _rot2d(pts, angle):
     """Rotate a list of (x, y) points by `angle` radians (compass CW convention)."""
     if abs(angle) < 1e-9:
@@ -632,11 +739,104 @@ def _rot2d(pts, angle):
     return [(x * c + y * s, -x * s + y * c) for x, y in pts]
 
 
+def _spoke_web_polygon(R_hub: float, R_rim_inner: float,
+                       spoke_count: int, spoke_width: float,
+                       n_arc: int = 32) -> ShapelyPolygon:
+    """
+    Return 2D cross-section polygon: hub disk + N radial spokes (no fillets).
+    Fillets are applied separately via _apply_spoke_fillets().
+
+    Fills from centre (r=0) to R_rim_inner.
+    Spokes connect R_hub → R_rim_inner; the hub disk (0→R_hub) is always solid.
+    spoke_width — tangential width of spoke measured at hub face.
+    """
+    hub_disk = ShapelyPoint(0.0, 0.0).buffer(R_hub, resolution=_BORE_SECTIONS)
+    hub_disk = shapely_orient(hub_disk, sign=1.0)
+
+    if spoke_count <= 0 or spoke_width <= 0.0 or R_rim_inner <= R_hub + 0.5:
+        # No spokes → solid disk to R_rim_inner
+        return shapely_orient(
+            ShapelyPoint(0.0, 0.0).buffer(R_rim_inner, resolution=_BORE_SECTIONS), sign=1.0)
+
+    # Only constrain at rim — hub overlap is allowed (spokes may merge at hub)
+    half_w = min(spoke_width / 2.0, R_rim_inner * 0.45)
+
+    theta_i = math.asin(min(half_w / R_hub,       0.9999))
+    theta_o = math.asin(min(half_w / R_rim_inner, 0.9999))
+
+    # One spoke centered on +X axis
+    pts: list = []
+    for a in np.linspace(-theta_i, theta_i, n_arc):
+        pts.append((R_hub       * math.cos(a), R_hub       * math.sin(a)))
+    for a in np.linspace(theta_o, -theta_o, n_arc):
+        pts.append((R_rim_inner * math.cos(a), R_rim_inner * math.sin(a)))
+
+    spoke_0 = ShapelyPolygon(pts)
+
+    # Union all N rotated spokes + hub disk (fillets applied to void by callers)
+    result = hub_disk.union(spoke_0)
+    theta_step = 2.0 * math.pi / spoke_count
+    for i in range(1, spoke_count):
+        rotated = shapely_rotate(spoke_0, math.degrees(i * theta_step), origin=(0.0, 0.0))
+        result = result.union(rotated)
+
+    return shapely_orient(result, sign=1.0)
+
+
+def _apply_spoke_fillets(web: ShapelyPolygon, annulus: ShapelyPolygon,
+                         fillet_base: float, fillet_tip: float,
+                         gap_hw: float) -> ShapelyPolygon:
+    """
+    Apply spoke fillets by morphological OPENING on each individual void gap
+    (buffer −r then +r), which rounds the convex corners of the void at the
+    spoke-to-hub and spoke-to-rim junctions.  Returns the updated spoke web.
+    """
+    if fillet_base <= 0.05 and fillet_tip <= 0.05:
+        return web
+
+    void_full = annulus.difference(web)
+    if void_full.is_empty:
+        return web
+
+    geoms = list(void_full.geoms) if void_full.geom_type == 'MultiPolygon' else [void_full]
+
+    r_base = min(fillet_base, gap_hw * 0.80) if fillet_base > 0.05 else 0.0
+    r_tip  = min(fillet_tip,  gap_hw * 0.80) if fillet_tip  > 0.05 else 0.0
+    r1 = min(r_base, r_tip) if r_base > 0.05 and r_tip > 0.05 else max(r_base, r_tip)
+    r2 = abs(r_base - r_tip) if r_base > 0.05 and r_tip > 0.05 else 0.0
+
+    filleted_voids = []
+    for g in geoms:
+        if g.is_empty or g.area < 0.01:
+            continue
+        vp = g
+        for r in (r1, r2):
+            if r > 0.05:
+                eroded = vp.buffer(-r, join_style=2, cap_style=2)
+                if eroded.is_valid and not eroded.is_empty:
+                    vp = eroded.buffer(r, join_style=1, cap_style=1)
+        filleted_voids.append(vp)
+
+    if not filleted_voids:
+        return web
+
+    from functools import reduce
+    from shapely.ops import unary_union
+    new_void = unary_union(filleted_voids)
+    new_web  = annulus.difference(new_void)
+    if new_web.is_empty:
+        return web
+    return shapely_orient(_largest_poly(new_web), sign=1.0)
+
+
 def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                        clearance_mm=0.0, backlash_mm=0.0, print_extra_mm=0.0,
                        phase=0.0, hub_od_mm=0.0, hub_height_mm=0.0,
                        screw_dia_mm=0.0, screw_count=0, captured_nut=False,
-                       flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0):
+                       flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0,
+                       spoke_count=0, spoke_width_mm=0.0, spoke_hub_od_mm=0.0,
+                       fillet_tip_mm=0.0, fillet_base_mm=0.0, rim_depth_mm=0.0,
+                       spoke_height_mm=0.0):
     """
     Build a single watertight pulley trimesh solid.
 
@@ -713,8 +913,40 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
     outer_poly = shapely_orient(outer_poly, sign=1.0)
     belt_cross = outer_poly.difference(bore_2d) if bore_2d is not None else outer_poly
     belt_cross = _largest_poly(belt_cross)
-    belt_mesh  = trimesh.creation.extrude_polygon(belt_cross, belt_height_mm)
+
+    belt_mesh = trimesh.creation.extrude_polygon(belt_cross, belt_height_mm)
     belt_mesh.fix_normals()
+
+    # ── Spoke voids ───────────────────────────────────────────────────────────
+    if spoke_count > 0 and spoke_width_mm > 0.0:
+        from exporters.png_exporter import _spoke_void_polygons
+        _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
+        _R_tr    = min(math.hypot(x, y) for x, y in outline)
+        _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
+        spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
+        spoke_cross = belt_cross
+        for vp in _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
+                                       fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm):
+            if len(vp) < 3:
+                continue
+            vp_shape = ShapelyPolygon(vp).simplify(0.05, preserve_topology=True).buffer(0)
+            vp_shape = shapely_orient(vp_shape, sign=1.0)
+            if vp_shape.is_valid and vp_shape.area > 0.1:
+                spoke_cross = spoke_cross.difference(vp_shape)
+                spoke_cross = _largest_poly(spoke_cross)
+        spoke_cross = shapely_orient(spoke_cross, sign=1.0)
+        slab_offset = (belt_height_mm - spk_h) / 2.0
+        slab_solid = trimesh.creation.extrude_polygon(belt_cross, spk_h)
+        slab_solid.fix_normals()
+        slab_solid.apply_translation([0.0, 0.0, slab_offset])
+        slab_spoke = trimesh.creation.extrude_polygon(spoke_cross, spk_h)
+        slab_spoke.fix_normals()
+        if not slab_spoke.is_watertight:
+            trimesh.repair.fill_holes(slab_spoke)
+            slab_spoke.fix_normals()
+        slab_spoke.apply_translation([0.0, 0.0, slab_offset])
+        voids_slab = trimesh.boolean.difference([slab_solid, slab_spoke], engine='manifold')
+        belt_mesh = trimesh.boolean.difference([belt_mesh, voids_slab], engine='manifold')
 
     # ── Hub section: hub circle minus bore hole ───────────────────────────────
     if hub_valid:
@@ -893,6 +1125,13 @@ def generate_drive_stl_preview(
     keyway_h_mm1: float = 0.0,
     keyway_w_mm2: float = 0.0,
     keyway_h_mm2: float = 0.0,
+    spoke_count: int = 0,
+    spoke_width_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
+    rim_depth_mm: float = 0.0,
+    spoke_height_mm: float = 0.0,
     part: str = 'all',
 ) -> bytes:
     """
@@ -925,7 +1164,11 @@ def generate_drive_stl_preview(
                             hub_od_mm=hub_od_mm1, hub_height_mm=hub_height_mm1,
                             screw_dia_mm=screw_dia_mm1, screw_count=screw_count1,
                             captured_nut=captured_nut1, flat_depth_mm=flat_depth_mm1,
-                            keyway_w_mm=keyway_w_mm1, keyway_h_mm=keyway_h_mm1)
+                            keyway_w_mm=keyway_w_mm1, keyway_h_mm=keyway_h_mm1,
+                            spoke_count=spoke_count, spoke_width_mm=spoke_width_mm,
+                            spoke_hub_od_mm=spoke_hub_od_mm, fillet_tip_mm=fillet_tip_mm,
+                            fillet_base_mm=fillet_base_mm, rim_depth_mm=rim_depth_mm,
+                            spoke_height_mm=spoke_height_mm)
     p1.apply_translation([cx1, 0.0, 0.0])
 
     p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
@@ -934,7 +1177,11 @@ def generate_drive_stl_preview(
                             hub_od_mm=hub_od_mm2, hub_height_mm=hub_height_mm2,
                             screw_dia_mm=screw_dia_mm2, screw_count=screw_count2,
                             captured_nut=captured_nut2, flat_depth_mm=flat_depth_mm2,
-                            keyway_w_mm=keyway_w_mm2, keyway_h_mm=keyway_h_mm2)
+                            keyway_w_mm=keyway_w_mm2, keyway_h_mm=keyway_h_mm2,
+                            spoke_count=spoke_count, spoke_width_mm=spoke_width_mm,
+                            spoke_hub_od_mm=spoke_hub_od_mm, fillet_tip_mm=fillet_tip_mm,
+                            fillet_base_mm=fillet_base_mm, rim_depth_mm=rim_depth_mm,
+                            spoke_height_mm=spoke_height_mm)
     p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────
@@ -987,6 +1234,13 @@ def generate_pulley_stl_preview(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spoke_count: int = 0,
+    spoke_width_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
+    rim_depth_mm: float = 0.0,
+    spoke_height_mm: float = 0.0,
 ) -> bytes:
     """
     Same as generate_pulley_stl but centres the mesh at the origin so
@@ -997,7 +1251,170 @@ def generate_pulley_stl_preview(
         clearance_mm, backlash_mm, print_extra_mm,
         hub_od_mm, hub_height_mm, screw_dia_mm, screw_count, captured_nut,
         flat_depth_mm, keyway_w_mm, keyway_h_mm,
+        spoke_count, spoke_width_mm, spoke_hub_od_mm, fillet_tip_mm, fillet_base_mm, rim_depth_mm,
+        spoke_height_mm,
     )
     mesh = trimesh.load(io.BytesIO(stl_bytes), file_type='stl')
     mesh.apply_translation(-mesh.centroid)
     return mesh.export(file_type='stl')
+
+
+def generate_spoke_layer_stl(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    bore_mm: float,
+    belt_height_mm: float,
+    spoke_height_mm: float,
+    clearance_mm: float = 0.0,
+    backlash_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+    hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 0.0,
+    spoke_count: int = 4,
+    spoke_width_mm: float = 4.0,
+    fillet_tip_mm: float = 1.0,
+    fillet_base_mm: float = 1.5,
+    hub_height_mm: float = 0.0,
+    screw_dia_mm: float = 0.0,
+    screw_count: int = 0,
+    captured_nut: bool = False,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
+) -> bytes:
+    """
+    Layer-cake part 1: spoke web + hub section (one connected piece).
+    Height = spoke_height_mm (or belt_height_mm if 0).
+    """
+    outline, _R_OD, _spec = _build_outline_points(
+        family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm)
+    R_tooth_root = min(math.hypot(x, y) for x, y in outline)
+    R_bore = bore_mm / 2.0
+    R_hub  = hub_od_mm / 2.0 if hub_od_mm > bore_mm else max(R_bore * 1.5, R_bore + 3.0)
+    R_rim_inner = max(R_tooth_root - rim_depth_mm, R_hub + 1.0)
+    layer_h = spoke_height_mm if spoke_height_mm > 0.5 else belt_height_mm
+
+    # 2D bore cross-section
+    bore_2d = None
+    if R_bore > 0.5:
+        bore_2d = (_d_bore_polygon(R_bore, flat_depth_mm, sections=_BORE_SECTIONS)
+                   if flat_depth_mm > 0.0 else
+                   ShapelyPoint(0, 0).buffer(R_bore, resolution=_BORE_SECTIONS))
+        bore_2d = shapely_orient(bore_2d, sign=1.0)
+        if keyway_w_mm > 0.0 and keyway_h_mm > 0.0:
+            kw_rect = ShapelyPolygon([
+                (0.0,              -keyway_w_mm / 2.0),
+                (R_bore + keyway_h_mm, -keyway_w_mm / 2.0),
+                (R_bore + keyway_h_mm,  keyway_w_mm / 2.0),
+                (0.0,               keyway_w_mm / 2.0),
+            ])
+            bore_2d = shapely_orient(bore_2d.union(kw_rect), sign=1.0)
+
+    # Spoke web cross-section (hub disk + N spokes, with fillets)
+    _ann_sl = (ShapelyPoint(0, 0).buffer(R_rim_inner).difference(ShapelyPoint(0, 0).buffer(R_hub)))
+    _half_w_sl  = min(spoke_width_mm / 2.0, R_rim_inner * 0.45)
+    _theta_o_sl = math.asin(min(_half_w_sl / R_rim_inner, 0.9999))
+    _gap_hw_sl  = (math.pi / spoke_count - _theta_o_sl) * R_rim_inner
+    web_poly = _spoke_web_polygon(R_hub, R_rim_inner, spoke_count, spoke_width_mm)
+    web_poly = _apply_spoke_fillets(web_poly, _ann_sl, fillet_base_mm, fillet_tip_mm, _gap_hw_sl)
+    if bore_2d is not None:
+        web_poly = web_poly.difference(bore_2d)
+    web_poly = _largest_poly(web_poly)
+    web_poly = shapely_orient(web_poly, sign=1.0)
+
+    body = trimesh.creation.extrude_polygon(web_poly, layer_h)
+    body.fix_normals()
+
+    # Hub boss + retention features above spoke layer
+    body = _add_hub_and_bore(body, layer_h, bore_mm,
+                              hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
+                              captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+    return body.export(file_type='stl')
+
+
+def generate_rim_ring_stl(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    belt_height_mm: float,
+    spoke_height_mm: float,
+    clearance_mm: float = 0.0,
+    backlash_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+    rim_depth_mm: float = 0.0,
+) -> bytes:
+    """
+    Layer-cake part 2: outer toothed ring only (no hub, no bore).
+    Height = belt_height_mm - spoke_height_mm.
+    """
+    outline, _R_OD, _spec = _build_outline_points(
+        family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm)
+    R_tooth_root = min(math.hypot(x, y) for x, y in outline)
+    R_rim_inner = max(R_tooth_root - rim_depth_mm, 1.0)
+    body_h = max(belt_height_mm - spoke_height_mm, 1.0) if spoke_height_mm > 0 else belt_height_mm
+
+    outer_poly = ShapelyPolygon(outline)
+    outer_poly = shapely_orient(outer_poly, sign=1.0)
+    inner_disk = ShapelyPoint(0, 0).buffer(R_rim_inner, resolution=_BORE_SECTIONS)
+    ring_cross = outer_poly.difference(inner_disk)
+    ring_cross = _largest_poly(ring_cross)
+    ring_cross = shapely_orient(ring_cross, sign=1.0)
+
+    body = trimesh.creation.extrude_polygon(ring_cross, body_h)
+    body.fix_normals()
+    return body.export(file_type='stl')
+
+
+def generate_hub_disk_stl(
+    bore_mm: float,
+    hub_od_mm: float,
+    belt_height_mm: float,
+    spoke_height_mm: float,
+    hub_height_mm: float = 0.0,
+    screw_dia_mm: float = 0.0,
+    screw_count: int = 0,
+    captured_nut: bool = False,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
+) -> bytes:
+    """
+    Layer-cake part 3: hub disk only (with bore + retention features, no rim).
+    Height = belt_height_mm - spoke_height_mm (+ hub boss above if configured).
+    """
+    R_bore = bore_mm / 2.0
+    R_hub  = hub_od_mm / 2.0 if hub_od_mm > bore_mm else max(R_bore * 1.5, R_bore + 3.0)
+    body_h = max(belt_height_mm - spoke_height_mm, 1.0) if spoke_height_mm > 0 else belt_height_mm
+
+    # 2D bore cross-section
+    bore_2d = None
+    if R_bore > 0.5:
+        bore_2d = (_d_bore_polygon(R_bore, flat_depth_mm, sections=_BORE_SECTIONS)
+                   if flat_depth_mm > 0.0 else
+                   ShapelyPoint(0, 0).buffer(R_bore, resolution=_BORE_SECTIONS))
+        bore_2d = shapely_orient(bore_2d, sign=1.0)
+        if keyway_w_mm > 0.0 and keyway_h_mm > 0.0:
+            kw_rect = ShapelyPolygon([
+                (0.0,              -keyway_w_mm / 2.0),
+                (R_bore + keyway_h_mm, -keyway_w_mm / 2.0),
+                (R_bore + keyway_h_mm,  keyway_w_mm / 2.0),
+                (0.0,               keyway_w_mm / 2.0),
+            ])
+            bore_2d = shapely_orient(bore_2d.union(kw_rect), sign=1.0)
+
+    hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
+    hub_poly = shapely_orient(hub_poly, sign=1.0)
+    if bore_2d is not None:
+        hub_poly = hub_poly.difference(bore_2d)
+    hub_poly = _largest_poly(hub_poly)
+    hub_poly = shapely_orient(hub_poly, sign=1.0)
+
+    body = trimesh.creation.extrude_polygon(hub_poly, body_h)
+    body.fix_normals()
+
+    # Hub boss + retention features
+    body = _add_hub_and_bore(body, body_h, bore_mm,
+                              hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
+                              captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+    return body.export(file_type='stl')
