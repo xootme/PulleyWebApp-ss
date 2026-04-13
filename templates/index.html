@@ -138,10 +138,17 @@
                  onchange="onHubEnabledChange(1)"
                  style="width:auto;accent-color:#0078d4;cursor:pointer;margin:0;">
           Hub
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Hub_help.html')" title="Hub help">&#9432;</button>
         </span>
         <span class="hub-arrow" id="hub1-arrow">&#9660;</span>
       </div>
       <div class="hub-body" id="hub1-body">
+        <label for="hub1_height">Hub Height (mm)</label>
+        <input type="number" id="hub1_height" value="10" min="3" max="50" step="0.5" oninput="onHubChange(1)" style="width:100%">
+
+        <label for="hub1_od">Hub OD (mm)</label>
+        <input type="number" id="hub1_od" value="20" min="6" max="200" step="0.5" oninput="onHubChange(1)" style="width:100%">
+
         <label for="hub1_retention">Retention Method</label>
         <select id="hub1_retention" onchange="onHubChange(1)">
           <option value="set_screw_nut">Set Screw (captured nut)</option>
@@ -170,18 +177,68 @@
 
         <div id="hub1_dshaft_opts" class="hidden">
           <label for="hub1_flat_depth">Flat Depth (mm)</label>
-          <input type="number" id="hub1_flat_depth" value="0.5" min="0.1" step="0.05" style="width:100%">
+          <input type="number" id="hub1_flat_depth" value="0.5" min="0.1" step="0.05" oninput="onHubChange(1)" style="width:100%">
           <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
+
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+            <input type="checkbox" id="hub1_dshaft_screw" onchange="onHubChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+            Add set screw
+          </label>
+
+          <div id="hub1_dshaft_screw_opts" class="hidden">
+            <label for="hub1_dshaft_screw_type">Screw Type</label>
+            <select id="hub1_dshaft_screw_type" onchange="onHubChange(1)">
+              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_nut">Captured nut</option>
+            </select>
+            <label for="hub1_dshaft_screw_size">Screw Size</label>
+            <select id="hub1_dshaft_screw_size" onchange="onHubChange(1)">
+              <option value="M3">M3</option>
+              <option value="M4">M4</option>
+              <option value="M5" selected>M5</option>
+              <option value="M6">M6</option>
+              <option value="M8">M8</option>
+              <option value="M10">M10</option>
+            </select>
+          </div>
         </div>
 
-        <label for="hub1_height">Hub Height (mm)</label>
-        <input type="number" id="hub1_height" value="10" min="1" step="0.5" oninput="onHubChange(1)" style="width:100%">
+        <div id="hub1_keyway_opts" class="hidden">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="hub1_keyway_w" style="margin:0;flex:1">Width W (mm)</label>
+            <input type="number" id="hub1_keyway_w" value="4" min="2" step="0.5" oninput="onHubChange(1)" style="width:70px">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="hub1_keyway_h" style="margin:0;flex:1">Hub Depth (mm)</label>
+            <input type="number" id="hub1_keyway_h" value="2" min="0.5" step="0.1" oninput="onHubChange(1)" style="width:70px">
+          </div>
+          <button type="button" onclick="applyISO773Default(1)"
+                  style="margin-top:2px;padding:3px 10px;font-size:12px;cursor:pointer;">Default Key</button>
+          <div class="hub-info" style="margin-top:4px">ISO 773 hub depth t&#x2082; + R corner clearance per shaft size</div>
 
-        <label for="hub1_od">Hub OD (mm)</label>
-        <input type="number" id="hub1_od" value="20" min="1" step="0.5" oninput="onHubChange(1)" style="width:100%">
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+            <input type="checkbox" id="hub1_keyway_screw" onchange="onHubChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+            Add set screw
+          </label>
+          <div id="hub1_keyway_screw_opts" class="hidden">
+            <label for="hub1_keyway_screw_type">Screw Type</label>
+            <select id="hub1_keyway_screw_type" onchange="onHubChange(1)">
+              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_nut">Captured nut</option>
+            </select>
+            <label for="hub1_keyway_screw_size">Screw Size</label>
+            <select id="hub1_keyway_screw_size" onchange="onHubChange(1)">
+              <option value="M3">M3</option>
+              <option value="M4">M4</option>
+              <option value="M5" selected>M5</option>
+              <option value="M6">M6</option>
+              <option value="M8">M8</option>
+              <option value="M10">M10</option>
+            </select>
+          </div>
+        </div>
 
         <div class="hub-info" id="hub1_info"></div>
-        <div class="hub-warn hidden" id="hub1_warn"></div>
       </div>
     </section>
 
@@ -333,10 +390,17 @@
                  onchange="onHubEnabledChange(2)"
                  style="width:auto;accent-color:#0078d4;cursor:pointer;margin:0;">
           Hub
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Hub_help.html')" title="Hub help">&#9432;</button>
         </span>
         <span class="hub-arrow" id="hub2-arrow">&#9660;</span>
       </div>
       <div class="hub-body" id="hub2-body">
+        <label for="hub2_height">Hub Height (mm)</label>
+        <input type="number" id="hub2_height" value="10" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+
+        <label for="hub2_od">Hub OD (mm)</label>
+        <input type="number" id="hub2_od" value="20" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+
         <label for="hub2_retention">Retention Method</label>
         <select id="hub2_retention" onchange="onHubChange(2)">
           <option value="set_screw_nut">Set Screw (captured nut)</option>
@@ -365,18 +429,68 @@
 
         <div id="hub2_dshaft_opts" class="hidden">
           <label for="hub2_flat_depth">Flat Depth (mm)</label>
-          <input type="number" id="hub2_flat_depth" value="0.5" min="0.1" step="0.05" style="width:100%">
+          <input type="number" id="hub2_flat_depth" value="0.5" min="0.1" step="0.05" oninput="onHubChange(2)" style="width:100%">
           <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
+
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+            <input type="checkbox" id="hub2_dshaft_screw" onchange="onHubChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+            Add set screw
+          </label>
+
+          <div id="hub2_dshaft_screw_opts" class="hidden">
+            <label for="hub2_dshaft_screw_type">Screw Type</label>
+            <select id="hub2_dshaft_screw_type" onchange="onHubChange(2)">
+              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_nut">Captured nut</option>
+            </select>
+            <label for="hub2_dshaft_screw_size">Screw Size</label>
+            <select id="hub2_dshaft_screw_size" onchange="onHubChange(2)">
+              <option value="M3">M3</option>
+              <option value="M4">M4</option>
+              <option value="M5" selected>M5</option>
+              <option value="M6">M6</option>
+              <option value="M8">M8</option>
+              <option value="M10">M10</option>
+            </select>
+          </div>
         </div>
 
-        <label for="hub2_height">Hub Height (mm)</label>
-        <input type="number" id="hub2_height" value="10" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+        <div id="hub2_keyway_opts" class="hidden">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="hub2_keyway_w" style="margin:0;flex:1">Width W (mm)</label>
+            <input type="number" id="hub2_keyway_w" value="4" min="1" step="0.5" oninput="onHubChange(2)" style="width:70px">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="hub2_keyway_h" style="margin:0;flex:1">Hub Depth (mm)</label>
+            <input type="number" id="hub2_keyway_h" value="2" min="0.5" step="0.1" oninput="onHubChange(2)" style="width:70px">
+          </div>
+          <button type="button" onclick="applyISO773Default(2)"
+                  style="margin-top:2px;padding:3px 10px;font-size:12px;cursor:pointer;">Default Key</button>
+          <div class="hub-info" style="margin-top:4px">ISO 773 hub depth t&#x2082; + R corner clearance per shaft size</div>
 
-        <label for="hub2_od">Hub OD (mm)</label>
-        <input type="number" id="hub2_od" value="20" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+            <input type="checkbox" id="hub2_keyway_screw" onchange="onHubChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+            Add set screw
+          </label>
+          <div id="hub2_keyway_screw_opts" class="hidden">
+            <label for="hub2_keyway_screw_type">Screw Type</label>
+            <select id="hub2_keyway_screw_type" onchange="onHubChange(2)">
+              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_nut">Captured nut</option>
+            </select>
+            <label for="hub2_keyway_screw_size">Screw Size</label>
+            <select id="hub2_keyway_screw_size" onchange="onHubChange(2)">
+              <option value="M3">M3</option>
+              <option value="M4">M4</option>
+              <option value="M5" selected>M5</option>
+              <option value="M6">M6</option>
+              <option value="M8">M8</option>
+              <option value="M10">M10</option>
+            </select>
+          </div>
+        </div>
 
         <div class="hub-info" id="hub2_info"></div>
-        <div class="hub-warn hidden" id="hub2_warn"></div>
       </div>
     </section>
 
@@ -483,22 +597,38 @@ function saveSettings() {
     p2_print_extra:      document.getElementById('p2_print_extra').value,
     feature_build:       document.getElementById('feature_build').checked,
     belt_height:         document.getElementById('belt_height').value,
-    hub1_enabled:        document.getElementById('hub1_enabled').checked,
-    hub1_open:           document.getElementById('hub1-body').classList.contains('open'),
-    hub1_retention:      document.getElementById('hub1_retention').value,
-    hub1_screw_size:     document.getElementById('hub1_screw_size').value,
-    hub1_screw_count:    document.getElementById('hub1_screw_count').value,
-    hub1_flat_depth:     document.getElementById('hub1_flat_depth').value,
-    hub1_height:         document.getElementById('hub1_height').value,
-    hub1_od:             document.getElementById('hub1_od').value,
-    hub2_enabled:        document.getElementById('hub2_enabled').checked,
-    hub2_open:           document.getElementById('hub2-body').classList.contains('open'),
-    hub2_retention:      document.getElementById('hub2_retention').value,
-    hub2_screw_size:     document.getElementById('hub2_screw_size').value,
-    hub2_screw_count:    document.getElementById('hub2_screw_count').value,
-    hub2_flat_depth:     document.getElementById('hub2_flat_depth').value,
-    hub2_height:         document.getElementById('hub2_height').value,
-    hub2_od:             document.getElementById('hub2_od').value,
+    hub1_enabled:             document.getElementById('hub1_enabled').checked,
+    hub1_open:                document.getElementById('hub1-body').classList.contains('open'),
+    hub1_retention:           document.getElementById('hub1_retention').value,
+    hub1_screw_size:          document.getElementById('hub1_screw_size').value,
+    hub1_screw_count:         document.getElementById('hub1_screw_count').value,
+    hub1_flat_depth:          document.getElementById('hub1_flat_depth').value,
+    hub1_dshaft_screw:        document.getElementById('hub1_dshaft_screw').checked,
+    hub1_dshaft_screw_type:   document.getElementById('hub1_dshaft_screw_type').value,
+    hub1_dshaft_screw_size:   document.getElementById('hub1_dshaft_screw_size').value,
+    hub1_keyway_w:            document.getElementById('hub1_keyway_w').value,
+    hub1_keyway_h:            document.getElementById('hub1_keyway_h').value,
+    hub1_keyway_screw:        document.getElementById('hub1_keyway_screw').checked,
+    hub1_keyway_screw_type:   document.getElementById('hub1_keyway_screw_type').value,
+    hub1_keyway_screw_size:   document.getElementById('hub1_keyway_screw_size').value,
+    hub1_height:              document.getElementById('hub1_height').value,
+    hub1_od:                  document.getElementById('hub1_od').value,
+    hub2_enabled:             document.getElementById('hub2_enabled').checked,
+    hub2_open:                document.getElementById('hub2-body').classList.contains('open'),
+    hub2_retention:           document.getElementById('hub2_retention').value,
+    hub2_screw_size:          document.getElementById('hub2_screw_size').value,
+    hub2_screw_count:         document.getElementById('hub2_screw_count').value,
+    hub2_flat_depth:          document.getElementById('hub2_flat_depth').value,
+    hub2_dshaft_screw:        document.getElementById('hub2_dshaft_screw').checked,
+    hub2_dshaft_screw_type:   document.getElementById('hub2_dshaft_screw_type').value,
+    hub2_dshaft_screw_size:   document.getElementById('hub2_dshaft_screw_size').value,
+    hub2_keyway_w:            document.getElementById('hub2_keyway_w').value,
+    hub2_keyway_h:            document.getElementById('hub2_keyway_h').value,
+    hub2_keyway_screw:        document.getElementById('hub2_keyway_screw').checked,
+    hub2_keyway_screw_type:   document.getElementById('hub2_keyway_screw_type').value,
+    hub2_keyway_screw_size:   document.getElementById('hub2_keyway_screw_size').value,
+    hub2_height:              document.getElementById('hub2_height').value,
+    hub2_od:                  document.getElementById('hub2_od').value,
   };
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
 }
@@ -585,10 +715,18 @@ async function loadSettings() {
       document.getElementById(`hub${n}-body`).classList.add('open');
       document.getElementById(`hub${n}-arrow`).classList.add('open');
     }
-    _val(`hub${n}_retention`,   s[`hub${n}_retention`]);
-    _val(`hub${n}_screw_size`,  s[`hub${n}_screw_size`]);
-    _val(`hub${n}_screw_count`, s[`hub${n}_screw_count`]);
-    _val(`hub${n}_flat_depth`,  s[`hub${n}_flat_depth`]);
+    _val(`hub${n}_retention`,        s[`hub${n}_retention`]);
+    _val(`hub${n}_screw_size`,       s[`hub${n}_screw_size`]);
+    _val(`hub${n}_screw_count`,      s[`hub${n}_screw_count`]);
+    _val(`hub${n}_flat_depth`,       s[`hub${n}_flat_depth`]);
+    _chk(`hub${n}_dshaft_screw`,     s[`hub${n}_dshaft_screw`]);
+    _val(`hub${n}_dshaft_screw_type`,s[`hub${n}_dshaft_screw_type`]);
+    _val(`hub${n}_dshaft_screw_size`,s[`hub${n}_dshaft_screw_size`]);
+    _val(`hub${n}_keyway_w`,         s[`hub${n}_keyway_w`]);
+    _val(`hub${n}_keyway_h`,         s[`hub${n}_keyway_h`]);
+    _chk(`hub${n}_keyway_screw`,     s[`hub${n}_keyway_screw`]);
+    _val(`hub${n}_keyway_screw_type`,s[`hub${n}_keyway_screw_type`]);
+    _val(`hub${n}_keyway_screw_size`,s[`hub${n}_keyway_screw_size`]);
     if (s[`hub${n}_height`] !== undefined) {
       const hEl = document.getElementById(`hub${n}_height`);
       hEl.value = s[`hub${n}_height`];
@@ -599,11 +737,17 @@ async function loadSettings() {
       odEl.value = s[`hub${n}_od`];
       odEl._userSet = true;
     }
-    // Restore screw/dshaft option visibility
+    // Restore top-level section visibility
     const ret = document.getElementById(`hub${n}_retention`).value;
     const isSS = ret === 'set_screw_nut' || ret === 'set_screw_std';
     document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSS);
     document.getElementById(`hub${n}_dshaft_opts`).classList.toggle('hidden', ret !== 'd_shaft');
+    document.getElementById(`hub${n}_keyway_opts`).classList.toggle('hidden', ret !== 'keyway');
+    // Restore sub-option visibility
+    const dsScrew = document.getElementById(`hub${n}_dshaft_screw`).checked;
+    document.getElementById(`hub${n}_dshaft_screw_opts`).classList.toggle('hidden', !dsScrew);
+    const kwScrew = document.getElementById(`hub${n}_keyway_screw`).checked;
+    document.getElementById(`hub${n}_keyway_screw_opts`).classList.toggle('hidden', !kwScrew);
   }
 
   return true;
@@ -635,6 +779,8 @@ window.onload = async () => {
       updateBeltTeethFromCenter();
     }
   }
+  _updateHubMaxValues(1);
+  _updateHubMaxValues(2);
   updateBeltBtn();
 };
 
@@ -682,6 +828,16 @@ function syncP2Belt() {
 function clampBore(el) {
   const v = parseFloat(el.value);
   if (!isNaN(v) && v < 1) el.value = 1;
+}
+
+function _clampHubInput(el) {
+  if (!el) return;
+  const v = parseFloat(el.value);
+  if (isNaN(v)) return;
+  const mn = el.min !== '' ? parseFloat(el.min) : -Infinity;
+  const mx = el.max !== '' ? parseFloat(el.max) : Infinity;
+  if (v < mn) el.value = mn;
+  else if (v > mx) el.value = mx;
 }
 
 function _calcMinC() {
@@ -1172,6 +1328,25 @@ function buildParams() {
       p.hub_screw_dia     = HUB_SCREW_DIA[sz1] || 5;
       p.hub_screw_count   = parseInt(document.getElementById('hub1_screw_count').value) || 1;
       p.hub_captured_nut  = r1 === 'set_screw_nut' ? '1' : '0';
+    } else if (r1 === 'd_shaft') {
+      p.hub_flat_depth = parseFloat(document.getElementById('hub1_flat_depth').value) || 0.5;
+      if (document.getElementById('hub1_dshaft_screw').checked) {
+        const dsType1 = document.getElementById('hub1_dshaft_screw_type').value;
+        const sz1 = document.getElementById('hub1_dshaft_screw_size').value;
+        p.hub_screw_dia    = HUB_SCREW_DIA[sz1] || 5;
+        p.hub_screw_count  = 1;
+        p.hub_captured_nut = dsType1 === 'set_screw_nut' ? '1' : '0';
+      }
+    } else if (r1 === 'keyway') {
+      p.hub_keyway_w = parseFloat(document.getElementById('hub1_keyway_w').value) || 4;
+      p.hub_keyway_h = parseFloat(document.getElementById('hub1_keyway_h').value) || 2;
+      if (document.getElementById('hub1_keyway_screw').checked) {
+        const kwType1 = document.getElementById('hub1_keyway_screw_type').value;
+        const sz1 = document.getElementById('hub1_keyway_screw_size').value;
+        p.hub_screw_dia    = HUB_SCREW_DIA[sz1] || 5;
+        p.hub_screw_count  = 1;
+        p.hub_captured_nut = kwType1 === 'set_screw_nut' ? '1' : '0';
+      }
     }
   }
   if (dual) {
@@ -1197,6 +1372,25 @@ function buildParams() {
         p.p2_hub_screw_dia     = HUB_SCREW_DIA[sz2] || 5;
         p.p2_hub_screw_count   = parseInt(document.getElementById('hub2_screw_count').value) || 1;
         p.p2_hub_captured_nut  = r2 === 'set_screw_nut' ? '1' : '0';
+      } else if (r2 === 'd_shaft') {
+        p.p2_hub_flat_depth = parseFloat(document.getElementById('hub2_flat_depth').value) || 0.5;
+        if (document.getElementById('hub2_dshaft_screw').checked) {
+          const dsType2 = document.getElementById('hub2_dshaft_screw_type').value;
+          const sz2 = document.getElementById('hub2_dshaft_screw_size').value;
+          p.p2_hub_screw_dia    = HUB_SCREW_DIA[sz2] || 5;
+          p.p2_hub_screw_count  = 1;
+          p.p2_hub_captured_nut = dsType2 === 'set_screw_nut' ? '1' : '0';
+        }
+      } else if (r2 === 'keyway') {
+        p.p2_hub_keyway_w = parseFloat(document.getElementById('hub2_keyway_w').value) || 4;
+        p.p2_hub_keyway_h = parseFloat(document.getElementById('hub2_keyway_h').value) || 2;
+        if (document.getElementById('hub2_keyway_screw').checked) {
+          const kwType2 = document.getElementById('hub2_keyway_screw_type').value;
+          const sz2 = document.getElementById('hub2_keyway_screw_size').value;
+          p.p2_hub_screw_dia    = HUB_SCREW_DIA[sz2] || 5;
+          p.p2_hub_screw_count  = 1;
+          p.p2_hub_captured_nut = kwType2 === 'set_screw_nut' ? '1' : '0';
+        }
       }
     }
   }
@@ -1350,6 +1544,7 @@ async function update3DPreview() {
     const params = buildParams();
     params.belt_height = document.getElementById('belt_height').value;
     const url = '/api/preview-stl?' + new URLSearchParams(params);
+    console.log('[3D preview] hub_flat_depth:', params.hub_flat_depth, '| full URL:', url);
     await init3D();
     load3DModel(url);
   } catch (e) {
@@ -1539,9 +1734,9 @@ function load3DModel(url) {
   document.getElementById('preview-footer').textContent = 'Loading 3D…';
 
   const isDual = url.includes('dual=true');
-  const pulleyMat  = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55 });
-  const pulley2Mat = new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.10, roughness: 0.55 });
-  const beltMat    = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.05, roughness: 0.80 });
+  const pulleyMat  = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55, side: THREE.DoubleSide });
+  const pulley2Mat = new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.10, roughness: 0.55, side: THREE.DoubleSide });
+  const beltMat    = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.05, roughness: 0.80, side: THREE.DoubleSide });
 
   if (isDual) {
     const p1Url   = url + '&part=p1';
@@ -1586,6 +1781,42 @@ function load3DModel(url) {
 // Set screw diameter in mm keyed by size label
 const HUB_SCREW_DIA = { M3:3, M4:4, M5:5, M6:6, M8:8, M10:10 };
 
+// ISO 773 / DIN 6885-1 key dimensions by shaft diameter (bore_mm)
+// Columns: [maxBore, W, t2 (hub depth), r (corner radius)]
+// Hub cut depth = t2 + r  (r clears the key's corner radius so it seats fully)
+function applyISO773Default(n) {
+  const bore = parseFloat(document.getElementById(n === 1 ? 'bore' : 'p2_bore').value) || 8;
+  const table = [
+    // maxBore,  W,  t2,    r
+    [  6,  2,  1.0, 0.16],
+    [  8,  2,  1.0, 0.16],
+    [ 10,  3,  1.4, 0.16],
+    [ 12,  4,  1.8, 0.16],
+    [ 17,  5,  2.3, 0.25],
+    [ 22,  6,  2.8, 0.25],
+    [ 30,  8,  3.3, 0.25],
+    [ 38, 10,  3.3, 0.25],
+    [ 44, 12,  3.3, 0.40],
+    [ 50, 14,  3.8, 0.40],
+    [ 58, 16,  4.3, 0.40],
+    [ 65, 18,  4.4, 0.40],
+    [ 75, 20,  4.9, 0.40],
+    [ 85, 22,  5.4, 0.60],
+    [ 95, 25,  5.4, 0.60],
+    [110, 28,  6.4, 0.60],
+    [130, 32,  7.4, 0.60],
+  ];
+  let W = 2, t2 = 1.0, r = 0.16;
+  for (const [maxD, w, t, rv] of table) {
+    W = w; t2 = t; r = rv;
+    if (bore <= maxD) break;
+  }
+  const hubDepth = Math.round((t2 + r) * 10) / 10;
+  document.getElementById(`hub${n}_keyway_w`).value = W;
+  document.getElementById(`hub${n}_keyway_h`).value = hubDepth;
+  onHubChange(n);
+}
+
 // Minimum wall to bore = 2× screw dia; min hub height = 2× screw dia
 function toggleHub(n) {
   const body  = document.getElementById(`hub${n}-body`);
@@ -1604,20 +1835,37 @@ function toggleTbd(id) {
 }
 
 function onHubChange(n) {
+  _updateHubMaxValues(n);
+  _clampHubInput(document.getElementById(`hub${n}_height`));
+  _clampHubInput(document.getElementById(`hub${n}_od`));
   const retention = document.getElementById(`hub${n}_retention`).value;
   const ssOpts    = document.getElementById(`hub${n}_setscrew_opts`);
   const dsOpts    = document.getElementById(`hub${n}_dshaft_opts`);
+  const kwOpts    = document.getElementById(`hub${n}_keyway_opts`);
 
   const isSetScrew = retention === 'set_screw_nut' || retention === 'set_screw_std';
   ssOpts.classList.toggle('hidden', !isSetScrew);
   dsOpts.classList.toggle('hidden', retention !== 'd_shaft');
+  kwOpts.classList.toggle('hidden', retention !== 'keyway');
+
+  // D-shaft set screw sub-options
+  if (retention === 'd_shaft') {
+    const dsScrew = document.getElementById(`hub${n}_dshaft_screw`).checked;
+    document.getElementById(`hub${n}_dshaft_screw_opts`).classList.toggle('hidden', !dsScrew);
+  }
+
+  // Keyway set screw sub-options
+  if (retention === 'keyway') {
+    const kwScrew = document.getElementById(`hub${n}_keyway_screw`).checked;
+    document.getElementById(`hub${n}_keyway_screw_opts`).classList.toggle('hidden', !kwScrew);
+  }
 
   _validateHub(n);
 
   saveSettings();
   if (document.getElementById('feature_build').checked &&
       document.getElementById(`hub${n}_enabled`).checked) {
-    schedulePreview();
+    schedulePreview3D();
   }
 }
 
@@ -1629,19 +1877,18 @@ function onHubEnabledChange(n) {
   body.style.pointerEvents = enabled ? '' : 'none';
   saveSettings();
   if (document.getElementById('feature_build').checked) {
-    schedulePreview();
+    schedulePreview3D();
   }
 }
 
 function _validateHub(n) {
   const info    = document.getElementById(`hub${n}_info`);
-  const warn    = document.getElementById(`hub${n}_warn`);
   const bore    = parseFloat(document.getElementById(n === 1 ? 'bore' : 'p2_bore').value) || 0;
   const hubOD   = parseFloat(document.getElementById(`hub${n}_od`).value) || 0;
   const hubH    = parseFloat(document.getElementById(`hub${n}_height`).value) || 0;
   const retention = document.getElementById(`hub${n}_retention`).value;
 
-  const warnings = [];
+  const lines = [];
 
   if (retention === 'set_screw_nut' || retention === 'set_screw_std') {
     const screwSize = document.getElementById(`hub${n}_screw_size`).value;
@@ -1649,25 +1896,20 @@ function _validateHub(n) {
     const minWallToBore = sd * 2;
     const minHubH       = sd * 2;
     const wall = (hubOD - bore) / 2;
-
+    lines.push(`Wall: ${wall.toFixed(1)} mm · Min wall: ${minWallToBore} mm · Min height: ${minHubH} mm`);
     if (wall < minWallToBore)
-      warnings.push(`Wall too thin: ${wall.toFixed(1)} mm (need ≥ ${minWallToBore} mm for ${screwSize})`);
+      lines.push(`⚠ Wall too thin (need ≥ ${minWallToBore} mm for ${screwSize})`);
     if (hubH < minHubH)
-      warnings.push(`Hub height too short: ${hubH.toFixed(1)} mm (need ≥ ${minHubH} mm for ${screwSize})`);
-
-    info.textContent = `Wall: ${wall.toFixed(1)} mm · Min wall: ${minWallToBore} mm · Min height: ${minHubH} mm`;
+      lines.push(`⚠ Hub height too short (need ≥ ${minHubH} mm for ${screwSize})`);
   } else if (retention === 'd_shaft') {
     const wall = (hubOD - bore) / 2;
-    info.textContent = `Wall: ${wall.toFixed(1)} mm`;
-  } else {
-    info.textContent = '';
+    lines.push(`Wall: ${wall.toFixed(1)} mm`);
   }
 
   if (hubOD <= bore)
-    warnings.push(`Hub OD (${hubOD} mm) must be larger than bore (${bore} mm)`);
+    lines.push(`⚠ Hub OD (${hubOD} mm) must be larger than bore (${bore} mm)`);
 
-  warn.textContent = warnings.join(' · ');
-  warn.classList.toggle('hidden', warnings.length === 0);
+  info.textContent = lines.join(' · ');
 }
 
 function _initHubDefaults(n) {
@@ -1680,8 +1922,25 @@ function _initHubDefaults(n) {
   _validateHub(n);
 }
 
+// Update max attributes on hub inputs that depend on bore diameter
+function _updateHubMaxValues(n) {
+  const bore = parseFloat(document.getElementById(n === 1 ? 'bore' : 'p2_bore').value) || 0;
+  if (bore <= 0) return;
+  const flatMax = Math.round(bore / 2 * 100) / 100;          // 100% of bore radius
+  const kwMax   = Math.round(bore * 0.75 * 100) / 100;       // 75% of bore diameter
+  const flatEl = document.getElementById(`hub${n}_flat_depth`);
+  if (flatEl) { flatEl.max = flatMax; _clampHubInput(flatEl); }
+  const kwWEl = document.getElementById(`hub${n}_keyway_w`);
+  if (kwWEl) { kwWEl.max = kwMax; _clampHubInput(kwWEl); }
+  const kwHEl = document.getElementById(`hub${n}_keyway_h`);
+  if (kwHEl) { kwHEl.max = kwMax; _clampHubInput(kwHEl); }
+}
+
 // Re-validate when bore changes
-function _onBoreChangeHub(n) { if (document.getElementById(`hub${n}-body`).classList.contains('open')) _validateHub(n); }
+function _onBoreChangeHub(n) {
+  _updateHubMaxValues(n);
+  if (document.getElementById(`hub${n}-body`).classList.contains('open')) _validateHub(n);
+}
 </script>
 
 </body>

@@ -519,13 +519,16 @@ def _parse_stl_params(args, pulley='1'):
 
 
 def _parse_hub_params(args, prefix=''):
-    """Return (hub_od_mm, hub_height_mm, screw_dia_mm, screw_count, captured_nut) from request args."""
+    """Return (hub_od_mm, hub_height_mm, screw_dia_mm, screw_count, captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm) from request args."""
     hub_od       = max(0.0, float(args.get(f'{prefix}hub_od',           0.0)))
     hub_height   = max(0.0, float(args.get(f'{prefix}hub_height',       0.0)))
     screw_dia    = max(0.0, float(args.get(f'{prefix}hub_screw_dia',    0.0)))
     screw_count  = max(0,   int(float(args.get(f'{prefix}hub_screw_count', 0))))
     captured_nut = args.get(f'{prefix}hub_captured_nut', '0') == '1'
-    return hub_od, hub_height, screw_dia, screw_count, captured_nut
+    flat_depth   = max(0.0, float(args.get(f'{prefix}hub_flat_depth',   0.0)))
+    keyway_w     = max(0.0, float(args.get(f'{prefix}hub_keyway_w',     0.0)))
+    keyway_h     = max(0.0, float(args.get(f'{prefix}hub_keyway_h',     0.0)))
+    return hub_od, hub_height, screw_dia, screw_count, captured_nut, flat_depth, keyway_w, keyway_h
 
 
 @app.route('/api/preview-stl')
@@ -550,8 +553,8 @@ def api_preview_stl():
                                       request.args.get('p2_backlash_custom', 0.0))
             center_dist = float(request.args.get('center_distance', 100.0))
             part = request.args.get('part', 'all')
-            hub_od1, hub_h1, sd1, sc1, cn1 = _parse_hub_params(request.args, '')
-            hub_od2, hub_h2, sd2, sc2, cn2 = _parse_hub_params(request.args, 'p2_')
+            hub_od1, hub_h1, sd1, sc1, cn1, fd1, kw_w1, kw_h1 = _parse_hub_params(request.args, '')
+            hub_od2, hub_h2, sd2, sc2, cn2, fd2, kw_w2, kw_h2 = _parse_hub_params(request.args, 'p2_')
             stl = generate_drive_stl_preview(
                 family, pitch,
                 num_teeth1, bore1, num_teeth2, bore2,
@@ -561,21 +564,27 @@ def api_preview_stl():
                 hub_od_mm2=hub_od2, hub_height_mm2=hub_h2,
                 screw_dia_mm1=sd1, screw_count1=sc1, captured_nut1=cn1,
                 screw_dia_mm2=sd2, screw_count2=sc2, captured_nut2=cn2,
+                flat_depth_mm1=fd1, flat_depth_mm2=fd2,
+                keyway_w_mm1=kw_w1, keyway_h_mm1=kw_h1,
+                keyway_w_mm2=kw_w2, keyway_h_mm2=kw_h2,
                 part=part,
             )
         else:
             pulley = request.args.get('pulley', '1')
             family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
                 _parse_stl_params(request.args, pulley)
-            hub_od, hub_h, sd, sc, cn = _parse_hub_params(request.args, '')
+            hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
             stl = generate_pulley_stl_preview(
                 family, pitch, num_teeth, bore_mm, belt_height,
-                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn,
+                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
             )
         return Response(stl, mimetype='model/stl',
                         headers={'Cache-Control': 'no-store'})
     except Exception as e:
-        return f'Error generating STL preview: {e}', 400
+        import traceback
+        tb = traceback.format_exc()
+        print(tb, flush=True)
+        return f'Error generating STL preview: {e}\n\n{tb}', 400
 
 
 @app.route('/download/stl')
@@ -585,10 +594,10 @@ def download_stl():
         pulley = request.args.get('pulley', '1')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
-        hub_od, hub_h, sd, sc, cn = _parse_hub_params(request.args, '')
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
         stl = generate_pulley_stl(
             family, pitch, num_teeth, bore_mm, belt_height,
-            cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn,
+            cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
         )
         suffix  = '-P2' if pulley == '2' else ''
         fname   = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
@@ -605,7 +614,7 @@ def download_step():
         pulley = request.args.get('pulley', '1')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
-        hub_od, hub_h, sd, sc, cn = _parse_hub_params(request.args, '')
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
 
         kw = dict(
             family=family, pitch=pitch, num_teeth=num_teeth,
@@ -613,7 +622,8 @@ def download_step():
             clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
             hub_od_mm=hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc,
-            captured_nut=cn,
+            captured_nut=cn, flat_depth_mm=fd,
+            keyway_w_mm=kw_w, keyway_h_mm=kw_h,
         )
 
         # Try direct import first (cadquery available — Render / Python 3.12 venv).

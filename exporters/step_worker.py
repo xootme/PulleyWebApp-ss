@@ -34,6 +34,9 @@ def main():
         screw_dia_mm  = params.get('screw_dia_mm', 0.0),
         screw_count   = params.get('screw_count', 0),
         captured_nut  = params.get('captured_nut', False),
+        flat_depth_mm = params.get('flat_depth_mm', 0.0),
+        keyway_w_mm   = params.get('keyway_w_mm', 0.0),
+        keyway_h_mm   = params.get('keyway_h_mm', 0.0),
     )
 
     sys.stdout.buffer.write(step_bytes)

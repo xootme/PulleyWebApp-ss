@@ -49,6 +49,26 @@ def _nut_dims(screw_dia_mm: float):
     return _NUT_DIMS_BY_DIA[nominal]
 
 
+def _d_bore_polygon(R_bore: float, flat_depth_mm: float, sections: int = 64) -> ShapelyPolygon:
+    """Return a Shapely polygon for a D-shaped bore cross-section.
+
+    The flat face is a chord at X = R_bore - flat_depth_mm (cuts the +X side).
+    Points go counter-clockwise so Shapely treats the interior as positive area.
+    The implicit closing edge (last→first point) forms the flat face.
+    """
+    flat_x = R_bore - flat_depth_mm
+    # clamp to valid range for acos
+    cos_theta = max(-1.0, min(1.0, flat_x / R_bore))
+    theta = math.acos(cos_theta)          # angle at the chord intersection points
+    # Arc from +theta (top intersection) CCW through left side to 2π-theta (bottom)
+    angles = [theta + (2.0 * math.pi - 2.0 * theta) * i / (sections - 1)
+              for i in range(sections)]
+    pts = [(R_bore * math.cos(a), R_bore * math.sin(a)) for a in angles]
+    # pts[0]  = (flat_x, +y_int)  and  pts[-1] = (flat_x, -y_int)
+    # Shapely closes with the flat edge: straight line from pts[-1] back to pts[0]
+    return ShapelyPolygon(pts)
+
+
 def _profile_key(family: str, pitch: str) -> str:
     return PROFILE_KEY_PREFIX.get(family, '') + pitch
 
@@ -137,7 +157,10 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                       hub_height_mm: float = 0.0,
                       screw_dia_mm: float = 0.0,
                       screw_count: int = 0,
-                      captured_nut: bool = False) -> trimesh.Trimesh:
+                      captured_nut: bool = False,
+                      flat_depth_mm: float = 0.0,
+                      keyway_w_mm: float = 0.0,
+                      keyway_h_mm: float = 0.0) -> trimesh.Trimesh:
     """
     Union a hub boss onto `body`, subtract the bore through the full height,
     then optionally drill radial set-screw holes and (for captured_nut=True)
@@ -242,17 +265,37 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         body         = trimesh.boolean.union([body, hub_mesh], engine='manifold')
         total_height = hub_top
 
-    # ── Bore ──────────────────────────────────────────────────────────────────
+    # ── Bore (round or D-shaped) ──────────────────────────────────────────────
     if R_bore > 0.5 and body.is_watertight:
-        extra    = 0.5
-        bore_cyl = trimesh.creation.cylinder(
-            radius=R_bore, height=total_height + extra * 2,
-            sections=_BORE_SECTIONS)
-        bore_cyl.apply_translation([0.0, 0.0, total_height / 2.0])
-        bore_cyl.fix_normals()
-        body = trimesh.boolean.difference([body, bore_cyl], engine='manifold')
+        extra = 0.5
+        bore_h = total_height + extra * 2
+        if flat_depth_mm > 0.0:
+            # Build a D-shaped bore by extruding the D polygon cross-section
+            d_poly = _d_bore_polygon(R_bore, flat_depth_mm, sections=_BORE_SECTIONS)
+            d_poly = shapely_orient(d_poly, sign=1.0)
+            bore_solid = trimesh.creation.extrude_polygon(d_poly, bore_h)
+            bore_solid.apply_translation([0.0, 0.0, -extra])
+        else:
+            bore_solid = trimesh.creation.cylinder(
+                radius=R_bore, height=bore_h, sections=_BORE_SECTIONS)
+            bore_solid.apply_translation([0.0, 0.0, total_height / 2.0])
+        bore_solid.fix_normals()
+        body = trimesh.boolean.difference([body, bore_solid], engine='manifold')
+
+    # ── Keyway slot (rectangular slot projecting outward from bore wall) ───────
+    if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5 and body.is_watertight:
+        kw_depth = keyway_h_mm   # hub keyway depth = H/2
+        kw_box = trimesh.creation.box(
+            extents=[kw_depth + 1.0, keyway_w_mm, total_height + 1.0])
+        kw_box.apply_translation([R_bore + kw_depth / 2.0, 0.0, total_height / 2.0])
+        kw_box.fix_normals()
+        body = trimesh.boolean.difference([body, kw_box], engine='manifold')
 
     # ── Set-screw holes + nut pockets ─────────────────────────────────────────
+    # Keyway: screw at angle=0, nut pocket against keyway slot outer face.
+    if keyway_h_mm > 0.0 and do_screws:
+        screw_angles = [0.0]
+
     if do_screws and body.is_watertight:
         R_screw = screw_dia_mm / 2.0
 
@@ -260,12 +303,18 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
             # Screw at centre of the nut (hub_top minus hex circumradius)
             z_screw = hub_top - R_circ        # nut centre in Z
 
-            # One-sided hole: enters from hub OD, stops at bore
-            hole_len = eff_r - R_bore + 1.0
-            hole_cx  = (eff_r + R_bore) / 2.0
-
-            # Hex pocket: inner face at bore
-            pkt_cx = R_bore
+            if keyway_h_mm > 0.0:
+                # Nut pocket inner face sits against the keyway slot outer face
+                kw_face  = R_bore + keyway_h_mm
+                hole_len = eff_r - kw_face + 1.0
+                hole_cx  = (eff_r + kw_face) / 2.0
+                pkt_cx   = kw_face
+            else:
+                # One-sided hole: enters from hub OD, stops at bore
+                hole_len = eff_r - R_bore + 1.0
+                hole_cx  = (eff_r + R_bore) / 2.0
+                # Hex pocket: inner face at bore
+                pkt_cx = R_bore
 
         else:
             z_screw  = belt_height_mm + hub_height_mm / 2.0
@@ -341,6 +390,9 @@ def generate_pulley_stl(
     screw_dia_mm: float = 0.0,
     screw_count: int = 0,
     captured_nut: bool = False,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """
     Return binary STL bytes of an extruded timing pulley solid.
@@ -362,7 +414,7 @@ def generate_pulley_stl(
 
     result = _add_hub_and_bore(body, belt_height_mm, bore_mm,
                                hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
-                               captured_nut)
+                               captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm)
     return result.export(file_type='stl')
 
 
@@ -380,6 +432,9 @@ def generate_pulley_step(
     screw_dia_mm: float = 0.0,
     screw_count: int = 0,
     captured_nut: bool = False,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """
     Return STEP bytes of a timing pulley with all hub features using cadquery B-rep.
@@ -460,23 +515,55 @@ def generate_pulley_step(
         result       = result.union(hub_boss)
         total_height = hub_top
 
-    # ── Bore ──────────────────────────────────────────────────────────────────
+    # ── Bore (round or D-shaped) ──────────────────────────────────────────────
     if R_bore > 0.5:
-        bore_cyl = (cq.Workplane('XY')
-                    .circle(R_bore)
-                    .extrude(total_height + 1.0)
-                    .translate((0.0, 0.0, -0.5)))
-        result = result.cut(bore_cyl)
+        extra  = 0.5
+        bore_h = total_height + extra * 2
+        if flat_depth_mm > 0.0:
+            # Extrude the D-shaped polygon as the bore solid to cut away
+            d_poly = _d_bore_polygon(R_bore, flat_depth_mm, sections=_BORE_SECTIONS)
+            d_poly = shapely_orient(d_poly, sign=1.0)
+            d_pts  = list(d_poly.exterior.coords[:-1])   # drop repeated closing point
+            bore_solid = (cq.Workplane('XY')
+                          .polyline(d_pts)
+                          .close()
+                          .extrude(bore_h)
+                          .translate((0.0, 0.0, -extra)))
+        else:
+            bore_solid = (cq.Workplane('XY')
+                          .circle(R_bore)
+                          .extrude(bore_h)
+                          .translate((0.0, 0.0, -extra)))
+        result = result.cut(bore_solid)
+
+    # ── Keyway slot ───────────────────────────────────────────────────────────
+    if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5:
+        kw_depth = keyway_h_mm
+        kw_box = (cq.Workplane('XY')
+                  .box(kw_depth + 1.0, keyway_w_mm, total_height + 1.0)
+                  .translate((R_bore + kw_depth / 2.0, 0.0, total_height / 2.0)))
+        result = result.cut(kw_box)
 
     # ── Set-screw holes + nut pockets ─────────────────────────────────────────
+    # Keyway: screw at angle=0, nut pocket against keyway slot outer face.
+    if keyway_h_mm > 0.0 and do_screws:
+        screw_angles = [0.0]
+
     if do_screws:
         R_screw = screw_dia_mm / 2.0
 
         if captured_nut:
-            z_screw  = hub_top - R_circ
-            hole_len = eff_r - R_bore + 1.0
-            hole_cx  = (eff_r + R_bore) / 2.0
-            pkt_cx   = R_bore
+            z_screw = hub_top - R_circ
+            if keyway_h_mm > 0.0:
+                # Nut pocket inner face sits against the keyway slot outer face
+                kw_face  = R_bore + keyway_h_mm
+                hole_len = eff_r - kw_face + 1.0
+                hole_cx  = (eff_r + kw_face) / 2.0
+                pkt_cx   = kw_face
+            else:
+                hole_len = eff_r - R_bore + 1.0
+                hole_cx  = (eff_r + R_bore) / 2.0
+                pkt_cx   = R_bore
         else:
             z_screw  = belt_height_mm + hub_height_mm / 2.0
             hole_len = R_hub * 2.0 + 2.0
@@ -527,6 +614,16 @@ def generate_pulley_step(
         os.unlink(tmp.name)
 
 
+def _largest_poly(geom):
+    """Return a Shapely Polygon from geom, keeping only the largest piece if
+    geom is a MultiPolygon.  Prevents trimesh.extrude_polygon from crashing
+    when a Shapely difference produces tiny disconnected slivers."""
+    from shapely.geometry import MultiPolygon as _MP
+    if isinstance(geom, _MP):
+        return max(geom.geoms, key=lambda g: g.area)
+    return geom
+
+
 def _rot2d(pts, angle):
     """Rotate a list of (x, y) points by `angle` radians (compass CW convention)."""
     if abs(angle) < 1e-9:
@@ -538,26 +635,179 @@ def _rot2d(pts, angle):
 def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                        clearance_mm=0.0, backlash_mm=0.0, print_extra_mm=0.0,
                        phase=0.0, hub_od_mm=0.0, hub_height_mm=0.0,
-                       screw_dia_mm=0.0, screw_count=0, captured_nut=False):
+                       screw_dia_mm=0.0, screw_count=0, captured_nut=False,
+                       flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0):
     """
-    Build a single watertight pulley trimesh solid centred at the origin in X-Y,
-    extruded from z=0 to z=belt_height_mm, with optional hub boss on top and
-    bore subtracted through the full height.
-    `phase` (radians) rotates the tooth pattern to mesh with the belt.
-    Returns a trimesh.Trimesh.
+    Build a single watertight pulley trimesh solid.
+
+    The bore (round or D-shaped) is punched by Shapely 2D polygon difference
+    before any extrusion — no 3D boolean operations are used for the bore.
+    Only radial set-screw holes / nut pockets still use boolean difference.
     """
+    R_bore    = bore_mm / 2.0
+    hub_valid = hub_height_mm > 0.0 and hub_od_mm > bore_mm
+    R_hub     = hub_od_mm / 2.0 if hub_valid else 0.0
+    do_screws = hub_valid and screw_dia_mm > 0.0 and screw_count > 0
+
+    # ── Captured nut pre-calculations ────────────────────────────────────────
+    if do_screws and captured_nut:
+        waf, t_nut = _nut_dims(screw_dia_mm)
+        R_circ    = waf / math.sqrt(3)
+        pkt_y     = waf + 0.5
+        pkt_x     = t_nut + 0.5
+        R_pkt     = pkt_y / math.sqrt(3)
+        pkt_depth = 2.0 * R_pkt
+        if hub_height_mm < pkt_depth:
+            hub_height_mm = pkt_depth
+        min_hub_r  = R_bore + 3.0 * t_nut
+        need_oblong = R_hub < min_hub_r
+        eff_r = max(R_hub, min_hub_r)
+        step  = math.pi
+    else:
+        waf = t_nut = R_circ = pkt_y = pkt_x = R_pkt = pkt_depth = 0.0
+        min_hub_r   = 0.0
+        need_oblong = False
+        eff_r = R_hub
+        step  = math.pi / 2.0
+
+    screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
+    hub_top      = belt_height_mm + hub_height_mm
+    total_height = hub_top if hub_valid else belt_height_mm
+
+    # ── 2D bore cross-section (D-shaped or round) ─────────────────────────────
+    if R_bore > 0.5:
+        if flat_depth_mm > 0.0:
+            bore_2d = _d_bore_polygon(R_bore, flat_depth_mm, sections=_BORE_SECTIONS)
+        else:
+            bore_2d = ShapelyPoint(0, 0).buffer(R_bore, resolution=_BORE_SECTIONS)
+        bore_2d = shapely_orient(bore_2d, sign=1.0)
+        # ── Keyway: union a rectangle outward from bore wall ──────────────────
+        # Start the rectangle at x=0 (bore centre) so it fully overlaps the
+        # bore circle in the central strip, guaranteeing a clean union with
+        # no gap between the two shapes at y=±W/2.  The bore circle arc then
+        # naturally forms the inner corners of the keyway slot.
+        if keyway_w_mm > 0.0 and keyway_h_mm > 0.0:
+            kw_half  = keyway_w_mm / 2.0
+            kw_depth = keyway_h_mm
+            keyway_rect = ShapelyPolygon([
+                (0.0,             -kw_half),
+                (R_bore + kw_depth, -kw_half),
+                (R_bore + kw_depth,  kw_half),
+                (0.0,              kw_half),
+            ])
+            merged = bore_2d.union(keyway_rect)
+            # Guard against degenerate MultiPolygon (shouldn't happen, but be safe)
+            from shapely.geometry import MultiPolygon as _MP
+            if isinstance(merged, _MP):
+                merged = max(merged.geoms, key=lambda g: g.area)
+            bore_2d = shapely_orient(merged, sign=1.0)
+    else:
+        bore_2d = None
+
+    # ── Belt section: outer toothed profile minus bore hole ───────────────────
     outline = _build_outline_points(
         family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
     )[0]
     outline = _rot2d(outline, phase)
-    poly = ShapelyPolygon(outline)
-    poly = shapely_orient(poly, sign=1.0)
-    body = trimesh.creation.extrude_polygon(poly, belt_height_mm)
-    body.fix_normals()
+    outer_poly = ShapelyPolygon(outline)
+    outer_poly = shapely_orient(outer_poly, sign=1.0)
+    belt_cross = outer_poly.difference(bore_2d) if bore_2d is not None else outer_poly
+    belt_cross = _largest_poly(belt_cross)
+    belt_mesh  = trimesh.creation.extrude_polygon(belt_cross, belt_height_mm)
+    belt_mesh.fix_normals()
 
-    return _add_hub_and_bore(body, belt_height_mm, bore_mm,
-                             hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
-                             captured_nut)
+    # ── Hub section: hub circle minus bore hole ───────────────────────────────
+    if hub_valid:
+        if captured_nut and need_oblong:
+            hub_outer = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
+            for angle in screw_angles:
+                offset    = min_hub_r - R_hub
+                hub_outer = hub_outer.union(
+                    ShapelyPoint(offset * math.cos(angle),
+                                 offset * math.sin(angle)).buffer(
+                        R_hub, resolution=_BORE_SECTIONS))
+        else:
+            hub_outer = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
+        hub_outer = shapely_orient(hub_outer, sign=1.0)
+        hub_cross = hub_outer.difference(bore_2d) if bore_2d is not None else hub_outer
+        hub_cross = _largest_poly(hub_cross)
+        hub_mesh  = trimesh.creation.extrude_polygon(hub_cross, hub_height_mm)
+        hub_mesh.apply_translation([0.0, 0.0, belt_height_mm])
+        hub_mesh.fix_normals()
+        body = trimesh.util.concatenate([belt_mesh, hub_mesh])
+        body.fix_normals()
+    else:
+        body = belt_mesh
+
+    # ── Set-screw holes + nut pockets (boolean — radial features) ────────────
+    # D-shaft: force screw at angle=0 (aligned with flat), nut against flat face.
+    # Keyway:  force screw at angle=0 (into keyway slot), nut against slot outer face.
+    if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
+        screw_angles = [0.0]
+
+    if do_screws and body.is_watertight:
+        R_screw = screw_dia_mm / 2.0
+
+        if captured_nut:
+            z_screw = hub_top - R_circ
+            if flat_depth_mm > 0.0:
+                # Nut pocket inner face sits against the D-flat face
+                flat_x   = R_bore - flat_depth_mm
+                hole_len = eff_r - flat_x + 1.0
+                hole_cx  = (eff_r + flat_x) / 2.0
+                pkt_cx   = flat_x
+            elif keyway_h_mm > 0.0:
+                # Nut pocket inner face sits against the keyway slot outer face
+                kw_face  = R_bore + keyway_h_mm
+                hole_len = eff_r - kw_face + 1.0
+                hole_cx  = (eff_r + kw_face) / 2.0
+                pkt_cx   = kw_face
+            else:
+                hole_len = eff_r - R_bore + 1.0
+                hole_cx  = (eff_r + R_bore) / 2.0
+                pkt_cx   = R_bore
+        else:
+            z_screw  = belt_height_mm + hub_height_mm / 2.0
+            hole_len = R_hub * 2.0 + 2.0
+            hole_cx  = 0.0
+
+        for angle in screw_angles:
+            hole = trimesh.creation.cylinder(radius=R_screw, height=hole_len, sections=32)
+            hole.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
+            hole.apply_translation([hole_cx, 0.0, z_screw])
+            if abs(angle) > 1e-9:
+                hole.apply_transform(trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
+            hole.fix_normals()
+            if body.is_watertight:
+                body = trimesh.boolean.difference([body, hole], engine='manifold')
+
+            if captured_nut and body.is_watertight:
+                half_y = pkt_y / 2.0
+                top_z  = hub_top + 1.0
+                low_z  = hub_top - 1.5 * R_pkt
+                tip_z  = hub_top - 2.0 * R_pkt
+                pocket_verts = [
+                    ( half_y, top_z),
+                    (-half_y, top_z),
+                    (-half_y, low_z),
+                    ( 0.0,    tip_z),
+                    ( half_y, low_z),
+                ]
+                pocket_poly = ShapelyPolygon(pocket_verts)
+                pocket = trimesh.creation.extrude_polygon(pocket_poly, pkt_x)
+                rot = np.array([[0, 0, 1, 0],
+                                [1, 0, 0, 0],
+                                [0, 1, 0, 0],
+                                [0, 0, 0, 1]], dtype=float)
+                pocket.apply_transform(rot)
+                pocket.apply_translation([pkt_cx, 0.0, 0.0])
+                if abs(angle) > 1e-9:
+                    pocket.apply_transform(
+                        trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
+                pocket.fix_normals()
+                body = trimesh.boolean.difference([body, pocket], engine='manifold')
+
+    return body
 
 
 def _dedupe_pts(pts):
@@ -637,6 +887,12 @@ def generate_drive_stl_preview(
     screw_dia_mm2: float = 0.0,
     screw_count2: int = 0,
     captured_nut2: bool = False,
+    flat_depth_mm1: float = 0.0,
+    flat_depth_mm2: float = 0.0,
+    keyway_w_mm1: float = 0.0,
+    keyway_h_mm1: float = 0.0,
+    keyway_w_mm2: float = 0.0,
+    keyway_h_mm2: float = 0.0,
     part: str = 'all',
 ) -> bytes:
     """
@@ -668,7 +924,8 @@ def generate_drive_stl_preview(
                             phase=phi_left,
                             hub_od_mm=hub_od_mm1, hub_height_mm=hub_height_mm1,
                             screw_dia_mm=screw_dia_mm1, screw_count=screw_count1,
-                            captured_nut=captured_nut1)
+                            captured_nut=captured_nut1, flat_depth_mm=flat_depth_mm1,
+                            keyway_w_mm=keyway_w_mm1, keyway_h_mm=keyway_h_mm1)
     p1.apply_translation([cx1, 0.0, 0.0])
 
     p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
@@ -676,7 +933,8 @@ def generate_drive_stl_preview(
                             phase=phi_right,
                             hub_od_mm=hub_od_mm2, hub_height_mm=hub_height_mm2,
                             screw_dia_mm=screw_dia_mm2, screw_count=screw_count2,
-                            captured_nut=captured_nut2)
+                            captured_nut=captured_nut2, flat_depth_mm=flat_depth_mm2,
+                            keyway_w_mm=keyway_w_mm2, keyway_h_mm=keyway_h_mm2)
     p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────
@@ -726,6 +984,9 @@ def generate_pulley_stl_preview(
     screw_dia_mm: float = 0.0,
     screw_count: int = 0,
     captured_nut: bool = False,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """
     Same as generate_pulley_stl but centres the mesh at the origin so
@@ -735,6 +996,7 @@ def generate_pulley_stl_preview(
         family, pitch, num_teeth, bore_mm, belt_height_mm,
         clearance_mm, backlash_mm, print_extra_mm,
         hub_od_mm, hub_height_mm, screw_dia_mm, screw_count, captured_nut,
+        flat_depth_mm, keyway_w_mm, keyway_h_mm,
     )
     mesh = trimesh.load(io.BytesIO(stl_bytes), file_type='stl')
     mesh.apply_translation(-mesh.centroid)
