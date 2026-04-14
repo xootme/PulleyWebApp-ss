@@ -39,9 +39,12 @@ def main():
         keyway_h_mm   = params.get('keyway_h_mm', 0.0),
         spoke_count   = params.get('spoke_count', 0),
         spoke_width_mm= params.get('spoke_width_mm', 0.0),
+        spoke_hub_od_mm= params.get('spoke_hub_od_mm', 0.0),
+        rim_depth_mm  = params.get('rim_depth_mm', 0.0),
         fillet_tip_mm = params.get('fillet_tip_mm', 0.0),
         fillet_base_mm= params.get('fillet_base_mm', 0.0),
-        rim_depth_mm  = params.get('rim_depth_mm', 0.0),
+        spoke_height_mm= params.get('spoke_height_mm', 0.0),
+        export_fmt    = params.get('export_fmt', 'STEP'),
     )
 
     sys.stdout.buffer.write(step_bytes)

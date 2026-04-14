@@ -711,6 +711,8 @@ def download_step():
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
         hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
+        
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = _parse_spoke_params(request.args, '')
 
         kw = dict(
             family=family, pitch=pitch, num_teeth=num_teeth,
@@ -720,6 +722,13 @@ def download_step():
             screw_dia_mm=sd, screw_count=sc,
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spoke_count=sp_c if sp_en else 0,
+            spoke_width_mm=sp_w,
+            spoke_hub_od_mm=sp_hub,
+            rim_depth_mm=sp_rim,
+            fillet_tip_mm=sp_ft,
+            fillet_base_mm=sp_fb,
+            spoke_height_mm=sp_h,
         )
 
         # Try direct import first (cadquery available — Render / Python 3.12 venv).

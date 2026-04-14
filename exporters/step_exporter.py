@@ -267,11 +267,10 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         total_height = hub_top
 
     # ── Bore (round or D-shaped) ──────────────────────────────────────────────
-    if R_bore > 0.5 and body.is_watertight:
+    if R_bore > 0.5 and getattr(body, 'is_watertight', False):
         extra = 0.5
         bore_h = total_height + extra * 2
         if flat_depth_mm > 0.0:
-            # Build a D-shaped bore by extruding the D polygon cross-section
             d_poly = _d_bore_polygon(R_bore, flat_depth_mm, sections=_BORE_SECTIONS)
             d_poly = shapely_orient(d_poly, sign=1.0)
             bore_solid = trimesh.creation.extrude_polygon(d_poly, bore_h)
@@ -281,16 +280,24 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                 radius=R_bore, height=bore_h, sections=_BORE_SECTIONS)
             bore_solid.apply_translation([0.0, 0.0, total_height / 2.0])
         bore_solid.fix_normals()
-        body = trimesh.boolean.difference([body, bore_solid], engine='manifold')
+        if getattr(body, 'is_volume', False) and getattr(bore_solid, 'is_volume', False):
+            try:
+                body = trimesh.boolean.difference([body, bore_solid], engine='manifold')
+            except Exception:
+                pass
 
     # ── Keyway slot (rectangular slot projecting outward from bore wall) ───────
-    if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5 and body.is_watertight:
+    if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5 and getattr(body, 'is_watertight', False):
         kw_depth = keyway_h_mm   # hub keyway depth = H/2
         kw_box = trimesh.creation.box(
             extents=[kw_depth + 1.0, keyway_w_mm, total_height + 1.0])
         kw_box.apply_translation([R_bore + kw_depth / 2.0, 0.0, total_height / 2.0])
         kw_box.fix_normals()
-        body = trimesh.boolean.difference([body, kw_box], engine='manifold')
+        if getattr(body, 'is_volume', False) and getattr(kw_box, 'is_volume', False):
+            try:
+                body = trimesh.boolean.difference([body, kw_box], engine='manifold')
+            except Exception:
+                pass
 
     # ── Set-screw holes + nut pockets ─────────────────────────────────────────
     # Keyway: screw at angle=0, nut pocket against keyway slot outer face.
@@ -417,17 +424,26 @@ def generate_pulley_stl(
     outer_poly = ShapelyPolygon(outline)
     outer_poly = shapely_orient(outer_poly, sign=1.0)
 
-    # ── Extrude full solid (spoke voids handled below if enabled) ─────────────
-    body = trimesh.creation.extrude_polygon(outer_poly, belt_height_mm)
-    body.fix_normals()
-
     if spoke_count > 0 and spoke_width_mm > 0.0:
         from exporters.png_exporter import _spoke_void_polygons
         _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
         _R_tr    = min(math.hypot(x, y) for x, y in outline)
         _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
         spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
-        # Build spoke-voided 2D cross-section
+        
+        # 1. Hub Cylinder (Full Height)
+        # Using a tiny bit extra resolution for smooth curves
+        hub_cyl = trimesh.creation.cylinder(radius=_R_hub_s, height=belt_height_mm, sections=64)
+        hub_cyl.apply_translation([0, 0, belt_height_mm / 2.0])
+        
+        # 2. Rim Mesh (Full Height)
+        rim_circle = ShapelyPoint(0, 0).buffer(_R_rim_s, resolution=64)
+        rim_poly = outer_poly.difference(rim_circle)
+        rim_poly = shapely_orient(_largest_poly(rim_poly), sign=1.0)
+        rim_mesh = trimesh.creation.extrude_polygon(rim_poly, belt_height_mm)
+        rim_mesh.fix_normals()
+        
+        # 3. Spoke Web Mesh (Partial Height)
         spoke_poly = outer_poly
         for vp in _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
                                        fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm):
@@ -437,22 +453,32 @@ def generate_pulley_stl(
             vp_shape = shapely_orient(vp_shape, sign=1.0)
             if vp_shape.is_valid and vp_shape.area > 0.1:
                 spoke_poly = spoke_poly.difference(vp_shape)
-                spoke_poly = _largest_poly(spoke_poly)
-        spoke_poly = shapely_orient(spoke_poly, sign=1.0)
-        # Build the spoke void slab directly at the centred position.
-        # slab_offset centres voids at belt_height/2 with total depth = spk_h.
+        
+        spoke_poly = shapely_orient(_largest_poly(spoke_poly), sign=1.0)
+        web_mesh = trimesh.creation.extrude_polygon(spoke_poly, spk_h)
+        web_mesh.fix_normals()
         slab_offset = (belt_height_mm - spk_h) / 2.0
-        slab_solid = trimesh.creation.extrude_polygon(outer_poly, spk_h)
-        slab_solid.fix_normals()
-        slab_solid.apply_translation([0.0, 0.0, slab_offset])
-        slab_spoke = trimesh.creation.extrude_polygon(spoke_poly, spk_h)
-        slab_spoke.fix_normals()
-        if not slab_spoke.is_watertight:
-            trimesh.repair.fill_holes(slab_spoke)
-            slab_spoke.fix_normals()
-        slab_spoke.apply_translation([0.0, 0.0, slab_offset])
-        voids_slab = trimesh.boolean.difference([slab_solid, slab_spoke], engine='manifold')
-        body = trimesh.boolean.difference([body, voids_slab], engine='manifold')
+        web_mesh.apply_translation([0, 0, slab_offset])
+        
+        # Union the pieces together
+        union_parts = []
+        for m in [hub_cyl, rim_mesh, web_mesh]:
+            if getattr(m, 'is_volume', False):
+                union_parts.append(m)
+            elif not m.is_watertight:
+                trimesh.repair.fill_holes(m)
+                m.fix_normals()
+                if getattr(m, 'is_volume', False):
+                    union_parts.append(m)
+        
+        try:
+            body = trimesh.boolean.union(union_parts, engine='manifold')
+        except Exception:
+            # Fallback to just the web mesh if union fails
+            body = web_mesh
+    else:
+        body = trimesh.creation.extrude_polygon(outer_poly, belt_height_mm)
+        body.fix_normals()
 
     result = _add_hub_and_bore(body, belt_height_mm, bore_mm,
                                hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
@@ -477,6 +503,14 @@ def generate_pulley_step(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spoke_count: int = 0,
+    spoke_width_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 0.0,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
+    spoke_height_mm: float = 0.0,
+    export_fmt: str = 'STEP',
 ) -> bytes:
     """
     Return STEP bytes of a timing pulley with all hub features using cadquery B-rep.
@@ -496,11 +530,45 @@ def generate_pulley_step(
     _step_poly = ShapelyPolygon(outline).simplify(0.05, preserve_topology=True)
     outline = list(_step_poly.exterior.coords[:-1])
 
-    # ── Toothed body (extrude 2D profile) ────────────────────────────────────
-    result = (cq.Workplane('XY')
-              .polyline(outline)
-              .close()
-              .extrude(belt_height_mm))
+    if spoke_count > 0 and spoke_width_mm > 0.0:
+        from exporters.png_exporter import _spoke_void_polygons
+        
+        spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
+        pocket_depth = (belt_height_mm - spk_h) / 2.0
+        
+        _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
+        _R_tr    = min(math.hypot(x, y) for x, y in outline)
+        _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
+        
+        # 1. Hub Cylinder (Full Height)
+        hub = cq.Workplane('XY').circle(_R_hub_s).extrude(belt_height_mm)
+        
+        # 2. Rim Mesh (Full Height)
+        # Extrude outer profile with a hole in the middle for the rim
+        rim = cq.Workplane('XY').polyline(outline).close().circle(_R_rim_s).extrude(belt_height_mm)
+        
+        # 3. Spoke Web (Partial Height)
+        # Extrude the full outer profile at the pocket height offset, then subtract the gaps
+        web = cq.Workplane('XY').workplane(offset=pocket_depth).polyline(outline).close().extrude(spk_h)
+        
+        gaps = _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
+                                    fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm)
+        for gap_pts in gaps:
+            if len(gap_pts) < 3: continue
+            vp_shape = ShapelyPolygon(gap_pts).simplify(0.05, preserve_topology=True).buffer(0)
+            if not vp_shape.is_valid or vp_shape.area < 0.1:
+                continue
+            cq_pts = [tuple(p) for p in vp_shape.exterior.coords[:-1]]
+            web = web.faces(">Z").workplane().polyline(cq_pts).close().cutThruAll()
+        
+        # Combine the 3 perfectly aligned layers
+        result = hub.union(rim).union(web)
+    else:
+        # No spokes, just extrude the full solid
+        result = (cq.Workplane('XY')
+                  .polyline(outline)
+                  .close()
+                  .extrude(belt_height_mm))
 
     # ── Hub pre-calculations (mirrors _add_hub_and_bore logic) ───────────────
     R_bore    = bore_mm / 2.0
@@ -645,8 +713,9 @@ def generate_pulley_step(
                     pocket = pocket.rotate((0, 0, 0), (0, 0, 1), math.degrees(angle))
                 result = result.cut(pocket)
 
-    # ── Export to STEP ────────────────────────────────────────────────────────
-    tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
+    # ── Export to File ────────────────────────────────────────────────────────
+    ext = '.stl' if export_fmt.upper() == 'STL' else '.step'
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
     tmp.close()
     try:
         cq.exporters.export(result, tmp.name)
@@ -924,7 +993,24 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         _R_tr    = min(math.hypot(x, y) for x, y in outline)
         _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
         spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
-        spoke_cross = belt_cross
+        
+        # 1. Hub Cylinder (Full Height, minus bore)
+        hub_circle = ShapelyPoint(0, 0).buffer(_R_hub_s, resolution=64)
+        hub_poly = hub_circle.difference(bore_2d) if bore_2d is not None else hub_circle
+        hub_poly = shapely_orient(_largest_poly(hub_poly), sign=1.0)
+        hub_cyl = trimesh.creation.extrude_polygon(hub_poly, belt_height_mm)
+        hub_cyl.fix_normals()
+        
+        # 2. Rim Mesh (Full Height, minus bore)
+        rim_circle = ShapelyPoint(0, 0).buffer(_R_rim_s, resolution=64)
+        rim_poly = outer_poly.difference(rim_circle)
+        rim_poly = rim_poly.difference(bore_2d) if bore_2d is not None else rim_poly
+        rim_poly = shapely_orient(_largest_poly(rim_poly), sign=1.0)
+        rim_mesh = trimesh.creation.extrude_polygon(rim_poly, belt_height_mm)
+        rim_mesh.fix_normals()
+        
+        # 3. Spoke Web Mesh (Partial Height, minus bore)
+        spoke_poly = outer_poly
         for vp in _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
                                        fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm):
             if len(vp) < 3:
@@ -932,21 +1018,29 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
             vp_shape = ShapelyPolygon(vp).simplify(0.05, preserve_topology=True).buffer(0)
             vp_shape = shapely_orient(vp_shape, sign=1.0)
             if vp_shape.is_valid and vp_shape.area > 0.1:
-                spoke_cross = spoke_cross.difference(vp_shape)
-                spoke_cross = _largest_poly(spoke_cross)
-        spoke_cross = shapely_orient(spoke_cross, sign=1.0)
+                spoke_poly = spoke_poly.difference(vp_shape)
+        
+        spoke_poly = spoke_poly.difference(bore_2d) if bore_2d is not None else spoke_poly
+        spoke_poly = shapely_orient(_largest_poly(spoke_poly), sign=1.0)
+        web_mesh = trimesh.creation.extrude_polygon(spoke_poly, spk_h)
+        web_mesh.fix_normals()
         slab_offset = (belt_height_mm - spk_h) / 2.0
-        slab_solid = trimesh.creation.extrude_polygon(belt_cross, spk_h)
-        slab_solid.fix_normals()
-        slab_solid.apply_translation([0.0, 0.0, slab_offset])
-        slab_spoke = trimesh.creation.extrude_polygon(spoke_cross, spk_h)
-        slab_spoke.fix_normals()
-        if not slab_spoke.is_watertight:
-            trimesh.repair.fill_holes(slab_spoke)
-            slab_spoke.fix_normals()
-        slab_spoke.apply_translation([0.0, 0.0, slab_offset])
-        voids_slab = trimesh.boolean.difference([slab_solid, slab_spoke], engine='manifold')
-        belt_mesh = trimesh.boolean.difference([belt_mesh, voids_slab], engine='manifold')
+        web_mesh.apply_translation([0, 0, slab_offset])
+        
+        union_parts = []
+        for m in [hub_cyl, rim_mesh, web_mesh]:
+            if getattr(m, 'is_volume', False):
+                union_parts.append(m)
+            elif not m.is_watertight:
+                trimesh.repair.fill_holes(m)
+                m.fix_normals()
+                if getattr(m, 'is_volume', False):
+                    union_parts.append(m)
+        
+        try:
+            belt_mesh = trimesh.boolean.union(union_parts, engine='manifold')
+        except Exception:
+            belt_mesh = web_mesh
 
     # ── Hub section: hub circle minus bore hole ───────────────────────────────
     if hub_valid:

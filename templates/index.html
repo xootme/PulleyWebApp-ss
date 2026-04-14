@@ -8,6 +8,11 @@
 </head>
 <body>
 
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div id="loading-text">Generating 3D Solid...</div>
+</div>
+
 <header>
   <div class="header-inner">
     <img src="/static/logo.png" alt="Cheap CAD Tools" class="logo">
@@ -1616,7 +1621,8 @@ function downloadBeltSVG() {
 function downloadBeltSTEP() {
   const params = buildBeltParams();
   params.belt_height = document.getElementById('belt_height').value;
-  window.location = '/download/belt-step?' + new URLSearchParams(params);
+  const url = '/download/belt-step?' + new URLSearchParams(params);
+  downloadWithProgress(url, 'Belt.step');
 }
 
 function downloadBeltSTL() {
@@ -1695,11 +1701,52 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeHelp();
 });
 
+async function downloadWithProgress(url, defaultFilename) {
+  const overlay = document.getElementById('loading-overlay');
+  const text = document.getElementById('loading-text');
+  
+  text.textContent = 'Generating 3D Solid...';
+  overlay.style.display = 'flex';
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || `Server Error: ${response.status}`);
+    }
+    
+    let filename = defaultFilename;
+    const disposition = response.headers.get('Content-Disposition');
+    if (disposition && disposition.indexOf('filename=') !== -1) {
+      const matches = disposition.match(/filename="([^"]+)"/);
+      if (matches && matches[1]) filename = matches[1];
+    }
+    
+    const blob = await response.blob();
+    const objUrl = window.URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = objUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    window.URL.revokeObjectURL(objUrl);
+    document.body.removeChild(a);
+  } catch (e) {
+    alert("Download failed: " + e.message);
+  } finally {
+    overlay.style.display = 'none';
+  }
+}
+
 function downloadSTEP(n) {
   const params = buildParams();
   params.belt_height = document.getElementById('belt_height').value;
   if (n === 2) params.pulley = '2';
-  window.location = '/download/step?' + new URLSearchParams(params);
+  const url = '/download/step?' + new URLSearchParams(params);
+  downloadWithProgress(url, `Pulley_${n}.step`);
 }
 
 function downloadSTL(n) {
