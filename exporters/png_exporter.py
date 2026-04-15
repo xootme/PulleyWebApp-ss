@@ -733,6 +733,24 @@ def generate_png_dual(
     if _check_cairosvg():
         from exporters.svg_exporter import generate_svg_dual
         svg = generate_svg_dual(
+            family=family, pitch=pitch,
+            num_teeth1=num_teeth1, bore_mm1=bore_mm1,
+            clearance_mm1=clearance_mm1, backlash_mm1=backlash_mm1,
+            print_extra_mm1=print_extra_mm1,
+            num_teeth2=num_teeth2, bore_mm2=bore_mm2,
+            clearance_mm2=clearance_mm2, backlash_mm2=backlash_mm2,
+            print_extra_mm2=print_extra_mm2,
+            center_dist_mm=center_dist_mm,
+            spoke_count1=spoke_count1, spoke_width_mm1=spoke_width_mm1,
+            spoke_hub_od_mm1=spoke_hub_od_mm1, rim_depth_mm1=rim_depth_mm1,
+            fillet_tip_mm1=fillet_tip_mm1, fillet_base_mm1=fillet_base_mm1,
+            spoke_count2=spoke_count2, spoke_width_mm2=spoke_width_mm2,
+            spoke_hub_od_mm2=spoke_hub_od_mm2, rim_depth_mm2=rim_depth_mm2,
+            fillet_tip_mm2=fillet_tip_mm2, fillet_base_mm2=fillet_base_mm2,
+            include_data=False,
+        )
+        return _svg_to_png(svg, size_px)
+    return _generate_png_dual_legacy(
         family=family, pitch=pitch,
         num_teeth1=num_teeth1, bore_mm1=bore_mm1,
         clearance_mm1=clearance_mm1, backlash_mm1=backlash_mm1,
@@ -747,9 +765,9 @@ def generate_png_dual(
         spoke_count2=spoke_count2, spoke_width_mm2=spoke_width_mm2,
         spoke_hub_od_mm2=spoke_hub_od_mm2, rim_depth_mm2=rim_depth_mm2,
         fillet_tip_mm2=fillet_tip_mm2, fillet_base_mm2=fillet_base_mm2,
-        include_data=False,
+        size_px=size_px, bg_color=bg_color,
+        groove_color=groove_color, bore_color=bore_color,
     )
-    return _svg_to_png(svg, size_px)
 
 
 def _generate_png_dual_legacy(
