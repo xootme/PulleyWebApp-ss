@@ -344,6 +344,7 @@ def _build_svg_from_request(args):
     sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
         _parse_spoke_params(args, '')
 
+    include_data = args.get('include_data', '1') != '0'
     return generate_svg(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
@@ -351,6 +352,7 @@ def _build_svg_from_request(args):
         spoke_count=sp_cnt if sp_en else 0,
         spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
         fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+        include_data=include_data,
     )
 
 
@@ -377,6 +379,7 @@ def _build_svg_from_request_p2(args):
     sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
         _parse_spoke_params(args, 'p2_')
 
+    include_data = args.get('include_data', '1') != '0'
     return generate_svg(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
@@ -384,6 +387,7 @@ def _build_svg_from_request_p2(args):
         spoke_count=sp_cnt if sp_en else 0,
         spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
         fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+        include_data=include_data,
     )
 
 
@@ -605,7 +609,8 @@ def api_preview_stl():
             hub_od2, hub_h2, sd2, sc2, cn2, fd2, kw_w2, kw_h2 = _parse_hub_params(request.args, 'p2_')
             sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
                 _parse_spoke_params(request.args, '')
-            sp_count = sp_cnt if sp_en else 0
+            sp_en2, sp_hub2, sp_rim2, sp_w2, sp_ft2, sp_fb2, sp_cnt2, sp_h2, sp_split2 = \
+                _parse_spoke_params(request.args, 'p2_')
             stl = generate_drive_stl_preview(
                 family, pitch,
                 num_teeth1, bore1, num_teeth2, bore2,
@@ -618,9 +623,14 @@ def api_preview_stl():
                 flat_depth_mm1=fd1, flat_depth_mm2=fd2,
                 keyway_w_mm1=kw_w1, keyway_h_mm1=kw_h1,
                 keyway_w_mm2=kw_w2, keyway_h_mm2=kw_h2,
-                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
-                spoke_height_mm=sp_h if sp_en else 0.0,
+                spoke_count1=sp_cnt if sp_en else 0,
+                spoke_width_mm1=sp_w, spoke_hub_od_mm1=sp_hub,
+                fillet_tip_mm1=sp_ft, fillet_base_mm1=sp_fb, rim_depth_mm1=sp_rim,
+                spoke_height_mm1=sp_h if sp_en else 0.0,
+                spoke_count2=sp_cnt2 if sp_en2 else 0,
+                spoke_width_mm2=sp_w2, spoke_hub_od_mm2=sp_hub2,
+                fillet_tip_mm2=sp_ft2, fillet_base_mm2=sp_fb2, rim_depth_mm2=sp_rim2,
+                spoke_height_mm2=sp_h2 if sp_en2 else 0.0,
                 part=part,
             )
         else:
@@ -823,6 +833,152 @@ def download_belt_dxf():
         )
     except Exception as e:
         return f'Error generating belt DXF: {e}', 400
+
+
+@app.route('/api/validate-spoke-fillets')
+def api_validate_spoke_fillets():
+    """Check if tip/base fillet tangent points conflict on the spoke wall.
+    Returns corrected {tip, base} values (clamping the one that was just changed).
+    """
+    import math as _m
+    from exporters.svg_exporter import (
+        _sv2_line_circle_fillet, _sv2_line_line_fillet,
+        _sv2_unit, _sv2_dot, _sv2_project,
+    )
+    from geometry.pulley_geometry import generate_profile_groove, _build_groove_points, wrap_groove_to_pulley
+    try:
+        family   = request.args.get('family', 'HTD')
+        pitch    = request.args.get('pitch',  '5M')
+        key      = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            raise ValueError(f'Unknown profile {family}/{pitch}')
+        spec      = PULLEY_SPECS[key]
+        num_teeth = max(spec['min_teeth'], int(request.args.get('teeth', spec['min_teeth'])))
+        hub_od    = float(request.args.get('spokes_hub_od',    16.0))
+        rim_depth = float(request.args.get('spokes_rim_depth',  2.0))
+        spoke_count = max(2, int(request.args.get('spokes_count', 4)))
+        spoke_width = float(request.args.get('spokes_width',  4.0))
+        fillet_tip  = float(request.args.get('spokes_fillet_tip',  0.0))
+        fillet_base = float(request.args.get('spokes_fillet_base', 0.0))
+        changed     = request.args.get('changed', 'tip')  # 'tip' or 'base'
+
+        # Compute r_tooth_root from groove profile (clearance=0 for geometry check)
+        container  = generate_profile_groove(family, key, num_teeth, 0.0, 0.0, 0.0)
+        groove_pts = _build_groove_points(container.primitives[1:-1], family)
+        wrapped, _, _ = wrap_groove_to_pulley(groove_pts, spec, num_teeth, 0.0)
+        r_tooth_root = (min(_m.hypot(x, y) for x, y in wrapped)
+                        if wrapped else num_teeth * spec['pitch'] / (2.0 * _m.pi))
+
+        r_hub = hub_od / 2.0
+        r_rim = max(r_hub + 0.5, r_tooth_root - rim_depth)
+
+        half_w     = spoke_width / 2.0
+        half_a_hub = _m.asin(min(1.0, half_w / r_hub))
+        half_a_rim = _m.asin(min(1.0, half_w / r_rim))
+        theta_step = 2.0 * _m.pi / spoke_count
+        void_mid   = theta_step / 2.0
+
+        # Right and left wall corner points for void 0
+        p_rh = (r_hub * _m.cos(half_a_hub), r_hub * _m.sin(half_a_hub))
+        p_rr = (r_rim * _m.cos(half_a_rim), r_rim * _m.sin(half_a_rim))
+        p_lh = (r_hub * _m.cos(theta_step - half_a_hub), r_hub * _m.sin(theta_step - half_a_hub))
+        p_lr = (r_rim * _m.cos(theta_step - half_a_rim), r_rim * _m.sin(theta_step - half_a_rim))
+
+        rdx, rdy = p_rr[0]-p_rh[0], p_rr[1]-p_rh[1]
+        ldx, ldy = p_lr[0]-p_lh[0], p_lr[1]-p_lh[1]
+        probe_x  = (r_hub + r_rim) * 0.5 * _m.cos(void_mid)
+        probe_y  = (r_hub + r_rim) * 0.5 * _m.sin(void_mid)
+
+        rux, ruy = _sv2_unit(rdx, rdy); rnx, rny = -ruy, rux
+        rdp = _sv2_dot(probe_x-p_rh[0], probe_y-p_rh[1], rnx, rny)
+        in_rx, in_ry = (rnx, rny) if rdp > 0 else (-rnx, -rny)
+
+        lux, luy = _sv2_unit(ldx, ldy); lnx, lny = -luy, lux
+        ldp = _sv2_dot(probe_x-p_lh[0], probe_y-p_lh[1], lnx, lny)
+        in_lx, in_ly = (lnx, lny) if ldp > 0 else (-lnx, -lny)
+
+        def tip_rim_angle_for(ft):
+            """Angle (radians) of the rim tangent point for tip fillet radius ft.
+            The rim tangent point is in the direction of the fillet center from the
+            origin (since rim circle is centred at origin). Returns None if no solution.
+            """
+            if ft <= 0:
+                return _m.atan2(p_rr[1], p_rr[0])
+            r = _sv2_line_circle_fillet(
+                p_rh[0], p_rh[1], rdx, rdy, 0.0, 0.0, r_rim, ft,
+                False, in_rx, in_ry, True)
+            return _m.atan2(r[1], r[0]) if r else None
+
+        def s_tip_for(ft):
+            r = _sv2_line_circle_fillet(
+                p_rh[0], p_rh[1], rdx, rdy, 0.0, 0.0, r_rim, ft,
+                False, in_rx, in_ry, True)
+            return r[6] if r else None
+
+        def s_base_for(fb):
+            ll = _sv2_line_line_fillet(
+                p_rh[0], p_rh[1], rdx, rdy,
+                p_lh[0], p_lh[1], ldx, ldy,
+                in_rx, in_ry, in_lx, in_ly, fb)
+            if ll is None:
+                return None
+            _, _, s = _sv2_project(ll[2], ll[3], p_rh[0], p_rh[1], rdx, rdy)
+            return s
+
+        corrected = False
+
+        if changed == 'tip':
+            # ── Rim-arc cap: rim tangent point must not pass the void midpoint angle.
+            rim_angle = tip_rim_angle_for(fillet_tip)
+            if rim_angle is None or rim_angle > void_mid:
+                lo, hi = 0.0, fillet_tip
+                for _ in range(60):
+                    mid = (lo + hi) / 2.0
+                    a = tip_rim_angle_for(mid)
+                    if a is not None and a <= void_mid:
+                        lo = mid
+                    else:
+                        hi = mid
+                fillet_tip = lo
+                corrected = True
+
+            # ── Spoke-wall conflict: tip tangent must remain above base tangent.
+            s_tip  = s_tip_for(fillet_tip)
+            s_base = s_base_for(fillet_base)
+            if s_tip is not None and s_base is not None and s_tip < s_base:
+                target = s_base
+                lo, hi = 0.0, fillet_tip
+                for _ in range(60):
+                    mid = (lo + hi) / 2.0
+                    s = s_tip_for(mid)
+                    if s is not None and s >= target:
+                        lo = mid
+                    else:
+                        hi = mid
+                fillet_tip = lo
+                corrected = True
+
+            return jsonify({'tip': round(fillet_tip, 2), 'base': round(fillet_base, 2), 'corrected': corrected})
+
+        else:  # changed == 'base'
+            # ── Spoke-wall conflict: base tangent must remain below tip tangent.
+            s_tip  = s_tip_for(fillet_tip)
+            s_base = s_base_for(fillet_base)
+            if s_tip is None or s_base is None or s_tip >= s_base:
+                return jsonify({'tip': round(fillet_tip, 2), 'base': round(fillet_base, 2), 'corrected': False})
+            target = s_tip
+            lo, hi = 0.0, fillet_base
+            for _ in range(60):
+                mid = (lo + hi) / 2.0
+                s = s_base_for(mid)
+                if s is not None and s <= target:
+                    lo = mid
+                else:
+                    hi = mid
+            return jsonify({'tip': round(fillet_tip, 2), 'base': round(lo, 2), 'corrected': True})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 if __name__ == '__main__':

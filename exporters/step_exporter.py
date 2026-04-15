@@ -521,54 +521,120 @@ def generate_pulley_step(
     import cadquery as cq
     import tempfile, os
 
-    # ── 2D toothed outline ────────────────────────────────────────────────────
-    outline, _R_OD, _spec = _build_outline_points(
-        family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm,
-    )
-    # Simplify the profile for STEP: 0.05 mm tolerance reduces hundreds of
-    # near-collinear points without noticeably changing the tooth geometry.
-    _step_poly = ShapelyPolygon(outline).simplify(0.05, preserve_topology=True)
-    outline = list(_step_poly.exterior.coords[:-1])
+    # ── 2D tooth profile data ─────────────────────────────────────────────────
+    _key  = _profile_key(family, pitch)
+    _spec = PULLEY_SPECS[_key]
+    _pv   = _spec['pitch']
+    _cl   = max(-_pv, min(clearance_mm,   _pv))
+    _bl   = max(-_pv, min(backlash_mm,    _pv))
+    _ex   = max(0.0,  min(print_extra_mm, _pv))
+
+    _container    = generate_profile_groove(family, _key, num_teeth, _cl, _ex, _bl)
+    _groove_prims = _container.primitives[1:-1]
+    _groove_pts   = _build_groove_points(_groove_prims, family)   # 15 pts/arc
+    _wrapped, _R_OD, _edge_a = wrap_groove_to_pulley(_groove_pts, _spec, num_teeth, _ex)
+    _t_ang = 2.0 * math.pi / num_teeth
+    _R_tr  = min(math.hypot(x, y) for x, y in _wrapped)  # tooth-root radius
+
+    def _rot(x, y, theta):
+        c, s = math.cos(theta), math.sin(theta)
+        return x * c + y * s, -x * s + y * c
+
+    def _tooth_spline_sketch(base_wp, inner_r=None):
+        """
+        Per-tooth B-spline + threePointArc OD lands.
+
+        Each groove spline's first and last point is snapped to the exact OD
+        circle position derived from _edge_a.  This guarantees zero-gap
+        junctions at every spline-arc transition and a gap-free wire close,
+        preventing the OCCT 'BRep_API command not done' error.
+        """
+        # Tooth 0 starts at exact OD position at angle -_edge_a
+        sx0 = _R_OD * math.sin(-_edge_a)
+        sy0 = _R_OD * math.cos(-_edge_a)
+        wp = base_wp.moveTo(sx0, sy0)
+
+        for i in range(num_teeth):
+            th = i * _t_ang
+            tooth_pts = [_rot(gx, gy, th) for gx, gy in _wrapped]
+
+            # Snap endpoints to exact OD circle — eliminates floating-point gaps
+            # at every spline↔arc junction and at the final close().
+            a_gs = i * _t_ang - _edge_a   # groove start angle
+            a_ge = i * _t_ang + _edge_a   # groove end angle
+            tooth_pts[0]  = (_R_OD * math.sin(a_gs), _R_OD * math.cos(a_gs))
+            tooth_pts[-1] = (_R_OD * math.sin(a_ge), _R_OD * math.cos(a_ge))
+
+            # B-spline from current pos (= tooth_pts[0]) through the groove.
+            # includeCurrent=True tells CadQuery to start the spline at the
+            # current workplane position rather than at tooth_pts[0], which
+            # ensures the edge connects to the previous OD arc with no gap.
+            wp = wp.spline(tooth_pts[1:], includeCurrent=True)
+
+            # Exact circular arc for the OD land to the next groove
+            a_arc_end = (i + 1) * _t_ang - _edge_a
+            arc_span  = a_arc_end - a_ge
+            if arc_span > 1e-6:
+                a_mid = (a_ge + a_arc_end) / 2.0
+                mx = _R_OD * math.sin(a_mid);   my = _R_OD * math.cos(a_mid)
+                ex = _R_OD * math.sin(a_arc_end); ey = _R_OD * math.cos(a_arc_end)
+                wp = wp.threePointArc((mx, my), (ex, ey))
+
+        sketch = wp.close()
+        if inner_r is not None:
+            sketch = sketch.circle(inner_r)
+        return sketch
 
     if spoke_count > 0 and spoke_width_mm > 0.0:
-        from exporters.png_exporter import _spoke_void_polygons
-        
+        from exporters.png_exporter import _spoke_void_segments
+
         spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
         pocket_depth = (belt_height_mm - spk_h) / 2.0
-        
+
         _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
-        _R_tr    = min(math.hypot(x, y) for x, y in outline)
         _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
-        
+
         # 1. Hub Cylinder (Full Height)
         hub = cq.Workplane('XY').circle(_R_hub_s).extrude(belt_height_mm)
-        
-        # 2. Rim Mesh (Full Height)
-        # Extrude outer profile with a hole in the middle for the rim
-        rim = cq.Workplane('XY').polyline(outline).close().circle(_R_rim_s).extrude(belt_height_mm)
-        
-        # 3. Spoke Web (Partial Height)
-        # Extrude the full outer profile at the pocket height offset, then subtract the gaps
-        web = cq.Workplane('XY').workplane(offset=pocket_depth).polyline(outline).close().extrude(spk_h)
-        
-        gaps = _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
-                                    fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm)
-        for gap_pts in gaps:
-            if len(gap_pts) < 3: continue
-            vp_shape = ShapelyPolygon(gap_pts).simplify(0.05, preserve_topology=True).buffer(0)
-            if not vp_shape.is_valid or vp_shape.area < 0.1:
+
+        # 2. Rim (Full Height) — spline tooth profile with inner circle cutout
+        rim = _tooth_spline_sketch(cq.Workplane('XY'), inner_r=_R_rim_s).extrude(belt_height_mm)
+
+        # 3. Spoke Web (Partial Height) — voids cut separately below
+        web = _tooth_spline_sketch(
+            cq.Workplane('XY').workplane(offset=pocket_depth)
+        ).extrude(spk_h)
+
+        gaps_segs = _spoke_void_segments(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
+                                         fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm)
+        for segs in gaps_segs:
+            if not segs:
                 continue
-            cq_pts = [tuple(p) for p in vp_shape.exterior.coords[:-1]]
-            web = web.faces(">Z").workplane().polyline(cq_pts).close().cutThruAll()
-        
-        # Combine the 3 perfectly aligned layers
+            s0 = segs[0]
+            if s0[0] == 'arc':
+                _, cx0, cy0, r0, a10, _ = s0
+                sx, sy = cx0 + r0 * math.cos(a10), cy0 + r0 * math.sin(a10)
+            else:
+                sx, sy = s0[1], s0[2]
+            wp2 = web.faces(">Z").workplane().moveTo(sx, sy)
+            for seg in segs:
+                if seg[0] == 'arc':
+                    _, cx, cy, r, a1, a2 = seg
+                    diff = (a2 - a1) % (2 * math.pi)
+                    if diff > math.pi:
+                        diff -= 2 * math.pi
+                    a_mid = a1 + diff / 2.0
+                    mx = cx + r * math.cos(a_mid);  my = cy + r * math.sin(a_mid)
+                    ex = cx + r * math.cos(a2);      ey = cy + r * math.sin(a2)
+                    wp2 = wp2.threePointArc((mx, my), (ex, ey))
+                else:
+                    _, x1, y1, x2, y2 = seg
+                    wp2 = wp2.lineTo(x2, y2)
+            web = wp2.close().cutThruAll()
+
         result = hub.union(rim).union(web)
     else:
-        # No spokes, just extrude the full solid
-        result = (cq.Workplane('XY')
-                  .polyline(outline)
-                  .close()
-                  .extrude(belt_height_mm))
+        result = _tooth_spline_sketch(cq.Workplane('XY')).extrude(belt_height_mm)
 
     # ── Hub pre-calculations (mirrors _add_hub_and_bore logic) ───────────────
     R_bore    = bore_mm / 2.0
@@ -603,20 +669,62 @@ def generate_pulley_step(
     # ── Hub boss ──────────────────────────────────────────────────────────────
     if hub_valid:
         if captured_nut and need_oblong:
-            # Build oblong profile via Shapely, then extrude in cadquery
-            hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
-            for angle in screw_angles:
-                offset   = min_hub_r - R_hub
-                hub_poly = hub_poly.union(
-                    ShapelyPoint(offset * math.cos(angle),
-                                 offset * math.sin(angle)).buffer(
-                        R_hub, resolution=_BORE_SECTIONS))
-            hub_pts = list(hub_poly.exterior.coords[:-1])  # drop repeated closing pt
-            hub_boss = (cq.Workplane('XY')
-                        .workplane(offset=belt_height_mm)
-                        .polyline(hub_pts)
-                        .close()
-                        .extrude(hub_height_mm))
+            # Oblong = union of circles all radius R_hub.
+            # Boundary is entirely circular arcs — build directly with threePointArc.
+            # offset = distance between the base circle centre and each lobe centre.
+            _ob_off = min_hub_r - R_hub
+            _ob_wp  = cq.Workplane('XY').workplane(offset=belt_height_mm)
+            _ob_ok  = False
+
+            if _ob_off < 2.0 * R_hub - 1e-6:
+                _y_h = math.sqrt(max(0.0, R_hub**2 - (_ob_off / 2.0)**2))
+
+                if len(screw_angles) == 2:
+                    # 3-circle symmetric oblong (screws at 0 and π):
+                    # 4 arcs: right lobe | C0 top bridge | left lobe | C0 bottom bridge
+                    P_rb = ( _ob_off / 2.0, -_y_h)   # right-bottom junction
+                    P_rt = ( _ob_off / 2.0,  _y_h)   # right-top    junction
+                    P_lt = (-_ob_off / 2.0,  _y_h)   # left-top     junction
+                    P_lb = (-_ob_off / 2.0, -_y_h)   # left-bottom  junction
+                    m_r  = ( _ob_off + R_hub, 0.0)   # rightmost of C1
+                    m_t  = (0.0,              R_hub)  # topmost  of C0
+                    m_l  = (-_ob_off - R_hub, 0.0)   # leftmost of C2
+                    m_b  = (0.0,             -R_hub)  # bottommost of C0
+                    hub_boss = (_ob_wp
+                                .moveTo(*P_rb)
+                                .threePointArc(m_r, P_rt)   # right lobe
+                                .threePointArc(m_t, P_lt)   # top bridge
+                                .threePointArc(m_l, P_lb)   # left lobe
+                                .threePointArc(m_b, P_rb)   # bottom bridge
+                                .close()
+                                .extrude(hub_height_mm))
+                    _ob_ok = True
+
+                elif len(screw_angles) == 1:
+                    # 2-circle oblong (1 screw / keyway case, lobe at angle 0):
+                    # 2 arcs: right lobe | left half of C0
+                    P_top = (_ob_off / 2.0,  _y_h)
+                    P_bot = (_ob_off / 2.0, -_y_h)
+                    m_r   = (_ob_off + R_hub, 0.0)
+                    m_l   = (-R_hub,          0.0)
+                    hub_boss = (_ob_wp
+                                .moveTo(*P_bot)
+                                .threePointArc(m_r, P_top)  # right lobe (C1)
+                                .threePointArc(m_l, P_bot)  # left arc   (C0)
+                                .close()
+                                .extrude(hub_height_mm))
+                    _ob_ok = True
+
+            if not _ob_ok:
+                # Fallback: circles too far apart — use Shapely polyline
+                hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
+                for angle in screw_angles:
+                    hub_poly = hub_poly.union(
+                        ShapelyPoint(_ob_off * math.cos(angle),
+                                     _ob_off * math.sin(angle)).buffer(
+                            R_hub, resolution=_BORE_SECTIONS))
+                hub_pts  = list(hub_poly.exterior.coords[:-1])
+                hub_boss = (_ob_wp.polyline(hub_pts).close().extrude(hub_height_mm))
         else:
             hub_boss = (cq.Workplane('XY')
                         .workplane(offset=belt_height_mm)
@@ -1219,13 +1327,20 @@ def generate_drive_stl_preview(
     keyway_h_mm1: float = 0.0,
     keyway_w_mm2: float = 0.0,
     keyway_h_mm2: float = 0.0,
-    spoke_count: int = 0,
-    spoke_width_mm: float = 0.0,
-    spoke_hub_od_mm: float = 0.0,
-    fillet_tip_mm: float = 0.0,
-    fillet_base_mm: float = 0.0,
-    rim_depth_mm: float = 0.0,
-    spoke_height_mm: float = 0.0,
+    spoke_count1: int = 0,
+    spoke_width_mm1: float = 0.0,
+    spoke_hub_od_mm1: float = 0.0,
+    fillet_tip_mm1: float = 0.0,
+    fillet_base_mm1: float = 0.0,
+    rim_depth_mm1: float = 0.0,
+    spoke_height_mm1: float = 0.0,
+    spoke_count2: int = 0,
+    spoke_width_mm2: float = 0.0,
+    spoke_hub_od_mm2: float = 0.0,
+    fillet_tip_mm2: float = 0.0,
+    fillet_base_mm2: float = 0.0,
+    rim_depth_mm2: float = 0.0,
+    spoke_height_mm2: float = 0.0,
     part: str = 'all',
 ) -> bytes:
     """
@@ -1259,10 +1374,10 @@ def generate_drive_stl_preview(
                             screw_dia_mm=screw_dia_mm1, screw_count=screw_count1,
                             captured_nut=captured_nut1, flat_depth_mm=flat_depth_mm1,
                             keyway_w_mm=keyway_w_mm1, keyway_h_mm=keyway_h_mm1,
-                            spoke_count=spoke_count, spoke_width_mm=spoke_width_mm,
-                            spoke_hub_od_mm=spoke_hub_od_mm, fillet_tip_mm=fillet_tip_mm,
-                            fillet_base_mm=fillet_base_mm, rim_depth_mm=rim_depth_mm,
-                            spoke_height_mm=spoke_height_mm)
+                            spoke_count=spoke_count1, spoke_width_mm=spoke_width_mm1,
+                            spoke_hub_od_mm=spoke_hub_od_mm1, fillet_tip_mm=fillet_tip_mm1,
+                            fillet_base_mm=fillet_base_mm1, rim_depth_mm=rim_depth_mm1,
+                            spoke_height_mm=spoke_height_mm1)
     p1.apply_translation([cx1, 0.0, 0.0])
 
     p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
@@ -1272,10 +1387,10 @@ def generate_drive_stl_preview(
                             screw_dia_mm=screw_dia_mm2, screw_count=screw_count2,
                             captured_nut=captured_nut2, flat_depth_mm=flat_depth_mm2,
                             keyway_w_mm=keyway_w_mm2, keyway_h_mm=keyway_h_mm2,
-                            spoke_count=spoke_count, spoke_width_mm=spoke_width_mm,
-                            spoke_hub_od_mm=spoke_hub_od_mm, fillet_tip_mm=fillet_tip_mm,
-                            fillet_base_mm=fillet_base_mm, rim_depth_mm=rim_depth_mm,
-                            spoke_height_mm=spoke_height_mm)
+                            spoke_count=spoke_count2, spoke_width_mm=spoke_width_mm2,
+                            spoke_hub_od_mm=spoke_hub_od_mm2, fillet_tip_mm=fillet_tip_mm2,
+                            fillet_base_mm=fillet_base_mm2, rim_depth_mm=rim_depth_mm2,
+                            spoke_height_mm=spoke_height_mm2)
     p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────

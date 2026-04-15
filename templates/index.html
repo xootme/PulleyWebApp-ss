@@ -149,7 +149,7 @@
       </div>
       <div class="hub-body" id="hub1-body">
         <label for="hub1_height">Hub Height (mm)</label>
-        <input type="number" id="hub1_height" value="10" min="3" max="50" step="0.5" oninput="onHubChange(1)" style="width:100%">
+        <input type="number" id="hub1_height" value="10" min="1" max="50" step="0.5" oninput="onHubChange(1)" style="width:100%">
 
         <label for="hub1_od" id="hub1_od_label">Hub OD (mm)</label>
         <input type="number" id="hub1_od" value="20" min="6" max="200" step="0.5" oninput="onHubChange(1)" style="width:100%">
@@ -283,11 +283,11 @@
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes1_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
-          <input type="number" id="spokes1_fillet_tip" value="1" min="0" step="0.25" oninput="onSpokesChange(1)" style="width:70px">
+          <input type="number" id="spokes1_fillet_tip" value="1" min="0" step="0.25" oninput="onFilletChange(1,'tip')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes1_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
-          <input type="number" id="spokes1_fillet_base" value="1.5" min="0" step="0.25" oninput="onSpokesChange(1)" style="width:70px">
+          <input type="number" id="spokes1_fillet_base" value="1.5" min="0" step="0.25" oninput="onFilletChange(1,'base')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
           <label for="spokes1_count" style="margin:0;flex:1">Spoke Count</label>
@@ -311,7 +311,8 @@
       <div class="dl-wrap">
         <button class="btn-download" onclick="toggleDlMenu('dl-p1-pulley', event)">⬇ Download Pulley</button>
         <div class="dl-menu hidden" id="dl-p1-pulley">
-          <button class="dl-item fb-2d" onclick="downloadSVG(1); closeDlMenus()">SVG</button>
+          <button class="dl-item fb-2d" onclick="downloadSVG(1,true); closeDlMenus()">SVG + Data</button>
+          <button class="dl-item fb-2d" onclick="downloadSVG(1,false); closeDlMenus()">SVG Drawing</button>
           <button class="dl-item fb-2d" onclick="downloadDXF(1); closeDlMenus()">DXF</button>
           <button class="dl-item fb-3d" onclick="downloadSTEP(1); closeDlMenus()">STEP</button>
           <button class="dl-item fb-3d" onclick="downloadSTL(1); closeDlMenus()">STL</button>
@@ -590,11 +591,11 @@
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes2_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
-          <input type="number" id="spokes2_fillet_tip" value="1" min="0" step="0.25" oninput="onSpokesChange(2)" style="width:70px">
+          <input type="number" id="spokes2_fillet_tip" value="1" min="0" step="0.25" oninput="onFilletChange(2,'tip')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes2_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
-          <input type="number" id="spokes2_fillet_base" value="1.5" min="0" step="0.25" oninput="onSpokesChange(2)" style="width:70px">
+          <input type="number" id="spokes2_fillet_base" value="1.5" min="0" step="0.25" oninput="onFilletChange(2,'base')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
           <label for="spokes2_count" style="margin:0;flex:1">Spoke Count</label>
@@ -618,7 +619,8 @@
       <div class="dl-wrap">
         <button class="btn-download-p2" onclick="toggleDlMenu('dl-p2-pulley', event)">⬇ Download Pulley</button>
         <div class="dl-menu hidden" id="dl-p2-pulley">
-          <button class="dl-item fb-2d" onclick="downloadSVG(2); closeDlMenus()">SVG</button>
+          <button class="dl-item fb-2d" onclick="downloadSVG(2,true); closeDlMenus()">SVG + Data</button>
+          <button class="dl-item fb-2d" onclick="downloadSVG(2,false); closeDlMenus()">SVG Drawing</button>
           <button class="dl-item fb-2d" onclick="downloadDXF(2); closeDlMenus()">DXF</button>
           <button class="dl-item fb-3d" onclick="downloadSTEP(2); closeDlMenus()">STEP</button>
           <button class="dl-item fb-3d" onclick="downloadSTL(2); closeDlMenus()">STL</button>
@@ -1602,9 +1604,10 @@ function closeDlMenus() {
 document.addEventListener('click', closeDlMenus);
 
 // ── Download ──────────────────────────────────────────────────────────────────
-function downloadSVG(n) {
+function downloadSVG(n, includeData = true) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
+  params.include_data = includeData ? '1' : '0';
   window.location = '/download/svg?' + new URLSearchParams(params);
 }
 
@@ -2148,6 +2151,34 @@ function onSpokesChange(n) {
 
   schedulePreview();
   saveSettings();
+}
+
+function onFilletChange(n, changed) {
+  // Validate that tip and base fillet tangent points don't cross on the spoke wall.
+  // If they do, correct the value that was just changed.
+  const prefix = n === 2 ? 'p2_' : '';
+  const params = new URLSearchParams({
+    family:           document.getElementById('family').value,
+    pitch:            document.getElementById('pitch').value,
+    teeth:            document.getElementById('teeth').value,
+    spokes_hub_od:    document.getElementById(`spokes${n}_hub_od`).value,
+    spokes_rim_depth: document.getElementById(`spokes${n}_rim_depth`).value,
+    spokes_width:     document.getElementById(`spokes${n}_width`).value,
+    spokes_count:     document.getElementById(`spokes${n}_count`).value,
+    spokes_fillet_tip:  document.getElementById(`spokes${n}_fillet_tip`).value,
+    spokes_fillet_base: document.getElementById(`spokes${n}_fillet_base`).value,
+    changed,
+  });
+  fetch('/api/validate-spoke-fillets?' + params)
+    .then(r => r.json())
+    .then(data => {
+      if (data.corrected) {
+        document.getElementById(`spokes${n}_fillet_tip`).value  = data.tip;
+        document.getElementById(`spokes${n}_fillet_base`).value = data.base;
+      }
+      onSpokesChange(n);
+    })
+    .catch(() => onSpokesChange(n));
 }
 
 function downloadLayerPart(n, part, fmt) {

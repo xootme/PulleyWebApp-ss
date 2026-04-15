@@ -27,7 +27,7 @@ import io
 
 import ezdxf
 
-from exporters.png_exporter import _spoke_void_polygons
+from exporters.png_exporter import _spoke_void_polygons, _spoke_void_segments
 from geometry.pulley_geometry import (
     generate_profile_groove,
     _build_groove_points,
@@ -66,6 +66,61 @@ def _add_line(msp, p0, p1, attribs):
     """Add a LINE only when the two endpoints are not coincident."""
     if math.hypot(p1[0] - p0[0], p1[1] - p0[1]) > 1e-6:
         msp.add_line((p0[0], p0[1], 0), (p1[0], p1[1], 0), dxfattribs=attribs)
+
+
+def _seg_to_dxf(seg):
+    """
+    Convert a spoke segment from math coords (x=r·cos θ, y=r·sin θ) to DXF
+    compass coords (x_dxf = y_math, y_dxf = x_math) used throughout this file.
+
+    Returns one of:
+        ('arc',  (cx,cy,0), r, start_deg, end_deg)   — DXF CCW arc
+        ('line', (x1,y1,0), (x2,y2,0))
+    or None if the segment is degenerate.
+    """
+    if seg[0] == 'line':
+        _, x1, y1, x2, y2 = seg
+        if math.hypot(x2 - x1, y2 - y1) < 1e-4:
+            return None
+        return ('line', (y1, x1, 0), (y2, x2, 0))
+
+    # arc: ('arc', cx, cy, r, a1, a2) — short arc from a1 to a2 in math coords
+    _, cx, cy, r, a1, a2 = seg
+    if r < 1e-4:
+        return None
+    diff = (a2 - a1) % (2 * math.pi)
+    if diff > math.pi:
+        diff -= 2 * math.pi          # take short arc
+    if abs(diff) < 1e-4:
+        return None
+    a_end = a1 + diff
+
+    # Compass swap: center (cx,cy) → (cy,cx).
+    # Angle transform: math angle θ → DXF angle = 90° − θ.
+    # A CCW math arc becomes CW after reflection → swap start/end for DXF CCW.
+    # A CW math arc becomes CCW after reflection → keep order.
+    dxf_a1  = math.degrees(math.pi / 2 - a1)
+    dxf_a2  = math.degrees(math.pi / 2 - a_end)
+    if diff > 0:                    # CCW in math → swap for DXF CCW
+        dxf_start, dxf_end = dxf_a2, dxf_a1
+    else:                           # CW in math → keep order for DXF CCW
+        dxf_start, dxf_end = dxf_a1, dxf_a2
+
+    return ('arc', (cy, cx, 0), r, dxf_start, dxf_end)
+
+
+def _write_seg(msp, dxf_seg, attribs):
+    """Write a converted DXF segment to the modelspace."""
+    if dxf_seg is None:
+        return
+    if dxf_seg[0] == 'line':
+        _, p1, p2 = dxf_seg
+        msp.add_line(p1, p2, dxfattribs=attribs)
+    else:
+        _, center, r, start_deg, end_deg = dxf_seg
+        msp.add_arc(center=center, radius=r,
+                    start_angle=start_deg, end_angle=end_deg,
+                    dxfattribs=attribs)
 
 
 # ---------------------------------------------------------------------------
@@ -196,20 +251,15 @@ def generate_dxf(
             dxfattribs={'layer': 'BORE'},
         )
 
-        # Spoke void polygons — _spoke_void_polygons uses standard math coords
-        # (x=r·cos, y=r·sin). DXF profile uses compass convention (x=r·sin, y=r·cos),
-        # so swap x↔y when writing polygon vertices.
-        void_polys = _spoke_void_polygons(
+        # Spoke voids — one ARC/LINE entity per geometric segment (clean edges).
+        void_segs = _spoke_void_segments(
             R_hub_spoke, R_rim_inner, spoke_count, spoke_width_mm,
             fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
         )
         sp_attr = {'layer': 'SPOKES'}
-        for pts in void_polys:
-            if len(pts) < 3:
-                continue
-            # swap x,y to match DXF compass convention
-            dxf_pts = [(y, x) for x, y in pts]
-            msp.add_lwpolyline(dxf_pts, format='xy', close=True, dxfattribs=sp_attr)
+        for void in void_segs:
+            for seg in void:
+                _write_seg(msp, _seg_to_dxf(seg), sp_attr)
 
     # ── Serialise to bytes ───────────────────────────────────────────────────
     # doc.write() requires a text stream; encode to UTF-8 bytes afterwards.

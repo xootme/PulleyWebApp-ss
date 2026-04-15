@@ -86,9 +86,8 @@ def _sv2_line_circle_fillet(x0, y0, dx, dy, ccx, ccy, cr, fr,
             tcx = ccx + rdx/rn*cr;  tcy = ccy + rdy/rn*cr
             if s < -1e-3 or s > 1.0+1e-3: continue
             if _sv2_dot(fcx-x0, fcy-y0, inward_nx, inward_ny) < -1e-6: continue
-            if prefer_high_t and s < 0.35: continue
-            if (not prefer_high_t) and s > 0.65: continue
-            score = math.hypot(tlx-x0, tly-y0) + math.hypot(tcx-x0, tcy-y0)
+            # Score by t: prefer_high_t picks root closest to rim, else closest to hub
+            score = -s if prefer_high_t else s
             if score < best_score:
                 best_score = score; best = (fcx, fcy, tlx, tly, tcx, tcy, s)
     return best
@@ -217,44 +216,226 @@ def _sv2_void_path_d(cx, cy, theta_mid, theta_step, r_hub, r_rim,
 def _spoke_void_svg_elements(cx, cy, r_tooth_root, r_hub, spoke_count,
                               spoke_width, rim_depth, fillet_tip, fillet_base,
                               sw, coord_swap=False):
-    """Return SVG path elements for spoke voids.
-
-    Uses the same _spoke_void_polygons() as the PNG exporter so shapes match exactly.
-
-    coord_swap=False  → generate_svg()  coords: (cx + y_math, cy + x_math)
-                         (pulley uses sin/cos-swapped convention)
-    coord_swap=True   → generate_svg_dual() coords: (cx + x_math, cy - y_math)
-                         (standard math with y-flip)
-    """
+    """Return SVG elements for spokes: edges + rim arcs + tip fillets."""
     if spoke_count < 2 or spoke_width <= 0.0 or r_hub <= 0.0:
         return ''
     r_rim = max(r_hub + 0.5, r_tooth_root - rim_depth)
     if r_rim <= r_hub + 0.5:
         return ''
 
-    void_polys = _spoke_void_polygons(
-        r_hub, r_rim, spoke_count, spoke_width,
-        fillet_tip_mm=fillet_tip, fillet_base_mm=fillet_base,
-    )
-
-    paths = []
-    for pts in void_polys:
-        if not pts:
-            continue
+    def to_svg(xm, ym):
         if coord_swap:
-            # generate_svg_dual: standard math x right, y up → svg x right, y down
-            coords = [(cx + x, cy - y) for x, y in pts]
+            return cx + xm, cy - ym
         else:
-            # generate_svg: pulley uses (r*sin(a), r*cos(a)) convention → swap x,y
-            coords = [(cx + y, cy + x) for x, y in pts]
-        first = coords[0]
-        d = f"M {first[0]:.4f},{first[1]:.4f}" + \
-            ''.join(f" L {p[0]:.4f},{p[1]:.4f}" for p in coords[1:]) + " Z"
-        paths.append(
-            f'<path d="{d}" fill="none" stroke="#1a1a1a" '
-            f'stroke-width="{sw:.4f}" stroke-linejoin="round"/>'
+            return cx + ym, cy + xm
+
+    def polar(r, a):
+        return r * math.cos(a), r * math.sin(a)
+
+    # ── SVG Arc Notes ────────────────────────────────────────────────────────
+    # SVG arc: A rx,ry x-rot large-arc-flag sweep-flag ex,ey
+    #   sweep-flag=0 → arc travels COUNTER-CLOCKWISE (CCW)
+    #   sweep-flag=1 → arc travels CLOCKWISE (CW)
+    # SVG coordinate system has y-axis pointing DOWN, so CW/CCW are screen-relative.
+    # Four possible arcs from (sx,sy) to (ex,ey) at radius r:
+    #   large=0 sweep=0 → small arc, CCW
+    #   large=0 sweep=1 → small arc, CW
+    #   large=1 sweep=0 → large arc, CCW
+    #   large=1 sweep=1 → large arc, CW
+    # To pick correct sweep given a reference "void" point that should be OUTSIDE the arc:
+    #   1. Compute fillet center from the fillet result (fcx,fcy in math coords → SVG via to_svg)
+    #   2. Compute angles from fillet center to start, end, and void point
+    #   3. The CCW arc spans (a_end - a_start) % 2pi
+    #   4. If void angle falls within that CCW span → void is INSIDE the CCW arc → use CW (sweep=1)
+    #   5. Otherwise void is outside CCW arc → use CCW (sweep=0)
+    # NOTE: void reference point must be at radius (r_hub+r_rim)/2 in void_mid direction,
+    #       NOT inside the hub circle (r_hub*0.5 is wrong — it's inside the hub).
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def svg_fillet_arc(fx_s, fy_s, sx_s, sy_s, ex_s, ey_s, r):
+        """Arc from (sx,sy) to (ex,ey) curving toward fillet centre (fx,fy).
+        Cross product of (start→end) × (start→center) determines which side
+        the center is on → which sweep direction curves toward it.
+        Fillet arcs are always < 180° so large-arc-flag is always 0.
+          cross > 0 → center is LEFT of chord → CW arc (sweep=1)
+          cross < 0 → center is RIGHT of chord → CCW arc (sweep=0)
+        """
+        cross = (ex_s - sx_s) * (fy_s - sy_s) - (ey_s - sy_s) * (fx_s - sx_s)
+        sweep = 1 if cross > 0 else 0
+        return f"A {r:.4f},{r:.4f} 0 0 {sweep} {ex_s:.4f},{ey_s:.4f}"
+
+    def _spoke_fillet(a_hub_corner, a_rim_corner, void_mid_angle, r_circle, fr, external, prefer_high_t):
+        """Fillet tangent to spoke wall and a circle; math coords, pulley centre at origin."""
+        if fr <= 0:
+            return None
+        phx, phy = polar(r_hub, a_hub_corner)
+        prx, pry = polar(r_rim, a_rim_corner)
+        dx, dy = prx - phx, pry - phy
+        probe_x = (r_hub + r_rim) * 0.5 * math.cos(void_mid_angle)
+        probe_y = (r_hub + r_rim) * 0.5 * math.sin(void_mid_angle)
+        ux, uy = _sv2_unit(dx, dy)
+        nx, ny = -uy, ux
+        dp = _sv2_dot(probe_x - phx, probe_y - phy, nx, ny)
+        in_x = nx if dp > 0 else -nx
+        in_y = ny if dp > 0 else -ny
+        return _sv2_line_circle_fillet(
+            phx, phy, dx, dy,
+            0.0, 0.0, r_circle, fr,
+            external, in_x, in_y, prefer_high_t,
         )
-    return '\n  '.join(paths)
+
+    def compute_tip(a_hub_corner, a_rim_corner, void_mid_angle):
+        return _spoke_fillet(a_hub_corner, a_rim_corner, void_mid_angle,
+                             r_rim, fillet_tip, False, True)
+
+    def compute_base_hub(a_hub_corner, a_rim_corner, void_mid_angle):
+        """Hub-tangent base fillet: line-circle fillet touching the hub circle."""
+        return _spoke_fillet(a_hub_corner, a_rim_corner, void_mid_angle,
+                             r_hub, fillet_base, True, False)
+
+    def compute_base_ll(p_rh, p_rr, p_lh, p_lr, void_mid_angle):
+        """Line-line fillet tangent to both spoke walls; no hub tangency required."""
+        if fillet_base <= 0:
+            return None
+        rdx, rdy = p_rr[0] - p_rh[0], p_rr[1] - p_rh[1]
+        ldx, ldy = p_lr[0] - p_lh[0], p_lr[1] - p_lh[1]
+        probe_x = (r_hub + r_rim) * 0.5 * math.cos(void_mid_angle)
+        probe_y = (r_hub + r_rim) * 0.5 * math.sin(void_mid_angle)
+        rux, ruy = _sv2_unit(rdx, rdy)
+        rnx, rny = -ruy, rux
+        rdp = _sv2_dot(probe_x - p_rh[0], probe_y - p_rh[1], rnx, rny)
+        in_rx, in_ry = (rnx, rny) if rdp > 0 else (-rnx, -rny)
+        lux, luy = _sv2_unit(ldx, ldy)
+        lnx, lny = -luy, lux
+        ldp = _sv2_dot(probe_x - p_lh[0], probe_y - p_lh[1], lnx, lny)
+        in_lx, in_ly = (lnx, lny) if ldp > 0 else (-lnx, -lny)
+        return _sv2_line_line_fillet(
+            p_rh[0], p_rh[1], rdx, rdy,
+            p_lh[0], p_lh[1], ldx, ldy,
+            in_rx, in_ry, in_lx, in_ly,
+            fillet_base,
+        )
+
+    half_w = spoke_width / 2.0
+    half_a_hub = math.asin(min(1.0, half_w / r_hub))
+    half_a_rim = math.asin(min(1.0, half_w / r_rim))
+    theta_step = 2.0 * math.pi / spoke_count
+    rim_sweep  = 0  # math CCW → SVG CCW for both coord_swap transforms
+
+
+    els = []
+    stroke = f'stroke="#1a1a1a" stroke-width="{sw:.4f}"'
+
+    for i in range(spoke_count):
+        a      = i * theta_step
+        a_next = (i + 1) * theta_step
+        void_mid = a + theta_step / 2.0
+
+        # Corner points of this void
+        p_rh = polar(r_hub, a + half_a_hub)            # right wall, hub end
+        p_rr = polar(r_rim, a + half_a_rim)            # right wall, rim end
+        p_lh = polar(r_hub, a_next - half_a_hub)       # left wall, hub end
+        p_lr = polar(r_rim, a_next - half_a_rim)       # left wall, rim end
+
+        # Tip fillets for this void
+        tip_r  = compute_tip(a + half_a_hub,      a + half_a_rim,      void_mid)
+        tip_nl = compute_tip(a_next - half_a_hub, a_next - half_a_rim, void_mid)
+
+        # Base fillet: prefer line-line; fall back to hub-tangent when the
+        # fillet arc's closest point to the pulley centre would be inside r_hub.
+        ll = compute_base_ll(p_rh, p_rr, p_lh, p_lr, void_mid)
+        use_hub_tangent = (ll is None or
+                           math.hypot(ll[0], ll[1]) - fillet_base < r_hub)
+        if use_hub_tangent:
+            base_r  = compute_base_hub(a + half_a_hub,      a + half_a_rim,      void_mid)
+            base_nl = compute_base_hub(a_next - half_a_hub, a_next - half_a_rim, void_mid)
+        else:
+            base_r = base_nl = None  # not used in line-line mode
+
+        # ── Right spoke edge (right wall of spoke i) ──────────────────────────
+        x1, y1 = to_svg(tip_r[2],  tip_r[3])  if tip_r else to_svg(*p_rr)
+        if use_hub_tangent:
+            x2, y2 = to_svg(base_r[2], base_r[3]) if base_r else to_svg(*p_rh)
+        else:
+            x2, y2 = to_svg(ll[2], ll[3])
+        els.append(f'<line x1="{x1:.4f}" y1="{y1:.4f}" x2="{x2:.4f}" y2="{y2:.4f}" {stroke}/>')
+
+        # ── Right tip fillet arc ──────────────────────────────────────────────
+        if tip_r:
+            fcx, fcy, tlx, tly, tcx, tcy, _ = tip_r
+            fs, ff = to_svg(fcx, fcy)
+            xs_s, ys_s = to_svg(tlx, tly)
+            xe_s, ye_s = to_svg(tcx, tcy)
+            els.append(f'<path d="M {xs_s:.4f},{ys_s:.4f} '
+                       f'{svg_fillet_arc(fs, ff, xs_s, ys_s, xe_s, ye_s, fillet_tip)}" '
+                       f'fill="none" {stroke}/>')
+
+        # ── Rim arc ───────────────────────────────────────────────────────────
+        xs_rim, ys_rim = to_svg(tip_r[4],  tip_r[5])  if tip_r  else to_svg(*p_rr)
+        xe_rim, ye_rim = to_svg(tip_nl[4], tip_nl[5]) if tip_nl else to_svg(*p_lr)
+        span = (a_next - half_a_rim) - (a + half_a_rim)
+        large = 1 if span > math.pi else 0
+        els.append(f'<path d="M {xs_rim:.4f},{ys_rim:.4f} '
+                   f'A {r_rim:.4f},{r_rim:.4f} 0 {large} {rim_sweep} {xe_rim:.4f},{ye_rim:.4f}" '
+                   f'fill="none" {stroke}/>')
+
+        # ── Left tip fillet arc ───────────────────────────────────────────────
+        if tip_nl:
+            fcx, fcy, tlx, tly, tcx, tcy, _ = tip_nl
+            fs, ff = to_svg(fcx, fcy)
+            xs_s, ys_s = to_svg(tcx, tcy)
+            xe_s, ye_s = to_svg(tlx, tly)
+            els.append(f'<path d="M {xs_s:.4f},{ys_s:.4f} '
+                       f'{svg_fillet_arc(fs, ff, xs_s, ys_s, xe_s, ye_s, fillet_tip)}" '
+                       f'fill="none" {stroke}/>')
+
+        # ── Left spoke edge (left wall of spoke i+1) ──────────────────────────
+        x1, y1 = to_svg(tip_nl[2], tip_nl[3]) if tip_nl else to_svg(*p_lr)
+        if use_hub_tangent:
+            x2, y2 = to_svg(base_nl[2], base_nl[3]) if base_nl else to_svg(*p_lh)
+        else:
+            x2, y2 = to_svg(ll[4], ll[5])
+        els.append(f'<line x1="{x1:.4f}" y1="{y1:.4f}" x2="{x2:.4f}" y2="{y2:.4f}" {stroke}/>')
+
+        # ── Base fillet(s) and hub arc ────────────────────────────────────────
+        if use_hub_tangent:
+            # Right base fillet arc (spoke wall → hub circle)
+            if base_r:
+                fcx, fcy, tlx, tly, tcx, tcy, _ = base_r
+                fs, ff = to_svg(fcx, fcy)
+                xs_s, ys_s = to_svg(tlx, tly)
+                xe_s, ye_s = to_svg(tcx, tcy)
+                els.append(f'<path d="M {xs_s:.4f},{ys_s:.4f} '
+                           f'{svg_fillet_arc(fs, ff, xs_s, ys_s, xe_s, ye_s, fillet_base)}" '
+                           f'fill="none" {stroke}/>')
+            # Hub arc between the two hub-tangent points
+            xs_hub = to_svg(base_r[4],  base_r[5])  if base_r  else to_svg(*p_rh)
+            xe_hub = to_svg(base_nl[4], base_nl[5]) if base_nl else to_svg(*p_lh)
+            span_hub = (a_next - half_a_hub) - (a + half_a_hub)
+            large_hub = 1 if span_hub > math.pi else 0
+            els.append(f'<path d="M {xs_hub[0]:.4f},{xs_hub[1]:.4f} '
+                       f'A {r_hub:.4f},{r_hub:.4f} 0 {large_hub} {rim_sweep} '
+                       f'{xe_hub[0]:.4f},{xe_hub[1]:.4f}" fill="none" {stroke}/>')
+            # Left base fillet arc (hub circle → spoke wall)
+            if base_nl:
+                fcx, fcy, tlx, tly, tcx, tcy, _ = base_nl
+                fs, ff = to_svg(fcx, fcy)
+                xs_s, ys_s = to_svg(tcx, tcy)
+                xe_s, ye_s = to_svg(tlx, tly)
+                els.append(f'<path d="M {xs_s:.4f},{ys_s:.4f} '
+                           f'{svg_fillet_arc(fs, ff, xs_s, ys_s, xe_s, ye_s, fillet_base)}" '
+                           f'fill="none" {stroke}/>')
+        else:
+            # Single line-line base fillet arc
+            fcx, fcy, trx, try_, tlx, tly = ll
+            fs, ff = to_svg(fcx, fcy)
+            xs_s, ys_s = to_svg(trx, try_)
+            xe_s, ye_s = to_svg(tlx, tly)
+            els.append(f'<path d="M {xs_s:.4f},{ys_s:.4f} '
+                       f'{svg_fillet_arc(fs, ff, xs_s, ys_s, xe_s, ye_s, fillet_base)}" '
+                       f'fill="none" {stroke}/>')
+
+    return '\n  '.join(els)
 
 _STANDARD_REF = {
     'HTD':      'ISO 13050:2014 — curvilinear arc-flank',
@@ -296,9 +477,10 @@ def generate_svg(
     rim_depth_mm: float = 2.0,
     fillet_tip_mm: float = 0.0,
     fillet_base_mm: float = 0.0,
+    include_data: bool = True,
 ) -> str:
     """
-    Returns an SVG string: full pulley profile + info panel.
+    Returns an SVG string: full pulley profile + optional info panel.
     """
     key = _profile_key(family, pitch)
     if key not in PULLEY_SPECS:
@@ -408,6 +590,16 @@ def generate_svg(
         ('Backlash',         f'{bl_label}  ({backlash_mm:+.3f} mm)'),
         ('Print Extra',      f'{print_extra_mm:.3f} mm'),
     ]
+    if spoke_count >= 2 and spoke_width_mm > 0.0:
+        rows += [
+            ('— Spokes —',       ''),
+            ('Spoke Count',      str(spoke_count)),
+            ('Spoke Width',      f'{spoke_width_mm:.2f} mm'),
+            ('Hub OD',           f'{spoke_hub_od_mm:.2f} mm'),
+            ('Rim Depth',        f'{rim_depth_mm:.2f} mm'),
+            ('Tip Fillet',       f'{fillet_tip_mm:.2f} mm'),
+            ('Base Fillet',      f'{fillet_base_mm:.2f} mm'),
+        ]
 
     def txt(x, y, content, font_size, color='#1a1a1a', weight='normal', anchor='start'):
         return (f'<text x="{x:.4f}" y="{y:.4f}" '
@@ -416,61 +608,74 @@ def generate_svg(
                 f'fill="{color}" text-anchor="{anchor}">'
                 f'{content}</text>')
 
-    panel_els = []
+    if include_data:
+        panel_els = []
 
-    # Separator line
-    panel_els.append(
-        f'<line x1="{panel_left:.4f}" y1="{panel_top - 1.5:.4f}" '
-        f'x2="{panel_right:.4f}" y2="{panel_top - 1.5:.4f}" '
-        f'stroke="#cccccc" stroke-width="0.25"/>'
-    )
+        # Separator line
+        panel_els.append(
+            f'<line x1="{panel_left:.4f}" y1="{panel_top - 1.5:.4f}" '
+            f'x2="{panel_right:.4f}" y2="{panel_top - 1.5:.4f}" '
+            f'stroke="#cccccc" stroke-width="0.25"/>'
+        )
 
-    # Title
-    y = panel_top + fs_title
-    panel_els.append(txt(0, y, f'{family} {pitch} — {num_teeth} Teeth', fs_title,
-                         color='#0078d4', weight='bold', anchor='middle'))
-    y += line_h * 1.5
+        # Title
+        y = panel_top + fs_title
+        panel_els.append(txt(0, y, f'{family} {pitch} — {num_teeth} Teeth', fs_title,
+                             color='#0078d4', weight='bold', anchor='middle'))
+        y += line_h * 1.5
 
-    # Parameter rows
-    for label, value in rows:
-        panel_els.append(txt(col_label_x, y, label, fs_body, color='#555555'))
-        panel_els.append(txt(col_value_x, y, value, fs_body, color='#1a1a1a', weight='bold'))
-        y += line_h
+        # Parameter rows
+        for label, value in rows:
+            if label.startswith('—'):
+                y += line_h * 0.3
+                panel_els.append(txt(col_label_x, y, label, fs_body, color='#0078d4', weight='bold'))
+                y += line_h
+            else:
+                panel_els.append(txt(col_label_x, y, label, fs_body, color='#555555'))
+                panel_els.append(txt(col_value_x, y, value, fs_body, color='#1a1a1a', weight='bold'))
+                y += line_h
 
-    y += line_h * 0.5
+        y += line_h * 0.5
 
-    # Standard reference
-    panel_els.append(txt(col_label_x, y, 'Standard', fs_body, color='#555555'))
-    panel_els.append(txt(col_value_x, y, std_ref,    fs_small, color='#1a1a1a'))
-    y += line_h * 1.8
+        # Standard reference
+        panel_els.append(txt(col_label_x, y, 'Standard', fs_body, color='#555555'))
+        panel_els.append(txt(col_value_x, y, std_ref,    fs_small, color='#1a1a1a'))
+        y += line_h * 1.8
 
-    # Divider before footer
-    panel_els.append(
-        f'<line x1="{panel_left:.4f}" y1="{y:.4f}" '
-        f'x2="{panel_right:.4f}" y2="{y:.4f}" '
-        f'stroke="#cccccc" stroke-width="0.2"/>'
-    )
-    y += line_h * 0.8
+        # Divider before footer
+        panel_els.append(
+            f'<line x1="{panel_left:.4f}" y1="{y:.4f}" '
+            f'x2="{panel_right:.4f}" y2="{y:.4f}" '
+            f'stroke="#cccccc" stroke-width="0.2"/>'
+        )
+        y += line_h * 0.8
 
-    # Website callout
-    panel_els.append(txt(0, y,
-        'Generated by Timing Pulley Generator  ·  cheapcadtools.com',
-        fs_small, color='#0078d4', anchor='middle'))
+        # Website callout
+        panel_els.append(txt(0, y,
+            'Generated by Timing Pulley Generator  ·  cheapcadtools.com',
+            fs_small, color='#0078d4', anchor='middle'))
 
-    panel_total_height = y - panel_top + line_h
+        panel_total_height = y - panel_top + line_h
 
-    # ── Viewport: wide enough for both pulley and panel ──────────────────────
-    vx   = panel_left - padding_mm
-    vy   = -(R_OD + padding_mm)
-    vw   = panel_w + padding_mm * 2
-    vh   = (R_OD + padding_mm) + panel_top + panel_total_height + padding_mm
+        # ── Viewport: wide enough for both pulley and panel ──────────────────────
+        vx   = panel_left - padding_mm
+        vy   = -(R_OD + padding_mm)
+        vw   = panel_w + padding_mm * 2
+        vh   = (R_OD + padding_mm) + panel_top + panel_total_height + padding_mm
+        panel_svg = '\n  '.join(panel_els)
+    else:
+        # Drawing only — tight viewport around the pulley
+        vx   = -(R_OD + padding_mm)
+        vy   = -(R_OD + padding_mm)
+        vw   =  (R_OD + padding_mm) * 2
+        vh   =  (R_OD + padding_mm) * 2
+        panel_svg = ''
+
     vbox = f"{vx:.4f} {vy:.4f} {vw:.4f} {vh:.4f}"
 
     # Output width fixed at 600px; height scales proportionally
     out_w = 600
     out_h = int(out_w * vh / vw)
-
-    panel_svg = '\n  '.join(panel_els)
 
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
@@ -564,6 +769,7 @@ def generate_svg_dual(
     rim_depth_mm2: float = 2.0,
     fillet_tip_mm2: float = 0.0,
     fillet_base_mm2: float = 0.0,
+    include_data: bool = True,
 ) -> str:
     """
     SVG of two pulleys with the belt wrapped around them.
@@ -726,7 +932,11 @@ def generate_svg_dual(
     vx = x_min
     vy = -y_ext
     vw = world_w
-    vh = world_h + panel_top - (-y_ext) + panel_h + padding_mm
+    if include_data:
+        vh = world_h + panel_top - (-y_ext) + panel_h + padding_mm
+    else:
+        vh = world_h
+        panel_els = []
 
     out_w = max(800, int(world_w * 8))
     out_h = int(out_w * vh / vw)

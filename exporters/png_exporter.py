@@ -204,8 +204,8 @@ def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
             rb_y = R_hub * math.sin(theta_mid + gap_half_hub)
 
         # Inward normals (toward void interior)
-        probe_x = R_rim_inner * 0.5 * math.cos(theta_mid)   # inside the void
-        probe_y = R_rim_inner * 0.5 * math.sin(theta_mid)
+        probe_x = (R_hub + R_rim_inner) * 0.5 * math.cos(theta_mid)
+        probe_y = (R_hub + R_rim_inner) * 0.5 * math.sin(theta_mid)
         lux, luy = _sv_unit(l_dx, l_dy)
         ln_a, ln_b = -luy, lux
         in_lx = ln_a if _sv_dot(probe_x - lb_x, probe_y - lb_y, ln_a, ln_b) > 0 else -ln_a
@@ -224,44 +224,30 @@ def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
                                         0.0, 0.0, R_rim_inner, fillet_tip_mm,
                                         False, in_rx, in_ry, prefer_high_t=True)
 
-        # ── Base fillets (spoke wall meets hub) ───────────────────────────────
-        base_l = _sv_line_circle_fillet(lb_x, lb_y, l_dx, l_dy,
-                                         0.0, 0.0, R_hub, fillet_base_mm,
-                                         True, in_lx, in_ly, prefer_high_t=False)
-        base_r = _sv_line_circle_fillet(rb_x, rb_y, r_dx, r_dy,
-                                         0.0, 0.0, R_hub, fillet_base_mm,
-                                         True, in_rx, in_ry, prefer_high_t=False)
-
-        use_hub_base = (base_l is not None and base_r is not None and not hub_overlap)
+        # ── Base fillets ─────────────────────────────────────────────────────
+        # PRIMARY: line-line fillet tangent to both spoke walls (no hub tangency).
+        # FALLBACK: hub-tangent when the line-line arc's inner edge dips below hub.
+        ll_base = _sv_line_line_fillet(rb_x, rb_y, r_dx, r_dy,
+                                        lb_x, lb_y, l_dx, l_dy,
+                                        in_rx, in_ry, in_lx, in_ly, fillet_base_mm)
+        use_hub_base = (ll_base is None or
+                        math.hypot(ll_base[0], ll_base[1]) - fillet_base_mm < R_hub)
         if use_hub_base:
-            # Verify the two hub tangent points haven't crossed each other.
-            # Going CW from right tangent to left tangent should be a small
-            # positive angle. If they've crossed (fillet too large for the gap)
-            # the CW span wraps near 2π → fall back to line-line fillet.
-            a_hr_chk = math.atan2(base_r[5], base_r[4])
-            a_hl_chk = math.atan2(base_l[5], base_l[4])
-            cw_span  = (a_hr_chk - a_hl_chk) % (2 * math.pi)
-            if cw_span > math.pi or cw_span < 1e-6:
-                use_hub_base = False
+            base_l = _sv_line_circle_fillet(lb_x, lb_y, l_dx, l_dy,
+                                             0.0, 0.0, R_hub, fillet_base_mm,
+                                             True, in_lx, in_ly, prefer_high_t=False)
+            base_r = _sv_line_circle_fillet(rb_x, rb_y, r_dx, r_dy,
+                                             0.0, 0.0, R_hub, fillet_base_mm,
+                                             True, in_rx, in_ry, prefer_high_t=False)
+        else:
+            base_l = base_r = None
 
         # ── Build polygon point list ──────────────────────────────────────────
         pts = []
 
-        # Start at left tip tangency on rim, arc CCW to right tip tangency on rim
-        if tip_l and tip_r:
-            a_tl = math.atan2(tip_l[4] - 0.0, tip_l[3] - 0.0)  # tc on rim
-            a_tr = math.atan2(tip_r[4] - 0.0, tip_r[3] - 0.0)
-        else:
-            a_tl = math.atan2(lt_y, lt_x)
-            a_tr = math.atan2(rt_y, rt_x)
-
         # Rim arc from left-tip to right-tip (short CCW arc across the gap)
-        a_rim_l = math.atan2(lt_y, lt_x)
-        a_rim_r = math.atan2(rt_y, rt_x)
-        if tip_l:
-            a_rim_l = math.atan2(tip_l[5], tip_l[4])   # tcy, tcx
-        if tip_r:
-            a_rim_r = math.atan2(tip_r[5], tip_r[4])   # tcy, tcx
+        a_rim_l = math.atan2(tip_l[5], tip_l[4]) if tip_l else math.atan2(lt_y, lt_x)
+        a_rim_r = math.atan2(tip_r[5], tip_r[4]) if tip_r else math.atan2(rt_y, rt_x)
 
         pts += _sv_fillet_arc_pts(0.0, 0.0, R_rim_inner, a_rim_l, a_rim_r, n=n_arc)
 
@@ -277,28 +263,31 @@ def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
         # Right spoke wall down to base, then across, then left spoke wall up
         if use_hub_base:
             # Hub-tangent base fillets: right wall → hub arc → left wall
-            fcx, fcy, tl_x, tl_y, tc_x, tc_y, _ = base_r
-            pts.append((tl_x, tl_y))
-            a1 = math.atan2(tl_y - fcy, tl_x - fcx)
-            a2 = math.atan2(tc_y - fcy, tc_x - fcx)
-            pts += _sv_fillet_arc_pts(fcx, fcy, fillet_base_mm, a1, a2, n=8)
-            # Hub arc
-            a_hr = math.atan2(tc_y, tc_x)
-            fcx2, fcy2, tl_x2, tl_y2, tc_x2, tc_y2, _ = base_l
-            a_hl = math.atan2(tc_y2, tc_x2)
-            pts += _sv_fillet_arc_pts(0.0, 0.0, R_hub, a_hr, a_hl, n=n_arc)
-            # Left base fillet
-            a1 = math.atan2(tc_y2 - fcy2, tc_x2 - fcx2)
-            a2 = math.atan2(tl_y2 - fcy2, tl_x2 - fcx2)
-            pts += _sv_fillet_arc_pts(fcx2, fcy2, fillet_base_mm, a1, a2, n=8)
+            if base_r:
+                fcx, fcy, tl_x, tl_y, tc_x, tc_y, _ = base_r
+                pts.append((tl_x, tl_y))
+                a1 = math.atan2(tl_y - fcy, tl_x - fcx)
+                a2 = math.atan2(tc_y - fcy, tc_x - fcx)
+                pts += _sv_fillet_arc_pts(fcx, fcy, fillet_base_mm, a1, a2, n=8)
+                a_hr = math.atan2(tc_y, tc_x)
+            else:
+                pts.append((rb_x, rb_y))
+                a_hr = math.atan2(rb_y, rb_x)
+            if base_l:
+                fcx2, fcy2, tl_x2, tl_y2, tc_x2, tc_y2, _ = base_l
+                a_hl = math.atan2(tc_y2, tc_x2)
+                pts += _sv_fillet_arc_pts(0.0, 0.0, R_hub, a_hr, a_hl, n=n_arc)
+                a1 = math.atan2(tc_y2 - fcy2, tc_x2 - fcx2)
+                a2 = math.atan2(tl_y2 - fcy2, tl_x2 - fcx2)
+                pts += _sv_fillet_arc_pts(fcx2, fcy2, fillet_base_mm, a1, a2, n=8)
+            else:
+                a_hl = math.atan2(lb_y, lb_x)
+                pts += _sv_fillet_arc_pts(0.0, 0.0, R_hub, a_hr, a_hl, n=n_arc)
+                pts.append((lb_x, lb_y))
         else:
-            # No room for hub fillet — use line-line fillet tangent to both spoke walls.
-            # This curves toward the adjacent spoke, replacing the hub arc entirely.
-            ll = _sv_line_line_fillet(rb_x, rb_y, r_dx, r_dy,
-                                       lb_x, lb_y, l_dx, l_dy,
-                                       in_rx, in_ry, in_lx, in_ly, fillet_base_mm)
-            if ll and fillet_base_mm > 0.05:
-                fcx, fcy, trx, try_, tlx, tly = ll
+            # Line-line base fillet: single arc tangent to both spoke walls.
+            if ll_base and fillet_base_mm > 0.05:
+                fcx, fcy, trx, try_, tlx, tly = ll_base
                 pts.append((trx, try_))
                 a1 = math.atan2(try_ - fcy, trx - fcx)
                 a2 = math.atan2(tly  - fcy, tlx - fcx)
@@ -325,6 +314,186 @@ def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
     return result
 
 
+def _spoke_void_segments(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
+                          fillet_tip_mm=0.0, fillet_base_mm=0.0):
+    """
+    Same geometry as _spoke_void_polygons but returns typed geometric primitives
+    instead of tessellated point lists.
+
+    Each void is a list of segments:
+        ('arc',  cx, cy, r, a1_rad, a2_rad)  — short arc from a1 to a2
+        ('line', x1, y1, x2, y2)
+
+    All coordinates are in standard math convention (x=r·cos θ, y=r·sin θ).
+    Callers must apply any coordinate-system conversion before writing to DXF/SVG.
+    """
+    if spoke_count <= 0 or spoke_width_mm <= 0.0 or R_rim_inner <= R_hub + 0.5:
+        return []
+
+    half_w = min(spoke_width_mm / 2.0, R_rim_inner * 0.45)
+    if half_w <= 0.0:
+        return []
+
+    theta_step  = 2.0 * math.pi / spoke_count
+    theta_hub   = math.asin(min(half_w / R_hub,        1.0))
+    theta_rim   = math.asin(min(half_w / R_rim_inner, 0.9999))
+    hub_overlap = theta_hub >= theta_step / 2.0
+
+    result = []
+    for i in range(spoke_count):
+        theta_mid    = (i + 0.5) * theta_step
+        gap_half_hub = max(_EPS, theta_step / 2.0 - theta_hub)
+        gap_half_rim = max(_EPS, theta_step / 2.0 - theta_rim)
+
+        lb_x = R_hub       * math.cos(theta_mid - gap_half_hub)
+        lb_y = R_hub       * math.sin(theta_mid - gap_half_hub)
+        rb_x = R_hub       * math.cos(theta_mid + gap_half_hub)
+        rb_y = R_hub       * math.sin(theta_mid + gap_half_hub)
+        lt_x = R_rim_inner * math.cos(theta_mid - gap_half_rim)
+        lt_y = R_rim_inner * math.sin(theta_mid - gap_half_rim)
+        rt_x = R_rim_inner * math.cos(theta_mid + gap_half_rim)
+        rt_y = R_rim_inner * math.sin(theta_mid + gap_half_rim)
+
+        if not hub_overlap:
+            l_dx, l_dy = lt_x - lb_x, lt_y - lb_y
+            r_dx, r_dy = rt_x - rb_x, rt_y - rb_y
+        else:
+            l_dx = lt_x - R_hub * math.cos(theta_mid - gap_half_hub)
+            l_dy = lt_y - R_hub * math.sin(theta_mid - gap_half_hub)
+            r_dx = rt_x - R_hub * math.cos(theta_mid + gap_half_hub)
+            r_dy = rt_y - R_hub * math.sin(theta_mid + gap_half_hub)
+
+        probe_x = (R_hub + R_rim_inner) * 0.5 * math.cos(theta_mid)
+        probe_y = (R_hub + R_rim_inner) * 0.5 * math.sin(theta_mid)
+        lux, luy = _sv_unit(l_dx, l_dy)
+        ln_a, ln_b = -luy, lux
+        in_lx = ln_a if _sv_dot(probe_x - lb_x, probe_y - lb_y, ln_a, ln_b) > 0 else -ln_a
+        in_ly = ln_b if _sv_dot(probe_x - lb_x, probe_y - lb_y, ln_a, ln_b) > 0 else -ln_b
+        rux, ruy = _sv_unit(r_dx, r_dy)
+        rn_a, rn_b = -ruy, rux
+        in_rx = rn_a if _sv_dot(probe_x - rb_x, probe_y - rb_y, rn_a, rn_b) > 0 else -rn_a
+        in_ry = rn_b if _sv_dot(probe_x - rb_x, probe_y - rb_y, rn_a, rn_b) > 0 else -rn_b
+
+        tip_l = _sv_line_circle_fillet(lb_x, lb_y, l_dx, l_dy, 0.0, 0.0, R_rim_inner,
+                                        fillet_tip_mm, False, in_lx, in_ly, prefer_high_t=True)
+        tip_r = _sv_line_circle_fillet(rb_x, rb_y, r_dx, r_dy, 0.0, 0.0, R_rim_inner,
+                                        fillet_tip_mm, False, in_rx, in_ry, prefer_high_t=True)
+
+        # PRIMARY: line-line fillet; FALLBACK: hub-tangent when arc dips below hub.
+        ll_base = _sv_line_line_fillet(rb_x, rb_y, r_dx, r_dy,
+                                        lb_x, lb_y, l_dx, l_dy,
+                                        in_rx, in_ry, in_lx, in_ly, fillet_base_mm)
+        use_hub_base = (ll_base is None or
+                        math.hypot(ll_base[0], ll_base[1]) - fillet_base_mm < R_hub)
+        if use_hub_base:
+            base_l = _sv_line_circle_fillet(lb_x, lb_y, l_dx, l_dy, 0.0, 0.0, R_hub,
+                                             fillet_base_mm, True, in_lx, in_ly, prefer_high_t=False)
+            base_r = _sv_line_circle_fillet(rb_x, rb_y, r_dx, r_dy, 0.0, 0.0, R_hub,
+                                             fillet_base_mm, True, in_rx, in_ry, prefer_high_t=False)
+        else:
+            base_l = base_r = None
+
+        segs = []
+
+        # ── Rim arc (left tip tangency → right tip tangency, short CCW) ──────
+        a_rim_l = math.atan2(tip_l[5], tip_l[4]) if tip_l else math.atan2(lt_y, lt_x)
+        a_rim_r = math.atan2(tip_r[5], tip_r[4]) if tip_r else math.atan2(rt_y, rt_x)
+        segs.append(('arc', 0.0, 0.0, R_rim_inner, a_rim_l, a_rim_r))
+
+        # ── Right tip fillet (rim tangency → spoke-wall tangency) ────────────
+        if tip_r:
+            fcx, fcy, tlx, tly, tcx, tcy, _ = tip_r
+            segs.append(('arc', fcx, fcy, fillet_tip_mm,
+                          math.atan2(tcy - fcy, tcx - fcx),
+                          math.atan2(tly - fcy, tlx - fcx)))
+            wall_r_start = (tlx, tly)
+        else:
+            wall_r_start = (rt_x, rt_y)
+
+        # ── Right spoke wall (line) ───────────────────────────────────────────
+        if use_hub_base and base_r:
+            _, _, tl_x, tl_y, tc_x, tc_y, _ = base_r
+            wall_r_end = (tl_x, tl_y)
+        elif ll_base and fillet_base_mm > 0.05:
+            wall_r_end = (ll_base[2], ll_base[3])
+        else:
+            wall_r_end = (rb_x, rb_y)
+        segs.append(('line', wall_r_start[0], wall_r_start[1],
+                              wall_r_end[0],   wall_r_end[1]))
+
+        # ── Base section (hub arc ± fillets or line-line fillet) ──────────────
+        if use_hub_base:
+            if base_r and base_l:
+                fcx,  fcy,  tl_x,  tl_y,  tc_x,  tc_y,  _ = base_r
+                fcx2, fcy2, tl_x2, tl_y2, tc_x2, tc_y2, _ = base_l
+                segs.append(('arc', fcx, fcy, fillet_base_mm,
+                              math.atan2(tl_y  - fcy,  tl_x  - fcx),
+                              math.atan2(tc_y  - fcy,  tc_x  - fcx)))
+                segs.append(('arc', 0.0, 0.0, R_hub,
+                              math.atan2(tc_y, tc_x), math.atan2(tc_y2, tc_x2)))
+                segs.append(('arc', fcx2, fcy2, fillet_base_mm,
+                              math.atan2(tc_y2 - fcy2, tc_x2 - fcx2),
+                              math.atan2(tl_y2 - fcy2, tl_x2 - fcx2)))
+                wall_l_start = (tl_x2, tl_y2)
+            else:
+                segs.append(('arc', 0.0, 0.0, R_hub,
+                              math.atan2(rb_y, rb_x), math.atan2(lb_y, lb_x)))
+                wall_l_start = (lb_x, lb_y)
+        else:
+            if ll_base and fillet_base_mm > 0.05:
+                fcx, fcy, trx, try_, tlx, tly = ll_base
+                segs.append(('arc', fcx, fcy, fillet_base_mm,
+                              math.atan2(try_ - fcy, trx - fcx),
+                              math.atan2(tly  - fcy, tlx - fcx)))
+                wall_l_start = (tlx, tly)
+            else:
+                segs.append(('arc', 0.0, 0.0, R_hub,
+                              math.atan2(rb_y, rb_x), math.atan2(lb_y, lb_x)))
+                wall_l_start = (lb_x, lb_y)
+
+        # ── Left spoke wall (line) ────────────────────────────────────────────
+        if tip_l:
+            _, _, tlx, tly, _, _, _ = tip_l
+            wall_l_end = (tlx, tly)
+        else:
+            wall_l_end = (lt_x, lt_y)
+        segs.append(('line', wall_l_start[0], wall_l_start[1],
+                              wall_l_end[0],   wall_l_end[1]))
+
+        # ── Left tip fillet (spoke-wall tangency → rim tangency) ─────────────
+        if tip_l:
+            fcx, fcy, tlx, tly, tcx, tcy, _ = tip_l
+            segs.append(('arc', fcx, fcy, fillet_tip_mm,
+                          math.atan2(tly - fcy, tlx - fcx),
+                          math.atan2(tcy - fcy, tcx - fcx)))
+
+        result.append(segs)
+
+    return result
+
+
+def _svg_to_png(svg_str: str, size_px: int) -> bytes:
+    """Rasterise an SVG string to PNG bytes at size_px wide."""
+    try:
+        import cairosvg
+        return cairosvg.svg2png(bytestring=svg_str.encode('utf-8'), output_width=size_px)
+    except (ImportError, OSError):
+        return None   # caller falls back to legacy
+
+
+_CAIROSVG_AVAILABLE = None   # cached after first attempt
+
+def _check_cairosvg() -> bool:
+    global _CAIROSVG_AVAILABLE
+    if _CAIROSVG_AVAILABLE is None:
+        try:
+            import cairosvg  # noqa
+            _CAIROSVG_AVAILABLE = True
+        except (ImportError, OSError):
+            _CAIROSVG_AVAILABLE = False
+    return _CAIROSVG_AVAILABLE
+
+
 def generate_png(
     family: str,
     pitch: str,
@@ -344,16 +513,50 @@ def generate_png(
     groove_color=(26, 26, 26),
     bore_color=(26, 26, 26),
 ) -> bytes:
-    """
-    Returns PNG bytes of the full pulley profile.
+    """Rasterise the SVG export to PNG.  Falls back to legacy Pillow renderer if Cairo unavailable."""
+    if _check_cairosvg():
+        from exporters.svg_exporter import generate_svg
+        svg = generate_svg(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, clearance_mm=clearance_mm, backlash_mm=backlash_mm,
+            print_extra_mm=print_extra_mm,
+            spoke_count=spoke_count, spoke_width_mm=spoke_width_mm,
+            spoke_hub_od_mm=spoke_hub_od_mm, rim_depth_mm=rim_depth_mm,
+            fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
+            include_data=False,
+        )
+        return _svg_to_png(svg, size_px)
+    return _generate_png_legacy(
+        family=family, pitch=pitch, num_teeth=num_teeth,
+        bore_mm=bore_mm, clearance_mm=clearance_mm, backlash_mm=backlash_mm,
+        print_extra_mm=print_extra_mm, spoke_count=spoke_count,
+        spoke_width_mm=spoke_width_mm, spoke_hub_od_mm=spoke_hub_od_mm,
+        rim_depth_mm=rim_depth_mm, fillet_tip_mm=fillet_tip_mm,
+        fillet_base_mm=fillet_base_mm, size_px=size_px,
+        bg_color=bg_color, groove_color=groove_color, bore_color=bore_color,
+    )
 
-    Parameters
-    ----------
-    size_px   : output image size (square, pixels)
-    bg_color  : RGB background
-    groove_color : RGB groove stroke
-    bore_color   : RGB bore circle stroke
-    """
+
+def _generate_png_legacy(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    bore_mm: float,
+    clearance_mm: float = 0.0,
+    backlash_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+    spoke_count: int = 0,
+    spoke_width_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 2.0,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
+    size_px: int = 500,
+    bg_color=(250, 251, 252),
+    groove_color=(26, 26, 26),
+    bore_color=(26, 26, 26),
+) -> bytes:
+    """Legacy Pillow-based renderer — kept for reference."""
     key = _profile_key(family, pitch)
     if key not in PULLEY_SPECS:
         raise ValueError(f"Unknown profile '{key}'")
@@ -526,10 +729,61 @@ def generate_png_dual(
     groove_color=(26, 26, 26),
     bore_color=(26, 26, 26),
 ) -> bytes:
-    """
-    Render two pulleys side by side, separated by center_dist_mm, into one PNG.
-    Both pulleys use the same family/pitch (belt must match).
-    """
+    """Rasterise the dual SVG export to PNG.  Falls back to legacy Pillow renderer if Cairo unavailable."""
+    if _check_cairosvg():
+        from exporters.svg_exporter import generate_svg_dual
+        svg = generate_svg_dual(
+        family=family, pitch=pitch,
+        num_teeth1=num_teeth1, bore_mm1=bore_mm1,
+        clearance_mm1=clearance_mm1, backlash_mm1=backlash_mm1,
+        print_extra_mm1=print_extra_mm1,
+        num_teeth2=num_teeth2, bore_mm2=bore_mm2,
+        clearance_mm2=clearance_mm2, backlash_mm2=backlash_mm2,
+        print_extra_mm2=print_extra_mm2,
+        center_dist_mm=center_dist_mm,
+        spoke_count1=spoke_count1, spoke_width_mm1=spoke_width_mm1,
+        spoke_hub_od_mm1=spoke_hub_od_mm1, rim_depth_mm1=rim_depth_mm1,
+        fillet_tip_mm1=fillet_tip_mm1, fillet_base_mm1=fillet_base_mm1,
+        spoke_count2=spoke_count2, spoke_width_mm2=spoke_width_mm2,
+        spoke_hub_od_mm2=spoke_hub_od_mm2, rim_depth_mm2=rim_depth_mm2,
+        fillet_tip_mm2=fillet_tip_mm2, fillet_base_mm2=fillet_base_mm2,
+        include_data=False,
+    )
+    return _svg_to_png(svg, size_px)
+
+
+def _generate_png_dual_legacy(
+    family: str,
+    pitch: str,
+    num_teeth1: int,
+    bore_mm1: float,
+    clearance_mm1: float = 0.0,
+    backlash_mm1: float = 0.0,
+    print_extra_mm1: float = 0.0,
+    num_teeth2: int = 20,
+    bore_mm2: float = 8.0,
+    clearance_mm2: float = 0.0,
+    backlash_mm2: float = 0.0,
+    print_extra_mm2: float = 0.0,
+    center_dist_mm: float = 100.0,
+    spoke_count1: int = 0,
+    spoke_width_mm1: float = 0.0,
+    spoke_hub_od_mm1: float = 0.0,
+    rim_depth_mm1: float = 2.0,
+    fillet_tip_mm1: float = 0.0,
+    fillet_base_mm1: float = 0.0,
+    spoke_count2: int = 0,
+    spoke_width_mm2: float = 0.0,
+    spoke_hub_od_mm2: float = 0.0,
+    rim_depth_mm2: float = 2.0,
+    fillet_tip_mm2: float = 0.0,
+    fillet_base_mm2: float = 0.0,
+    size_px: int = 480,
+    bg_color=(250, 251, 252),
+    groove_color=(26, 26, 26),
+    bore_color=(26, 26, 26),
+) -> bytes:
+    """Legacy Pillow-based dual renderer — kept for reference."""
     wrapped1, R_OD1, edge_a1, spec1 = _build_pulley_poly(
         family, pitch, num_teeth1, clearance_mm1, backlash_mm1, print_extra_mm1)
     wrapped2, R_OD2, edge_a2, spec2 = _build_pulley_poly(
