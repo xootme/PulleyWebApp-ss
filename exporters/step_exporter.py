@@ -51,6 +51,47 @@ def _nut_dims(screw_dia_mm: float):
     return _NUT_DIMS_BY_DIA[nominal]
 
 
+def _make_frustum(r_bottom: float, r_top: float, height: float, sections: int = 32):
+    """Return a trimesh frustum (truncated cone) along the +Z axis.
+
+    Bottom cap at Z=0 with radius r_bottom; top cap at Z=height with radius r_top.
+    Used to create 45° chamfer support cones under captured-nut lobes.
+    """
+    import numpy as np
+    angles  = np.linspace(0.0, 2.0 * math.pi, sections, endpoint=False)
+    cos_a   = np.cos(angles)
+    sin_a   = np.sin(angles)
+
+    bottom   = np.column_stack([r_bottom * cos_a, r_bottom * sin_a, np.zeros(sections)])
+    top      = np.column_stack([r_top    * cos_a, r_top    * sin_a, np.full(sections, height)])
+    vertices = np.vstack([bottom, top])   # indices 0..(s-1)=bottom, s..(2s-1)=top
+
+    faces = []
+    for i in range(sections):
+        j = (i + 1) % sections
+        faces.append([i,          j,          sections + j])
+        faces.append([i,          sections + j, sections + i])
+
+    # Bottom cap (normal –Z)
+    cb = len(vertices)
+    vertices = np.vstack([vertices, [[0.0, 0.0, 0.0]]])
+    for i in range(sections):
+        j = (i + 1) % sections
+        faces.append([cb, j, i])
+
+    # Top cap (normal +Z)
+    ct = len(vertices)
+    vertices = np.vstack([vertices, [[0.0, 0.0, height]]])
+    for i in range(sections):
+        j = (i + 1) % sections
+        faces.append([ct, sections + i, sections + j])
+
+    mesh = trimesh.Trimesh(vertices=np.array(vertices, dtype=float),
+                           faces=np.array(faces, dtype=np.int32))
+    mesh.fix_normals()
+    return mesh
+
+
 def _d_bore_polygon(R_bore: float, flat_depth_mm: float, sections: int = 64) -> ShapelyPolygon:
     """Return a Shapely polygon for a D-shaped bore cross-section.
 
@@ -720,6 +761,45 @@ def generate_pulley_step(
                         R_hub, resolution=_BORE_SECTIONS))
             hub_pts = list(hub_poly.exterior.coords[:-1])
             result = hub_wp.polyline(hub_pts).close().extrude(hub_height_mm, clean=False)
+
+            # ── 45° chamfer support under each lobe ──────────────────────────
+            # Adds a toroidal wedge of material in the pocket space directly
+            # below the lobe overhang so the 3D printer has a 45° surface to
+            # build from instead of printing over open air.
+            # Only applied when there is an annular pocket below (pocket_depth > 0).
+            _lobe_has_open_space = has_spokes and pocket_depth > 0 and eff_r > _R_hub_s
+            if _lobe_has_open_space:
+                # Chamfer cone extends through the full spoke zone + top pocket.
+                # Clamped to R_hub - 0.5 so the tip radius stays >= 0.5 mm.
+                _ch = min(spk_h + pocket_depth, R_hub - 0.5)
+                _z0 = belt_height_mm   # lobe bottom face Z
+
+                for _sc_angle in screw_angles:
+                    _lcx = _ob_off * math.cos(_sc_angle)
+                    _lcy = _ob_off * math.sin(_sc_angle)
+
+                    # Triangle profile in LOCAL lobe coords, revolved 360° around
+                    # the lobe's Z axis, then translated to world lobe position.
+                    #
+                    # Cross-section (r = distance from lobe centre, Z = height):
+                    #
+                    # Tapered cylinder (truncated cone) centred on the lobe axis:
+                    #   bottom Z = _z0 - _ch : radius = R_hub - _ch  (inner, near hub)
+                    #   top    Z = _z0       : radius = R_hub         (full lobe radius)
+                    # taper=-45 means the cone expands outward going up at 45°.
+                    # The sloped face runs from inner-bottom → outer-top, i.e. toward
+                    # the hub as you go downward. ✓
+                    try:
+                        chamfer_support = (
+                            cq.Workplane('XY')
+                            .workplane(offset=_z0 - _ch)
+                            .circle(R_hub - _ch)
+                            .extrude(_ch, taper=-45, clean=False)
+                            .translate((_lcx, _lcy, 0))
+                        )
+                        result = result.union(chamfer_support, clean=False)
+                    except Exception:
+                        pass   # skip if taper fails for this geometry
         else:
             result = hub_wp.circle(R_hub).extrude(hub_height_mm, clean=False)
 
@@ -751,7 +831,7 @@ def generate_pulley_step(
         result = result.cut(kw_box, clean=False)
 
     # ── 6. Set-screw holes + nut pockets ──────────────────────────────────────
-    if keyway_h_mm > 0.0 and do_screws:
+    if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
         screw_angles = [0.0]
 
     if do_screws:
@@ -759,7 +839,13 @@ def generate_pulley_step(
 
         if captured_nut:
             z_screw = hub_top - R_circ
-            if keyway_h_mm > 0.0:
+            if flat_depth_mm > 0.0:
+                # Nut inner face sits against the D-flat face
+                flat_x   = R_bore - flat_depth_mm
+                hole_len = eff_r - flat_x + 1.0
+                hole_cx  = (eff_r + flat_x) / 2.0
+                pkt_cx   = flat_x
+            elif keyway_h_mm > 0.0:
                 kw_face  = R_bore + keyway_h_mm
                 hole_len = eff_r - kw_face + 1.0
                 hole_cx  = (eff_r + kw_face) / 2.0
@@ -1156,6 +1242,35 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         hub_mesh.fix_normals()
         body = trimesh.util.concatenate([belt_mesh, hub_mesh])
         body.fix_normals()
+
+        # ── Chamfer support cones under captured-nut lobes ────────────────────
+        # Mirrors the STEP exporter: a 45° truncated cone is unioned under each
+        # lobe so the 3D printer has a sloped surface instead of open air.
+        if captured_nut and need_oblong and spoke_count > 0 and spoke_width_mm > 0.0:
+            _R_hub_s_ch = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
+            _spk_h_ch   = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
+            _pocket_ch  = (belt_height_mm - _spk_h_ch) / 2.0
+            _ob_off_ch  = min_hub_r - R_hub
+
+            if _pocket_ch > 0 and eff_r > _R_hub_s_ch:
+                _ch = min(_spk_h_ch + _pocket_ch, R_hub - 0.5)
+                if _ch > 0.1:
+                    r_bottom = max(R_hub - _ch, 0.1)
+                    r_top    = R_hub
+                    z_bot    = belt_height_mm - _ch
+                    for _sc_angle in screw_angles:
+                        _lcx = _ob_off_ch * math.cos(_sc_angle)
+                        _lcy = _ob_off_ch * math.sin(_sc_angle)
+                        try:
+                            cone_mesh = _make_frustum(r_bottom, r_top, _ch)
+                            cone_mesh.apply_translation([_lcx, _lcy, z_bot])
+                            cone_mesh.fix_normals()
+                            if body.is_watertight and cone_mesh.is_watertight:
+                                body = trimesh.boolean.union(
+                                    [body, cone_mesh], engine='manifold')
+                                body.fix_normals()
+                        except Exception:
+                            pass
     else:
         body = belt_mesh
 
