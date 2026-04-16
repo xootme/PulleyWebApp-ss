@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=10">
+  <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
 
@@ -76,10 +76,13 @@
   <aside class="controls-panel" id="panel1">
     <div class="panel-title">
       <span id="panel1-title">Pulley</span>
-      <button class="btn-help"
-              data-help2d="/static/Pulley1_2d_help.html"
-              data-help3d="/static/Pulley1_3d_help.html"
-              onclick="openHelp(this, event)" title="Help">&#9432;</button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button class="btn-summary" onclick="openSummary(1,event)" title="Current settings">&#9888;</button>
+        <button class="btn-help"
+                data-help2d="/static/Pulley1_2d_help.html"
+                data-help3d="/static/Pulley1_3d_help.html"
+                onclick="openHelp(this, event)" title="Help">&#9432;</button>
+      </div>
     </div>
 
     <section class="card fb-2d">
@@ -392,10 +395,13 @@
   <aside class="controls-panel" id="panel2">
     <div class="panel-title panel-title-p2">
       Pulley 2
-      <button class="btn-help"
-              data-help2d="/static/Pulley2_2d_help.html"
-              data-help3d="/static/Pulley2_3d_help.html"
-              onclick="openHelp(this, event)" title="Help">&#9432;</button>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button class="btn-summary" onclick="openSummary(2,event)" title="Current settings">&#9888;</button>
+        <button class="btn-help"
+                data-help2d="/static/Pulley2_2d_help.html"
+                data-help3d="/static/Pulley2_3d_help.html"
+                onclick="openHelp(this, event)" title="Help">&#9432;</button>
+      </div>
     </div>
     <div class="card belt-lock-info fb-2d" id="belt-lock-info">
       Belt: <strong id="p2-belt-label">—</strong><br>
@@ -662,6 +668,17 @@
       <button onclick="closeHelp()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#555;line-height:1;padding:0 4px;" title="Close">&times;</button>
     </div>
     <iframe id="help-iframe" src="" style="flex:1;border:none;min-height:0;"></iframe>
+  </div>
+</div>
+
+<!-- ── Settings summary modal ── -->
+<div id="summary-overlay">
+  <div id="summary-box">
+    <div class="sum-header">
+      <span class="sum-title" id="summary-title">&#9888; Pulley Settings</span>
+      <button class="sum-close" onclick="closeSummary()" title="Close">&times;</button>
+    </div>
+    <div id="summary-body"></div>
   </div>
 </div>
 
@@ -1701,7 +1718,157 @@ document.getElementById('help-overlay').addEventListener('click', function(e) {
 });
 // Close on Escape key
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeHelp();
+  if (e.key === 'Escape') { closeHelp(); closeSummary(); }
+});
+
+// ── Settings summary ────────────────────────────────────────────────────────
+function _gv(id) {
+  const el = document.getElementById(id);
+  if (!el) return '—';
+  if (el.type === 'checkbox') return el.checked ? 'Yes' : 'No';
+  return el.value || '—';
+}
+function _row(label, value) {
+  return `<tr><td>${label}</td><td>${value}</td></tr>`;
+}
+function _section(title) {
+  return `<div class="sum-section">${title}</div><table>`;
+}
+
+function openSummary(pulley, evt) {
+  evt.stopPropagation();
+  const p      = pulley === 2 ? '2' : '1';
+  const pfx    = p === '2' ? 'p2_' : '';
+  const hpfx   = p === '2' ? 'hub2' : 'hub1';
+  const spfx   = p === '2' ? 'spokes2' : 'spokes1';
+  const is3d   = document.getElementById('feature_build').checked;
+  const isDual = document.getElementById('dual_enable').checked;
+
+  // ── computed values ──────────────────────────────────────────────────────
+  const spec    = p === '2' ? currentSpec2 : currentSpec;
+  const teeth   = parseInt(_gv(pfx + 'teeth') || _gv('teeth'), 10) || 0;
+  const pitchMm = spec ? spec.pitch_mm : null;
+  const pdStr   = (spec && teeth) ? ((pitchMm * teeth) / Math.PI).toFixed(3) + ' mm' : '—';
+  const odEl    = document.getElementById(p === '2' ? 'p2_od' : 'od');
+  const odStr   = (odEl && odEl.value) ? parseFloat(odEl.value).toFixed(2) + ' mm' : '—';
+
+  // ── clearance / backlash label ───────────────────────────────────────────
+  function presetLabel(selId, customId) {
+    const v = _gv(selId);
+    if (v === 'CUSTOM') return `Custom ${parseFloat(_gv(customId) || 0).toFixed(3)} mm`;
+    const labels = {NONE:'None', TIGHT:'Tight', STANDARD:'Standard', LOOSE:'Loose'};
+    return labels[v] || v;
+  }
+
+  // ── hub retention label ──────────────────────────────────────────────────
+  const retMap = {
+    set_screw_nut:  'Set Screw (captured nut)',
+    set_screw_drill:'Set Screw (drilled)',
+    d_shaft:        'D-Shaft',
+    keyway:         'Keyway',
+  };
+
+  let html = '';
+
+  // Belt Profile
+  html += _section('Belt Profile');
+  if (p === '1') {
+    html += _row('Family', _gv('family'));
+    html += _row('Pitch', _gv('pitch') + (spec ? ` (${spec.pitch_mm} mm)` : ''));
+  } else {
+    html += _row('Belt', document.getElementById('p2-belt-label')?.textContent || '—');
+    html += _row('(Locked to Pulley 1)', '');
+  }
+  html += '</table>';
+
+  // Size
+  html += _section('Size');
+  html += _row('Teeth', _gv(pfx + 'teeth'));
+  html += _row('Outer Diameter', odStr);
+  html += _row('Bore Diameter', parseFloat(_gv(pfx + 'bore') || _gv('bore')).toFixed(1) + ' mm');
+  html += _row('Pitch Diameter', pdStr);
+  html += '</table>';
+
+  // Advanced
+  html += _section('Advanced');
+  html += _row('Tooth Clearance', presetLabel(pfx + 'clearance_preset', pfx + 'clearance_custom'));
+  html += _row('Backlash', presetLabel(pfx + 'backlash_preset', pfx + 'backlash_custom'));
+  html += _row('Print Compensation', parseFloat(_gv(pfx + 'print_extra') || 0).toFixed(3) + ' mm');
+  html += '</table>';
+
+  // 3D settings (always show in 3D mode)
+  if (is3d) {
+    html += _section('3D Belt');
+    html += _row('Belt Height', _gv('belt_height') + ' mm');
+    html += '</table>';
+
+    // Hub
+    const hubEnabled = document.getElementById(hpfx + '_enabled')?.checked;
+    html += _section('Hub ' + (hubEnabled ? '' : '(disabled)'));
+    if (hubEnabled) {
+      const ret = _gv(hpfx + '_retention');
+      html += _row('Retention', retMap[ret] || ret);
+      html += _row('Hub Height', _gv(hpfx + '_height') + ' mm');
+      html += _row('Hub OD', _gv(hpfx + '_od') + ' mm');
+      if (ret === 'set_screw_nut' || ret === 'set_screw_drill') {
+        html += _row('Screw Size', _gv(hpfx + '_screw_size'));
+        html += _row('Screw Count', _gv(hpfx + '_screw_count'));
+      }
+      if (ret === 'd_shaft') {
+        html += _row('Flat Depth', _gv(hpfx + '_flat_depth') + ' mm');
+        const dsScrew = document.getElementById(hpfx + '_dshaft_screw')?.checked;
+        if (dsScrew) {
+          html += _row('D-Shaft Screw', _gv(hpfx + '_dshaft_screw_type') + ' ' + _gv(hpfx + '_dshaft_screw_size'));
+        }
+      }
+      if (ret === 'keyway') {
+        html += _row('Keyway Width', _gv(hpfx + '_keyway_w') + ' mm');
+        html += _row('Keyway Height', _gv(hpfx + '_keyway_h') + ' mm');
+        const kwScrew = document.getElementById(hpfx + '_keyway_screw')?.checked;
+        if (kwScrew) {
+          html += _row('Keyway Screw', _gv(hpfx + '_keyway_screw_type') + ' ' + _gv(hpfx + '_keyway_screw_size'));
+        }
+      }
+    }
+    html += '</table>';
+
+    // Spokes
+    const spokesEnabled = document.getElementById(spfx + '_enabled')?.checked;
+    html += _section('Spokes ' + (spokesEnabled ? '' : '(disabled)'));
+    if (spokesEnabled) {
+      html += _row('Count', _gv(spfx + '_count'));
+      html += _row('Width', _gv(spfx + '_width') + ' mm');
+      html += _row('Hub OD', _gv(spfx + '_hub_od') + ' mm');
+      html += _row('Rim Depth', _gv(spfx + '_rim_depth') + ' mm');
+      const sh = _gv(spfx + '_height');
+      html += _row('Spoke Height', sh && sh !== '0' ? sh + ' mm' : 'Full belt height');
+      html += _row('Tip Fillet', _gv(spfx + '_fillet_tip') + ' mm');
+      html += _row('Base Fillet', _gv(spfx + '_fillet_base') + ' mm');
+    }
+    html += '</table>';
+  }
+
+  // Drive ratio (only in dual mode, only for P1)
+  if (isDual && p === '1') {
+    html += _section('Drive');
+    html += _row('Gear Ratio', parseFloat(_gv('gear_ratio')).toFixed(3) + ' : 1');
+    html += _row('Center Distance', parseFloat(_gv('center_distance')).toFixed(1) + ' mm');
+    html += '</table>';
+  }
+
+  const label = p === '1'
+    ? (isDual ? 'Pulley 1' : 'Pulley') + ' — Current Settings'
+    : 'Pulley 2 — Current Settings';
+  document.getElementById('summary-title').textContent = '\u26A0 ' + label;
+  document.getElementById('summary-body').innerHTML = html;
+  document.getElementById('summary-overlay').style.display = 'flex';
+}
+
+function closeSummary() {
+  document.getElementById('summary-overlay').style.display = 'none';
+}
+document.getElementById('summary-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeSummary();
 });
 
 async function downloadWithProgress(url, defaultFilename) {

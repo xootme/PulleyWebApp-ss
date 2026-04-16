@@ -665,9 +665,10 @@ def download_stl():
         part   = request.args.get('part', 'all')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
-        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
+        pfx = 'p2_' if pulley == '2' else ''
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, pfx)
         sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
-            _parse_spoke_params(request.args, '')
+            _parse_spoke_params(request.args, pfx)
         suffix = '-P2' if pulley == '2' else ''
 
         if part == 'spoke' and sp_en:
@@ -703,6 +704,7 @@ def download_stl():
                 cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
                 spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
                 fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+                spoke_height_mm=sp_h if sp_en else 0.0,
             )
             fname = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
 
@@ -720,15 +722,19 @@ def download_step():
         pulley = request.args.get('pulley', '1')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
-        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, '')
-        
-        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = _parse_spoke_params(request.args, '')
+        pfx = 'p2_' if pulley == '2' else ''
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, pfx)
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = _parse_spoke_params(request.args, pfx)
+
+        # When spokes are enabled, use spoke hub OD as hub boss OD if no
+        # explicit hub OD was set — matches the STL download behaviour.
+        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
 
         kw = dict(
             family=family, pitch=pitch, num_teeth=num_teeth,
             bore_mm=bore_mm, belt_height_mm=belt_height,
             clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
-            hub_od_mm=hub_od, hub_height_mm=hub_h,
+            hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc,
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
@@ -770,7 +776,47 @@ def download_step():
 
 @app.route('/download/belt-step')
 def download_belt_step():
-    return Response('Belt STEP export — coming soon', status=501, mimetype='text/plain')
+    """Two-pulley belt STEP export (cadquery, B-rep with true arcs + B-spline teeth)."""
+    try:
+        family  = request.args.get('family', 'HTD')
+        pitch   = request.args.get('pitch',  '5M')
+        dual    = request.args.get('dual') == 'true'
+
+        if not dual:
+            return Response(
+                'Belt STEP export requires Two Pulley Drive mode.',
+                status=400, mimetype='text/plain')
+
+        key = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return f'Unknown profile {family}/{pitch}', 400
+        spec = PULLEY_SPECS[key]
+
+        num_teeth1   = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
+        num_teeth2   = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
+        belt_h       = float(request.args.get('belt_height', 10.0))
+        _default_c   = (num_teeth1 + num_teeth2) * spec['pitch'] / (2.0 * math.pi)
+        center_dist  = float(request.args.get('center_distance', _default_c))
+
+        from exporters.step_exporter import generate_belt_step
+        step_bytes = generate_belt_step(
+            family=family, pitch=pitch,
+            num_teeth_left=num_teeth1, num_teeth_right=num_teeth2,
+            center_dist_mm=center_dist,
+            belt_height_mm=belt_h,
+        )
+        filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.step'
+        return Response(
+            step_bytes,
+            mimetype='application/step',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+    except Exception as exc:
+        import traceback
+        return Response(
+            f'Belt STEP export failed:\n{traceback.format_exc()}',
+            status=500, mimetype='text/plain'
+        )
 
 
 @app.route('/download/belt-stl')

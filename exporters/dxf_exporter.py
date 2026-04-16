@@ -40,6 +40,7 @@ from geometry.pulley_geometry import (
     generate_h_belt_profile, generate_s_belt_profile, generate_r_belt_profile,
     generate_g_belt_profile, generate_t_belt_profile, generate_at_belt_profile,
     generate_imperial_belt_profile,
+    pulley_outline_segments, belt_outline_segments,
 )
 
 
@@ -66,6 +67,54 @@ def _add_line(msp, p0, p1, attribs):
     """Add a LINE only when the two endpoints are not coincident."""
     if math.hypot(p1[0] - p0[0], p1[1] - p0[1]) > 1e-6:
         msp.add_line((p0[0], p0[1], 0), (p1[0], p1[1], 0), dxfattribs=attribs)
+
+
+def _segs_to_dxf(msp, segments, attribs):
+    """
+    Write a pulley_outline_segments() / belt_outline_segments() segment list
+    as DXF entities.
+
+    Segment types handled:
+      ('spline', [(x,y),...])                    → SPLINE with fit-points
+      ('arc', cx,cy,r, (sx,sy),(mx,my),(ex,ey)) → ARC entity (CCW in DXF)
+      ('line', x0,y0, x1,y1)                    → LINE entity
+
+    Coordinate convention: all values in compass coords (x = r·sin θ, y = r·cos θ),
+    which matches ezdxf's XY plane (no coordinate swap needed).
+
+    DXF ARC direction note
+    ----------------------
+    DXF arcs run counter-clockwise.  The segment arcs are CW (compass), so the
+    DXF start/end angles come from the CW *end* and CW *start* respectively:
+      dxf_start_angle = atan2(ey - cy, ex - cx)   (math angle of the CW end)
+      dxf_end_angle   = atan2(sy - cy, sx - cx)   (math angle of the CW start)
+    """
+    for seg in segments:
+        kind = seg[0]
+
+        if kind == 'spline':
+            _, pts = seg
+            msp.add_spline(
+                fit_points=[(x, y, 0) for x, y in pts],
+                dxfattribs=attribs,
+            )
+
+        elif kind == 'arc':
+            _, cx, cy, r, (sx, sy), (_mx, _my), (ex, ey) = seg
+            # Convert CW compass arc → CCW DXF arc by swapping start/end
+            dxf_start = math.degrees(math.atan2(ey - cy, ex - cx))
+            dxf_end   = math.degrees(math.atan2(sy - cy, sx - cx))
+            msp.add_arc(
+                center=(cx, cy, 0),
+                radius=r,
+                start_angle=dxf_start,
+                end_angle=dxf_end,
+                dxfattribs=attribs,
+            )
+
+        elif kind == 'line':
+            _, x0, y0, x1, y1 = seg
+            _add_line(msp, (x0, y0), (x1, y1), attribs)
 
 
 def _seg_to_dxf(seg):
@@ -152,23 +201,12 @@ def generate_dxf(
     if key not in PULLEY_SPECS:
         raise ValueError(f"Unknown profile key '{key}' for {family} / {pitch}")
 
-    spec      = PULLEY_SPECS[key]
-    pitch_val = spec['pitch']
+    # ── Shared segment geometry ──────────────────────────────────────────────
+    segs, R_OD, _edge_a, wrapped = pulley_outline_segments(
+        family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
+    )
 
-    clearance_mm   = max(-pitch_val, min(clearance_mm,   pitch_val))
-    backlash_mm    = max(-pitch_val, min(backlash_mm,    pitch_val))
-    print_extra_mm = max(0.0,        min(print_extra_mm, pitch_val))
-
-    container    = generate_profile_groove(family, key, num_teeth,
-                                           clearance_mm, print_extra_mm, backlash_mm)
-    groove_prims = container.primitives[1:-1]
-    groove_pts   = _build_groove_points(groove_prims, family)
-    wrapped, R_OD, edge_a = wrap_groove_to_pulley(groove_pts, spec,
-                                                   num_teeth, print_extra_mm)
-
-    t_ang = 2.0 * math.pi / num_teeth
-
-    # ── DXF document ────────────────────────────────────────────────────────
+    # ── DXF document ─────────────────────────────────────────────────────────
     doc = ezdxf.new('R2010')
     doc.header['$INSUNITS'] = 4          # 4 = millimetres
     doc.header['$MEASUREMENT'] = 1       # 1 = metric
@@ -181,53 +219,8 @@ def generate_dxf(
 
     prof = {'layer': 'PROFILE'}
 
-    # ── Pulley profile ───────────────────────────────────────────────────────
-    # Walk the same sequence the SVG exporter does:
-    #   for each tooth:
-    #     [LINE from prev OD-arc-end → groove start]   (implicit SVG 'L')
-    #     LINEs through groove points
-    #     ARC  from groove end → next OD-arc-end  (SVG 'A', sweep CW)
-    #   closing LINE from last OD-arc-end → first groove start  (SVG 'Z')
-
-    first_groove_start = None   # used to close the profile at the end
-    prev_od_end        = None   # OD-arc endpoint of the previous tooth
-
-    for i in range(num_teeth):
-        th        = i * t_ang
-        tooth_pts = [_rot(gx, gy, th) for gx, gy in wrapped]
-
-        # OD-arc end for this tooth (start of next tooth's land)
-        a_end  = th + t_ang - edge_a
-        od_end = (R_OD * math.sin(a_end), R_OD * math.cos(a_end))
-
-        # Connection: previous OD-arc-end → this groove start
-        if i == 0:
-            first_groove_start = tooth_pts[0]
-        else:
-            _add_line(msp, prev_od_end, tooth_pts[0], prof)
-
-        # Tooth groove: straight line segments between sampled points
-        for j in range(len(tooth_pts) - 1):
-            _add_line(msp, tooth_pts[j], tooth_pts[j + 1], prof)
-
-        # OD arc from groove end to od_end — arc is CW in standard math.
-        # DXF arcs are CCW, so swap start / end angles.
-        last_pt = tooth_pts[-1]
-        start_ang = _math_angle(*od_end)    # CCW start  = CW destination
-        end_ang   = _math_angle(*last_pt)   # CCW end    = CW origin
-
-        msp.add_arc(
-            center=(0.0, 0.0, 0.0),
-            radius=R_OD,
-            start_angle=start_ang,
-            end_angle=end_ang,
-            dxfattribs=prof,
-        )
-
-        prev_od_end = od_end
-
-    # Close: last OD-arc-end → first groove start  (SVG Z)
-    _add_line(msp, prev_od_end, first_groove_start, prof)
+    # ── Pulley profile — SPLINE per tooth groove + ARC per OD land ───────────
+    _segs_to_dxf(msp, segs, prof)
 
     # ── Bore circle ─────────────────────────────────────────────────────────
     if bore_mm > 0:
@@ -333,26 +326,44 @@ def generate_belt_dxf_dual(
     """
     DXF export of the two-pulley belt layout.
     Exports:
-      BELT_BACK   — outer belt surface polyline
-      BELT_TEETH  — inner toothed surface polyline
-    Both closed. Geometry centred so pulley 1 is at x_offset (left), pulley 2 at right.
+      BELT_BACK   — outer belt surface: true LINE + ARC entities
+      BELT_TEETH  — inner toothed surface: true SPLINE entities (one per tooth)
+    Geometry centred so pulley 1 is at x_offset (left), pulley 2 at right.
     """
-    from geometry.pulley_geometry import PULLEY_SPECS, PROFILE_KEY_PREFIX
-    key  = PROFILE_KEY_PREFIX.get(family, '') + pitch
-    spec = PULLEY_SPECS[key]
+    key      = PROFILE_KEY_PREFIX.get(family, '') + pitch
+    spec     = PULLEY_SPECS[key]
     pitch_val = spec['pitch']
 
     R_pitch1 = num_teeth1 * pitch_val / (2.0 * math.pi)
     R_pitch2 = num_teeth2 * pitch_val / (2.0 * math.pi)
-    min_c = R_pitch1 + R_pitch2
-    center_dist_mm = max(center_dist_mm, min_c)
+    center_dist_mm = max(center_dist_mm, R_pitch1 + R_pitch2)
 
+    # Centre the belt around x=0 (left pulley at -C/2, right at +C/2)
     cx1 = -center_dist_mm / 2.0
 
-    belt_ring, tooth_polys, _phi_l, _phi_r = build_two_pulley_belt(
-        family, pitch, num_teeth1, num_teeth2,
-        center_dist_mm, x_offset=cx1,
+    # Get segments from the shared geometry layer, then shift by cx1 so that
+    # the belt is centred in the drawing (belt_outline_segments places the
+    # left pulley at x=0; we want it at x=cx1).
+    outer_segs, inner_segs, _n_belt, _spec, C = belt_outline_segments(
+        family, pitch, num_teeth1, num_teeth2, center_dist_mm
     )
+
+    def _shift_seg(seg):
+        """Translate a segment by cx1 in X (Y unchanged)."""
+        kind = seg[0]
+        if kind == 'line':
+            _, x0, y0, x1, y1 = seg
+            return ('line', x0 + cx1, y0, x1 + cx1, y1)
+        elif kind == 'arc':
+            _, cxx, cy, r, (sx, sy), (mx, my), (ex, ey) = seg
+            return ('arc', cxx + cx1, cy, r,
+                    (sx + cx1, sy), (mx + cx1, my), (ex + cx1, ey))
+        else:  # spline
+            _, pts = seg
+            return ('spline', [(x + cx1, y) for x, y in pts])
+
+    outer_shifted = [_shift_seg(s) for s in outer_segs]
+    inner_shifted = [_shift_seg(s) for s in inner_segs]
 
     doc = ezdxf.new('R2010')
     doc.header['$INSUNITS'] = 4
@@ -361,17 +372,7 @@ def generate_belt_dxf_dual(
     doc.layers.new('BELT_BACK',  dxfattribs={'color': 5, 'linetype': 'Continuous'})
     doc.layers.new('BELT_TEETH', dxfattribs={'color': 3, 'linetype': 'Continuous'})
 
-    if belt_ring:
-        msp.add_lwpolyline(
-            [(x, y) for x, y in belt_ring],
-            format='xy', close=True,
-            dxfattribs={'layer': 'BELT_BACK'},
-        )
-    for tp in tooth_polys:
-        msp.add_lwpolyline(
-            [(x, y) for x, y in tp],
-            format='xy', close=True,
-            dxfattribs={'layer': 'BELT_TEETH'},
-        )
+    _segs_to_dxf(msp, outer_shifted, {'layer': 'BELT_BACK'})
+    _segs_to_dxf(msp, inner_shifted, {'layer': 'BELT_TEETH'})
 
     return _serialise_dxf(doc)

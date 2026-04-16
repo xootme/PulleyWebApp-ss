@@ -2149,3 +2149,190 @@ def wrap_groove_to_pulley(groove_points, spec, num_teeth, print_extra=0.0):
     edge_a    = abs(groove_points[-1][0] / R_pitch)
     return wrapped, R_OD_phys, edge_a
 
+
+# ── Shared outline-segment API ────────────────────────────────────────────────
+# Provides a format-neutral description of pulley and belt geometry that STEP,
+# DXF, and STL exporters consume instead of each duplicating the same math.
+#
+# Segment types (all coordinates in compass convention: x = r·sin θ, y = r·cos θ):
+#
+#   ('spline', [(x, y), ...])
+#       Interpolating B-spline through every listed point.
+#       Used for tooth grooves.  Endpoints are snapped to the exact OD circle
+#       so they join neighbouring arcs with zero floating-point gap.
+#
+#   ('arc', cx, cy, r, (sx, sy), (mx, my), (ex, ey))
+#       Circular arc, traversed CW (compass-clockwise), defined by three points
+#       that all lie on the circle of radius r centred at (cx, cy).
+#       (sx,sy) = start,  (mx,my) = mid-arc,  (ex,ey) = end.
+#       The three-point form is unambiguous (no angle-wrapping edge cases) and
+#       maps directly to CadQuery's threePointArc and ezdxf's add_arc.
+#
+#   ('line', x0, y0, x1, y1)
+#       Straight line from (x0,y0) to (x1,y1).  Used for belt tangent runs.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+def pulley_outline_segments(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    clearance_mm: float = 0.0,
+    backlash_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+) -> tuple:
+    """
+    Return the closed pulley-outline as a list of typed segments plus metadata.
+
+    The segments form one complete closed loop:
+    for each tooth i → ('spline', groove_pts)  then  ('arc', OD-land)
+
+    Returns
+    -------
+    segments     : list of typed tuples  (spline / arc, see module docstring)
+    R_OD         : float — outer radius (mm)
+    edge_a       : float — half-angle (rad) of the OD land between adjacent grooves
+    wrapped      : list[(x,y)] — single-tooth groove points (kept for STL/Shapely)
+    """
+    key  = PROFILE_KEY_PREFIX.get(family, '') + pitch
+    spec = PULLEY_SPECS[key]
+    pv   = spec['pitch']
+    cl   = max(-pv, min(clearance_mm,   pv))
+    bl   = max(-pv, min(backlash_mm,    pv))
+    ex   = max(0.0, min(print_extra_mm, pv))
+
+    container    = generate_profile_groove(family, key, num_teeth, cl, ex, bl)
+    groove_prims = container.primitives[1:-1]
+    groove_pts   = _build_groove_points(groove_prims, family)
+    wrapped, R_OD, edge_a = wrap_groove_to_pulley(groove_pts, spec, num_teeth, ex)
+
+    t_ang = 2.0 * math.pi / num_teeth
+
+    def _rot(x, y, th):
+        c, s = math.cos(th), math.sin(th)
+        return x * c + y * s, -x * s + y * c
+
+    segments: List = []
+    for i in range(num_teeth):
+        th        = i * t_ang
+        tooth_pts = [_rot(gx, gy, th) for gx, gy in wrapped]
+
+        # Snap OD endpoints to exact circle — prevents floating-point gaps at
+        # every spline↔arc junction, which would make STEP wire-build fail.
+        a_gs = i * t_ang - edge_a   # compass start angle of this groove
+        a_ge = i * t_ang + edge_a   # compass end   angle of this groove
+        tooth_pts[0]  = (R_OD * math.sin(a_gs), R_OD * math.cos(a_gs))
+        tooth_pts[-1] = (R_OD * math.sin(a_ge), R_OD * math.cos(a_ge))
+
+        segments.append(('spline', tooth_pts))
+
+        # OD land arc: compass-CW from groove end → next groove start
+        a_arc_end = (i + 1) * t_ang - edge_a
+        if a_arc_end - a_ge > 1e-6:
+            a_mid = (a_ge + a_arc_end) / 2.0
+            sx, sy = R_OD * math.sin(a_ge),      R_OD * math.cos(a_ge)
+            mx, my = R_OD * math.sin(a_mid),     R_OD * math.cos(a_mid)
+            ex_, ey = R_OD * math.sin(a_arc_end), R_OD * math.cos(a_arc_end)
+            segments.append(('arc', 0.0, 0.0, R_OD, (sx, sy), (mx, my), (ex_, ey)))
+
+    return segments, R_OD, edge_a, wrapped
+
+
+def belt_outline_segments(
+    family: str,
+    pitch: str,
+    num_teeth_left: int,
+    num_teeth_right: int,
+    center_dist_mm: float,
+) -> tuple:
+    """
+    Return typed segments describing the outer back surface and inner tooth
+    surface of a two-pulley belt.
+
+    Left pulley at x=0, right pulley at x=C.
+
+    Returns
+    -------
+    outer_segs : list of ('line',...) and ('arc',...) segments — back surface
+    inner_segs : list of ('spline', pts) — one per belt tooth
+    n_belt     : int   — number of teeth on the belt
+    belt_spec  : dict  — belt dimension dict (pitch, aa, ht, hs, …)
+    C          : float — actual centre distance used (mm)
+    """
+    if family not in BELT_FAMILIES:
+        raise ValueError(f"No belt data for family '{family}'")
+
+    # ── belt spec lookup ──────────────────────────────────────────────────────
+    if family == 'HTD':
+        belt_spec = H_BELT_SPECS['H' + pitch]
+    elif family == 'GT':
+        belt_spec = G_BELT_SPECS['G' + pitch]
+    elif family == 'RPP':
+        belt_spec = R_BELT_SPECS['R' + pitch]
+    elif family == 'T':
+        belt_spec = T_BELT_SPECS[pitch]
+    elif family == 'AT':
+        belt_spec = AT_BELT_SPECS[pitch]
+    elif family == 'Imperial':
+        belt_spec = IMPERIAL_BELT_SPECS[pitch]
+    else:   # STD
+        belt_spec = S_BELT_SPECS['S' + pitch]
+
+    p_mm = belt_spec['pitch']
+    aa   = belt_spec['aa']
+    ht   = belt_spec['ht']
+    hs   = belt_spec['hs']
+
+    # ── pulley geometry ───────────────────────────────────────────────────────
+    R_left  = num_teeth_left  * p_mm / (2.0 * math.pi)
+    R_right = num_teeth_right * p_mm / (2.0 * math.pi)
+    C       = max(float(center_dist_mm), R_right + R_left)
+    alpha   = math.asin(max(-1.0, min(1.0, (R_right - R_left) / C)))
+
+    offset_back  = hs - ht - aa          # pitch-line to belt-back offset
+    R_back_left  = R_left  + offset_back
+    R_back_right = R_right + offset_back
+
+    # ── back-surface corner points (compass coords) ───────────────────────────
+    BL_top = (-R_back_left  * math.sin(alpha),  R_back_left  * math.cos(alpha))
+    BR_top = (C - R_back_right * math.sin(alpha),  R_back_right * math.cos(alpha))
+    BR_bot = (C - R_back_right * math.sin(alpha), -R_back_right * math.cos(alpha))
+    BL_bot = (-R_back_left  * math.sin(alpha), -R_back_left  * math.cos(alpha))
+
+    # Midpoints of the two back-surface arcs: rightmost and leftmost points
+    mid_right = (C + R_back_right, 0.0)
+    mid_left  = (-R_back_left,     0.0)
+
+    # ── outer segments: CW loop — line, arc(right), line, arc(left) ───────────
+    outer_segs: List = [
+        ('line', BL_top[0], BL_top[1], BR_top[0], BR_top[1]),
+        ('arc',  C, 0.0, R_back_right, BR_top, mid_right, BR_bot),
+        ('line', BR_bot[0], BR_bot[1], BL_bot[0], BL_bot[1]),
+        ('arc',  0.0, 0.0, R_back_left, BL_bot, mid_left, BL_top),
+    ]
+
+    # ── inner tooth segments (one spline per belt tooth) ─────────────────────
+    belt_ring_poly, tooth_polys, _phi_l, _phi_r = build_two_pulley_belt(
+        family, pitch, num_teeth_left, num_teeth_right, center_dist_mm
+    )
+    if not tooth_polys:
+        return outer_segs, [], 0, belt_spec, C
+
+    inner_pts = tooth_polys[0]
+
+    # Derive n_belt from geometry (same formula as build_two_pulley_belt)
+    s_tangent   = C * math.cos(alpha)
+    sweep_right = math.pi + 2.0 * alpha
+    sweep_left  = math.pi - 2.0 * alpha
+    total_belt  = 2.0 * s_tangent + R_right * sweep_right + R_left * sweep_left
+    n_belt      = max(1, round(total_belt / p_mm))
+
+    N = (len(inner_pts) - 1) // n_belt + 1   # points per tooth inc. shared endpoints
+
+    inner_segs: List = []
+    for k in range(n_belt):
+        tooth_pts = inner_pts[k * (N - 1): k * (N - 1) + N]
+        inner_segs.append(('spline', tooth_pts))
+
+    return outer_segs, inner_segs, n_belt, belt_spec, C
+

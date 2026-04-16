@@ -26,6 +26,7 @@ from geometry.pulley_geometry import (
     generate_profile_groove, _build_groove_points,
     wrap_groove_to_pulley, PULLEY_SPECS, PROFILE_KEY_PREFIX,
     build_two_pulley_belt, BELT_FAMILIES,
+    pulley_outline_segments, belt_outline_segments,
 )
 from shapely.affinity import rotate as shapely_rotate
 
@@ -72,6 +73,54 @@ def _d_bore_polygon(R_bore: float, flat_depth_mm: float, sections: int = 64) -> 
 
 def _profile_key(family: str, pitch: str) -> str:
     return PROFILE_KEY_PREFIX.get(family, '') + pitch
+
+
+def _segs_to_cq_sketch(segments, base_wp, inner_r=None):
+    """
+    Translate a pulley_outline_segments() or belt_outline_segments() segment
+    list into a CadQuery sketch on *base_wp*.
+
+    Segment types handled:
+      ('spline', [(x,y), ...])                   → wp.spline(..., includeCurrent=True)
+      ('arc', cx,cy,r, (sx,sy),(mx,my),(ex,ey)) → wp.threePointArc((mx,my),(ex,ey))
+      ('line', x0,y0, x1,y1)                    → wp.lineTo(x1, y1)
+
+    The first spline's first point is used as the moveTo start.
+    After all segments, wp.close() seals the wire.
+    If inner_r is given, a concentric bore circle is added (for pulley sketches).
+
+    All coordinates are in compass convention (x = r·sin θ, y = r·cos θ),
+    which is the same frame CadQuery uses (XY plane, Y-up).
+    """
+    # Find the start point — first point of the first spline or line
+    first = segments[0]
+    if first[0] == 'spline':
+        sx0, sy0 = first[1][0]
+    elif first[0] == 'line':
+        sx0, sy0 = first[1], first[2]
+    else:   # arc — start is the 'start' point tuple
+        sx0, sy0 = first[4]
+
+    wp = base_wp.moveTo(sx0, sy0)
+
+    for seg in segments:
+        kind = seg[0]
+        if kind == 'spline':
+            _, pts = seg
+            # includeCurrent=True: start from current wp position (= pts[0]),
+            # so the spline connects to the previous arc with zero gap.
+            wp = wp.spline(pts[1:], includeCurrent=True)
+        elif kind == 'arc':
+            _, _cx, _cy, _r, _start, mid, end = seg
+            wp = wp.threePointArc(mid, end)
+        elif kind == 'line':
+            _, _x0, _y0, x1, y1 = seg
+            wp = wp.lineTo(x1, y1)
+
+    sketch = wp.close()
+    if inner_r is not None:
+        sketch = sketch.circle(inner_r)
+    return sketch
 
 
 def _build_outline_points(family, pitch, num_teeth,
@@ -521,123 +570,26 @@ def generate_pulley_step(
     import cadquery as cq
     import tempfile, os
 
-    # ── 2D tooth profile data ─────────────────────────────────────────────────
-    _key  = _profile_key(family, pitch)
-    _spec = PULLEY_SPECS[_key]
-    _pv   = _spec['pitch']
-    _cl   = max(-_pv, min(clearance_mm,   _pv))
-    _bl   = max(-_pv, min(backlash_mm,    _pv))
-    _ex   = max(0.0,  min(print_extra_mm, _pv))
-
-    _container    = generate_profile_groove(family, _key, num_teeth, _cl, _ex, _bl)
-    _groove_prims = _container.primitives[1:-1]
-    _groove_pts   = _build_groove_points(_groove_prims, family)   # 15 pts/arc
-    _wrapped, _R_OD, _edge_a = wrap_groove_to_pulley(_groove_pts, _spec, num_teeth, _ex)
-    _t_ang = 2.0 * math.pi / num_teeth
-    _R_tr  = min(math.hypot(x, y) for x, y in _wrapped)  # tooth-root radius
-
-    def _rot(x, y, theta):
-        c, s = math.cos(theta), math.sin(theta)
-        return x * c + y * s, -x * s + y * c
+    # ── 2D tooth profile data (via shared segment API) ────────────────────────
+    _segs, _R_OD, _edge_a, _wrapped = pulley_outline_segments(
+        family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
+    )
+    _R_tr = min(math.hypot(x, y) for x, y in _wrapped)   # tooth-root radius
 
     def _tooth_spline_sketch(base_wp, inner_r=None):
-        """
-        Per-tooth B-spline + threePointArc OD lands.
+        """Translate shared outline segments into a CadQuery sketch."""
+        return _segs_to_cq_sketch(_segs, base_wp, inner_r=inner_r)
 
-        Each groove spline's first and last point is snapped to the exact OD
-        circle position derived from _edge_a.  This guarantees zero-gap
-        junctions at every spline-arc transition and a gap-free wire close,
-        preventing the OCCT 'BRep_API command not done' error.
-        """
-        # Tooth 0 starts at exact OD position at angle -_edge_a
-        sx0 = _R_OD * math.sin(-_edge_a)
-        sy0 = _R_OD * math.cos(-_edge_a)
-        wp = base_wp.moveTo(sx0, sy0)
-
-        for i in range(num_teeth):
-            th = i * _t_ang
-            tooth_pts = [_rot(gx, gy, th) for gx, gy in _wrapped]
-
-            # Snap endpoints to exact OD circle — eliminates floating-point gaps
-            # at every spline↔arc junction and at the final close().
-            a_gs = i * _t_ang - _edge_a   # groove start angle
-            a_ge = i * _t_ang + _edge_a   # groove end angle
-            tooth_pts[0]  = (_R_OD * math.sin(a_gs), _R_OD * math.cos(a_gs))
-            tooth_pts[-1] = (_R_OD * math.sin(a_ge), _R_OD * math.cos(a_ge))
-
-            # B-spline from current pos (= tooth_pts[0]) through the groove.
-            # includeCurrent=True tells CadQuery to start the spline at the
-            # current workplane position rather than at tooth_pts[0], which
-            # ensures the edge connects to the previous OD arc with no gap.
-            wp = wp.spline(tooth_pts[1:], includeCurrent=True)
-
-            # Exact circular arc for the OD land to the next groove
-            a_arc_end = (i + 1) * _t_ang - _edge_a
-            arc_span  = a_arc_end - a_ge
-            if arc_span > 1e-6:
-                a_mid = (a_ge + a_arc_end) / 2.0
-                mx = _R_OD * math.sin(a_mid);   my = _R_OD * math.cos(a_mid)
-                ex = _R_OD * math.sin(a_arc_end); ey = _R_OD * math.cos(a_arc_end)
-                wp = wp.threePointArc((mx, my), (ex, ey))
-
-        sketch = wp.close()
-        if inner_r is not None:
-            sketch = sketch.circle(inner_r)
-        return sketch
-
-    if spoke_count > 0 and spoke_width_mm > 0.0:
-        from exporters.png_exporter import _spoke_void_segments
-
-        spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
-        pocket_depth = (belt_height_mm - spk_h) / 2.0
-
-        _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
-        _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
-
-        # 1. Hub Cylinder (Full Height)
-        hub = cq.Workplane('XY').circle(_R_hub_s).extrude(belt_height_mm)
-
-        # 2. Rim (Full Height) — spline tooth profile with inner circle cutout
-        rim = _tooth_spline_sketch(cq.Workplane('XY'), inner_r=_R_rim_s).extrude(belt_height_mm)
-
-        # 3. Spoke Web (Partial Height) — voids cut separately below
-        web = _tooth_spline_sketch(
-            cq.Workplane('XY').workplane(offset=pocket_depth)
-        ).extrude(spk_h)
-
-        gaps_segs = _spoke_void_segments(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
-                                         fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm)
-        for segs in gaps_segs:
-            if not segs:
-                continue
-            s0 = segs[0]
-            if s0[0] == 'arc':
-                _, cx0, cy0, r0, a10, _ = s0
-                sx, sy = cx0 + r0 * math.cos(a10), cy0 + r0 * math.sin(a10)
-            else:
-                sx, sy = s0[1], s0[2]
-            wp2 = web.faces(">Z").workplane().moveTo(sx, sy)
-            for seg in segs:
-                if seg[0] == 'arc':
-                    _, cx, cy, r, a1, a2 = seg
-                    diff = (a2 - a1) % (2 * math.pi)
-                    if diff > math.pi:
-                        diff -= 2 * math.pi
-                    a_mid = a1 + diff / 2.0
-                    mx = cx + r * math.cos(a_mid);  my = cy + r * math.sin(a_mid)
-                    ex = cx + r * math.cos(a2);      ey = cy + r * math.sin(a2)
-                    wp2 = wp2.threePointArc((mx, my), (ex, ey))
-                else:
-                    _, x1, y1, x2, y2 = seg
-                    wp2 = wp2.lineTo(x2, y2)
-            web = wp2.close().cutThruAll()
-
-        result = hub.union(rim).union(web)
-    else:
-        result = _tooth_spline_sketch(cq.Workplane('XY')).extrude(belt_height_mm)
-
-    # ── Hub pre-calculations (mirrors _add_hub_and_bore logic) ───────────────
-    R_bore    = bore_mm / 2.0
+    # ── Hub pre-calculations (MUST be before any extrusion) ─────────────────
+    R_bore = bore_mm / 2.0
+    if hub_height_mm <= 0.0 and hub_od_mm > bore_mm and screw_dia_mm > 0.0 and screw_count > 0:
+        if captured_nut:
+            _waf_pre, _t_pre = _nut_dims(screw_dia_mm)
+            _pkt_y_pre = _waf_pre + 0.5
+            _R_pkt_pre = _pkt_y_pre / math.sqrt(3)
+            hub_height_mm = max(2.0 * _R_pkt_pre, 4.0)
+        else:
+            hub_height_mm = max(screw_dia_mm * 1.5, 4.0)
     hub_valid = hub_height_mm > 0.0 and hub_od_mm > bore_mm
     R_hub     = hub_od_mm / 2.0 if hub_valid else 0.0
     do_screws = hub_valid and screw_dia_mm > 0.0 and screw_count > 0
@@ -648,15 +600,15 @@ def generate_pulley_step(
         pkt_y     = waf + 0.5
         pkt_x     = t_nut + 0.5
         R_pkt     = pkt_y / math.sqrt(3)
-        pkt_depth = 2.0 * R_pkt
-        if hub_height_mm < pkt_depth:
-            hub_height_mm = pkt_depth
+        pkt_depth_nut = 2.0 * R_pkt
+        if hub_height_mm < pkt_depth_nut:
+            hub_height_mm = pkt_depth_nut
         min_hub_r  = R_bore + 3.0 * t_nut
         need_oblong = R_hub < min_hub_r
         eff_r = max(R_hub, min_hub_r)
         step  = math.pi
     else:
-        waf = t_nut = R_circ = pkt_y = pkt_x = R_pkt = pkt_depth = 0.0
+        waf = t_nut = R_circ = pkt_y = pkt_x = R_pkt = pkt_depth_nut = 0.0
         min_hub_r   = 0.0
         need_oblong = False
         eff_r = R_hub
@@ -664,106 +616,141 @@ def generate_pulley_step(
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
     hub_top      = belt_height_mm + hub_height_mm
-    total_height = belt_height_mm
+    total_height = hub_top if hub_valid else belt_height_mm
 
-    # ── Hub boss ──────────────────────────────────────────────────────────────
+    # ── Spoke pre-calculations ────────────────────────────────────────────────
+    has_spokes = spoke_count > 0 and spoke_width_mm > 0.0
+    if has_spokes:
+        from exporters.png_exporter import _spoke_void_segments, _spoke_void_polygons
+        spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
+        pocket_depth = (belt_height_mm - spk_h) / 2.0
+        _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
+        _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
+
+    # ── 1. Belt solid ─────────────────────────────────────────────────────────
+    # clean=False: CadQuery Issue #192 — cutThruAll / booleans on B-spline tooth
+    # profiles fail during OCCT's shape-healing ("clean") pass.  Disabling it
+    # avoids silently dropped cuts (missing bore hole) and spurious faces.
+    result = _tooth_spline_sketch(cq.Workplane('XY')).extrude(belt_height_mm, clean=False)
+
+    # ── 2. Spoke voids + annular pockets (before hub so top face is unambiguous)
+    if has_spokes:
+        def _dedup(pts, tol=1e-6):
+            out = [pts[0]]
+            for p in pts[1:]:
+                if math.hypot(p[0] - out[-1][0], p[1] - out[-1][1]) > tol:
+                    out.append(p)
+            while len(out) > 2 and math.hypot(out[-1][0]-out[0][0], out[-1][1]-out[0][1]) <= tol:
+                out.pop()
+            return out
+
+        def _cut_spoke_voids_arc(solid):
+            gaps_segs = _spoke_void_segments(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
+                                             fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm)
+            for segs in gaps_segs:
+                if not segs:
+                    continue
+                s0 = segs[0]
+                if s0[0] == 'arc':
+                    _, cx0, cy0, r0, a10, _ = s0
+                    sx, sy = cx0 + r0 * math.cos(a10), cy0 + r0 * math.sin(a10)
+                else:
+                    sx, sy = s0[1], s0[2]
+                wp2 = cq.Workplane('XY').workplane(offset=pocket_depth).moveTo(sx, sy)
+                for seg in segs:
+                    if seg[0] == 'arc':
+                        _, cx, cy, r, a1, a2 = seg
+                        diff = (a2 - a1) % (2 * math.pi)
+                        if diff > math.pi:
+                            diff -= 2 * math.pi
+                        a_mid = a1 + diff / 2.0
+                        mx = cx + r * math.cos(a_mid); my = cy + r * math.sin(a_mid)
+                        ex = cx + r * math.cos(a2);    ey = cy + r * math.sin(a2)
+                        wp2 = wp2.threePointArc((mx, my), (ex, ey))
+                    else:
+                        _, x1, y1, x2, y2 = seg
+                        wp2 = wp2.lineTo(x2, y2)
+                void_solid = wp2.close().extrude(spk_h, clean=False)
+                solid = solid.cut(void_solid, clean=False)
+            return solid
+
+        def _cut_spoke_voids_poly(solid):
+            for ft, fb in [(fillet_tip_mm, fillet_base_mm), (0.0, 0.0)]:
+                try:
+                    voids = _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
+                                                 fillet_tip_mm=ft, fillet_base_mm=fb)
+                    for pts in voids:
+                        pts = _dedup(pts)
+                        if len(pts) < 3:
+                            continue
+                        void_solid = (cq.Workplane('XY')
+                                      .workplane(offset=pocket_depth)
+                                      .polyline(pts).close().extrude(spk_h, clean=False))
+                        solid = solid.cut(void_solid, clean=False)
+                    return solid
+                except Exception:
+                    continue
+            return solid
+
+        try:
+            result = _cut_spoke_voids_arc(result)
+        except Exception:
+            result = _cut_spoke_voids_poly(result)
+
+        if pocket_depth > 1e-3:
+            annulus_slab = (cq.Workplane('XY')
+                            .circle(_R_rim_s).circle(_R_hub_s)
+                            .extrude(pocket_depth, clean=False))
+            result = result.cut(annulus_slab, clean=False)
+            result = result.cut(annulus_slab.translate(
+                (0.0, 0.0, spk_h + pocket_depth)), clean=False)
+
+    # ── 3. Hub boss: extrude directly from the top face ──────────────────────
+    #    faces(">Z").workplane() + extrude() is CadQuery's native "boss" pattern.
+    #    OCCT treats it as one continuous solid — no boolean union, no seam.
     if hub_valid:
+        hub_wp = result.faces(">Z").workplane()
         if captured_nut and need_oblong:
-            # Oblong = union of circles all radius R_hub.
-            # Boundary is entirely circular arcs — build directly with threePointArc.
-            # offset = distance between the base circle centre and each lobe centre.
             _ob_off = min_hub_r - R_hub
-            _ob_wp  = cq.Workplane('XY').workplane(offset=belt_height_mm)
-            _ob_ok  = False
-
-            if _ob_off < 2.0 * R_hub - 1e-6:
-                _y_h = math.sqrt(max(0.0, R_hub**2 - (_ob_off / 2.0)**2))
-
-                if len(screw_angles) == 2:
-                    # 3-circle symmetric oblong (screws at 0 and π):
-                    # 4 arcs: right lobe | C0 top bridge | left lobe | C0 bottom bridge
-                    P_rb = ( _ob_off / 2.0, -_y_h)   # right-bottom junction
-                    P_rt = ( _ob_off / 2.0,  _y_h)   # right-top    junction
-                    P_lt = (-_ob_off / 2.0,  _y_h)   # left-top     junction
-                    P_lb = (-_ob_off / 2.0, -_y_h)   # left-bottom  junction
-                    m_r  = ( _ob_off + R_hub, 0.0)   # rightmost of C1
-                    m_t  = (0.0,              R_hub)  # topmost  of C0
-                    m_l  = (-_ob_off - R_hub, 0.0)   # leftmost of C2
-                    m_b  = (0.0,             -R_hub)  # bottommost of C0
-                    hub_boss = (_ob_wp
-                                .moveTo(*P_rb)
-                                .threePointArc(m_r, P_rt)   # right lobe
-                                .threePointArc(m_t, P_lt)   # top bridge
-                                .threePointArc(m_l, P_lb)   # left lobe
-                                .threePointArc(m_b, P_rb)   # bottom bridge
-                                .close()
-                                .extrude(hub_height_mm))
-                    _ob_ok = True
-
-                elif len(screw_angles) == 1:
-                    # 2-circle oblong (1 screw / keyway case, lobe at angle 0):
-                    # 2 arcs: right lobe | left half of C0
-                    P_top = (_ob_off / 2.0,  _y_h)
-                    P_bot = (_ob_off / 2.0, -_y_h)
-                    m_r   = (_ob_off + R_hub, 0.0)
-                    m_l   = (-R_hub,          0.0)
-                    hub_boss = (_ob_wp
-                                .moveTo(*P_bot)
-                                .threePointArc(m_r, P_top)  # right lobe (C1)
-                                .threePointArc(m_l, P_bot)  # left arc   (C0)
-                                .close()
-                                .extrude(hub_height_mm))
-                    _ob_ok = True
-
-            if not _ob_ok:
-                # Fallback: circles too far apart — use Shapely polyline
-                hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
-                for angle in screw_angles:
-                    hub_poly = hub_poly.union(
-                        ShapelyPoint(_ob_off * math.cos(angle),
-                                     _ob_off * math.sin(angle)).buffer(
-                            R_hub, resolution=_BORE_SECTIONS))
-                hub_pts  = list(hub_poly.exterior.coords[:-1])
-                hub_boss = (_ob_wp.polyline(hub_pts).close().extrude(hub_height_mm))
+            hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
+            for angle in screw_angles:
+                hub_poly = hub_poly.union(
+                    ShapelyPoint(_ob_off * math.cos(angle),
+                                 _ob_off * math.sin(angle)).buffer(
+                        R_hub, resolution=_BORE_SECTIONS))
+            hub_pts = list(hub_poly.exterior.coords[:-1])
+            result = hub_wp.polyline(hub_pts).close().extrude(hub_height_mm, clean=False)
         else:
-            hub_boss = (cq.Workplane('XY')
-                        .workplane(offset=belt_height_mm)
-                        .circle(R_hub)
-                        .extrude(hub_height_mm))
-        result       = result.union(hub_boss)
-        total_height = hub_top
+            result = hub_wp.circle(R_hub).extrude(hub_height_mm, clean=False)
 
-    # ── Bore (round or D-shaped) ──────────────────────────────────────────────
+    # ── 4. Bore: explicit solid cut (more reliable than cutThruAll on splines) ─
     if R_bore > 0.5:
         extra  = 0.5
         bore_h = total_height + extra * 2
         if flat_depth_mm > 0.0:
-            # Extrude the D-shaped polygon as the bore solid to cut away
             d_poly = _d_bore_polygon(R_bore, flat_depth_mm, sections=_BORE_SECTIONS)
             d_poly = shapely_orient(d_poly, sign=1.0)
-            d_pts  = list(d_poly.exterior.coords[:-1])   # drop repeated closing point
+            d_pts  = list(d_poly.exterior.coords[:-1])
             bore_solid = (cq.Workplane('XY')
-                          .polyline(d_pts)
-                          .close()
-                          .extrude(bore_h)
+                          .polyline(d_pts).close()
+                          .extrude(bore_h, clean=False)
                           .translate((0.0, 0.0, -extra)))
         else:
             bore_solid = (cq.Workplane('XY')
                           .circle(R_bore)
-                          .extrude(bore_h)
+                          .extrude(bore_h, clean=False)
                           .translate((0.0, 0.0, -extra)))
-        result = result.cut(bore_solid)
+        result = result.cut(bore_solid, clean=False)
 
-    # ── Keyway slot ───────────────────────────────────────────────────────────
+    # ── 5. Keyway slot ────────────────────────────────────────────────────────
     if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5:
         kw_depth = keyway_h_mm
         kw_box = (cq.Workplane('XY')
-                  .box(kw_depth + 1.0, keyway_w_mm, total_height + 1.0)
+                  .box(kw_depth + 1.0, keyway_w_mm, total_height + 1.0, clean=False)
                   .translate((R_bore + kw_depth / 2.0, 0.0, total_height / 2.0)))
-        result = result.cut(kw_box)
+        result = result.cut(kw_box, clean=False)
 
-    # ── Set-screw holes + nut pockets ─────────────────────────────────────────
-    # Keyway: screw at angle=0, nut pocket against keyway slot outer face.
+    # ── 6. Set-screw holes + nut pockets ──────────────────────────────────────
     if keyway_h_mm > 0.0 and do_screws:
         screw_angles = [0.0]
 
@@ -773,7 +760,6 @@ def generate_pulley_step(
         if captured_nut:
             z_screw = hub_top - R_circ
             if keyway_h_mm > 0.0:
-                # Nut pocket inner face sits against the keyway slot outer face
                 kw_face  = R_bore + keyway_h_mm
                 hole_len = eff_r - kw_face + 1.0
                 hole_cx  = (eff_r + kw_face) / 2.0
@@ -784,11 +770,12 @@ def generate_pulley_step(
                 pkt_cx   = R_bore
         else:
             z_screw  = belt_height_mm + hub_height_mm / 2.0
-            hole_len = R_hub * 2.0 + 2.0
-            hole_cx  = 0.0
+            # Hole goes from hub OD inward to bore — not through the other side.
+            # +0.5 overshoot on each end so the bore and hub surface cuts are clean.
+            hole_len = R_hub - R_bore + 1.0
+            hole_cx  = (R_hub + R_bore) / 2.0
 
         for angle in screw_angles:
-            # Radial screw hole: cylinder along X, centred at (hole_cx, 0, z_screw)
             x_start = hole_cx - hole_len / 2.0
             hole = (cq.Workplane('YZ')
                     .circle(R_screw)
@@ -796,14 +783,13 @@ def generate_pulley_step(
                     .translate((x_start, 0.0, z_screw)))
             if abs(angle) > 1e-9:
                 hole = hole.rotate((0, 0, 0), (0, 0, 1), math.degrees(angle))
-            result = result.cut(hole)
+            result = result.cut(hole, clean=False)
 
-            # Nut pocket: pentagon in YZ plane, extruded along +X from bore face
             if captured_nut:
                 half_y = pkt_y / 2.0
-                top_z  = hub_top + 1.0          # 1 mm overshoot → clean open top
-                low_z  = hub_top - 1.5 * R_pkt  # lower hex corners
-                tip_z  = hub_top - 2.0 * R_pkt  # bottom V tip
+                top_z  = hub_top + 1.0
+                low_z  = hub_top - 1.5 * R_pkt
+                tip_z  = hub_top - 2.0 * R_pkt
 
                 pkt_pts = [
                     ( half_y, top_z),
@@ -816,10 +802,10 @@ def generate_pulley_step(
                           .workplane(offset=pkt_cx)
                           .polyline(pkt_pts)
                           .close()
-                          .extrude(pkt_x))
+                          .extrude(pkt_x, clean=False))
                 if abs(angle) > 1e-9:
                     pocket = pocket.rotate((0, 0, 0), (0, 0, 1), math.degrees(angle))
-                result = result.cut(pocket)
+                result = result.cut(pocket, clean=False)
 
     # ── Export to File ────────────────────────────────────────────────────────
     ext = '.stl' if export_fmt.upper() == 'STL' else '.step'
@@ -1627,3 +1613,51 @@ def generate_hub_disk_stl(
                               hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
                               captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm)
     return body.export(file_type='stl')
+
+
+def generate_belt_step(
+    family: str,
+    pitch: str,
+    num_teeth_left: int,
+    num_teeth_right: int,
+    center_dist_mm: float,
+    belt_height_mm: float,
+) -> bytes:
+    """
+    Return STEP bytes of a two-pulley belt cross-section.
+
+    Outer (back) surface: two true circular arcs + two straight lines.
+    Inner (tooth) surface: per-tooth B-splines using includeCurrent=True.
+
+    Both surfaces are built from belt_outline_segments() — the same source
+    used by the DXF exporter — so geometry is defined in one place.
+
+    Solid = extruded outer shape minus extruded inner (tooth-cavity) shape.
+    """
+    import cadquery as cq
+    import tempfile, os
+
+    # ── Shared belt geometry ──────────────────────────────────────────────────
+    outer_segs, inner_segs, n_belt, _belt_spec, C = belt_outline_segments(
+        family, pitch, num_teeth_left, num_teeth_right, center_dist_mm
+    )
+    if not inner_segs:
+        raise ValueError(f'Belt geometry not available for {family} {pitch}')
+
+    # ── Outer back-surface solid ──────────────────────────────────────────────
+    outer_solid = _segs_to_cq_sketch(outer_segs, cq.Workplane('XY')).extrude(belt_height_mm)
+
+    # ── Inner toothed-surface solid ───────────────────────────────────────────
+    inner_solid = _segs_to_cq_sketch(inner_segs, cq.Workplane('XY')).extrude(belt_height_mm)
+
+    result = outer_solid.cut(inner_solid)
+
+    # ── Export ────────────────────────────────────────────────────────────────
+    tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
+    tmp.close()
+    try:
+        cq.exporters.export(result, tmp.name)
+        with open(tmp.name, 'rb') as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
