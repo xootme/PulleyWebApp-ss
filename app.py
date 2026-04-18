@@ -6,6 +6,7 @@ import math
 import io
 import os
 import json
+import threading
 from datetime import datetime
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory
 
@@ -13,9 +14,50 @@ from flask import Flask, render_template, request, Response, jsonify, send_from_
 APP_VERSION  = '0.1'
 BUILD_TIME   = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-# ── Bug-report log ────────────────────────────────────────────────────────────
-_LOG_DIR  = os.path.join(os.path.dirname(__file__), 'logs')
-_LOG_FILE = os.path.join(_LOG_DIR, 'bug_reports.log')
+# ── Logs ─────────────────────────────────────────────────────────────────────
+_LOG_DIR             = os.path.join(os.path.dirname(__file__), 'logs')
+_LOG_FILE            = os.path.join(_LOG_DIR, 'bug_reports.log')
+_DOWNLOAD_COUNT_FILE = os.path.join(_LOG_DIR, 'download_count.json')
+_download_lock       = threading.Lock()
+
+
+def _increment_download_count():
+    """Increment the persistent download counter; email at each multiple of 100."""
+    with _download_lock:
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        try:
+            with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
+                count = int(json.load(f).get('count', 0))
+        except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
+            count = 0
+        count += 1
+        with open(_DOWNLOAD_COUNT_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'count': count}, f)
+    if count % 100 == 0:
+        _send_milestone_email(count)
+
+
+def _send_milestone_email(count):
+    """Send a download-milestone notification via SendGrid."""
+    api_key = os.environ.get('SENDGRID_API_KEY', '').strip()
+    if not api_key:
+        return
+    try:
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+        body = (
+            f'The Timing Pulley Generator has reached {count:,} total downloads.\n\n'
+            f'Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n'
+        )
+        message = Mail(
+            from_email='noreply@cheapcadtools.com',
+            to_emails='info@cheapcadtools.com',
+            subject=f'[Pulley Generator] {count:,} downloads milestone!',
+            plain_text_content=body,
+        )
+        SendGridAPIClient(api_key).send(message)
+    except Exception:
+        pass
 
 from geometry.pulley_geometry import (
     PULLEY_SPECS, PROFILE_KEY_PREFIX, PROFILE_PITCHES,
@@ -41,6 +83,14 @@ app = Flask(__name__)
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1, x_host=1)
 # ──────────────────────────────────────────
+
+
+@app.after_request
+def _track_download(response):
+    """Count every successful /download/* response."""
+    if request.path.startswith('/download/') and response.status_code == 200:
+        _increment_download_count()
+    return response
 
 
 # u2500u2500 Reverse-proxy / subfolder support u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
