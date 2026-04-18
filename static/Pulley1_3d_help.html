@@ -141,11 +141,53 @@
 </section>
 
 <section>
+  <h2>Spokes</h2>
+  <div class="field">
+    <div class="field-name">Spokes</div>
+    <div class="field-desc">
+      Enable the <strong>Spokes</strong> section to hollow out the pulley body between the rim ring and the
+      hub boss, replacing solid material with evenly spaced radial spokes. This reduces print time and
+      material usage on large-diameter pulleys.<br><br>
+      <strong>Spoke Count</strong> — number of spokes (2–10).<br>
+      <strong>Hub OD</strong> — outer diameter of the hub boss at the spoke root.<br>
+      <strong>Rim Depth</strong> — radial thickness of the solid outer rim ring that the spokes attach to.<br>
+      <strong>Spoke Width</strong> — tangential width of each spoke at mid-span.<br>
+      <strong>Tip / Base Fillet</strong> — corner radii where the spoke meets the rim ring (tip) and hub boss (base).<br>
+      <strong>Spoke Height</strong> — axial height of the spoke web. Max = belt height.
+    </div>
+    <div class="field-tip">
+      The spoke voids also appear in the 2D SVG and DXF exports as cut profiles for laser or waterjet cutting.
+      Use <em>Gen. Rim Layer</em> to export just the toothed rim ring as a separate 2D file.
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Flanges</h2>
+  <div class="field">
+    <div class="field-name">Flanges</div>
+    <div class="field-desc">
+      Enable the <strong>Flanges</strong> section to add annular plates on the top and bottom faces of the
+      pulley that prevent the belt from riding off axially. Two types are available:<br><br>
+      <strong>Metal</strong> — thin plate with a bent-up outer rim; downloaded as separate upper and lower STL files.<br>
+      <strong>3D Print</strong> — solid wedge profile; the bottom flange is merged into the pulley body.
+      The top flange is optionally a separate part with gluing nubs.<br><br>
+      Click the <strong>ℹ</strong> button next to the Flanges heading for full parameter details.
+    </div>
+    <div class="field-tip">
+      When flanges are enabled, a <em>Download Flanges</em> button appears in the Download card for separate
+      upper- and lower-flange STL files.
+    </div>
+  </div>
+</section>
+
+<section>
   <h2>Download — STL</h2>
   <div class="field">
     <div class="field-name">Download Pulley STL</div>
     <div class="field-desc">
-      Binary STL of the complete 3D pulley solid — toothed body plus any hub boss and retention features.
+      Binary STL of the complete 3D pulley solid — toothed body plus any hub boss, retention features,
+      spokes, and (for 3D-print flanges) the integrated bottom flange.
       Bore subtracted as a through-hole. Exported in millimetres.
       Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly — no CAD import required.
     </div>

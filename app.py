@@ -4,7 +4,18 @@ Serves the pulley generator UI and returns SVG downloads.
 """
 import math
 import io
+import os
+import json
+from datetime import datetime
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory
+
+# ── App version ───────────────────────────────────────────────────────────────
+APP_VERSION  = '0.1'
+BUILD_TIME   = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+# ── Bug-report log ────────────────────────────────────────────────────────────
+_LOG_DIR  = os.path.join(os.path.dirname(__file__), 'logs')
+_LOG_FILE = os.path.join(_LOG_DIR, 'bug_reports.log')
 
 from geometry.pulley_geometry import (
     PULLEY_SPECS, PROFILE_KEY_PREFIX, PROFILE_PITCHES,
@@ -12,14 +23,17 @@ from geometry.pulley_geometry import (
     BELT_FAMILIES,
     correct_center_distance, center_dist_from_belt_teeth,
 )
-from exporters.svg_exporter import generate_svg, generate_svg_dual
+from exporters.svg_exporter import generate_svg, generate_svg_dual, generate_rim_layer_svg
 from exporters.png_exporter import generate_png, generate_png_dual
 from exporters.belt_svg_exporter import generate_belt_svg, generate_belt_png
-from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_belt_dxf_dual
+from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_belt_dxf_dual, generate_rim_layer_dxf
 from exporters.step_exporter import (
     generate_pulley_stl, generate_pulley_stl_preview,
     generate_drive_stl_preview,
-    generate_spoke_layer_stl, generate_rim_ring_stl, generate_hub_disk_stl,
+)
+from exporters.flange_exporter import (
+    generate_3dprint_flange_stl,
+    generate_metal_flange_stl,
 )
 
 app = Flask(__name__)
@@ -96,6 +110,8 @@ def index():
         clearance_presets=CLEARANCE_PRESETS,
         backlash_presets=BACKLASH_PRESETS,
         belt_families=sorted(BELT_FAMILIES),
+        app_version=APP_VERSION,
+        build_time=BUILD_TIME,
     )
 
 
@@ -291,6 +307,95 @@ def download_dxf():
         )
     except Exception as e:
         return f'Error generating DXF: {e}', 400
+
+
+@app.route('/download/svg-rim')
+def download_svg_rim():
+    """Return rim-layer SVG: toothed profile + inner-rim, hub, bore circles."""
+    try:
+        family = request.args.get('family', 'HTD')
+        pitch  = request.args.get('pitch',  '5M')
+        pulley = request.args.get('pulley', '1')
+        pfx    = 'p2_' if pulley == '2' else ''
+        key    = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return f'Unknown profile {family}/{pitch}', 400
+        spec = PULLEY_SPECS[key]
+
+        if pulley == '2':
+            teeth    = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
+            bore_mm  = _get_bore(request.args, 'p2_bore')
+            pr_ex    = float(request.args.get('p2_print_extra', 0.0))
+            cl_preset = request.args.get('p2_clearance_preset', 'STANDARD')
+            bl_preset = request.args.get('p2_backlash_preset',  'STANDARD')
+            cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('p2_clearance_custom', 0.0))
+            bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('p2_backlash_custom',  0.0))
+            _, sp_hub_od, sp_rim, *_ = _parse_spoke_params(request.args, 'p2_')
+            filename = f'{family}-{pitch}-{teeth}T-P2-Rim.svg'
+        else:
+            teeth    = max(spec['min_teeth'], int(request.args.get('teeth', spec['min_teeth'])))
+            bore_mm  = _get_bore(request.args, 'bore')
+            pr_ex    = float(request.args.get('print_extra', 0.0))
+            cl_preset = request.args.get('clearance_preset', 'STANDARD')
+            bl_preset = request.args.get('backlash_preset',  'STANDARD')
+            cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('clearance_custom', 0.0))
+            bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('backlash_custom',  0.0))
+            _, sp_hub_od, sp_rim, *_ = _parse_spoke_params(request.args, '')
+            filename = f'{family}-{pitch}-{teeth}T-Rim.svg'
+
+        svg = generate_rim_layer_svg(
+            family=family, pitch=pitch, num_teeth=teeth,
+            bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
+            print_extra_mm=pr_ex, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
+        )
+        return Response(svg, mimetype='image/svg+xml',
+                        headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except Exception as e:
+        return f'Error generating rim SVG: {e}', 400
+
+
+@app.route('/download/dxf-rim')
+def download_dxf_rim():
+    """Return rim-layer DXF: toothed profile + inner-rim, hub, bore circles."""
+    try:
+        family = request.args.get('family', 'HTD')
+        pitch  = request.args.get('pitch',  '5M')
+        pulley = request.args.get('pulley', '1')
+        key    = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return f'Unknown profile {family}/{pitch}', 400
+        spec = PULLEY_SPECS[key]
+
+        if pulley == '2':
+            teeth    = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
+            bore_mm  = _get_bore(request.args, 'p2_bore')
+            pr_ex    = float(request.args.get('p2_print_extra', 0.0))
+            cl_preset = request.args.get('p2_clearance_preset', 'STANDARD')
+            bl_preset = request.args.get('p2_backlash_preset',  'STANDARD')
+            cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('p2_clearance_custom', 0.0))
+            bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('p2_backlash_custom',  0.0))
+            _, sp_hub_od, sp_rim, *_ = _parse_spoke_params(request.args, 'p2_')
+            filename = f'{family}-{pitch}-{teeth}T-P2-Rim.dxf'
+        else:
+            teeth    = max(spec['min_teeth'], int(request.args.get('teeth', spec['min_teeth'])))
+            bore_mm  = _get_bore(request.args, 'bore')
+            pr_ex    = float(request.args.get('print_extra', 0.0))
+            cl_preset = request.args.get('clearance_preset', 'STANDARD')
+            bl_preset = request.args.get('backlash_preset',  'STANDARD')
+            cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('clearance_custom', 0.0))
+            bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('backlash_custom',  0.0))
+            _, sp_hub_od, sp_rim, *_ = _parse_spoke_params(request.args, '')
+            filename = f'{family}-{pitch}-{teeth}T-Rim.dxf'
+
+        dxf = generate_rim_layer_dxf(
+            family=family, pitch=pitch, num_teeth=teeth,
+            bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
+            print_extra_mm=pr_ex, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
+        )
+        return Response(dxf, mimetype='application/dxf',
+                        headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except Exception as e:
+        return f'Error generating rim DXF: {e}', 400
 
 
 def _build_png_from_request(args, size_px=480):
@@ -611,6 +716,10 @@ def api_preview_stl():
                 _parse_spoke_params(request.args, '')
             sp_en2, sp_hub2, sp_rim2, sp_w2, sp_ft2, sp_fb2, sp_cnt2, sp_h2, sp_split2 = \
                 _parse_spoke_params(request.args, 'p2_')
+            fl1 = _parse_flange_params(request.args, '') \
+                  if request.args.get('flange_enabled') == '1' else None
+            fl2 = _parse_flange_params(request.args, 'p2_') \
+                  if request.args.get('p2_flange_enabled') == '1' else None
             stl = generate_drive_stl_preview(
                 family, pitch,
                 num_teeth1, bore1, num_teeth2, bore2,
@@ -632,6 +741,7 @@ def api_preview_stl():
                 fillet_tip_mm2=sp_ft2, fillet_base_mm2=sp_fb2, rim_depth_mm2=sp_rim2,
                 spoke_height_mm2=sp_h2 if sp_en2 else 0.0,
                 part=part,
+                flange1=fl1, flange2=fl2,
             )
         else:
             pulley = request.args.get('pulley', '1')
@@ -641,13 +751,41 @@ def api_preview_stl():
             sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
                 _parse_spoke_params(request.args, '')
             sp_count = sp_cnt if sp_en else 0
+            # Build socket meshes before generating pulley STL (avoids STL round-trip)
+            _socket_meshes = None
+            _fl_meshes = []
+            if request.args.get('flange_enabled') == '1':
+                import trimesh
+                from exporters.flange_exporter import build_flange_meshes, build_socket_meshes
+                fp = _parse_flange_params(request.args)
+                _fl_meshes = build_flange_meshes(
+                    fp, family, pitch, num_teeth, bore_mm, belt_height,
+                    clearance_mm=cl_mm, print_extra_mm=pr_ex,
+                    hub_od_mm=hub_od, hub_height_mm=hub_h,
+                    spokes_enabled=sp_en, spoke_hub_od_mm=sp_hub,
+                    rim_depth_mm=sp_rim,
+                )
+                if fp.get('nubs_enabled') and fp.get('flange_3dprint') and fp.get('top_separate'):
+                    _socket_meshes = build_socket_meshes(
+                        fp, family, pitch, num_teeth, bore_mm, belt_height,
+                        clearance_mm=cl_mm, print_extra_mm=pr_ex,
+                        hub_od_mm=hub_od, spokes_enabled=sp_en, spoke_hub_od_mm=sp_hub,
+                        rim_depth_mm=sp_rim,
+                    ) or None
             stl = generate_pulley_stl_preview(
                 family, pitch, num_teeth, bore_mm, belt_height,
                 cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
                 spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
                 fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
                 spoke_height_mm=sp_h if sp_en else 0.0,
+                socket_meshes=_socket_meshes,
             )
+            if _fl_meshes:
+                import io as _io
+                pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
+                combined = trimesh.util.concatenate([pulley_mesh] + _fl_meshes)
+                combined.apply_translation(-combined.centroid)
+                stl = combined.export(file_type='stl')
         return Response(stl, mimetype='model/stl',
                         headers={'Cache-Control': 'no-store'})
     except Exception as e:
@@ -659,55 +797,25 @@ def api_preview_stl():
 
 @app.route('/download/stl')
 def download_stl():
-    """Return binary STL file download. part=all|spoke|rim|hub selects layer-cake pieces."""
+    """Return binary STL file download."""
     try:
         pulley = request.args.get('pulley', '1')
-        part   = request.args.get('part', 'all')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(request.args, pulley)
         pfx = 'p2_' if pulley == '2' else ''
         hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, pfx)
-        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, _ = \
             _parse_spoke_params(request.args, pfx)
-        suffix = '-P2' if pulley == '2' else ''
-
-        if part == 'spoke' and sp_en:
-            stl   = generate_spoke_layer_stl(
-                family, pitch, num_teeth, bore_mm, belt_height, sp_h,
-                cl_mm, bl_mm, pr_ex,
-                hub_od_mm=sp_hub if sp_hub > bore_mm else hub_od,
-                rim_depth_mm=sp_rim, spoke_count=sp_cnt, spoke_width_mm=sp_w,
-                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
-                hub_height_mm=hub_h, screw_dia_mm=sd, screw_count=sc,
-                captured_nut=cn, flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
-            )
-            fname = f'{family}-{pitch}-{num_teeth}T{suffix}-spoke.stl'
-        elif part == 'rim' and sp_en:
-            stl   = generate_rim_ring_stl(
-                family, pitch, num_teeth, belt_height, sp_h,
-                cl_mm, bl_mm, pr_ex, rim_depth_mm=sp_rim,
-            )
-            fname = f'{family}-{pitch}-{num_teeth}T{suffix}-rim.stl'
-        elif part == 'hub' and sp_en:
-            stl   = generate_hub_disk_stl(
-                bore_mm,
-                hub_od_mm=sp_hub if sp_hub > bore_mm else hub_od,
-                belt_height_mm=belt_height, spoke_height_mm=sp_h,
-                hub_height_mm=hub_h, screw_dia_mm=sd, screw_count=sc,
-                captured_nut=cn, flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
-            )
-            fname = f'{family}-{pitch}-{num_teeth}T{suffix}-hub.stl'
-        else:
-            sp_count = sp_cnt if sp_en else 0
-            stl   = generate_pulley_stl(
-                family, pitch, num_teeth, bore_mm, belt_height,
-                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
-                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
-                spoke_height_mm=sp_h if sp_en else 0.0,
-            )
-            fname = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
-
+        suffix   = '-P2' if pulley == '2' else ''
+        sp_count = sp_cnt if sp_en else 0
+        stl = generate_pulley_stl(
+            family, pitch, num_teeth, bore_mm, belt_height,
+            cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+            spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+            fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+            spoke_height_mm=sp_h if sp_en else 0.0,
+        )
+        fname = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
         return Response(stl, mimetype='model/stl',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
@@ -1025,6 +1133,154 @@ def api_validate_spoke_fillets():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+
+def _safe_float(val, default):
+    """Convert val to float, falling back to default on empty string or None."""
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _parse_flange_params(args, prefix=''):
+    """Return flange parameter dict from request args (shared by both routes)."""
+    return dict(
+        flange_3dprint    = args.get(f'{prefix}flange_3dprint', '0') == '1',
+        top_separate      = args.get(f'{prefix}flange_top_separate', '1') == '1',
+        flange_angle_deg  = max(8.0,  min(25.0, _safe_float(args.get(f'{prefix}flange_angle'),   15.0))),
+        rim_radius_mm     = max(0.5,  _safe_float(args.get(f'{prefix}flange_rim_radius'),  3.0)),
+        flange_height_mm  = max(0.1,  _safe_float(args.get(f'{prefix}flange_height'),      1.5)),
+        plate_height_mm   = max(0.3,  _safe_float(args.get(f'{prefix}flange_plate_height'), 1.0)),
+        bend_radius_mm    = max(0.0,  _safe_float(args.get(f'{prefix}flange_bend_radius'),  0.0)),
+        # Nub/socket params (3D-print top-separate only)
+        nubs_enabled      = args.get(f'{prefix}flange_nubs_enabled', '0') == '1',
+        nub_count         = max(1, int(_safe_float(args.get(f'{prefix}flange_nub_count'),     4))),
+        nub_dia_mm        = max(1.0, _safe_float(args.get(f'{prefix}flange_nub_dia'),         3.0)),
+        nub_height_mm     = max(0.5, _safe_float(args.get(f'{prefix}flange_nub_height'),      2.0)),
+        nub_allowance_mm  = max(0.0, _safe_float(args.get(f'{prefix}flange_nub_allowance'),   0.2)),
+    )
+
+
+@app.route('/download/flange-stl')
+def download_flange_stl():
+    """Return STL of a single flange plate.
+
+    Required query params: family, pitch, teeth, bore, belt_height,
+                           flange_which ('top'|'bottom'),
+                           flange_3dprint ('1'|'0'),
+                           flange_angle, flange_rim_radius, flange_height (3D print),
+                           flange_plate_height, flange_bend_radius (metal).
+    Optional: hub_od, spokes_enabled, spokes_hub_od, clearance_preset, backlash_preset.
+    """
+    try:
+        args = request.args
+
+        family = args.get('family', 'HTD')
+        pitch  = args.get('pitch',  '5M')
+        key    = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return jsonify({'error': f'Unknown profile {family}/{pitch}'}), 400
+
+        spec      = PULLEY_SPECS[key]
+        num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
+        bore_mm   = _get_bore(args)
+        belt_h    = max(1.0, float(args.get('belt_height', 10.0)))
+        cl_mm     = _get_preset_value(spec, 'clearances',
+                                      args.get('clearance_preset', 'STANDARD'),
+                                      args.get('clearance_custom', 0.0))
+        pe_mm     = float(args.get('print_extra', 0.0))
+
+        hub_od         = max(0.0, float(args.get('hub_od', 0.0)))
+        spokes_enabled = args.get('spokes_enabled', '0') == '1'
+        spoke_hub_od   = max(0.0, float(args.get('spokes_hub_od', 0.0)))
+        spoke_rim_depth = max(0.0, float(args.get('spokes_rim_depth', 0.0)))
+
+        fp    = _parse_flange_params(args)
+        which = args.get('flange_which', 'top')   # 'top' or 'bottom'
+
+        if fp['flange_3dprint']:
+            stl_bytes = generate_3dprint_flange_stl(
+                family, pitch, num_teeth, bore_mm, belt_h,
+                clearance_mm=cl_mm, print_extra_mm=pe_mm,
+                flange_angle_deg=fp['flange_angle_deg'],
+                rim_radius_mm=fp['rim_radius_mm'],
+                flange_height_mm=fp['flange_height_mm'],
+                which=which,
+                hub_od_mm=hub_od,
+                spokes_enabled=spokes_enabled,
+                spoke_hub_od_mm=spoke_hub_od,
+                rim_depth_mm=spoke_rim_depth,
+            )
+        else:
+            stl_bytes = generate_metal_flange_stl(
+                family, pitch, num_teeth, bore_mm, belt_h,
+                clearance_mm=cl_mm, print_extra_mm=pe_mm,
+                flange_angle_deg=fp['flange_angle_deg'],
+                rim_radius_mm=fp['rim_radius_mm'],
+                plate_height_mm=fp['plate_height_mm'],
+                bend_radius_mm=fp['bend_radius_mm'],
+                which=which,
+                hub_od_mm=hub_od,
+                spokes_enabled=spokes_enabled,
+                spoke_hub_od_mm=spoke_hub_od,
+                rim_depth_mm=spoke_rim_depth,
+            )
+
+        suffix    = '-upper-flange' if which == 'top' else '-lower-flange'
+        type_tag  = '3DP' if fp['flange_3dprint'] else 'Metal'
+        filename  = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.stl'
+
+        return Response(
+            stl_bytes,
+            mimetype='model/stl',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+
+    except Exception as e:
+        import traceback
+        return Response(f'Flange STL export failed:\n{traceback.format_exc()}',
+                        status=500, mimetype='text/plain')
+
+
+@app.route('/api/report-bug', methods=['POST'])
+def api_report_bug():
+    """Save a bug report to logs/bug_reports.log."""
+    try:
+        data = request.get_json(force=True) or {}
+        seeing      = str(data.get('seeing',      '')).strip()
+        should_see  = str(data.get('should_see',  '')).strip()
+        email       = str(data.get('email',       '')).strip()
+        state       = data.get('state', {})          # dict of current app params
+        report_type = str(data.get('report_type', 'bug')).strip()
+
+        if not seeing and not should_see:
+            return jsonify({'error': 'At least one description field is required.'}), 400
+
+        is_feature   = report_type == 'feature'
+        report_label = 'Feature Request' if is_feature else 'Bug Report'
+        label_seeing = 'Would like to do' if is_feature else 'Currently seeing'
+        label_should = "Why it's useful"  if is_feature else 'Should be seeing'
+
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        entry = (
+            f'\n{"="*60}\n'
+            f'{report_label} — {timestamp}\n'
+            f'App Version: {APP_VERSION}   Build: {BUILD_TIME}\n'
+            f'{"="*60}\n'
+            f'{label_seeing}:\n  {seeing or "(not provided)"}\n\n'
+            f'{label_should}:\n  {should_see or "(not provided)"}\n\n'
+            f'Contact email:\n  {email or "(not provided)"}\n\n'
+            f'App state:\n{json.dumps(state, indent=2)}\n'
+        )
+        with open(_LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(entry)
+
+        return jsonify({'ok': True})
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
 
 
 if __name__ == '__main__':

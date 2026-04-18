@@ -737,6 +737,99 @@ def _pts_to_path_d(pts, cx, cy):
     return d + " Z"
 
 
+def generate_rim_layer_svg(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    bore_mm: float,
+    clearance_mm: float = 0.0,
+    backlash_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+    padding_mm: float = 3.0,
+    spoke_hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 2.0,
+) -> str:
+    """Return an SVG for the rim ring layer: toothed outer profile + three
+    concentric circles (inner rim, hub OD, bore).  Intended for laser /
+    waterjet cutting of the rim ring in a spoked pulley design.
+
+    Layer colours:
+      black  — outer toothed profile (PROFILE)
+      blue   — inner rim circle at R_tooth_root − rim_depth (RIM_INNER)
+      green  — spoke hub OD circle (HUB)
+      red    — bore circle (BORE)
+    """
+    key = _profile_key(family, pitch)
+    if key not in PULLEY_SPECS:
+        raise ValueError(f"Unknown profile key '{key}'")
+
+    spec = PULLEY_SPECS[key]
+    pitch_val      = spec['pitch']
+    clearance_mm   = max(-pitch_val, min(clearance_mm,   pitch_val))
+    backlash_mm    = max(-pitch_val, min(backlash_mm,    pitch_val))
+    print_extra_mm = max(0.0,        min(print_extra_mm, pitch_val))
+
+    container    = generate_profile_groove(family, key, num_teeth, clearance_mm, print_extra_mm, backlash_mm)
+    groove_prims = container.primitives[1:-1]
+    groove_pts   = _build_groove_points(groove_prims, family)
+    wrapped, R_OD, edge_a = wrap_groove_to_pulley(groove_pts, spec, num_teeth, print_extra_mm)
+
+    R_bore = bore_mm / 2.0
+    t_ang  = 2.0 * math.pi / num_teeth
+
+    def rotate(x, y, theta):
+        c, s = math.cos(theta), math.sin(theta)
+        return x * c + y * s, -x * s + y * c
+
+    # ── Outer toothed profile path ────────────────────────────────────────────
+    d_parts = []
+    for i in range(num_teeth):
+        th        = i * t_ang
+        tooth_pts = [rotate(gx, gy, th) for gx, gy in wrapped]
+        d_parts.append(
+            f"{'M' if i == 0 else 'L'} {tooth_pts[0][0]:.4f} {tooth_pts[0][1]:.4f}"
+        )
+        for gx, gy in tooth_pts[1:]:
+            d_parts.append(f"L {gx:.4f} {gy:.4f}")
+        a_end = th + t_ang - edge_a
+        d_parts.append(
+            f"A {R_OD:.4f} {R_OD:.4f} 0 0 1 "
+            f"{R_OD * math.sin(a_end):.4f} {R_OD * math.cos(a_end):.4f}"
+        )
+    d_parts.append("Z")
+    path_d = " ".join(d_parts)
+
+    sw = max(0.15, R_OD * 2.0 * 0.004)
+
+    R_tooth_root = min(math.hypot(x, y) for x, y in wrapped) if wrapped else R_OD
+    R_hub_spoke  = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (R_bore + 1.0)
+    R_rim_inner  = max(R_hub_spoke + 0.5, R_tooth_root - rim_depth_mm)
+
+    vb_size = R_OD + padding_mm
+    vb = f"{-vb_size:.4f} {-vb_size:.4f} {vb_size * 2:.4f} {vb_size * 2:.4f}"
+
+    parts = [
+        f'<path d="{path_d}" fill="none" stroke="#000000" stroke-width="{sw:.3f}"/>',
+        f'<circle cx="0" cy="0" r="{R_rim_inner:.4f}" fill="none" stroke="#0055cc" stroke-width="{sw:.3f}"/>',
+    ]
+    if R_hub_spoke > R_bore + 0.1:
+        parts.append(
+            f'<circle cx="0" cy="0" r="{R_hub_spoke:.4f}" fill="none" stroke="#007a00" stroke-width="{sw:.3f}"/>'
+        )
+    if R_bore > 0:
+        parts.append(
+            f'<circle cx="0" cy="0" r="{R_bore:.4f}" fill="none" stroke="#cc0000" stroke-width="{sw:.3f}"/>'
+        )
+
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="{vb}" width="{vb_size * 2:.1f}mm" height="{vb_size * 2:.1f}mm">\n'
+        + '\n'.join(parts)
+        + '\n</svg>\n'
+    )
+
+
 def generate_svg_dual(
     family: str,
     pitch: str,

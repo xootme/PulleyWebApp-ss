@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=15">
 </head>
 <body>
 
@@ -16,7 +16,10 @@
 <header>
   <div class="header-inner">
     <img src="/static/logo.png" alt="Cheap CAD Tools" class="logo">
-    <span class="header-title">Timing Pulley Generator</span>
+    <div class="header-title-block">
+      <span class="header-title">Timing Pulley Generator</span>
+      <span class="header-version">Ver. {{ app_version }}</span>
+    </div>
   </div>
 </header>
 
@@ -28,7 +31,7 @@
   </label>
   <div class="drive-spacing fb-3d" id="belt_height_row">
     <label for="belt_height" style="margin:0;white-space:nowrap">Belt Height (mm)</label>
-    <input type="number" id="belt_height" value="10" min="1" step="0.5" style="width:80px" oninput="schedulePreview()">
+    <input type="number" id="belt_height" value="10" min="1" max="200" step="0.5" style="width:80px" oninput="schedulePreview()">
   </div>
   <label class="drive-toggle fb-2d">
     <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
@@ -67,6 +70,7 @@
             data-help2d="/static/TwoPulleyDrive_2d_help.html"
             data-help3d="/static/TwoPulleyDrive_3d_help.html"
             onclick="openHelp(this, event)" title="Help">&#9432;</button>
+    <button class="btn-bug-report" onclick="openBugReport()" title="Report a bug">&#9888;</button>
   </div>
 </div>
 
@@ -77,7 +81,6 @@
     <div class="panel-title">
       <span id="panel1-title">Pulley</span>
       <div style="display:flex;gap:4px;align-items:center;">
-        <button class="btn-summary" onclick="openSummary(1,event)" title="Current settings">&#9888;</button>
         <button class="btn-help"
                 data-help2d="/static/Pulley1_2d_help.html"
                 data-help3d="/static/Pulley1_3d_help.html"
@@ -100,7 +103,7 @@
     <section class="card fb-2d">
       <h2>Size</h2>
       <label for="teeth">Number of Teeth</label>
-      <input type="number" id="teeth" min="10" value="20" step="1" oninput="onTeethChange(1)">
+      <input type="number" id="teeth" min="10" max="360" value="20" step="1" oninput="onTeethChange(1)">
       <label for="od">Outer Diameter (mm)</label>
       <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)">
       <label for="bore">Bore Diameter (mm)</label>
@@ -135,7 +138,7 @@
       <div class="preset-info" id="backlash_info"></div>
 
       <label for="print_extra">3D Print Compensation (mm)</label>
-      <input type="number" id="print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
+      <input type="number" id="print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
     </section>
 
     <section class="card fb-3d">
@@ -185,7 +188,7 @@
 
         <div id="hub1_dshaft_opts" class="hidden">
           <label for="hub1_flat_depth">Flat Depth (mm)</label>
-          <input type="number" id="hub1_flat_depth" value="0.5" min="0.1" step="0.05" oninput="onHubChange(1)" style="width:100%">
+          <input type="number" id="hub1_flat_depth" value="0.5" min="0.1" max="10" step="0.05" oninput="onHubChange(1)" style="width:100%">
           <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
 
           <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
@@ -214,11 +217,11 @@
         <div id="hub1_keyway_opts" class="hidden">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
             <label for="hub1_keyway_w" style="margin:0;flex:1">Width W (mm)</label>
-            <input type="number" id="hub1_keyway_w" value="4" min="2" step="0.5" oninput="onHubChange(1)" style="width:70px">
+            <input type="number" id="hub1_keyway_w" value="4" min="2" max="30" step="0.5" oninput="onHubChange(1)" style="width:70px">
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
             <label for="hub1_keyway_h" style="margin:0;flex:1">Hub Depth (mm)</label>
-            <input type="number" id="hub1_keyway_h" value="2" min="0.5" step="0.1" oninput="onHubChange(1)" style="width:70px">
+            <input type="number" id="hub1_keyway_h" value="2" min="0.5" max="30" step="0.1" oninput="onHubChange(1)" style="width:70px">
           </div>
           <button type="button" onclick="applyISO773Default(1)"
                   style="margin-top:2px;padding:3px 10px;font-size:12px;cursor:pointer;">Default Key</button>
@@ -250,16 +253,95 @@
       </div>
     </section>
 
-    <section class="card fb-3d" style="opacity:0.55;">
-      <div class="hub-header" onclick="toggleTbd('flange1')">
+    <section class="card fb-3d">
+      <div class="hub-header" onclick="toggleSection('flange1')">
         <span style="display:flex;align-items:center;gap:7px;">
-          <input type="checkbox" id="flange1_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          <input type="checkbox" id="flange1_enabled" onclick="event.stopPropagation(); onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
           Flanges
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/flange_help.html')" title="Flange help">&#9432;</button>
         </span>
         <span class="hub-arrow" id="flange1-arrow">&#9660;</span>
       </div>
-      <div class="hub-body" id="flange1-body">
-        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+      <div class="hub-body" id="flange1-body" style="display:none;">
+
+        <!-- 3D Print toggle -->
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;font-weight:600;">
+          <input type="checkbox" id="flange1_3dprint" onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+          3D Print
+        </label>
+
+        <!-- Shared settings -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="flange1_angle" style="margin:0;flex:1">Flange Angle (°)</label>
+          <input type="number" id="flange1_angle" value="15" min="8" max="25" step="1" oninput="onFlangeChange(1)" style="width:70px">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="flange1_rim_radius" style="margin:0;flex:1">Rim Radius (mm)</label>
+          <input type="number" id="flange1_rim_radius" value="3" min="0.5" max="20" step="0.5" oninput="onFlangeChange(1)" style="width:70px">
+        </div>
+
+        <!-- Metal-only settings -->
+        <div id="flange1_metal_opts">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="flange1_plate_height" style="margin:0;flex:1">Plate Thickness (mm)</label>
+            <input type="number" id="flange1_plate_height" value="1.0" min="0.3" max="6" step="0.1" oninput="onFlangeChange(1)" style="width:70px">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="flange1_bend_radius" style="margin:0;flex:1">Bend Radius (mm)</label>
+            <input type="number" id="flange1_bend_radius" value="0" min="0" step="0.1" oninput="onFlangeChange(1)" style="width:70px">
+          </div>
+          <div class="hub-info">0 = auto (1.5 × plate thickness)</div>
+        </div>
+
+        <!-- 3D-print-only settings -->
+        <div id="flange1_3dp_opts" style="display:none;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="flange1_height" style="margin:0;flex:1">Flange Height (mm)</label>
+            <input type="number" id="flange1_height" value="1.5" min="0.1" max="20" step="0.1" oninput="onFlangeChange(1)" style="width:70px">
+          </div>
+          <div class="hub-info">Vertical lip height at outer rim</div>
+
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;margin-bottom:2px;cursor:pointer;">
+            <input type="checkbox" id="flange1_top_separate" checked onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+            Top flange as separate part
+          </label>
+
+          <!-- Gluing nubs (only when top is separate) -->
+          <div id="flange1_nub_section">
+            <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
+              <input type="checkbox" id="flange1_nubs_enabled" onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+              Add Gluing Nubs
+            </label>
+            <div id="flange1_nub_opts" style="display:none;padding-left:16px;">
+              <div style="display:flex;align-items:center;gap:6px;margin-top:4px;margin-bottom:4px;">
+                <label for="flange1_nub_count" style="margin:0;flex:1">Number of Nubs</label>
+                <input type="number" id="flange1_nub_count" value="4" min="1" max="24" step="1" oninput="onFlangeChange(1)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange1_nub_dia" style="margin:0;flex:1">Nub Diameter (mm)</label>
+                <input type="number" id="flange1_nub_dia" value="3" min="1" max="15" step="0.5" oninput="onFlangeChange(1)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange1_nub_height" style="margin:0;flex:1">Nub Height (mm)</label>
+                <input type="number" id="flange1_nub_height" value="2" min="1" step="0.5" oninput="onFlangeChange(1)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange1_nub_allowance" style="margin:0;flex:1">Socket Fit Allow. (mm)</label>
+                <input type="number" id="flange1_nub_allowance" value="0.2" min="0" max="2" step="0.05" oninput="onFlangeChange(1)" style="width:70px">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hub intersection warning -->
+        <div id="flange1_hub_warn" style="display:none;margin-top:6px;padding:5px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
+          ⚠ Hub intersects the flange zone.
+          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
+            <input type="checkbox" id="flange1_cuts_hub" checked onchange="onFlangeChange(1)" style="width:auto;accent-color:#f97316;margin:0;">
+            Flange cuts hub
+          </label>
+        </div>
+
       </div>
     </section>
 
@@ -274,7 +356,10 @@
       <div class="hub-body" id="spokes1-body">
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes1_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
-          <input type="number" id="spokes1_hub_od" value="16" min="4" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+          <input type="number" id="spokes1_hub_od" value="16" min="4" max="200" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div id="spokes1_hub_warn" style="display:none;margin-bottom:4px;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
+          ⚠ Hub OD exceeds pulley OD — spokes ignored in preview
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes1_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
@@ -282,15 +367,15 @@
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes1_width" style="margin:0;flex:1">Spoke Width (mm)</label>
-          <input type="number" id="spokes1_width" value="4" min="1" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+          <input type="number" id="spokes1_width" value="4" min="1" max="50" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes1_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
-          <input type="number" id="spokes1_fillet_tip" value="1" min="0" step="0.25" oninput="onFilletChange(1,'tip')" style="width:70px">
+          <input type="number" id="spokes1_fillet_tip" value="1" min="0" max="30" step="0.25" oninput="onFilletChange(1,'tip')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes1_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
-          <input type="number" id="spokes1_fillet_base" value="1.5" min="0" step="0.25" oninput="onFilletChange(1,'base')" style="width:70px">
+          <input type="number" id="spokes1_fillet_base" value="1.5" min="0" max="30" step="0.25" oninput="onFilletChange(1,'base')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
           <label for="spokes1_count" style="margin:0;flex:1">Spoke Count</label>
@@ -301,11 +386,7 @@
           <label for="spokes1_height" style="margin:0;flex:1">Spoke Height (mm)</label>
           <input type="number" id="spokes1_height" value="0" min="0" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
         </div>
-        <div class="hub-info fb-3d">0 = full belt height (non-split mode only)</div>
-        <label class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
-          <input type="checkbox" id="spokes1_split_layers" onchange="onSpokesChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
-          Split Layers (laser / waterjet)
-        </label>
+        <div class="hub-info fb-3d">0 = full belt height</div>
       </div>
     </section>
 
@@ -321,25 +402,17 @@
           <button class="dl-item fb-3d" onclick="downloadSTL(1); closeDlMenus()">STL</button>
         </div>
       </div>
-      <!-- Layer-cake downloads — shown when Spokes + Split Layers is ON -->
-      <div id="dl-p1-split" class="hidden">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:#0078d4;margin:8px 0 4px;">Layer Cake Parts</div>
+      <label class="fb-2d" id="rim-layer1-wrap" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="rim_layer1_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
+        Gen. Rim Layer
+      </label>
+      <!-- Flange download buttons (fb-3d, shown only when flanges enabled) -->
+      <div id="flange1_dl_wrap" class="fb-3d" style="display:none;margin-top:6px;">
         <div class="dl-wrap">
-          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-spoke-menu', event)">⬇ Spoke Web</button>
-          <div class="dl-menu hidden" id="dl-p1-spoke-menu">
-            <button class="dl-item fb-3d" onclick="downloadLayerPart(1,'spoke','stl'); closeDlMenus()">STL</button>
-          </div>
-        </div>
-        <div class="dl-wrap">
-          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-rim-menu', event)">⬇ Rim Ring</button>
-          <div class="dl-menu hidden" id="dl-p1-rim-menu">
-            <button class="dl-item fb-3d" onclick="downloadLayerPart(1,'rim','stl'); closeDlMenus()">STL</button>
-          </div>
-        </div>
-        <div class="dl-wrap">
-          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-hub-menu', event)">⬇ Hub Disk</button>
-          <div class="dl-menu hidden" id="dl-p1-hub-menu">
-            <button class="dl-item fb-3d" onclick="downloadLayerPart(1,'hub','stl'); closeDlMenus()">STL</button>
+          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-flange', event)">⬇ Download Flanges</button>
+          <div class="dl-menu hidden" id="dl-p1-flange">
+            <button class="dl-item" onclick="downloadFlange(1,'top'); closeDlMenus()">Upper Flange STL</button>
+            <button class="dl-item" onclick="downloadFlange(1,'bottom'); closeDlMenus()">Lower Flange STL</button>
           </div>
         </div>
       </div>
@@ -396,7 +469,6 @@
     <div class="panel-title panel-title-p2">
       Pulley 2
       <div style="display:flex;gap:4px;align-items:center;">
-        <button class="btn-summary" onclick="openSummary(2,event)" title="Current settings">&#9888;</button>
         <button class="btn-help"
                 data-help2d="/static/Pulley2_2d_help.html"
                 data-help3d="/static/Pulley2_3d_help.html"
@@ -411,7 +483,7 @@
     <section class="card fb-2d">
       <h2>Size</h2>
       <label for="p2_teeth">Number of Teeth</label>
-      <input type="number" id="p2_teeth" min="10" value="30" step="1" oninput="onTeethChange(2)">
+      <input type="number" id="p2_teeth" min="10" max="360" value="30" step="1" oninput="onTeethChange(2)">
       <label for="p2_od">Outer Diameter (mm)</label>
       <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)">
       <label for="p2_bore">Bore Diameter (mm)</label>
@@ -446,7 +518,7 @@
       <div class="preset-info" id="p2_backlash_info"></div>
 
       <label for="p2_print_extra">3D Print Compensation (mm)</label>
-      <input type="number" id="p2_print_extra" value="0" min="0" step="0.05" oninput="schedulePreview()">
+      <input type="number" id="p2_print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
     </section>
 
     <section class="card fb-3d">
@@ -463,10 +535,10 @@
       </div>
       <div class="hub-body" id="hub2-body">
         <label for="hub2_height">Hub Height (mm)</label>
-        <input type="number" id="hub2_height" value="10" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+        <input type="number" id="hub2_height" value="10" min="1" max="50" step="0.5" oninput="onHubChange(2)" style="width:100%">
 
         <label for="hub2_od" id="hub2_od_label">Hub OD (mm)</label>
-        <input type="number" id="hub2_od" value="20" min="1" step="0.5" oninput="onHubChange(2)" style="width:100%">
+        <input type="number" id="hub2_od" value="20" min="1" max="200" step="0.5" oninput="onHubChange(2)" style="width:100%">
 
         <label for="hub2_retention">Retention Method</label>
         <select id="hub2_retention" onchange="onHubChange(2)">
@@ -496,7 +568,7 @@
 
         <div id="hub2_dshaft_opts" class="hidden">
           <label for="hub2_flat_depth">Flat Depth (mm)</label>
-          <input type="number" id="hub2_flat_depth" value="0.5" min="0.1" step="0.05" oninput="onHubChange(2)" style="width:100%">
+          <input type="number" id="hub2_flat_depth" value="0.5" min="0.1" max="10" step="0.05" oninput="onHubChange(2)" style="width:100%">
           <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
 
           <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
@@ -525,11 +597,11 @@
         <div id="hub2_keyway_opts" class="hidden">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
             <label for="hub2_keyway_w" style="margin:0;flex:1">Width W (mm)</label>
-            <input type="number" id="hub2_keyway_w" value="4" min="1" step="0.5" oninput="onHubChange(2)" style="width:70px">
+            <input type="number" id="hub2_keyway_w" value="4" min="1" max="30" step="0.5" oninput="onHubChange(2)" style="width:70px">
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
             <label for="hub2_keyway_h" style="margin:0;flex:1">Hub Depth (mm)</label>
-            <input type="number" id="hub2_keyway_h" value="2" min="0.5" step="0.1" oninput="onHubChange(2)" style="width:70px">
+            <input type="number" id="hub2_keyway_h" value="2" min="0.5" max="30" step="0.1" oninput="onHubChange(2)" style="width:70px">
           </div>
           <button type="button" onclick="applyISO773Default(2)"
                   style="margin-top:2px;padding:3px 10px;font-size:12px;cursor:pointer;">Default Key</button>
@@ -561,16 +633,83 @@
       </div>
     </section>
 
-    <section class="card fb-3d" style="opacity:0.55;">
-      <div class="hub-header" onclick="toggleTbd('flange2')">
+    <section class="card fb-3d">
+      <div class="hub-header" onclick="toggleSection('flange2')">
         <span style="display:flex;align-items:center;gap:7px;">
-          <input type="checkbox" id="flange2_enabled" disabled onclick="event.stopPropagation()" style="width:auto;accent-color:#0078d4;cursor:not-allowed;margin:0;">
+          <input type="checkbox" id="flange2_enabled" onclick="event.stopPropagation(); onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
           Flanges
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/flange_help.html')" title="Flange help">&#9432;</button>
         </span>
         <span class="hub-arrow" id="flange2-arrow">&#9660;</span>
       </div>
-      <div class="hub-body" id="flange2-body">
-        <div style="font-size:12px;color:#94a3b8;padding:4px 0;">Coming soon</div>
+      <div class="hub-body" id="flange2-body" style="display:none;">
+
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;font-weight:600;">
+          <input type="checkbox" id="flange2_3dprint" onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+          3D Print
+        </label>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="flange2_angle" style="margin:0;flex:1">Flange Angle (°)</label>
+          <input type="number" id="flange2_angle" value="15" min="8" max="25" step="1" oninput="onFlangeChange(2)" style="width:70px">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="flange2_rim_radius" style="margin:0;flex:1">Rim Radius (mm)</label>
+          <input type="number" id="flange2_rim_radius" value="3" min="0.5" max="20" step="0.5" oninput="onFlangeChange(2)" style="width:70px">
+        </div>
+        <div id="flange2_metal_opts">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="flange2_plate_height" style="margin:0;flex:1">Plate Thickness (mm)</label>
+            <input type="number" id="flange2_plate_height" value="1.0" min="0.3" max="6" step="0.1" oninput="onFlangeChange(2)" style="width:70px">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="flange2_bend_radius" style="margin:0;flex:1">Bend Radius (mm)</label>
+            <input type="number" id="flange2_bend_radius" value="0" min="0" step="0.1" oninput="onFlangeChange(2)" style="width:70px">
+          </div>
+          <div class="hub-info">0 = auto (1.5 × plate thickness)</div>
+        </div>
+        <div id="flange2_3dp_opts" style="display:none;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <label for="flange2_height" style="margin:0;flex:1">Flange Height (mm)</label>
+            <input type="number" id="flange2_height" value="1.5" min="0.1" max="20" step="0.1" oninput="onFlangeChange(2)" style="width:70px">
+          </div>
+          <div class="hub-info">Vertical lip height at outer rim</div>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;margin-bottom:2px;cursor:pointer;">
+            <input type="checkbox" id="flange2_top_separate" checked onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+            Top flange as separate part
+          </label>
+          <div id="flange2_nub_section">
+            <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
+              <input type="checkbox" id="flange2_nubs_enabled" onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+              Add Gluing Nubs
+            </label>
+            <div id="flange2_nub_opts" style="display:none;padding-left:16px;">
+              <div style="display:flex;align-items:center;gap:6px;margin-top:4px;margin-bottom:4px;">
+                <label for="flange2_nub_count" style="margin:0;flex:1">Number of Nubs</label>
+                <input type="number" id="flange2_nub_count" value="4" min="1" max="24" step="1" oninput="onFlangeChange(2)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange2_nub_dia" style="margin:0;flex:1">Nub Diameter (mm)</label>
+                <input type="number" id="flange2_nub_dia" value="3" min="1" max="15" step="0.5" oninput="onFlangeChange(2)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange2_nub_height" style="margin:0;flex:1">Nub Height (mm)</label>
+                <input type="number" id="flange2_nub_height" value="2" min="1" max="20" step="0.5" oninput="onFlangeChange(2)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange2_nub_allowance" style="margin:0;flex:1">Socket Fit Allow. (mm)</label>
+                <input type="number" id="flange2_nub_allowance" value="0.2" min="0" max="2" step="0.05" oninput="onFlangeChange(2)" style="width:70px">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="flange2_hub_warn" style="display:none;margin-top:6px;padding:5px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
+          ⚠ Hub intersects the flange zone.
+          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
+            <input type="checkbox" id="flange2_cuts_hub" checked onchange="onFlangeChange(2)" style="width:auto;accent-color:#f97316;margin:0;">
+            Flange cuts hub
+          </label>
+        </div>
+
       </div>
     </section>
 
@@ -585,7 +724,10 @@
       <div class="hub-body" id="spokes2-body">
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes2_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
-          <input type="number" id="spokes2_hub_od" value="16" min="4" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+          <input type="number" id="spokes2_hub_od" value="16" min="4" max="200" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div id="spokes2_hub_warn" style="display:none;margin-bottom:4px;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
+          ⚠ Hub OD exceeds pulley OD — spokes ignored in preview
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes2_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
@@ -593,15 +735,15 @@
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes2_width" style="margin:0;flex:1">Spoke Width (mm)</label>
-          <input type="number" id="spokes2_width" value="4" min="1" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+          <input type="number" id="spokes2_width" value="4" min="1" max="50" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes2_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
-          <input type="number" id="spokes2_fillet_tip" value="1" min="0" step="0.25" oninput="onFilletChange(2,'tip')" style="width:70px">
+          <input type="number" id="spokes2_fillet_tip" value="1" min="0" max="30" step="0.25" oninput="onFilletChange(2,'tip')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label for="spokes2_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
-          <input type="number" id="spokes2_fillet_base" value="1.5" min="0" step="0.25" oninput="onFilletChange(2,'base')" style="width:70px">
+          <input type="number" id="spokes2_fillet_base" value="1.5" min="0" max="30" step="0.25" oninput="onFilletChange(2,'base')" style="width:70px">
         </div>
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
           <label for="spokes2_count" style="margin:0;flex:1">Spoke Count</label>
@@ -612,11 +754,7 @@
           <label for="spokes2_height" style="margin:0;flex:1">Spoke Height (mm)</label>
           <input type="number" id="spokes2_height" value="0" min="0" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
         </div>
-        <div class="hub-info fb-3d">0 = full belt height (non-split mode only)</div>
-        <label class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
-          <input type="checkbox" id="spokes2_split_layers" onchange="onSpokesChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
-          Split Layers (laser / waterjet)
-        </label>
+        <div class="hub-info fb-3d">0 = full belt height</div>
       </div>
     </section>
 
@@ -632,25 +770,16 @@
           <button class="dl-item fb-3d" onclick="downloadSTL(2); closeDlMenus()">STL</button>
         </div>
       </div>
-      <!-- Layer-cake downloads for P2 -->
-      <div id="dl-p2-split" class="hidden">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:#0078d4;margin:8px 0 4px;">Layer Cake Parts</div>
+      <label class="fb-2d" id="rim-layer2-wrap" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="rim_layer2_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
+        Gen. Rim Layer
+      </label>
+      <div id="flange2_dl_wrap" class="fb-3d" style="display:none;margin-top:6px;">
         <div class="dl-wrap">
-          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-spoke-menu', event)">⬇ Spoke Web</button>
-          <div class="dl-menu hidden" id="dl-p2-spoke-menu">
-            <button class="dl-item fb-3d" onclick="downloadLayerPart(2,'spoke','stl'); closeDlMenus()">STL</button>
-          </div>
-        </div>
-        <div class="dl-wrap">
-          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-rim-menu', event)">⬇ Rim Ring</button>
-          <div class="dl-menu hidden" id="dl-p2-rim-menu">
-            <button class="dl-item fb-3d" onclick="downloadLayerPart(2,'rim','stl'); closeDlMenus()">STL</button>
-          </div>
-        </div>
-        <div class="dl-wrap">
-          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-hub-menu', event)">⬇ Hub Disk</button>
-          <div class="dl-menu hidden" id="dl-p2-hub-menu">
-            <button class="dl-item fb-3d" onclick="downloadLayerPart(2,'hub','stl'); closeDlMenus()">STL</button>
+          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-flange', event)">⬇ Download Flanges</button>
+          <div class="dl-menu hidden" id="dl-p2-flange">
+            <button class="dl-item" onclick="downloadFlange(2,'top'); closeDlMenus()">Upper Flange STL</button>
+            <button class="dl-item" onclick="downloadFlange(2,'bottom'); closeDlMenus()">Lower Flange STL</button>
           </div>
         </div>
       </div>
@@ -671,14 +800,33 @@
   </div>
 </div>
 
-<!-- ── Settings summary modal ── -->
-<div id="summary-overlay">
-  <div id="summary-box">
-    <div class="sum-header">
-      <span class="sum-title" id="summary-title">&#9888; Pulley Settings</span>
-      <button class="sum-close" onclick="closeSummary()" title="Close">&times;</button>
+<!-- ── Bug Report Modal ── -->
+<div id="bug-report-overlay">
+  <div id="bug-report-box">
+    <div class="bug-header">
+      <span class="bug-title" id="bug-title">&#9888; Report A Bug</span>
+      <label class="bug-feature-toggle" title="Switch to feature request">
+        <input type="checkbox" id="bug-is-feature" onchange="onBugTypeToggle()">
+        Feature Request
+      </label>
+      <button class="bug-close" onclick="closeBugReport()" title="Close">&times;</button>
     </div>
-    <div id="summary-body"></div>
+    <div class="bug-body">
+      <label class="bug-label" id="bug-label-seeing" for="bug-seeing">What are you currently seeing?</label>
+      <textarea id="bug-seeing" class="bug-textarea" rows="3" placeholder="Describe what you see…"></textarea>
+
+      <label class="bug-label" id="bug-label-should" for="bug-should">What should you be seeing?</label>
+      <textarea id="bug-should" class="bug-textarea" rows="3" placeholder="Describe the expected behaviour…"></textarea>
+
+      <label class="bug-label" for="bug-email">Email <span class="bug-optional">(optional — to be notified of progress)</span></label>
+      <input type="email" id="bug-email" class="bug-input" placeholder="you@example.com">
+
+      <div id="bug-status" class="bug-status"></div>
+    </div>
+    <div class="bug-footer">
+      <button class="bug-btn bug-btn-cancel" onclick="closeBugReport()">Cancel</button>
+      <button class="bug-btn bug-btn-submit" onclick="submitBugReport()">Submit</button>
+    </div>
   </div>
 </div>
 
@@ -686,11 +834,14 @@
   <a href="https://cheapcadtools.com">cheapcadtools.com</a> &nbsp;|&nbsp;
   <a href="https://cheapcadtools.com/privacy-policy/Fusion360-privacy-policy">Privacy Policy</a>
   &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.
+  &nbsp;|&nbsp; v{{ app_version }} &nbsp;<span class="footer-build">build {{ build_time }}</span>
 </footer>
 
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
+const APP_VERSION   = {{ app_version | tojson }};
+const BUILD_TIME    = {{ build_time | tojson }};
 let previewTab = 'pulley';   // 'pulley' | 'belt'
 let currentSpec  = null;
 let currentSpec2 = null;
@@ -703,6 +854,42 @@ let odTimer1     = null;
 let odTimer2     = null;
 let teethLock    = false;
 let teethLock2   = false;
+
+// ── Global number-input auto-clamp ────────────────────────────────────────────
+// Any <input type="number"> with a min or max attribute that goes out of range
+// will be highlighted in red, then auto-corrected to the boundary value after
+// 1 second of no further typing.
+(function () {
+  const clampTimers = new WeakMap();
+  document.addEventListener('input', function (e) {
+    const el = e.target;
+    if (el.tagName !== 'INPUT' || el.type !== 'number') return;
+    const hasMin = el.min !== '' && el.min !== null;
+    const hasMax = el.max !== '' && el.max !== null;
+    if (!hasMin && !hasMax) return;
+
+    const val = parseFloat(el.value);
+    const min = hasMin ? parseFloat(el.min) : -Infinity;
+    const max = hasMax ? parseFloat(el.max) :  Infinity;
+
+    if (isNaN(val) || val < min || val > max) {
+      el.classList.add('input-out-of-range');
+      clearTimeout(clampTimers.get(el));
+      clampTimers.set(el, setTimeout(function () {
+        if (el.value === '' || isNaN(parseFloat(el.value))) {
+          el.value = hasMin ? el.min : el.max;
+        } else {
+          el.value = Math.min(max, Math.max(min, parseFloat(el.value)));
+        }
+        el.classList.remove('input-out-of-range');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }, 1000));
+    } else {
+      clearTimeout(clampTimers.get(el));
+      el.classList.remove('input-out-of-range');
+    }
+  }, true);
+})();
 
 // ── Settings persistence (localStorage) ──────────────────────────────────────
 const SETTINGS_KEY = 'pulley_last';
@@ -772,7 +959,6 @@ function saveSettings() {
     spokes1_fillet_base:  document.getElementById('spokes1_fillet_base').value,
     spokes1_count:        document.getElementById('spokes1_count').value,
     spokes1_height:       document.getElementById('spokes1_height').value,
-    spokes1_split_layers: document.getElementById('spokes1_split_layers').checked ? '1' : '0',
     // Spokes P2
     spokes2_enabled:      document.getElementById('spokes2_enabled').checked ? '1' : '0',
     spokes2_hub_od:       document.getElementById('spokes2_hub_od').value,
@@ -782,7 +968,34 @@ function saveSettings() {
     spokes2_fillet_base:  document.getElementById('spokes2_fillet_base').value,
     spokes2_count:        document.getElementById('spokes2_count').value,
     spokes2_height:       document.getElementById('spokes2_height').value,
-    spokes2_split_layers: document.getElementById('spokes2_split_layers').checked ? '1' : '0',
+    // Flanges P1
+    flange1_enabled:      document.getElementById('flange1_enabled').checked ? '1' : '0',
+    flange1_3dprint:      document.getElementById('flange1_3dprint').checked ? '1' : '0',
+    flange1_angle:        document.getElementById('flange1_angle').value,
+    flange1_rim_radius:   document.getElementById('flange1_rim_radius').value,
+    flange1_plate_height: document.getElementById('flange1_plate_height').value,
+    flange1_bend_radius:  document.getElementById('flange1_bend_radius').value,
+    flange1_height:       document.getElementById('flange1_height').value,
+    flange1_top_separate: document.getElementById('flange1_top_separate').checked ? '1' : '0',
+    flange1_nubs_enabled: document.getElementById('flange1_nubs_enabled').checked ? '1' : '0',
+    flange1_nub_count:    document.getElementById('flange1_nub_count').value,
+    flange1_nub_dia:      document.getElementById('flange1_nub_dia').value,
+    flange1_nub_height:   document.getElementById('flange1_nub_height').value,
+    flange1_nub_allowance:document.getElementById('flange1_nub_allowance').value,
+    // Flanges P2
+    flange2_enabled:      document.getElementById('flange2_enabled').checked ? '1' : '0',
+    flange2_3dprint:      document.getElementById('flange2_3dprint').checked ? '1' : '0',
+    flange2_angle:        document.getElementById('flange2_angle').value,
+    flange2_rim_radius:   document.getElementById('flange2_rim_radius').value,
+    flange2_plate_height: document.getElementById('flange2_plate_height').value,
+    flange2_bend_radius:  document.getElementById('flange2_bend_radius').value,
+    flange2_height:       document.getElementById('flange2_height').value,
+    flange2_top_separate: document.getElementById('flange2_top_separate').checked ? '1' : '0',
+    flange2_nubs_enabled: document.getElementById('flange2_nubs_enabled').checked ? '1' : '0',
+    flange2_nub_count:    document.getElementById('flange2_nub_count').value,
+    flange2_nub_dia:      document.getElementById('flange2_nub_dia').value,
+    flange2_nub_height:   document.getElementById('flange2_nub_height').value,
+    flange2_nub_allowance:document.getElementById('flange2_nub_allowance').value,
   };
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
 }
@@ -913,7 +1126,6 @@ async function loadSettings() {
   if (s.spokes1_fillet_base !== undefined)  document.getElementById('spokes1_fillet_base').value = s.spokes1_fillet_base;
   if (s.spokes1_count !== undefined)        document.getElementById('spokes1_count').value = s.spokes1_count;
   if (s.spokes1_height !== undefined)       document.getElementById('spokes1_height').value = s.spokes1_height;
-  if (s.spokes1_split_layers !== undefined) document.getElementById('spokes1_split_layers').checked = s.spokes1_split_layers === '1';
   // Spokes P2
   if (s.spokes2_enabled !== undefined)      document.getElementById('spokes2_enabled').checked = s.spokes2_enabled === '1';
   if (s.spokes2_hub_od !== undefined)       document.getElementById('spokes2_hub_od').value = s.spokes2_hub_od;
@@ -923,14 +1135,35 @@ async function loadSettings() {
   if (s.spokes2_fillet_base !== undefined)  document.getElementById('spokes2_fillet_base').value = s.spokes2_fillet_base;
   if (s.spokes2_count !== undefined)        document.getElementById('spokes2_count').value = s.spokes2_count;
   if (s.spokes2_height !== undefined)       document.getElementById('spokes2_height').value = s.spokes2_height;
-  if (s.spokes2_split_layers !== undefined) document.getElementById('spokes2_split_layers').checked = s.spokes2_split_layers === '1';
-  // Restore split-layer download visibility and hub OD lock state.
+  // Restore Gen. Rim Layer checkbox visibility and hub OD lock state.
   [1, 2].forEach(n => {
-    const splitOn = document.getElementById(`spokes${n}_enabled`).checked &&
-                    document.getElementById(`spokes${n}_split_layers`).checked;
-    const d = document.getElementById(`dl-p${n}-split`);
-    if (d) d.classList.toggle('hidden', !splitOn);
+    const spokesOn = document.getElementById(`spokes${n}_enabled`).checked;
+    const rimWrap  = document.getElementById(`rim-layer${n}-wrap`);
+    if (rimWrap) rimWrap.style.display = spokesOn ? 'flex' : 'none';
     _syncSpokeHubLock(n);
+  });
+
+  // Restore flange settings
+  [1, 2].forEach(n => {
+    if (s[`flange${n}_enabled`] !== undefined)
+      document.getElementById(`flange${n}_enabled`).checked = s[`flange${n}_enabled`] === '1';
+    if (s[`flange${n}_3dprint`] !== undefined)
+      document.getElementById(`flange${n}_3dprint`).checked = s[`flange${n}_3dprint`] === '1';
+    if (s[`flange${n}_angle`]        !== undefined) _val(`flange${n}_angle`,        s[`flange${n}_angle`]);
+    if (s[`flange${n}_rim_radius`]   !== undefined) _val(`flange${n}_rim_radius`,   s[`flange${n}_rim_radius`]);
+    if (s[`flange${n}_plate_height`] !== undefined) _val(`flange${n}_plate_height`, s[`flange${n}_plate_height`]);
+    if (s[`flange${n}_bend_radius`]  !== undefined) _val(`flange${n}_bend_radius`,  s[`flange${n}_bend_radius`]);
+    if (s[`flange${n}_height`]       !== undefined) _val(`flange${n}_height`,       s[`flange${n}_height`]);
+    if (s[`flange${n}_top_separate`] !== undefined)
+      document.getElementById(`flange${n}_top_separate`).checked = s[`flange${n}_top_separate`] === '1';
+    if (s[`flange${n}_nubs_enabled`] !== undefined)
+      document.getElementById(`flange${n}_nubs_enabled`).checked = s[`flange${n}_nubs_enabled`] === '1';
+    if (s[`flange${n}_nub_count`]    !== undefined) _val(`flange${n}_nub_count`,    s[`flange${n}_nub_count`]);
+    if (s[`flange${n}_nub_dia`]      !== undefined) _val(`flange${n}_nub_dia`,      s[`flange${n}_nub_dia`]);
+    if (s[`flange${n}_nub_height`]   !== undefined) _val(`flange${n}_nub_height`,   s[`flange${n}_nub_height`]);
+    if (s[`flange${n}_nub_allowance`]!== undefined) _val(`flange${n}_nub_allowance`,s[`flange${n}_nub_allowance`]);
+    // Apply visibility
+    onFlangeChange(n);
   });
 
   return true;
@@ -945,6 +1178,7 @@ function resetSettings() {
 window.onload = async () => {
   populatePitches('HTD');
   const restored = await loadSettings();
+  _syncNubHeightMax();
 
   // Apply Feature Build tab state now that the DOM is fully ready.
   // loadSettings() sets previewTab but doesn't call setPreviewTab().
@@ -964,6 +1198,16 @@ window.onload = async () => {
   }
   _updateHubMaxValues(1);
   _updateHubMaxValues(2);
+  // Set hub height min based on retention type (mirrors onHubChange logic)
+  [1, 2].forEach(function(n) {
+    const heightEl  = document.getElementById(`hub${n}_height`);
+    const retention = document.getElementById(`hub${n}_retention`).value;
+    const isSetScrew = retention === 'set_screw_nut' || retention === 'set_screw_std';
+    if (heightEl && isSetScrew) {
+      const sz = document.getElementById(`hub${n}_screw_size`).value;
+      heightEl.min = (HUB_SCREW_DIA[sz] || 5) * 2;
+    }
+  });
   updateBeltBtn();
 };
 
@@ -1463,6 +1707,7 @@ function setPreviewTab(tab) {
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 function schedulePreview() {
+  _syncNubHeightMax();
   clearTimeout(previewTimer);
   previewTimer = setTimeout(updatePreview, 300);
   saveSettings();
@@ -1587,7 +1832,6 @@ function buildParams() {
     p.spokes_fillet_base = document.getElementById('spokes1_fillet_base').value;
     p.spokes_count     = document.getElementById('spokes1_count').value;
     p.spokes_height    = document.getElementById('spokes1_height').value;
-    p.spokes_split     = document.getElementById('spokes1_split_layers').checked ? '1' : '0';
   }
   // Spoke params — P2 (only in dual mode)
   if (document.getElementById('dual_enable').checked &&
@@ -1600,7 +1844,41 @@ function buildParams() {
     p.p2_spokes_fillet_base = document.getElementById('spokes2_fillet_base').value;
     p.p2_spokes_count     = document.getElementById('spokes2_count').value;
     p.p2_spokes_height    = document.getElementById('spokes2_height').value;
-    p.p2_spokes_split     = document.getElementById('spokes2_split_layers').checked ? '1' : '0';
+  }
+  // Flange params — P1
+  if (document.getElementById('flange1_enabled').checked) {
+    p.flange_enabled        = '1';
+    p.flange_3dprint        = document.getElementById('flange1_3dprint').checked ? '1' : '0';
+    p.flange_angle          = document.getElementById('flange1_angle').value;
+    p.flange_rim_radius     = document.getElementById('flange1_rim_radius').value;
+    p.flange_height         = document.getElementById('flange1_height').value;
+    p.flange_plate_height   = document.getElementById('flange1_plate_height').value;
+    p.flange_bend_radius    = document.getElementById('flange1_bend_radius').value;
+    p.flange_top_separate   = document.getElementById('flange1_top_separate').checked ? '1' : '0';
+    p.hub_height_for_flange = document.getElementById('hub1_height').value;
+    p.flange_nubs_enabled   = document.getElementById('flange1_nubs_enabled').checked ? '1' : '0';
+    p.flange_nub_count      = document.getElementById('flange1_nub_count').value;
+    p.flange_nub_dia        = document.getElementById('flange1_nub_dia').value;
+    p.flange_nub_height     = document.getElementById('flange1_nub_height').value;
+    p.flange_nub_allowance  = document.getElementById('flange1_nub_allowance').value;
+  }
+  // Flange params — P2 (only in dual mode)
+  if (document.getElementById('dual_enable').checked &&
+      document.getElementById('flange2_enabled').checked) {
+    p.p2_flange_enabled        = '1';
+    p.p2_flange_3dprint        = document.getElementById('flange2_3dprint').checked ? '1' : '0';
+    p.p2_flange_angle          = document.getElementById('flange2_angle').value;
+    p.p2_flange_rim_radius     = document.getElementById('flange2_rim_radius').value;
+    p.p2_flange_height         = document.getElementById('flange2_height').value;
+    p.p2_flange_plate_height   = document.getElementById('flange2_plate_height').value;
+    p.p2_flange_bend_radius    = document.getElementById('flange2_bend_radius').value;
+    p.p2_flange_top_separate   = document.getElementById('flange2_top_separate').checked ? '1' : '0';
+    p.p2_hub_height_for_flange = document.getElementById('hub2_height').value;
+    p.p2_flange_nubs_enabled   = document.getElementById('flange2_nubs_enabled').checked ? '1' : '0';
+    p.p2_flange_nub_count      = document.getElementById('flange2_nub_count').value;
+    p.p2_flange_nub_dia        = document.getElementById('flange2_nub_dia').value;
+    p.p2_flange_nub_height     = document.getElementById('flange2_nub_height').value;
+    p.p2_flange_nub_allowance  = document.getElementById('flange2_nub_allowance').value;
   }
   return p;
 }
@@ -1625,13 +1903,19 @@ function downloadSVG(n, includeData = true) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
   params.include_data = includeData ? '1' : '0';
-  window.location = '/download/svg?' + new URLSearchParams(params);
+  _triggerDownload('/download/svg?' + new URLSearchParams(params));
+  if (document.getElementById(`rim_layer${n}_enabled`)?.checked) {
+    setTimeout(() => _triggerDownload('/download/svg-rim?' + new URLSearchParams(params)), 400);
+  }
 }
 
 function downloadDXF(n) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
-  window.location = '/download/dxf?' + new URLSearchParams(params);
+  _triggerDownload('/download/dxf?' + new URLSearchParams(params));
+  if (document.getElementById(`rim_layer${n}_enabled`)?.checked) {
+    setTimeout(() => _triggerDownload('/download/dxf-rim?' + new URLSearchParams(params)), 400);
+  }
 }
 
 function downloadBeltSVG() {
@@ -1682,6 +1966,52 @@ function updateBeltBtn() {
 }
 
 // ── Feature Build ─────────────────────────────────────────────────────────────
+
+// Sync all dynamic min/max bounds that depend on other field values.
+// Called on page load and whenever belt_height or rim_radius changes.
+function _syncDynamicBounds() {
+  const bh = Math.max(1, parseFloat(document.getElementById('belt_height').value) || 10);
+
+  // Nub Height: max = belt_height / 3  (spec: flange_feature.md)
+  const nubMax = Math.floor((bh / 3) * 10) / 10;
+  ['flange1_nub_height', 'flange2_nub_height'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.max = nubMax;
+    if (parseFloat(el.value) > nubMax) {
+      el.value = nubMax;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+
+  // Spoke Height: max = belt_height  (spec: 3D_SpokeHeight.md — 0 means full height)
+  [['spokes1_height', 1], ['spokes2_height', 2]].forEach(function([id]) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.max = bh;
+    if (parseFloat(el.value) > bh) {
+      el.value = bh;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+
+  // Bend Radius: max = rim_radius * 0.8  (server clips at this value)
+  [[1], [2]].forEach(function([n]) {
+    const rimEl  = document.getElementById('flange' + n + '_rim_radius');
+    const bendEl = document.getElementById('flange' + n + '_bend_radius');
+    if (!rimEl || !bendEl) return;
+    const bendMax = Math.floor(parseFloat(rimEl.value) * 0.8 * 10) / 10;
+    bendEl.max = bendMax;
+    if (parseFloat(bendEl.value) > bendMax) {
+      bendEl.value = bendMax;
+      bendEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+}
+
+// Keep old name as alias so existing call sites still work
+function _syncNubHeightMax() { _syncDynamicBounds(); }
+
 function onFeatureBuildToggle() {
   const fb = document.getElementById('feature_build').checked;
   document.body.classList.toggle('feature-build', fb);
@@ -1722,153 +2052,99 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ── Settings summary ────────────────────────────────────────────────────────
-function _gv(id) {
-  const el = document.getElementById(id);
-  if (!el) return '—';
-  if (el.type === 'checkbox') return el.checked ? 'Yes' : 'No';
-  return el.value || '—';
-}
-function _row(label, value) {
-  return `<tr><td>${label}</td><td>${value}</td></tr>`;
-}
-function _section(title) {
-  return `<div class="sum-section">${title}</div><table>`;
-}
 
-function openSummary(pulley, evt) {
-  evt.stopPropagation();
-  const p      = pulley === 2 ? '2' : '1';
-  const pfx    = p === '2' ? 'p2_' : '';
-  const hpfx   = p === '2' ? 'hub2' : 'hub1';
-  const spfx   = p === '2' ? 'spokes2' : 'spokes1';
-  const is3d   = document.getElementById('feature_build').checked;
-  const isDual = document.getElementById('dual_enable').checked;
+// ── Bug Report ────────────────────────────────────────────────────────────────
+function openBugReport() {
+  document.getElementById('bug-seeing').value  = '';
+  document.getElementById('bug-should').value  = '';
+  document.getElementById('bug-email').value   = '';
+  document.getElementById('bug-status').textContent = '';
+  document.getElementById('bug-status').className   = 'bug-status';
+  // Reset to bug mode
+  document.getElementById('bug-is-feature').checked = false;
+  onBugTypeToggle();
+  document.getElementById('bug-report-overlay').style.display = 'flex';
+  document.getElementById('bug-seeing').focus();
+}
+function onBugTypeToggle() {
+  const isFeature = document.getElementById('bug-is-feature').checked;
+  document.getElementById('bug-title').innerHTML = isFeature
+    ? '&#9733; Feature Request'
+    : '&#9888; Report A Bug';
+  document.getElementById('bug-label-seeing').textContent = isFeature
+    ? 'What would you like to be able to do?'
+    : 'What are you currently seeing?';
+  document.getElementById('bug-label-should').textContent = isFeature
+    ? 'Why would this be useful?'
+    : 'What should you be seeing?';
+  document.getElementById('bug-seeing').placeholder = isFeature
+    ? 'Describe the feature you\'d like…'
+    : 'Describe what you see…';
+  document.getElementById('bug-should').placeholder = isFeature
+    ? 'Explain the benefit or use case…'
+    : 'Describe the expected behaviour…';
+}
+function closeBugReport() {
+  document.getElementById('bug-report-overlay').style.display = 'none';
+}
+document.getElementById('bug-report-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeBugReport();
+});
 
-  // ── computed values ──────────────────────────────────────────────────────
-  const spec    = p === '2' ? currentSpec2 : currentSpec;
-  const teeth   = parseInt(_gv(pfx + 'teeth') || _gv('teeth'), 10) || 0;
-  const pitchMm = spec ? spec.pitch_mm : null;
-  const pdStr   = (spec && teeth) ? ((pitchMm * teeth) / Math.PI).toFixed(3) + ' mm' : '—';
-  const odEl    = document.getElementById(p === '2' ? 'p2_od' : 'od');
-  const odStr   = (odEl && odEl.value) ? parseFloat(odEl.value).toFixed(2) + ' mm' : '—';
+async function submitBugReport() {
+  const seeing     = document.getElementById('bug-seeing').value.trim();
+  const should_see = document.getElementById('bug-should').value.trim();
+  const email      = document.getElementById('bug-email').value.trim();
+  const statusEl   = document.getElementById('bug-status');
 
-  // ── clearance / backlash label ───────────────────────────────────────────
-  function presetLabel(selId, customId) {
-    const v = _gv(selId);
-    if (v === 'CUSTOM') return `Custom ${parseFloat(_gv(customId) || 0).toFixed(3)} mm`;
-    const labels = {NONE:'None', TIGHT:'Tight', STANDARD:'Standard', LOOSE:'Loose'};
-    return labels[v] || v;
+  if (!seeing && !should_see) {
+    statusEl.textContent = 'Please fill in at least one description field.';
+    statusEl.className   = 'bug-status bug-status-error';
+    return;
   }
 
-  // ── hub retention label ──────────────────────────────────────────────────
-  const retMap = {
-    set_screw_nut:  'Set Screw (captured nut)',
-    set_screw_drill:'Set Screw (drilled)',
-    d_shaft:        'D-Shaft',
-    keyway:         'Keyway',
-  };
+  // Capture current app state
+  const state = buildParams();
+  state.belt_height  = document.getElementById('belt_height')?.value || '';
+  state.app_version  = APP_VERSION;
+  state.build_time   = BUILD_TIME;
+  state.preview_tab  = previewTab;
+  state.page_url     = window.location.href;
 
-  let html = '';
+  const submitBtn = document.querySelector('.bug-btn-submit');
+  submitBtn.disabled = true;
+  statusEl.textContent = 'Submitting…';
+  statusEl.className   = 'bug-status';
 
-  // Belt Profile
-  html += _section('Belt Profile');
-  if (p === '1') {
-    html += _row('Family', _gv('family'));
-    html += _row('Pitch', _gv('pitch') + (spec ? ` (${spec.pitch_mm} mm)` : ''));
-  } else {
-    html += _row('Belt', document.getElementById('p2-belt-label')?.textContent || '—');
-    html += _row('(Locked to Pulley 1)', '');
-  }
-  html += '</table>';
-
-  // Size
-  html += _section('Size');
-  html += _row('Teeth', _gv(pfx + 'teeth'));
-  html += _row('Outer Diameter', odStr);
-  html += _row('Bore Diameter', parseFloat(_gv(pfx + 'bore') || _gv('bore')).toFixed(1) + ' mm');
-  html += _row('Pitch Diameter', pdStr);
-  html += '</table>';
-
-  // Advanced
-  html += _section('Advanced');
-  html += _row('Tooth Clearance', presetLabel(pfx + 'clearance_preset', pfx + 'clearance_custom'));
-  html += _row('Backlash', presetLabel(pfx + 'backlash_preset', pfx + 'backlash_custom'));
-  html += _row('Print Compensation', parseFloat(_gv(pfx + 'print_extra') || 0).toFixed(3) + ' mm');
-  html += '</table>';
-
-  // 3D settings (always show in 3D mode)
-  if (is3d) {
-    html += _section('3D Belt');
-    html += _row('Belt Height', _gv('belt_height') + ' mm');
-    html += '</table>';
-
-    // Hub
-    const hubEnabled = document.getElementById(hpfx + '_enabled')?.checked;
-    html += _section('Hub ' + (hubEnabled ? '' : '(disabled)'));
-    if (hubEnabled) {
-      const ret = _gv(hpfx + '_retention');
-      html += _row('Retention', retMap[ret] || ret);
-      html += _row('Hub Height', _gv(hpfx + '_height') + ' mm');
-      html += _row('Hub OD', _gv(hpfx + '_od') + ' mm');
-      if (ret === 'set_screw_nut' || ret === 'set_screw_drill') {
-        html += _row('Screw Size', _gv(hpfx + '_screw_size'));
-        html += _row('Screw Count', _gv(hpfx + '_screw_count'));
-      }
-      if (ret === 'd_shaft') {
-        html += _row('Flat Depth', _gv(hpfx + '_flat_depth') + ' mm');
-        const dsScrew = document.getElementById(hpfx + '_dshaft_screw')?.checked;
-        if (dsScrew) {
-          html += _row('D-Shaft Screw', _gv(hpfx + '_dshaft_screw_type') + ' ' + _gv(hpfx + '_dshaft_screw_size'));
-        }
-      }
-      if (ret === 'keyway') {
-        html += _row('Keyway Width', _gv(hpfx + '_keyway_w') + ' mm');
-        html += _row('Keyway Height', _gv(hpfx + '_keyway_h') + ' mm');
-        const kwScrew = document.getElementById(hpfx + '_keyway_screw')?.checked;
-        if (kwScrew) {
-          html += _row('Keyway Screw', _gv(hpfx + '_keyway_screw_type') + ' ' + _gv(hpfx + '_keyway_screw_size'));
-        }
-      }
+  try {
+    const isFeature = document.getElementById('bug-is-feature').checked;
+    const resp = await fetch('/api/report-bug', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seeing, should_see, email, state, report_type: isFeature ? 'feature' : 'bug' }),
+    });
+    const data = await resp.json();
+    if (resp.ok && data.ok) {
+      statusEl.textContent = 'Thank you — your report has been saved.';
+      statusEl.className   = 'bug-status bug-status-ok';
+      setTimeout(closeBugReport, 2000);
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'Unknown error');
+      statusEl.className   = 'bug-status bug-status-error';
     }
-    html += '</table>';
-
-    // Spokes
-    const spokesEnabled = document.getElementById(spfx + '_enabled')?.checked;
-    html += _section('Spokes ' + (spokesEnabled ? '' : '(disabled)'));
-    if (spokesEnabled) {
-      html += _row('Count', _gv(spfx + '_count'));
-      html += _row('Width', _gv(spfx + '_width') + ' mm');
-      html += _row('Hub OD', _gv(spfx + '_hub_od') + ' mm');
-      html += _row('Rim Depth', _gv(spfx + '_rim_depth') + ' mm');
-      const sh = _gv(spfx + '_height');
-      html += _row('Spoke Height', sh && sh !== '0' ? sh + ' mm' : 'Full belt height');
-      html += _row('Tip Fillet', _gv(spfx + '_fillet_tip') + ' mm');
-      html += _row('Base Fillet', _gv(spfx + '_fillet_base') + ' mm');
-    }
-    html += '</table>';
+  } catch (err) {
+    statusEl.textContent = 'Network error: ' + err.message;
+    statusEl.className   = 'bug-status bug-status-error';
+  } finally {
+    submitBtn.disabled = false;
   }
-
-  // Drive ratio (only in dual mode, only for P1)
-  if (isDual && p === '1') {
-    html += _section('Drive');
-    html += _row('Gear Ratio', parseFloat(_gv('gear_ratio')).toFixed(3) + ' : 1');
-    html += _row('Center Distance', parseFloat(_gv('center_distance')).toFixed(1) + ' mm');
-    html += '</table>';
-  }
-
-  const label = p === '1'
-    ? (isDual ? 'Pulley 1' : 'Pulley') + ' — Current Settings'
-    : 'Pulley 2 — Current Settings';
-  document.getElementById('summary-title').textContent = '\u26A0 ' + label;
-  document.getElementById('summary-body').innerHTML = html;
-  document.getElementById('summary-overlay').style.display = 'flex';
 }
 
-function closeSummary() {
-  document.getElementById('summary-overlay').style.display = 'none';
-}
-document.getElementById('summary-overlay').addEventListener('click', function(e) {
-  if (e.target === this) closeSummary();
+// Close bug report on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeBugReport();
+  }
 });
 
 async function downloadWithProgress(url, defaultFilename) {
@@ -2237,6 +2513,14 @@ function toggleTbd(id) {
   arrow.classList.toggle('open', open);
 }
 
+function toggleSection(id) {
+  const body  = document.getElementById(`${id}-body`);
+  const arrow = document.getElementById(`${id}-arrow`);
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.classList.toggle('open', !isOpen);
+}
+
 function toggleSpokes(n) {
   const body  = document.getElementById(`spokes${n}-body`);
   const arrow = document.getElementById(`spokes${n}-arrow`);
@@ -2309,15 +2593,98 @@ function _syncSpokeHubLock(n) {
 
 function onSpokesChange(n) {
   _updateSpokeMaxCount(n);
-  const spokesOn = document.getElementById(`spokes${n}_enabled`).checked;
-  const splitOn  = spokesOn && document.getElementById(`spokes${n}_split_layers`).checked;
-  const splitDiv = document.getElementById(`dl-p${n}-split`);
-  if (splitDiv) splitDiv.classList.toggle('hidden', !splitOn);
+  const spokesOn  = document.getElementById(`spokes${n}_enabled`).checked;
+  const rimWrap   = document.getElementById(`rim-layer${n}-wrap`);
+  if (rimWrap) rimWrap.style.display = spokesOn ? 'flex' : 'none';
+
+  // Warn when spoke hub OD >= pulley OD, or bore >= spoke hub OD (geometry impossible)
+  const hubOd   = parseFloat(document.getElementById(`spokes${n}_hub_od`).value) || 0;
+  const boreId  = n === 2 ? 'p2_bore' : 'bore';
+  const bore    = parseFloat(document.getElementById(boreId).value) || 0;
+  const odEl    = document.getElementById(n === 2 ? 'p2_od' : 'od');
+  const pulleyOd = odEl ? parseFloat(odEl.value) || 0 : 0;
+  const warnEl  = document.getElementById(`spokes${n}_hub_warn`);
+  const hubTooLarge = pulleyOd > 0 && hubOd >= pulleyOd;
+  const boreTooLarge = hubOd > 0 && bore >= hubOd;
+  if (warnEl) {
+    warnEl.style.display = (spokesOn && (hubTooLarge || boreTooLarge)) ? 'block' : 'none';
+    warnEl.textContent   = hubTooLarge
+      ? '⚠ Hub OD exceeds pulley OD — spokes ignored in preview'
+      : '⚠ Bore ≥ spoke Hub OD — spokes ignored in preview';
+  }
 
   _syncSpokeHubLock(n);
 
   schedulePreview();
   saveSettings();
+}
+
+function onFlangeChange(n) {
+  _syncDynamicBounds();
+  const enabled  = document.getElementById(`flange${n}_enabled`).checked;
+  const is3dp    = document.getElementById(`flange${n}_3dprint`).checked;
+
+  document.getElementById(`flange${n}_metal_opts`).style.display = (enabled && !is3dp) ? 'block' : 'none';
+  document.getElementById(`flange${n}_3dp_opts`).style.display   = (enabled && is3dp)  ? 'block' : 'none';
+
+  const topSep = enabled && is3dp && document.getElementById(`flange${n}_top_separate`).checked;
+  document.getElementById(`flange${n}_nub_section`).style.display = topSep ? 'block' : 'none';
+
+  const nubsOn = topSep && document.getElementById(`flange${n}_nubs_enabled`).checked;
+  document.getElementById(`flange${n}_nub_opts`).style.display = nubsOn ? 'block' : 'none';
+
+  const dlWrap = document.getElementById(`flange${n}_dl_wrap`);
+  if (dlWrap) dlWrap.style.display = enabled ? 'block' : 'none';
+
+  schedulePreview();
+  saveSettings();
+}
+
+function _flangeParams(n) {
+  // Build flange-specific params for pulley n (always uses flat names, not p2_ prefix)
+  const prefix = n === 2 ? 'p2_' : '';
+  const p = buildParams();
+  const fp = {};
+
+  // Core pulley params, remapped to flat names if P2
+  fp.family  = p.family;
+  fp.pitch   = p.pitch;
+  fp.teeth   = n === 2 ? p.p2_teeth   : p.teeth;
+  fp.bore    = n === 2 ? p.p2_bore    : p.bore;
+  fp.belt_height = document.getElementById('belt_height').value;
+  fp.clearance_preset = n === 2 ? p.p2_clearance_preset : p.clearance_preset;
+  fp.clearance_custom = n === 2 ? p.p2_clearance_custom : p.clearance_custom;
+  fp.print_extra      = n === 2 ? p.p2_print_extra      : p.print_extra;
+
+  // Hub params
+  const hubKey = n === 2 ? 'p2_hub_od' : 'hub_od';
+  fp.hub_od = p[hubKey] || 0;
+
+  // Spoke params
+  fp.spokes_enabled = document.getElementById(`spokes${n}_enabled`).checked ? '1' : '0';
+  fp.spokes_hub_od  = document.getElementById(`spokes${n}_hub_od`).value;
+
+  // Flange-specific params
+  fp.flange_3dprint      = document.getElementById(`flange${n}_3dprint`).checked ? '1' : '0';
+  fp.flange_angle        = document.getElementById(`flange${n}_angle`).value;
+  fp.flange_rim_radius   = document.getElementById(`flange${n}_rim_radius`).value;
+  fp.flange_height       = document.getElementById(`flange${n}_height`).value;
+  fp.flange_plate_height = document.getElementById(`flange${n}_plate_height`).value;
+  fp.flange_bend_radius  = document.getElementById(`flange${n}_bend_radius`).value;
+  fp.flange_top_separate = document.getElementById(`flange${n}_top_separate`).checked ? '1' : '0';
+  fp.flange_nubs_enabled = document.getElementById(`flange${n}_nubs_enabled`).checked ? '1' : '0';
+  fp.flange_nub_count    = document.getElementById(`flange${n}_nub_count`).value;
+  fp.flange_nub_dia      = document.getElementById(`flange${n}_nub_dia`).value;
+  fp.flange_nub_height   = document.getElementById(`flange${n}_nub_height`).value;
+  fp.flange_nub_allowance= document.getElementById(`flange${n}_nub_allowance`).value;
+
+  return fp;
+}
+
+function downloadFlange(n, which) {
+  const fp = _flangeParams(n);
+  fp.flange_which = which;
+  _triggerDownload('/download/flange-stl?' + new URLSearchParams(fp));
 }
 
 function onFilletChange(n, changed) {
@@ -2327,7 +2694,7 @@ function onFilletChange(n, changed) {
   const params = new URLSearchParams({
     family:           document.getElementById('family').value,
     pitch:            document.getElementById('pitch').value,
-    teeth:            document.getElementById('teeth').value,
+    teeth:            document.getElementById(n === 2 ? 'p2_teeth' : 'teeth').value,
     spokes_hub_od:    document.getElementById(`spokes${n}_hub_od`).value,
     spokes_rim_depth: document.getElementById(`spokes${n}_rim_depth`).value,
     spokes_width:     document.getElementById(`spokes${n}_width`).value,
@@ -2348,24 +2715,38 @@ function onFilletChange(n, changed) {
     .catch(() => onSpokesChange(n));
 }
 
-function downloadLayerPart(n, part, fmt) {
-  const params = buildParams();
-  params.belt_height = document.getElementById('belt_height').value;
-  if (n === 2) params.pulley = '2';
-  params.part = part;
-  window.location = '/download/' + fmt + '?' + new URLSearchParams(params);
+function _triggerDownload(url) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function onHubChange(n) {
   _updateHubMaxValues(n);
+
+  // Hub Height min = 2 × screw_dia when set screw retention (hub.md spec)
+  const heightEl  = document.getElementById(`hub${n}_height`);
+  const retention = document.getElementById(`hub${n}_retention`).value;
+  const isSetScrew = retention === 'set_screw_nut' || retention === 'set_screw_std';
+  if (heightEl) {
+    if (isSetScrew) {
+      const sz = document.getElementById(`hub${n}_screw_size`).value;
+      const sd = HUB_SCREW_DIA[sz] || 5;
+      heightEl.min = sd * 2;
+    } else {
+      heightEl.min = 1;
+    }
+  }
+
   _clampHubInput(document.getElementById(`hub${n}_height`));
   _clampHubInput(document.getElementById(`hub${n}_od`));
-  const retention = document.getElementById(`hub${n}_retention`).value;
   const ssOpts    = document.getElementById(`hub${n}_setscrew_opts`);
   const dsOpts    = document.getElementById(`hub${n}_dshaft_opts`);
   const kwOpts    = document.getElementById(`hub${n}_keyway_opts`);
 
-  const isSetScrew = retention === 'set_screw_nut' || retention === 'set_screw_std';
   ssOpts.classList.toggle('hidden', !isSetScrew);
   dsOpts.classList.toggle('hidden', retention !== 'd_shaft');
   kwOpts.classList.toggle('hidden', retention !== 'keyway');
@@ -2444,18 +2825,36 @@ function _initHubDefaults(n) {
   _validateHub(n);
 }
 
-// Update max attributes on hub inputs that depend on bore diameter
+// Update min/max attributes on hub and spoke inputs that depend on bore diameter
 function _updateHubMaxValues(n) {
   const bore = parseFloat(document.getElementById(n === 1 ? 'bore' : 'p2_bore').value) || 0;
   if (bore <= 0) return;
-  const flatMax = Math.round(bore / 2 * 100) / 100;          // 100% of bore radius
-  const kwMax   = Math.round(bore * 0.75 * 100) / 100;       // 75% of bore diameter
+
+  // Flat depth: max = bore radius (can't cut deeper than shaft centre)
+  const flatMax = Math.round(bore / 2 * 100) / 100;
   const flatEl = document.getElementById(`hub${n}_flat_depth`);
   if (flatEl) { flatEl.max = flatMax; _clampHubInput(flatEl); }
+
+  // Keyway dimensions: max = 75% of bore diameter
+  const kwMax = Math.round(bore * 0.75 * 100) / 100;
   const kwWEl = document.getElementById(`hub${n}_keyway_w`);
   if (kwWEl) { kwWEl.max = kwMax; _clampHubInput(kwWEl); }
   const kwHEl = document.getElementById(`hub${n}_keyway_h`);
   if (kwHEl) { kwHEl.max = kwMax; _clampHubInput(kwHEl); }
+
+  // Hub OD: min = bore + 1 mm (hub must enclose bore with at least 1 mm wall)
+  const hubOdEl = document.getElementById(`hub${n}_od`);
+  if (hubOdEl) {
+    hubOdEl.min = (bore + 1).toFixed(1);
+    _clampHubInput(hubOdEl);
+  }
+
+  // Spoke Hub OD: min = bore (spoke hub boss must enclose the bore)
+  const spokeHubEl = document.getElementById(`spokes${n}_hub_od`);
+  if (spokeHubEl) {
+    spokeHubEl.min = bore.toFixed(1);
+    _clampHubInput(spokeHubEl);
+  }
 }
 
 // Re-validate when bore changes

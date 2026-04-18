@@ -267,6 +267,63 @@ def _serialise_dxf(doc) -> bytes:
     return buf.getvalue().encode('utf-8')
 
 
+def generate_rim_layer_dxf(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    bore_mm: float,
+    clearance_mm: float = 0.0,
+    backlash_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+    spoke_hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 2.0,
+) -> bytes:
+    """Return DXF bytes for the rim ring layer.
+
+    Layers:
+      PROFILE   — outer toothed profile
+      RIM_INNER — inner rim circle at R_tooth_root − rim_depth  (blue, color 5)
+      HUB       — spoke hub OD circle                           (green, color 3)
+      BORE      — bore circle                                   (red, color 1)
+    """
+    key = _profile_key(family, pitch)
+    if key not in PULLEY_SPECS:
+        raise ValueError(f"Unknown profile key '{key}'")
+
+    segs, R_OD, _edge_a, wrapped = pulley_outline_segments(
+        family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
+    )
+
+    doc = ezdxf.new('R2010')
+    doc.header['$INSUNITS']   = 4   # mm
+    doc.header['$MEASUREMENT'] = 1  # metric
+
+    msp = doc.modelspace()
+    doc.layers.new('PROFILE',   dxfattribs={'color': 7, 'linetype': 'Continuous'})
+    doc.layers.new('RIM_INNER', dxfattribs={'color': 5, 'linetype': 'Continuous'})
+    doc.layers.new('HUB',       dxfattribs={'color': 3, 'linetype': 'Continuous'})
+    doc.layers.new('BORE',      dxfattribs={'color': 1, 'linetype': 'Continuous'})
+
+    # Outer toothed profile
+    _segs_to_dxf(msp, segs, {'layer': 'PROFILE'})
+
+    R_bore       = bore_mm / 2.0
+    R_tooth_root = min(math.hypot(x, y) for x, y in wrapped) if wrapped else R_OD
+    R_hub_spoke  = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (R_bore + 1.0)
+    R_rim_inner  = max(R_hub_spoke + 0.5, R_tooth_root - rim_depth_mm)
+
+    msp.add_circle(center=(0.0, 0.0, 0.0), radius=R_rim_inner,
+                   dxfattribs={'layer': 'RIM_INNER'})
+    if R_hub_spoke > R_bore + 0.1:
+        msp.add_circle(center=(0.0, 0.0, 0.0), radius=R_hub_spoke,
+                       dxfattribs={'layer': 'HUB'})
+    if R_bore > 0:
+        msp.add_circle(center=(0.0, 0.0, 0.0), radius=R_bore,
+                       dxfattribs={'layer': 'BORE'})
+
+    return _serialise_dxf(doc)
+
+
 def generate_belt_dxf(
     family: str,
     pitch: str,

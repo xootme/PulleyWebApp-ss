@@ -12,8 +12,10 @@ from exporters.step_exporter import (
     generate_pulley_stl,
     generate_pulley_stl_preview,
     generate_drive_stl_preview,
+    generate_pulley_step,
     _build_outline_points,
     _rot2d,
+    _make_frustum,
 )
 from tests.conftest import get_spec, std_cl, std_bl, BORE_MM
 
@@ -298,6 +300,154 @@ class TestHubGeometry:
         cx, cy, _ = mesh.centroid
         assert abs(cx) < 1.0, f'Centroid X not near 0 with hub: {cx:.3f}'
         assert abs(cy) < 1.0, f'Centroid Y not near 0 with hub: {cy:.3f}'
+
+
+# ---------------------------------------------------------------------------
+# _make_frustum — truncated cone mesh (chamfer support helper)
+# ---------------------------------------------------------------------------
+class TestMakeFrustum:
+    """_make_frustum produces a valid, watertight trimesh with correct geometry."""
+
+    def test_returns_trimesh(self):
+        m = _make_frustum(r_bottom=2.0, r_top=5.0, height=3.0)
+        assert isinstance(m, trimesh.Trimesh)
+
+    def test_watertight(self):
+        m = _make_frustum(r_bottom=2.0, r_top=5.0, height=3.0)
+        assert m.is_watertight, 'Frustum mesh is not watertight'
+
+    def test_positive_volume(self):
+        m = _make_frustum(r_bottom=2.0, r_top=5.0, height=3.0)
+        assert m.volume > 0
+
+    def test_z_extent_matches_height(self):
+        h = 7.5
+        m = _make_frustum(r_bottom=0.5, r_top=8.0, height=h)
+        z_min, z_max = m.bounds[:, 2]
+        assert abs(z_max - z_min - h) < 0.1, f'Z extent {z_max - z_min:.3f} ≠ height {h}'
+
+    def test_cylinder_when_radii_equal(self):
+        """Equal top and bottom radii should produce a cylinder."""
+        r = 5.0
+        m = _make_frustum(r_bottom=r, r_top=r, height=4.0)
+        assert m.is_watertight
+        assert m.volume > 0
+
+    def test_volume_less_than_enclosing_cylinder(self):
+        r_b, r_t, h = 2.0, 6.0, 5.0
+        frustum  = _make_frustum(r_b, r_t, h)
+        import math as _m
+        cyl_vol = _m.pi * r_t ** 2 * h
+        assert frustum.volume < cyl_vol
+
+
+# ---------------------------------------------------------------------------
+# Chamfer cones in STL (spokes + captured-nut lobes)
+# ---------------------------------------------------------------------------
+class TestChamferConesSTL:
+    """STL with captured-nut lobes + spokes includes chamfer cones without crashing."""
+
+    _BASE = dict(
+        family='HTD', pitch='5M', num_teeth=20, bore_mm=8.0,
+        belt_height_mm=10.0, clearance_mm=0.0, backlash_mm=0.0,
+    )
+
+    def test_no_crash_with_chamfer(self):
+        stl = generate_pulley_stl(
+            **self._BASE,
+            hub_od_mm=0.0, hub_height_mm=10.0,
+            screw_dia_mm=5.0, screw_count=2, captured_nut=True,
+            spoke_count=4, spoke_width_mm=4.0, spoke_hub_od_mm=16.0,
+            rim_depth_mm=2.0, spoke_height_mm=5.0,
+        )
+        assert isinstance(stl, bytes)
+        assert len(stl) > 84
+
+    def test_chamfer_valid_mesh(self):
+        stl = generate_pulley_stl(
+            **self._BASE,
+            hub_od_mm=0.0, hub_height_mm=10.0,
+            screw_dia_mm=5.0, screw_count=2, captured_nut=True,
+            spoke_count=4, spoke_width_mm=4.0, spoke_hub_od_mm=16.0,
+            rim_depth_mm=2.0, spoke_height_mm=5.0,
+        )
+        mesh = _load_stl(stl)
+        assert mesh.volume > 0
+
+
+# ---------------------------------------------------------------------------
+# generate_pulley_step — retention feature smoke tests
+# ---------------------------------------------------------------------------
+class TestStepRetention:
+    """generate_pulley_step returns valid STEP bytes for each retention type."""
+
+    _BASE = dict(
+        family='HTD', pitch='5M', num_teeth=20, bore_mm=8.0,
+        belt_height_mm=10.0, clearance_mm=0.0, backlash_mm=0.0,
+        hub_od_mm=24.0, hub_height_mm=10.0,
+    )
+
+    def test_step_no_hub_returns_bytes(self):
+        stl = generate_pulley_step(
+            family='HTD', pitch='5M', num_teeth=20, bore_mm=8.0,
+            belt_height_mm=10.0,
+        )
+        assert isinstance(stl, bytes)
+        assert len(stl) > 1000
+
+    def test_step_standard_setscrew(self):
+        data = generate_pulley_step(
+            **self._BASE,
+            screw_dia_mm=5.0, screw_count=2, captured_nut=False,
+        )
+        assert isinstance(data, bytes) and len(data) > 1000
+
+    def test_step_captured_nut(self):
+        data = generate_pulley_step(
+            **self._BASE,
+            screw_dia_mm=5.0, screw_count=2, captured_nut=True,
+        )
+        assert isinstance(data, bytes) and len(data) > 1000
+
+    def test_step_dshaft_no_screw(self):
+        data = generate_pulley_step(
+            **self._BASE,
+            flat_depth_mm=1.5,
+        )
+        assert isinstance(data, bytes) and len(data) > 1000
+
+    def test_step_dshaft_with_captured_nut(self):
+        """D-shaft + captured-nut: nut pocket should align with flat face (not crash)."""
+        data = generate_pulley_step(
+            **self._BASE,
+            flat_depth_mm=1.5,
+            screw_dia_mm=5.0, screw_count=1, captured_nut=True,
+        )
+        assert isinstance(data, bytes) and len(data) > 1000
+
+    def test_step_keyway(self):
+        data = generate_pulley_step(
+            **self._BASE,
+            keyway_w_mm=4.0, keyway_h_mm=2.0,
+        )
+        assert isinstance(data, bytes) and len(data) > 1000
+
+    def test_step_keyway_with_setscrew(self):
+        data = generate_pulley_step(
+            **self._BASE,
+            keyway_w_mm=4.0, keyway_h_mm=2.0,
+            screw_dia_mm=5.0, screw_count=1, captured_nut=True,
+        )
+        assert isinstance(data, bytes) and len(data) > 1000
+
+    def test_step_spokes_with_hub(self):
+        data = generate_pulley_step(
+            **self._BASE,
+            spoke_count=4, spoke_width_mm=4.0, spoke_hub_od_mm=18.0,
+            rim_depth_mm=2.0, spoke_height_mm=5.0,
+            screw_dia_mm=5.0, screw_count=2, captured_nut=True,
+        )
+        assert isinstance(data, bytes) and len(data) > 1000
 
 
 # ---------------------------------------------------------------------------

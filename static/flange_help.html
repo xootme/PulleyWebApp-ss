@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flanges Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul   { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+</style>
+</head>
+<body>
+
+<h2>Flanges</h2>
+
+<p>Flanges are annular plates fitted to the faces of a pulley to prevent the belt from riding off
+axially. Check the checkbox next to <strong>Flanges</strong> to enable them.
+Each pulley has its own independent flange configuration.</p>
+
+<h3>Flange Type</h3>
+<p>Select the type with the <strong>3D Print</strong> checkbox:</p>
+
+<table>
+  <tr><th>Type</th><th>Description</th><th>Best for</th></tr>
+  <tr>
+    <td><strong>Metal</strong> (default)</td>
+    <td>Thin flat plate that bends upward at the outer rim. Matches stamped or laser-cut sheet metal.
+        Always generated as two separate files — upper and lower.</td>
+    <td>Metal pulleys; standard industrial flanges</td>
+  </tr>
+  <tr>
+    <td><strong>3D Print</strong></td>
+    <td>Solid wedge cross-section. The bottom flange is permanently merged into the pulley body.
+        The top flange can optionally be a separate part for post-assembly gluing.</td>
+    <td>Plastic pulleys; custom print-in-place designs</td>
+  </tr>
+</table>
+
+<h3>Inner Rim Rule</h3>
+<p>The flange plate extends inward only as far as the innermost applicable boundary:</p>
+<ul>
+  <li><strong>Spokes active</strong> — inner face of the solid rim ring
+      = tooth OD radius − Rim Depth. The flange covers only the rim ring; it does not
+      span the spoke web or hub boss area.</li>
+  <li><strong>No spokes, hub present</strong> — hub OD.</li>
+  <li><strong>No spokes, no hub</strong> — bore diameter.</li>
+</ul>
+<div class="note">
+  For the 3D-print bottom flange the <em>combined</em> solid (flange + pulley body) spans from
+  flange OD to bore, but the flange plate geometry itself still stops at the inner rim boundary.
+</div>
+
+<h3>Shared Settings</h3>
+<ul>
+  <li><strong>Flange Angle</strong> — Angle of the angled section from horizontal (8–25°).
+      Steeper angles provide better belt retention; shallower angles are easier to assemble.
+      15° matches most commercial flanges.</li>
+  <li><strong>Rim Radius</strong> — Horizontal distance the angled section extends beyond the
+      tooth OD (mm). Typically 2–5 mm.</li>
+</ul>
+
+<h3>Metal Flange Settings</h3>
+<ul>
+  <li><strong>Plate Thickness</strong> — Material stock thickness (mm).
+      The outer rim of the plate is bent upward to create the flange angle.
+      Typical: 0.5–1.0 mm thin sheet; 1.0–3.0 mm heavier plate.</li>
+  <li><strong>Bend Radius</strong> — Horizontal distance from the tooth OD to the end of the
+      bend arc (mm). Set to <code>0</code> for automatic (1.5 × plate thickness).
+      A tighter bend is stiffer; too tight can crack thin sheet metal.</li>
+</ul>
+<div class="note">
+  Metal flanges are always two separate parts. Download each independently from the
+  <em>Download Flanges</em> menu — <em>Upper Flange</em> and <em>Lower Flange</em>.
+</div>
+
+<h3>3D Print Flange Settings</h3>
+<ul>
+  <li><strong>Flange Height</strong> — Height of the vertical lip at the outer rim (mm).
+      The angled section rises from the tooth OD; the lip adds a vertical wall at the outer edge.
+      Typical: 1.0–2.5 mm.</li>
+  <li><strong>Top Flange as Separate Part</strong> (default: on) — When checked, the top flange
+      is exported as a separate STL and shown 20 mm above the pulley in the 3D preview.
+      When unchecked, the top flange is merged into the pulley body as one combined solid.</li>
+</ul>
+
+<h3>Gluing Nubs (3D Print, separate top flange only)</h3>
+<p>Nubs are small cylindrical pins on the underside of the top flange that seat into matching
+sockets in the pulley face, centering the flange and increasing bonding strength.</p>
+<ul>
+  <li><strong>Number of Nubs</strong> — Equally spaced around the nub centre circle.
+      If adjacent nubs overlap they are merged automatically. 3–6 is typical.</li>
+  <li><strong>Nub Diameter</strong> — Diameter of each cylindrical pin and its matching socket (mm).</li>
+  <li><strong>Nub Height</strong> — Depth of the socket cut into the pulley face (mm).
+      The physical pin on the flange is shorter by the Socket Fit Allowance, leaving a small gap
+      at the socket base when fully seated.
+      Min: 1 mm. Max: one-third of belt height.</li>
+  <li><strong>Socket Fit Allowance</strong> — Clearance subtracted from both the nub diameter and nub
+      height (but <em>not</em> from the socket dimensions), so the pin slides freely into the socket.
+      Default 0.2 mm. Increase for looser fit; decrease for a tighter press fit.</li>
+</ul>
+<div class="note">
+  Nub centres lie on a circle at radius = groove-bottom radius − min(tooth height, 3 mm) − nub radius.
+  If a nub extends inward past the inner rim boundary (spoke or hub), it is clipped at that boundary.
+</div>
+
+<h3>Hub Intersection Warning</h3>
+<p>A warning appears when the hub OD encroaches into the flange zone:</p>
+<ul>
+  <li>Spokes active and the hub OD extends inward past the spokes' inner rim, or</li>
+  <li>No spokes and the hub OD encroaches within 10 mm of the groove-bottom circle.</li>
+</ul>
+<div class="warn">
+  ⚠ Hub intersects the flange zone.<br><br>
+  <strong>Flange cuts hub</strong> (default: on) — the flange geometry trims the hub solid so
+  there is no overlap. When unchecked, the hub solid trims the flange geometry instead.
+</div>
+
+<h3>Downloading Flanges</h3>
+<p>When Flanges are enabled, the <em>Download Flanges</em> button appears in the Download card.
+Open it to choose:</p>
+<ul>
+  <li><strong>Upper Flange STL</strong> — Top-face flange (3D print: separate disc when
+      "Top flange as separate part" is on; metal: upper plate).</li>
+  <li><strong>Lower Flange STL</strong> — Bottom-face flange (3D print: base ring geometry only;
+      metal: lower plate).</li>
+  <li><strong>STEP</strong> — Available for metal flanges; solid-of-revolution body suitable for
+      CAD, simulation, or CAM.</li>
+</ul>
+
+</body>
+</html>
