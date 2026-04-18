@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 
@@ -15,7 +15,9 @@
 
 <header>
   <div class="header-inner">
-    <img src="/static/logo.png" alt="Cheap CAD Tools" class="logo">
+    <a href="https://cheapcadtools.com" target="_blank" rel="noopener" title="Cheap CAD Tools home">
+      <img src="/static/logo.png" alt="Cheap CAD Tools" class="logo">
+    </a>
     <div class="header-title-block">
       <span class="header-title">Timing Pulley Generator</span>
       <span class="header-version">Ver. {{ app_version }}</span>
@@ -315,7 +317,7 @@
             <div id="flange1_nub_opts" style="display:none;padding-left:16px;">
               <div style="display:flex;align-items:center;gap:6px;margin-top:4px;margin-bottom:4px;">
                 <label for="flange1_nub_count" style="margin:0;flex:1">Number of Nubs</label>
-                <input type="number" id="flange1_nub_count" value="4" min="1" max="24" step="1" oninput="onFlangeChange(1)" style="width:70px">
+                <input type="number" id="flange1_nub_count" value="4" min="1" max="100" step="1" oninput="onFlangeChange(1)" style="width:70px">
               </div>
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
                 <label for="flange1_nub_dia" style="margin:0;flex:1">Nub Diameter (mm)</label>
@@ -685,7 +687,7 @@
             <div id="flange2_nub_opts" style="display:none;padding-left:16px;">
               <div style="display:flex;align-items:center;gap:6px;margin-top:4px;margin-bottom:4px;">
                 <label for="flange2_nub_count" style="margin:0;flex:1">Number of Nubs</label>
-                <input type="number" id="flange2_nub_count" value="4" min="1" max="24" step="1" oninput="onFlangeChange(2)" style="width:70px">
+                <input type="number" id="flange2_nub_count" value="4" min="1" max="100" step="1" oninput="onFlangeChange(2)" style="width:70px">
               </div>
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
                 <label for="flange2_nub_dia" style="margin:0;flex:1">Nub Diameter (mm)</label>
@@ -809,7 +811,19 @@
         <input type="checkbox" id="bug-is-feature" onchange="onBugTypeToggle()">
         Feature Request
       </label>
+      <button class="bug-info-btn" onclick="toggleBugInfo()" title="What data is recorded?">&#9432;</button>
       <button class="bug-close" onclick="closeBugReport()" title="Close">&times;</button>
+    </div>
+    <div id="bug-info-panel" class="bug-info-panel" style="display:none;">
+      <strong>What gets recorded when you submit:</strong>
+      <ul>
+        <li>The text you enter in the description fields above.</li>
+        <li>Your email address, if provided.</li>
+        <li>The current pulley settings (family, pitch, teeth, bore, hub, spoke, and flange values) so the issue can be reproduced.</li>
+        <li>The app version and build timestamp.</li>
+        <li>The page URL.</li>
+      </ul>
+      No account information, browser fingerprint, or IP address is stored. Reports are saved to a private log file and used only to improve the tool.
     </div>
     <div class="bug-body">
       <label class="bug-label" id="bug-label-seeing" for="bug-seeing">What are you currently seeing?</label>
@@ -824,7 +838,7 @@
       <div id="bug-status" class="bug-status"></div>
     </div>
     <div class="bug-footer">
-      <button class="bug-btn bug-btn-cancel" onclick="closeBugReport()">Cancel</button>
+      <button class="bug-btn bug-btn-cancel" onclick="cancelBugReport()">Cancel</button>
       <button class="bug-btn bug-btn-submit" onclick="submitBugReport()">Submit</button>
     </div>
   </div>
@@ -876,13 +890,18 @@ let teethLock2   = false;
       el.classList.add('input-out-of-range');
       clearTimeout(clampTimers.get(el));
       clampTimers.set(el, setTimeout(function () {
-        if (el.value === '' || isNaN(parseFloat(el.value))) {
-          el.value = hasMin ? el.min : el.max;
-        } else {
-          el.value = Math.min(max, Math.max(min, parseFloat(el.value)));
+        const cur = parseFloat(el.value);
+        if (isNaN(cur)) {
+          // Field is empty — keep red, do not insert min; user is still editing
+          return;
         }
-        el.classList.remove('input-out-of-range');
-        el.dispatchEvent(new Event('input', { bubbles: true }));
+        if (cur < min || cur > max) {
+          el.value = Math.min(max, Math.max(min, cur));
+          el.classList.remove('input-out-of-range');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          el.classList.remove('input-out-of-range');
+        }
       }, 1000));
     } else {
       clearTimeout(clampTimers.get(el));
@@ -2054,14 +2073,22 @@ document.addEventListener('keydown', function(e) {
 // ── Settings summary ────────────────────────────────────────────────────────
 
 // ── Bug Report ────────────────────────────────────────────────────────────────
+var _bugDraft = null;  // { seeing, should_see, email, isFeature }
+
 function openBugReport() {
-  document.getElementById('bug-seeing').value  = '';
-  document.getElementById('bug-should').value  = '';
-  document.getElementById('bug-email').value   = '';
   document.getElementById('bug-status').textContent = '';
   document.getElementById('bug-status').className   = 'bug-status';
-  // Reset to bug mode
-  document.getElementById('bug-is-feature').checked = false;
+  if (_bugDraft) {
+    document.getElementById('bug-seeing').value     = _bugDraft.seeing;
+    document.getElementById('bug-should').value     = _bugDraft.should_see;
+    document.getElementById('bug-email').value      = _bugDraft.email;
+    document.getElementById('bug-is-feature').checked = _bugDraft.isFeature;
+  } else {
+    document.getElementById('bug-seeing').value  = '';
+    document.getElementById('bug-should').value  = '';
+    document.getElementById('bug-email').value   = '';
+    document.getElementById('bug-is-feature').checked = false;
+  }
   onBugTypeToggle();
   document.getElementById('bug-report-overlay').style.display = 'flex';
   document.getElementById('bug-seeing').focus();
@@ -2084,8 +2111,35 @@ function onBugTypeToggle() {
     ? 'Explain the benefit or use case…'
     : 'Describe the expected behaviour…';
 }
+function _saveBugDraft() {
+  const seeing    = document.getElementById('bug-seeing').value;
+  const should_see = document.getElementById('bug-should').value;
+  const email     = document.getElementById('bug-email').value;
+  const isFeature = document.getElementById('bug-is-feature').checked;
+  // Only keep a draft if there's something worth saving
+  if (seeing.trim() || should_see.trim() || email.trim()) {
+    _bugDraft = { seeing, should_see, email, isFeature };
+  } else {
+    _bugDraft = null;
+  }
+}
 function closeBugReport() {
+  _saveBugDraft();
   document.getElementById('bug-report-overlay').style.display = 'none';
+}
+function _clearBugFields() {
+  document.getElementById('bug-seeing').value = '';
+  document.getElementById('bug-should').value = '';
+  document.getElementById('bug-email').value  = '';
+  _bugDraft = null;
+}
+function cancelBugReport() {
+  _clearBugFields();
+  document.getElementById('bug-report-overlay').style.display = 'none';
+}
+function toggleBugInfo() {
+  var panel = document.getElementById('bug-info-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
 }
 document.getElementById('bug-report-overlay').addEventListener('click', function(e) {
   if (e.target === this) closeBugReport();
@@ -2127,6 +2181,7 @@ async function submitBugReport() {
     if (resp.ok && data.ok) {
       statusEl.textContent = 'Thank you — your report has been saved.';
       statusEl.className   = 'bug-status bug-status-ok';
+      _clearBugFields();
       setTimeout(closeBugReport, 2000);
     } else {
       statusEl.textContent = 'Error: ' + (data.error || 'Unknown error');

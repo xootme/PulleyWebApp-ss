@@ -800,5 +800,51 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 .bug-btn-submit:hover:not(:disabled) { background: #005fa3; border-color: #005fa3; }
 .bug-btn-submit:disabled { opacity: 0.55; cursor: default; }
 
+/* ── Bug report info button & panel ─────────────────────────────────────── */
+.bug-info-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid #c8d0db;
+  background: #f0f4f9;
+  color: #0078d4;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: 6px;
+}
+.bug-info-btn:hover {
+  background: #0078d4;
+  border-color: #0078d4;
+  color: #fff;
+}
+.bug-info-panel {
+  background: #eef5fc;
+  border-left: 3px solid #0078d4;
+  border-radius: 0 4px 4px 0;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #1a3a5c;
+  line-height: 1.5;
+}
+.bug-info-panel ul {
+  margin: 6px 0 4px 18px;
+}
+.bug-info-panel li {
+  margin-bottom: 3px;
+}
+.bug-info-panel p {
+  margin-top: 6px;
+  font-style: italic;
+  color: #4a6080;
+}
+
 /* ── Footer build info ───────────────────────────────────────────────────── */
 .footer-build { color: #666; }

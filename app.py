@@ -783,6 +783,13 @@ def api_preview_stl():
             if _fl_meshes:
                 import io as _io
                 pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
+                # generate_pulley_stl_preview centres the pulley at origin, so its
+                # Z_min now represents what was Z=0 (bottom face) before centering.
+                # Shift all flange meshes (built in the uncentred Z=0=bottom frame)
+                # by that same offset so they align with the centred pulley.
+                z_bottom = float(pulley_mesh.bounds[0][2])
+                for m in _fl_meshes:
+                    m.apply_translation([0.0, 0.0, z_bottom])
                 combined = trimesh.util.concatenate([pulley_mesh] + _fl_meshes)
                 combined.apply_translation(-combined.centroid)
                 stl = combined.export(file_type='stl')
