@@ -1250,9 +1250,38 @@ def download_flange_stl():
                         status=500, mimetype='text/plain')
 
 
+def _send_report_email(report_label, timestamp, label_seeing, label_should,
+                       seeing, should_see, email, state):
+    """Fire-and-forget SendGrid notification. Silently skips if key not set."""
+    api_key = os.environ.get('SENDGRID_API_KEY', '').strip()
+    if not api_key:
+        return
+    try:
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+        state_json = json.dumps(state, indent=2)
+        body = (
+            f'{report_label} — {timestamp}\n'
+            f'App Version: {APP_VERSION}   Build: {BUILD_TIME}\n\n'
+            f'{label_seeing}:\n  {seeing or "(not provided)"}\n\n'
+            f'{label_should}:\n  {should_see or "(not provided)"}\n\n'
+            f'Contact email:\n  {email or "(not provided)"}\n\n'
+            f'App state:\n{state_json}\n'
+        )
+        message = Mail(
+            from_email='noreply@cheapcadtools.com',
+            to_emails='info@cheapcadtools.com',
+            subject=f'[Pulley Generator] {report_label}',
+            plain_text_content=body,
+        )
+        SendGridAPIClient(api_key).send(message)
+    except Exception:
+        pass  # email failure must never break the log write
+
+
 @app.route('/api/report-bug', methods=['POST'])
 def api_report_bug():
-    """Save a bug report to logs/bug_reports.log."""
+    """Save a bug report to logs/bug_reports.log and email a notification."""
     try:
         data = request.get_json(force=True) or {}
         seeing      = str(data.get('seeing',      '')).strip()
@@ -1283,6 +1312,9 @@ def api_report_bug():
         )
         with open(_LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(entry)
+
+        _send_report_email(report_label, timestamp, label_seeing, label_should,
+                           seeing, should_see, email, state)
 
         return jsonify({'ok': True})
     except Exception as e:
