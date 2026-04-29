@@ -59,7 +59,25 @@ Before committing, ensure these files reflect every user-facing change:
 - [ ] Download format options (SVG / DXF) accurate in all three help files
 - [ ] `ToDo.md` Completed section updated
 
-### Step 3 — Commit and push
+### Step 3 — Run performance benchmarks
+
+Before pushing, record a benchmark snapshot against the current code.
+Results are appended to `Perf_History.csv` (committed alongside the code change).
+
+```bash
+.venv312/Scripts/python record_benchmarks.py
+```
+
+The script prints a summary table and appends one row per benchmark to `Perf_History.csv`
+tagged with the current commit hash and timestamp.  Review the table for unexpected
+regressions before proceeding — a 2× slowdown in an STL test is worth investigating.
+
+**Checklist:**
+- [ ] `record_benchmarks.py` ran without errors (exit 0)
+- [ ] No test regressed more than ~30% vs the previous entry in `Perf_History.csv`
+- [ ] `Perf_History.csv` staged for commit
+
+### Step 4 — Commit and push
 
 ```bash
 git add .

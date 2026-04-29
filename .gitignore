@@ -34,3 +34,7 @@ desktop.ini
 # ── Local dev / scratch files ────────────────────────────────────────────────
 testing.html
 *.log
+
+# ── Benchmarks ───────────────────────────────────────────────────────────────
+# Raw JSON scratch output — Perf_History.csv is committed instead
+.benchmarks/
