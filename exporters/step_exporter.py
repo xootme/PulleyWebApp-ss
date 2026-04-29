@@ -21,6 +21,7 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
 from shapely.geometry.polygon import orient as shapely_orient
+from shapely.ops import unary_union as shapely_unary_union
 
 from geometry.pulley_geometry import (
     generate_profile_groove, _build_groove_points,
@@ -536,6 +537,7 @@ def generate_pulley_stl(
 
             # 3. Spoke Web Mesh (Partial Height)
             spoke_poly = outer_poly
+            _vp_shapes = []
             for vp in _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
                                            fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm):
                 if len(vp) < 3:
@@ -543,7 +545,9 @@ def generate_pulley_stl(
                 vp_shape = ShapelyPolygon(vp).simplify(0.05, preserve_topology=True).buffer(0)
                 vp_shape = shapely_orient(vp_shape, sign=1.0)
                 if vp_shape.is_valid and vp_shape.area > 0.1:
-                    spoke_poly = spoke_poly.difference(vp_shape)
+                    _vp_shapes.append(vp_shape)
+            if _vp_shapes:
+                spoke_poly = spoke_poly.difference(shapely_unary_union(_vp_shapes))
 
             spoke_poly = shapely_orient(_largest_poly(spoke_poly), sign=1.0)
             web_mesh = trimesh.creation.extrude_polygon(spoke_poly, spk_h)
@@ -1039,12 +1043,12 @@ def _spoke_web_polygon(R_hub: float, R_rim_inner: float,
 
     spoke_0 = ShapelyPolygon(pts)
 
-    # Union all N rotated spokes + hub disk (fillets applied to void by callers)
-    result = hub_disk.union(spoke_0)
+    # Union all N rotated spokes + hub disk in one shot (avoids O(N) incremental rebuilds)
     theta_step = 2.0 * math.pi / spoke_count
+    parts = [hub_disk, spoke_0]
     for i in range(1, spoke_count):
-        rotated = shapely_rotate(spoke_0, math.degrees(i * theta_step), origin=(0.0, 0.0))
-        result = result.union(rotated)
+        parts.append(shapely_rotate(spoke_0, math.degrees(i * theta_step), origin=(0.0, 0.0)))
+    result = shapely_unary_union(parts)
 
     return shapely_orient(result, sign=1.0)
 
@@ -1210,6 +1214,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
 
             # 3. Spoke Web Mesh (Partial Height, minus bore)
             spoke_poly = outer_poly
+            _vp_shapes = []
             for vp in _spoke_void_polygons(_R_hub_s, _R_rim_s, spoke_count, spoke_width_mm,
                                            fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm):
                 if len(vp) < 3:
@@ -1217,7 +1222,9 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                 vp_shape = ShapelyPolygon(vp).simplify(0.05, preserve_topology=True).buffer(0)
                 vp_shape = shapely_orient(vp_shape, sign=1.0)
                 if vp_shape.is_valid and vp_shape.area > 0.1:
-                    spoke_poly = spoke_poly.difference(vp_shape)
+                    _vp_shapes.append(vp_shape)
+            if _vp_shapes:
+                spoke_poly = spoke_poly.difference(shapely_unary_union(_vp_shapes))
 
             spoke_poly = spoke_poly.difference(bore_2d) if bore_2d is not None else spoke_poly
             spoke_poly = shapely_orient(_largest_poly(spoke_poly), sign=1.0)

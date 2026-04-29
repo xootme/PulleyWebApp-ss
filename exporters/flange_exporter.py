@@ -147,6 +147,9 @@ def generate_3dprint_flange_stl(
     flange_height_mm = max(0.1, flange_height_mm)
     angle_deg = max(8.0, min(25.0, flange_angle_deg))
 
+    # Adaptive sections: target ~3 mm chord on the outer radius; cap at caller's sections.
+    sections = max(32, min(sections, round(2 * math.pi * R_OD / 3.0)))
+
     prof = profile_3dprint(r_inner, R_OD, rim_radius_mm, angle_deg, flange_height_mm)
 
     meshes = []
@@ -212,6 +215,9 @@ def generate_metal_flange_stl(
 
     # Clamp bend_radius to < rim_radius (can't exceed the reach of the flange)
     bend_mm = min(bend_radius_mm, rim_mm * 0.8)
+
+    # Adaptive sections: target ~3 mm chord on the outer radius; cap at caller's sections.
+    sections = max(32, min(sections, round(2 * math.pi * R_OD / 3.0)))
 
     if which == 'top':
         r_inner = flange_inner_r_metal_top(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
@@ -315,21 +321,27 @@ def build_socket_meshes(
     cut_h      = cut_top - cut_bottom
     cut_z      = (cut_top + cut_bottom) / 2.0
 
-    meshes = []
+    # Build all socket cylinders first (no per-cylinder booleans yet)
+    cyls = []
     for x, y in _nub_xy(fp['nub_count'], r_nub):
         cyl = trimesh.creation.cylinder(radius=r_socket, height=cut_h, sections=sections)
         cyl.apply_translation([x, y, cut_z])
-        # Clip at spoke inner rim (hub boss boundary) if socket extends inside it
-        if r_spoke_inner > 0.0 and (r_nub - r_socket) < r_spoke_inner:
+        cyls.append(cyl)
+
+    # Clip at spoke inner rim: the clip cylinder is the same for every socket,
+    # so union all sockets first then do one difference — O(2) instead of O(N).
+    needs_clip = r_spoke_inner > 0.0 and (r_nub - r_socket) < r_spoke_inner
+    if needs_clip and cyls:
+        try:
             inner_clip = trimesh.creation.cylinder(
                 radius=r_spoke_inner, height=cut_h + 2.0, sections=64)
             inner_clip.apply_translation([0.0, 0.0, cut_z])
-            try:
-                cyl = trimesh.boolean.difference([cyl, inner_clip], engine='manifold')
-            except Exception:
-                pass
-        meshes.append(cyl)
-    return meshes
+            sockets_union = (trimesh.boolean.union(cyls, engine='manifold')
+                             if len(cyls) > 1 else cyls[0])
+            return [trimesh.boolean.difference([sockets_union, inner_clip], engine='manifold')]
+        except Exception:
+            pass  # fall through and return unclipped cylinders
+    return cyls
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +378,8 @@ def build_flange_meshes(
         return []
     try:
         R_OD, _R_gb, tooth_ht = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
+        # Adaptive sections: target ~3 mm chord on the outer radius; cap at caller's sections.
+        sections = max(32, min(sections, round(2 * math.pi * R_OD / 3.0)))
         angle = max(8.0, min(25.0, fp['flange_angle_deg']))
         rim_r = max(0.5, fp['rim_radius_mm'])
         meshes = []
