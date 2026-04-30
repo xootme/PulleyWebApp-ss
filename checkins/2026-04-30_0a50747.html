@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deploy Report — 0a50747 — 2026-04-30 06:08</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1e293b;
+         margin: 0; padding: 24px; background: #f8fafc; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+           padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  h2 { font-size: 14px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .06em; color: #64748b; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: #64748b; border-bottom: 1px solid #e2e8f0;
+        padding: 4px 8px; }
+  td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  .num  { text-align: right; font-family: ui-monospace, monospace; font-size: 12px; }
+  .muted { color: #94a3b8; font-style: italic; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px;
+            font-size:12px; font-weight:600; }
+  .body-text { color:#475569; margin: 8px 0 0; white-space: pre-wrap; }
+  .meta { color:#64748b; font-size:13px; margin-top:4px; }
+  code { font-family: ui-monospace, monospace; background:#f1f5f9;
+          padding:1px 5px; border-radius:3px; font-size:12px; }
+  .header-row { display:flex; justify-content:space-between; align-items:flex-start; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header-row">
+    <div>
+      <h1>Deploy Report</h1>
+      <p class="meta">Generated 2026-04-30 06:08 &nbsp;·&nbsp; Commit <code>0a50747</code> &nbsp;·&nbsp; 2026-04-30 06:08:12 -0700</p>
+    </div>
+    <div>
+      <span class="badge" style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac">✓ CLEAN</span>
+    </div>
+  </div>
+  <hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0">
+  <h2>Commit</h2>
+  <p style="margin:0;font-size:15px;font-weight:600">3D-print flange improvements: support ribs, download fixes, deploy reports</p>
+  <p class="body-text">Support ribs (integrated top-flange mode):
+- Flying buttress ribs with vertical outer face flush with support tube
+- Tube positioned 1mm outside lower flange, spans bed to flange rim height
+- Two 1mm slits cut through tube at 0/180 deg for easy removal
+- Rib inner face ~26 deg from vertical (self-supporting, no extra supports)
+
+Flange STL download fixes:
+- Pulley STL now includes bottom flange when 3D-print mode is enabled
+- Nub socket holes cut from pulley top face when nubs + top-separate are on
+- Upper flange STL download now includes nub pins
+- Lower flange download options hidden when 3D-print mode is active
+- Fixed non-watertight mesh error by using generate_pulley_stl_preview
+  to do socket boolean before STL export (avoids round-trip precision loss)
+
+Deploy report cards:
+- generate_checkin_report.py: HTML report per deploy in checkins/
+- Shows changed files, benchmark comparison vs previous commit, recent log
+- Regression banner when any test exceeds 50% slowdown
+- web_provisioning.md updated with Step 5
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com></p>
+</div>
+
+
+
+<div class="card">
+  <h2>Changed Files —  12 files changed, 1462 insertions(+), 131 deletions(-)</h2>
+  <table>
+    <tr><th>File</th></tr>
+    <tr><td class="mono">app.py</td></tr>
+<tr><td class="mono">checkins/.gitkeep</td></tr>
+<tr><td class="mono">concurrency_test.py</td></tr>
+<tr><td class="mono">exporters/flange_exporter.py</td></tr>
+<tr><td class="mono">exporters/step_exporter.py</td></tr>
+<tr><td class="mono">exporters/step_worker.py</td></tr>
+<tr><td class="mono">generate_checkin_report.py</td></tr>
+<tr><td class="mono">record_benchmarks.py</td></tr>
+<tr><td class="mono">render.yaml</td></tr>
+<tr><td class="mono">templates/index.html</td></tr>
+<tr><td class="mono">web_provisioning.md</td></tr>
+
+  </table>
+</div>
+
+<div class="card">
+  <h2>Benchmarks &nbsp;<span style="font-size:12px;font-weight:400;color:#64748b">Comparing <code>9b96e0b</code> vs <code>94a7cd2</code></span></h2>
+  <table>
+    <tr>
+      <th>Test</th>
+      <th style="text-align:right">Prev (ms)</th>
+      <th style="text-align:right">Current (ms)</th>
+      <th style="text-align:right">Delta</th>
+      <th style="text-align:center">Status</th>
+    </tr>
+    <tr style="background:#f0fdf4"><td class="mono">test_dxf_medium</td><td class="num">14.1</td><td class="num">13.4</td><td class="num" style="color:#16a34a;font-weight:600">-4.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_medium_with_spokes</td><td class="num">14.5</td><td class="num">14.0</td><td class="num" style="color:#16a34a;font-weight:600">-3.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_small</td><td class="num">8.1</td><td class="num">7.7</td><td class="num" style="color:#16a34a;font-weight:600">-4.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#fffbeb"><td class="mono">test_flange_3dprint_bottom</td><td class="num">1.6</td><td class="num">2.0</td><td class="num" style="color:#b45309;font-weight:600">+24.5%</td><td style="color:#b45309;text-align:center">⚠</td></tr>
+<tr style="background:#fffbeb"><td class="mono">test_flange_3dprint_top</td><td class="num">1.7</td><td class="num">2.0</td><td class="num" style="color:#b45309;font-weight:600">+22.0%</td><td style="color:#b45309;text-align:center">⚠</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_with_spokes</td><td class="num">1.3</td><td class="num">1.4</td><td class="num" style="color:#16a34a;font-weight:600">+3.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_metal_bottom</td><td class="num">7.0</td><td class="num">7.4</td><td class="num" style="color:#16a34a;font-weight:600">+6.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_metal_top</td><td class="num">19.9</td><td class="num">18.9</td><td class="num" style="color:#16a34a;font-weight:600">-5.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium</td><td class="num">21.3</td><td class="num">19.9</td><td class="num" style="color:#16a34a;font-weight:600">-6.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium_with_spokes</td><td class="num">143.7</td><td class="num">142.9</td><td class="num" style="color:#16a34a;font-weight:600">-0.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_small</td><td class="num">12.3</td><td class="num">10.5</td><td class="num" style="color:#16a34a;font-weight:600">-15.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_large</td><td class="num">66.2</td><td class="num">58.3</td><td class="num" style="color:#16a34a;font-weight:600">-11.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium</td><td class="num">30.3</td><td class="num">29.8</td><td class="num" style="color:#16a34a;font-weight:600">-1.5%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_hub_and_spokes</td><td class="num">299.5</td><td class="num">285.1</td><td class="num" style="color:#16a34a;font-weight:600">-4.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_hub</td><td class="num">84.9</td><td class="num">82.7</td><td class="num" style="color:#16a34a;font-weight:600">-2.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_spokes</td><td class="num">181.7</td><td class="num">178.0</td><td class="num" style="color:#16a34a;font-weight:600">-2.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_small</td><td class="num">19.0</td><td class="num">19.5</td><td class="num" style="color:#16a34a;font-weight:600">+2.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium</td><td class="num">1.6</td><td class="num">1.5</td><td class="num" style="color:#16a34a;font-weight:600">-4.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium_with_spokes</td><td class="num">1.7</td><td class="num">1.6</td><td class="num" style="color:#16a34a;font-weight:600">-6.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_small</td><td class="num">0.8</td><td class="num">0.8</td><td class="num" style="color:#16a34a;font-weight:600">-5.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+
+  </table>
+  <p style="margin:10px 0 0;font-size:12px;color:#94a3b8">
+    ⬆ improved &gt;20% &nbsp;|&nbsp; ⚠ slow &gt;20% &nbsp;|&nbsp; ✗ regression &gt;50% &nbsp;|&nbsp; + new test
+  </p>
+</div>
+
+<div class="card">
+  <h2>Recent Commits</h2>
+  <table>
+    <tr><th>Hash</th><th>Subject</th></tr>
+    <tr style="font-weight:700"><td class="mono">0a50747</td><td>3D-print flange improvements: support ribs, download fixes, deploy reports</td></tr>
+<tr><td class="mono">9b96e0b</td><td>Add concurrency test harness</td></tr>
+<tr><td class="mono">17dca3e</td><td>Performance: batch Shapely booleans, adaptive flange sections, socket batch clip</td></tr>
+<tr><td class="mono">94a7cd2</td><td>Add performance benchmark recording to deploy workflow</td></tr>
+<tr><td class="mono">4e48f4e</td><td>Add pytest-benchmark suite for performance regression tracking</td></tr>
+<tr><td class="mono">1f1d16c</td><td>Add download counter with milestone email every 100 downloads</td></tr>
+<tr><td class="mono">05ec29d</td><td>Add SendGrid email notification for bug/feature reports</td></tr>
+<tr><td class="mono">46cda77</td><td>Add bug/feature modal improvements: info panel, draft save/restore, cancel clears fields; fix bottom flange alignment in 3D preview</td></tr>
+<tr><td class="mono">10104ab</td><td>Add flanges (3D-print + metal), spoke/flange bug fixes, input auto-clamp, feature request modal, and test suite expansion</td></tr>
+<tr><td class="mono">fe47ef1</td><td>Fix D-shaft captured-nut STEP geometry; add chamfer cones to STL</td></tr>
+
+  </table>
+</div>
+
+</body>
+</html>
