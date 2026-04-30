@@ -28,6 +28,11 @@ from geometry.pulley_geometry import (
     wrap_groove_to_pulley, PULLEY_SPECS, PROFILE_KEY_PREFIX,
     build_two_pulley_belt, BELT_FAMILIES,
     pulley_outline_segments, belt_outline_segments,
+    getOuterDiameter,
+)
+from geometry.flange_geometry import (
+    profile_3dprint, profile_metal,
+    flange_inner_r_3dprint, flange_inner_r_metal_top, flange_inner_r_metal_bottom,
 )
 from shapely.affinity import rotate as shapely_rotate
 
@@ -115,6 +120,27 @@ def _d_bore_polygon(R_bore: float, flat_depth_mm: float, sections: int = 64) -> 
 
 def _profile_key(family: str, pitch: str) -> str:
     return PROFILE_KEY_PREFIX.get(family, '') + pitch
+
+
+def _revolve_rz_profile(pts):
+    """Revolve a closed (r, z) polygon 360° around the Z axis using CadQuery.
+
+    pts — list of (r, z) tuples in the r-Z plane.  The polygon is closed
+    automatically; do not repeat the first point at the end.
+    """
+    import cadquery as cq
+    local = [(float(r), float(z)) for r, z in pts]
+    return (cq.Workplane('XZ')
+            .polyline(local)
+            .close()
+            .revolve(360, (0, 0), (0, 1)))
+
+
+def _nub_circle_r_step(r_tooth_OD: float, tooth_ht: float, nub_dia_mm: float) -> float:
+    """Radius of the nub/socket centre circle (same rule as flange_exporter)."""
+    r_groove_bottom = r_tooth_OD - tooth_ht
+    margin = min(tooth_ht, 3.0)
+    return r_groove_bottom - margin - nub_dia_mm / 2.0
 
 
 def _segs_to_cq_sketch(segments, base_wp, inner_r=None):
@@ -608,6 +634,18 @@ def generate_pulley_step(
     fillet_base_mm: float = 0.0,
     spoke_height_mm: float = 0.0,
     export_fmt: str = 'STEP',
+    # Flange params (3D-print bottom is integrated into pulley; top is separate)
+    flange_enabled: bool = False,
+    flange_3dprint: bool = True,
+    flange_angle_deg: float = 15.0,
+    flange_rim_radius_mm: float = 3.0,
+    flange_height_mm: float = 1.5,
+    flange_top_separate: bool = True,
+    nubs_enabled: bool = False,
+    nub_count: int = 4,
+    nub_dia_mm: float = 3.0,
+    nub_height_mm: float = 2.0,
+    nub_allowance_mm: float = 0.2,
 ) -> bytes:
     """
     Return STEP bytes of a timing pulley with all hub features using cadquery B-rep.
@@ -914,12 +952,151 @@ def generate_pulley_step(
                     pocket = pocket.rotate((0, 0, 0), (0, 0, 1), math.degrees(angle))
                 result = result.cut(pocket, clean=False)
 
+    # ── 7. 3D-print bottom flange (integrated with pulley body) ────────────────
+    if flange_enabled and flange_3dprint:
+        _key  = _profile_key(family, pitch)
+        _spec = PULLEY_SPECS[_key]
+        _pld  = _spec.get('pitch_line_diff', _spec.get('pitchLineDiff', 0.0))
+        _R_OD = getOuterDiameter(num_teeth, _spec['pitch'],
+                                 _pld + print_extra_mm - clearance_mm) / 2.0
+        _has_spokes = spoke_count > 0
+        _r_inner = flange_inner_r_3dprint(
+            bore_mm, hub_od_mm, _has_spokes, spoke_hub_od_mm,
+            r_tooth_OD=_R_OD, rim_depth_mm=rim_depth_mm)
+        _angle   = max(8.0, min(25.0, flange_angle_deg))
+        _rim_r   = max(0.5, flange_rim_radius_mm)
+        _f_h     = max(0.1, flange_height_mm)
+        _prof    = profile_3dprint(_r_inner, _R_OD, _rim_r, _angle, _f_h)
+        _bot_prof = [(_r, -_z) for _r, _z in _prof]
+        _bot_flange = _revolve_rz_profile(_bot_prof)
+        result = result.union(_bot_flange, clean=False)
+
+        # Cut socket holes into the pulley top face when nubs are enabled
+        if flange_top_separate and nubs_enabled:
+            _tooth_ht = _spec['tooth_ht']
+            _r_nub    = _nub_circle_r_step(_R_OD, _tooth_ht, nub_dia_mm)
+            _r_socket = nub_dia_mm / 2.0
+            _sock_h   = max(1.0, min(nub_height_mm, belt_height_mm / 3.0))
+            for _i in range(nub_count):
+                _ang = 2.0 * math.pi * _i / nub_count
+                _cx  = _r_nub * math.cos(_ang)
+                _cy  = _r_nub * math.sin(_ang)
+                _sock = (cq.Workplane('XY')
+                         .moveTo(_cx, _cy)
+                         .circle(_r_socket)
+                         .extrude(_sock_h, clean=False)
+                         .translate((0.0, 0.0, belt_height_mm - _sock_h)))
+                result = result.cut(_sock, clean=False)
+
     # ── Export to File ────────────────────────────────────────────────────────
     ext = '.stl' if export_fmt.upper() == 'STL' else '.step'
     tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
     tmp.close()
     try:
         cq.exporters.export(result, tmp.name)
+        with open(tmp.name, 'rb') as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+def generate_flange_step(
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    bore_mm: float,
+    belt_height_mm: float,
+    clearance_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+    flange_3dprint: bool = True,
+    flange_angle_deg: float = 15.0,
+    rim_radius_mm: float = 3.0,
+    flange_height_mm: float = 1.5,
+    plate_height_mm: float = 1.0,
+    bend_radius_mm: float = 0.0,
+    which: str = 'top',
+    hub_od_mm: float = 0.0,
+    spokes_enabled: bool = False,
+    spoke_hub_od_mm: float = 0.0,
+    rim_depth_mm: float = 0.0,
+    nubs_enabled: bool = False,
+    nub_count: int = 4,
+    nub_dia_mm: float = 3.0,
+    nub_height_mm: float = 2.0,
+    nub_allowance_mm: float = 0.2,
+) -> bytes:
+    """Return STEP bytes of a single flange (top 3D-print, or metal top/bottom).
+
+    3D-print top flanges include nub pins when nubs_enabled is True.
+    Metal flanges are thin-shell solids revolved from a closed 2D profile.
+    The 3D-print bottom flange is NOT generated here — it is integrated into
+    the pulley body by generate_pulley_step() when flange_enabled=True.
+    """
+    import cadquery as cq
+    import tempfile, os
+
+    key  = _profile_key(family, pitch)
+    spec = PULLEY_SPECS[key]
+    pld  = spec.get('pitch_line_diff', spec.get('pitchLineDiff', 0.0))
+    R_OD = getOuterDiameter(num_teeth, spec['pitch'], pld + print_extra_mm - clearance_mm) / 2.0
+    tooth_ht = spec['tooth_ht']
+
+    if flange_3dprint:
+        r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
+                                         r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+        _angle = max(8.0, min(25.0, flange_angle_deg))
+        _rim_r = max(0.5, rim_radius_mm)
+        _f_h   = max(0.1, flange_height_mm)
+        prof   = profile_3dprint(r_inner, R_OD, _rim_r, _angle, _f_h)
+
+        if which == 'top':
+            flange = _revolve_rz_profile(prof)
+            # Add nub pins protruding down from Z=0 (bottom face of top flange)
+            if nubs_enabled:
+                r_nub     = _nub_circle_r_step(R_OD, tooth_ht, nub_dia_mm)
+                r_pin     = max(0.1, (nub_dia_mm - nub_allowance_mm) / 2.0)
+                nub_h     = max(1.0, min(nub_height_mm, belt_height_mm / 3.0))
+                nub_pin_h = max(0.1, nub_h - nub_allowance_mm)
+                for i in range(nub_count):
+                    ang = 2.0 * math.pi * i / nub_count
+                    cx  = r_nub * math.cos(ang)
+                    cy  = r_nub * math.sin(ang)
+                    pin = (cq.Workplane('XY')
+                           .moveTo(cx, cy)
+                           .circle(r_pin)
+                           .extrude(nub_pin_h, clean=False)
+                           .translate((0.0, 0.0, -nub_pin_h)))
+                    flange = flange.union(pin, clean=False)
+            flange = flange.translate((0.0, 0.0, belt_height_mm))
+        else:
+            bot_prof = [(r, -z) for r, z in prof]
+            flange = _revolve_rz_profile(bot_prof)
+    else:
+        # Metal flange
+        if bend_radius_mm <= 0.0:
+            bend_radius_mm = 1.5 * plate_height_mm
+        _angle   = max(8.0, min(25.0, flange_angle_deg))
+        _rim_r   = max(0.5, rim_radius_mm)
+        _plate_t = max(0.3, plate_height_mm)
+        _bend_r  = min(bend_radius_mm, _rim_r * 0.8)
+
+        if which == 'top':
+            r_inner = flange_inner_r_metal_top(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
+                                               r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+            prof = profile_metal(r_inner, R_OD, _rim_r, _angle, _plate_t, _bend_r)
+            flange = _revolve_rz_profile(prof)
+            flange = flange.translate((0.0, 0.0, belt_height_mm))
+        else:
+            r_inner = flange_inner_r_metal_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
+                                                  r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+            prof = profile_metal(r_inner, R_OD, _rim_r, _angle, _plate_t, _bend_r)
+            prof_flipped = [(r, -z) for r, z in prof]
+            flange = _revolve_rz_profile(prof_flipped)
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
+    tmp.close()
+    try:
+        cq.exporters.export(flange, tmp.name)
         with open(tmp.name, 'rb') as f:
             return f.read()
     finally:

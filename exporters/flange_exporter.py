@@ -130,22 +130,30 @@ def generate_3dprint_flange_stl(
     spoke_hub_od_mm: float = 0.0,
     rim_depth_mm: float = 0.0,
     sections: int = 64,
+    # Nub params (top flange only; ignored for bottom)
+    nubs_enabled: bool = False,
+    nub_count: int = 4,
+    nub_dia_mm: float = 3.0,
+    nub_height_mm: float = 2.0,
+    nub_allowance_mm: float = 0.2,
 ) -> bytes:
     """Return binary STL of one or both 3D-print flanges.
 
     ``which`` controls what is returned:
-      'top'    → separate top flange solid (positioned at Z=belt_height_mm,
-                 floating above the pulley for print-in-place assembly).
+      'top'    → separate top flange solid (positioned at Z=belt_height_mm).
       'bottom' → bottom flange solid (integrated at Z=0, growing downward).
       'both'   → union of both (for preview purposes).
+
+    When ``nubs_enabled`` is True and ``which`` is 'top', nub pins are unioned
+    onto the bottom face of the top flange.
     """
-    R_OD, _R_gb, _th = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
+    R_OD, _R_gb, tooth_ht = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
     r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                      r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
 
-    rim_radius_mm  = max(0.5, rim_radius_mm)
+    rim_radius_mm    = max(0.5, rim_radius_mm)
     flange_height_mm = max(0.1, flange_height_mm)
-    angle_deg = max(8.0, min(25.0, flange_angle_deg))
+    angle_deg        = max(8.0, min(25.0, flange_angle_deg))
 
     # Adaptive sections: target ~3 mm chord on the outer radius; cap at caller's sections.
     sections = max(32, min(sections, round(2 * math.pi * R_OD / 3.0)))
@@ -156,14 +164,40 @@ def generate_3dprint_flange_stl(
 
     if which in ('top', 'both'):
         top_mesh = _revolve_polygon(prof, sections)
+
+        if nubs_enabled:
+            nub_h   = max(1.0, min(nub_height_mm, belt_height_mm / 3.0))
+            r_pin   = max(0.1, (nub_dia_mm - nub_allowance_mm) / 2.0)
+            nub_pin_h = max(0.1, nub_h - nub_allowance_mm)
+            r_nub   = _nub_circle_radius(R_OD, tooth_ht, nub_dia_mm)
+            r_spoke_inner = spoke_hub_od_mm / 2.0 if (spokes_enabled and spoke_hub_od_mm > 0.0) else 0.0
+            r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
+            nub_cyls = []
+            for x, y in _nub_xy(nub_count, r_nub):
+                cyl = trimesh.creation.cylinder(radius=r_pin, height=nub_pin_h, sections=16)
+                cyl.apply_translation([x, y, -nub_pin_h / 2.0])
+                nub_cyls.append(cyl)
+            if nub_cyls:
+                try:
+                    top_mesh = trimesh.boolean.union([top_mesh] + nub_cyls, engine='manifold')
+                    clip_h = nub_pin_h + 2.0
+                    if r_spoke_inner > 0.0 and (r_nub - r_pin) < r_spoke_inner:
+                        clip = trimesh.creation.cylinder(radius=r_spoke_inner, height=clip_h, sections=64)
+                        clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
+                        top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
+                    if r_spoke_outer > 0.0 and (r_nub - r_pin) < r_spoke_outer:
+                        clip = trimesh.creation.cylinder(radius=r_spoke_outer, height=clip_h, sections=64)
+                        clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
+                        top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
+                except Exception:
+                    pass  # fall back to flange without nubs
+
         top_mesh.apply_translation([0.0, 0.0, belt_height_mm])
         meshes.append(top_mesh)
 
     if which in ('bottom', 'both'):
-        # Mirror profile in Z: negate z, then translate to sit below Z=0
         bot_prof = [(r, -z) for r, z in prof]
         bot_mesh = _revolve_polygon(bot_prof, sections)
-        # No translation needed: profile already goes downward from Z=0
         meshes.append(bot_mesh)
 
     if len(meshes) == 1:
@@ -342,6 +376,154 @@ def build_socket_meshes(
         except Exception:
             pass  # fall through and return unclipped cylinders
     return cyls
+
+
+# ---------------------------------------------------------------------------
+# Print support ribs (integrated top-flange mode only)
+# ---------------------------------------------------------------------------
+
+def _build_buttress_mesh(
+    r_ti: float, z_ti: float,    # inner tip: (R_OD, flat_underside - air_gap)
+    r_to: float, z_to: float,    # outer tip: (r_outer, angled_underside - air_gap)
+    r_tube: float,               # tube inner radius (r_outer + 1mm); outer face is flush here
+    z_bed: float,                # bed level (tube bottom)
+    hw_tip: float, hw_base: float,
+    theta: float,
+) -> trimesh.Trimesh:
+    """Flying-buttress rib whose outer vertical face is flush with the support tube.
+
+    Cross-section in r-Z (quadrilateral A-B-C-D):
+      A = (r_ti,   z_ti)   inner tip (under flat flange, air gap included)
+      B = (r_to,   z_to)   outer tip (under angled flange, air gap included)
+      C = (r_tube, z_to)   tube top  (1mm step outward from B at the same height)
+      D = (r_tube, z_bed)  tube base (bed level)
+
+    The outer face C-D is vertical and co-planar with the tube inner face.
+    The inner face A-D is the printable slope (~25 deg from vertical for typical geometry).
+    """
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+
+    def tr(r, tang, z):
+        return [r * cos_t - tang * sin_t, r * sin_t + tang * cos_t, z]
+
+    v = [
+        tr(r_ti,   -hw_tip,  z_ti),   # 0 A-left  inner tip
+        tr(r_ti,   +hw_tip,  z_ti),   # 1 A-right
+        tr(r_to,   -hw_tip,  z_to),   # 2 B-left  outer tip
+        tr(r_to,   +hw_tip,  z_to),   # 3 B-right
+        tr(r_tube, -hw_base, z_to),   # 4 C-left  tube top (same z as B)
+        tr(r_tube, +hw_base, z_to),   # 5 C-right
+        tr(r_tube, -hw_base, z_bed),  # 6 D-left  tube base / bed
+        tr(r_tube, +hw_base, z_bed),  # 7 D-right
+    ]
+    f = [
+        [0, 2, 1], [1, 2, 3],  # top face A-B (air gap side, under flange)
+        [2, 4, 3], [3, 4, 5],  # step face B-C (1mm horizontal shelf to tube)
+        [4, 6, 5], [5, 6, 7],  # outer vertical face C-D (tube inner surface)
+        [0, 1, 6], [1, 7, 6],  # inner face A-D (printable slope)
+        [0, 4, 2], [0, 6, 4],  # left tang side
+        [1, 3, 5], [1, 5, 7],  # right tang side
+    ]
+    m = trimesh.Trimesh(vertices=v, faces=f, process=False)
+    m.fix_normals()
+    return m
+
+
+def build_support_ribs(
+    fp: dict,
+    family: str,
+    pitch: str,
+    num_teeth: int,
+    bore_mm: float,
+    belt_height_mm: float,
+    clearance_mm: float = 0.0,
+    print_extra_mm: float = 0.0,
+) -> list:
+    """Return trimesh objects for flying-buttress supports + bed tube.
+
+    Geometry
+    --------
+    A thin-walled vertical tube sits on the bed 1mm outside the lower flange
+    outer edge (r = R_OD + rim_r + 1mm).  The tube extends from the bed up to
+    the height of the upper flange outer rim.
+
+    Each rib has a vertical outer face flush with the tube inner face, so both
+    the rib top (at flange level) and rib bottom (at bed level) merge into the
+    tube.  The rib inner face slopes at ~25 deg from vertical (self-supporting).
+
+    Returns [] when supports are not enabled or conditions are not met.
+    """
+    if not (fp.get('supports_enabled')
+            and fp.get('flange_3dprint')
+            and not fp.get('top_separate', True)):
+        return []
+
+    try:
+        R_OD, _, _ = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
+        rim_r     = max(0.5, fp['rim_radius_mm'])
+        angle_deg = max(8.0, min(25.0, fp['flange_angle_deg']))
+        angle_rad = math.radians(angle_deg)
+        z_angled  = rim_r * math.tan(angle_rad)
+        f_h       = max(0.1, fp['flange_height_mm'])
+
+        nozzle_dia  = max(0.1, float(fp.get('support_nozzle_dia',  0.4)))
+        max_spacing = max(1.0, float(fp.get('support_max_spacing', 10.0)))
+        air_gap     = max(0.0, float(fp.get('support_air_gap',     0.2)))
+
+        r_outer = R_OD + rim_r   # outer rim of upper flange
+
+        z_ti  = belt_height_mm - air_gap            # flat underside of flange (air gap in)
+        z_to  = belt_height_mm + z_angled - air_gap # angled outer underside (air gap in)
+        z_bed = -f_h                                # bed level = bottom of lower flange
+
+        if z_ti <= z_bed:
+            return []
+
+        # Tube sits 1mm outside lower flange outer edge, spans bed to flange rim height
+        r_tube     = r_outer + 1.0
+        tube_h     = z_to - z_bed           # from bed up to upper flange rim level
+        tube_outer = r_tube + nozzle_dia
+        tube_sections = max(64, round(2.0 * math.pi * tube_outer / 3.0))
+        tube_mesh = _revolve_polygon([
+            (r_tube,      0.0),
+            (tube_outer,  0.0),
+            (tube_outer,  tube_h),
+            (r_tube,      tube_h),
+        ], sections=tube_sections)
+        tube_mesh.apply_translation([0.0, 0.0, z_bed])
+
+        # Two 1mm slits at 0° and 180° — always between ribs (ribs start at π/n_ribs)
+        # Each slit is a tall thin box that cuts through the full tube wall
+        slit_w = 1.0
+        slit_d = nozzle_dia + 2.0          # deeper than wall to guarantee clean cut
+        slit_h = tube_h + 2.0              # taller than tube for clean top/bottom cuts
+        r_mid  = r_tube + nozzle_dia / 2.0 # radial midpoint of tube wall
+        z_mid  = z_bed + tube_h / 2.0
+        slit_0   = trimesh.creation.box(extents=[slit_d, slit_w, slit_h])
+        slit_0.apply_translation([ r_mid, 0.0, z_mid])
+        slit_180 = trimesh.creation.box(extents=[slit_d, slit_w, slit_h])
+        slit_180.apply_translation([-r_mid, 0.0, z_mid])
+        slit_union = trimesh.boolean.union([slit_0, slit_180], engine='manifold')
+        tube_mesh  = trimesh.boolean.difference([tube_mesh, slit_union], engine='manifold')
+
+        hw_tip  = nozzle_dia / 2.0  # breakaway tip: 1x nozzle wide (tangential)
+        hw_base = nozzle_dia        # tube contact: 2x nozzle wide
+
+        # Rib count: multiple of 4, offset from cardinal angles
+        n_raw  = math.ceil(2.0 * math.pi * r_outer / max_spacing)
+        n_ribs = max(4, int(math.ceil(n_raw / 4.0)) * 4)
+        start_angle = math.pi / n_ribs
+
+        meshes = [tube_mesh]
+        for k in range(n_ribs):
+            theta = start_angle + k * 2.0 * math.pi / n_ribs
+            meshes.append(_build_buttress_mesh(
+                R_OD, z_ti, r_outer, z_to, r_tube, z_bed, hw_tip, hw_base, theta,
+            ))
+        return meshes
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------

@@ -15,20 +15,24 @@ Usage:
     # Against an already-running server at a custom URL:
     .venv312/Scripts/python concurrency_test.py --url http://localhost:8000
 
+    # Record results to Perf_History.csv (append rows with ratio):
+    .venv312/Scripts/python concurrency_test.py --csv Perf_History.csv
+
     # Verbose: print every individual request time:
     .venv312/Scripts/python concurrency_test.py --verbose
 
 Interpreting results
 --------------------
 Serialisation ratio = mean_concurrent / mean_baseline
-  ~1.0  → requests ran in parallel (good)
-  ~N    → fully serialised (GIL or single worker)
-  1–N   → partial parallelism (some workers free, some blocked)
+  ~1.0  -> requests ran in parallel (good)
+  ~N    -> fully serialised (GIL or single worker)
+  1-N   -> partial parallelism (some workers free, some blocked)
 
 A ratio > 1.5 at concurrency=2 is flagged as a potential blocking issue.
 """
 
 import argparse
+import csv
 import io
 import os
 import statistics
@@ -37,6 +41,7 @@ import sys
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 # Force UTF-8 output on Windows so arrow/tick characters don't crash
 if sys.platform == 'win32':
@@ -52,8 +57,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Endpoint definitions
 # ---------------------------------------------------------------------------
-# Each entry: (label, path, params)
-# Ordered roughly fastest → slowest so the report reads naturally.
+# Each entry: (label, path, params, csv_key)
+# csv_key is used as the test name prefix in Perf_History.csv: conc/<csv_key>/N<n>
+# Ordered roughly fastest -> slowest so the report reads naturally.
 
 BARE_PARAMS   = {'family': 'HTD', 'pitch': '5M', 'teeth': 40, 'bore': 8,
                  'belt_height': 15}
@@ -67,19 +73,27 @@ FLANGE_PARAMS = {**SPOKE_PARAMS,
                  'flange_bend_radius': 3, 'flange_top_separate': 1}
 
 ENDPOINTS = [
-    ('SVG  (fast / pure-Python)',    '/download/svg',        BARE_PARAMS),
-    ('DXF  (medium / ezdxf)',        '/download/dxf',        BARE_PARAMS),
-    ('SVG  with spokes',             '/download/svg',        SPOKE_PARAMS),
-    ('Preview STL  bare',            '/api/preview-stl',     BARE_PARAMS),
-    ('Preview STL  with spokes',     '/api/preview-stl',     SPOKE_PARAMS),
-    ('Download STL  bare',           '/download/stl',        BARE_PARAMS),
-    ('Download STL  with spokes',    '/download/stl',        SPOKE_PARAMS),
+    ('SVG  (fast / pure-Python)',    '/download/svg',        BARE_PARAMS,   'svg_bare'),
+    ('DXF  (medium / ezdxf)',        '/download/dxf',        BARE_PARAMS,   'dxf_bare'),
+    ('SVG  with spokes',             '/download/svg',        SPOKE_PARAMS,  'svg_spokes'),
+    ('Preview STL  bare',            '/api/preview-stl',     BARE_PARAMS,   'preview_bare'),
+    ('Preview STL  with spokes',     '/api/preview-stl',     SPOKE_PARAMS,  'preview_spokes'),
+    ('Download STL  bare',           '/download/stl',        BARE_PARAMS,   'stl_bare'),
+    ('Download STL  with spokes',    '/download/stl',        SPOKE_PARAMS,  'stl_spokes'),
     ('Flange STL  3D-print top',     '/download/flange-stl',
-     {**FLANGE_PARAMS, 'which': 'top'}),
+     {**FLANGE_PARAMS, 'which': 'top'},                                     'flange_top'),
 ]
 
 CONCURRENCY_LEVELS = [1, 2, 4, 8]
 WARMUP_REQUESTS   = 2   # discard these before measuring baseline
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+CSV_COLUMNS = [
+    'date', 'commit', 'branch',
+    'test',
+    'mean_ms', 'min_ms', 'max_ms', 'stddev_ms', 'median_ms',
+    'rounds', 'ratio',
+]
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +129,8 @@ def _run_concurrent(session, base_url, path, params, n):
         t.join()
     wall_elapsed = time.perf_counter() - wall_start
 
-    times   = [r[0]   for r in results if r]
-    statuses = [r[1]  for r in results if r]
+    times    = [r[0] for r in results if r]
+    statuses = [r[1] for r in results if r]
     return times, statuses, wall_elapsed
 
 
@@ -150,18 +164,56 @@ def _pct(lst, p):
 
 
 # ---------------------------------------------------------------------------
+# Git helpers
+# ---------------------------------------------------------------------------
+
+def _git(cmd):
+    try:
+        return subprocess.check_output(cmd, cwd=ROOT,
+                                       stderr=subprocess.DEVNULL).decode().strip()
+    except subprocess.CalledProcessError:
+        return 'unknown'
+
+
+# ---------------------------------------------------------------------------
+# CSV writer
+# ---------------------------------------------------------------------------
+
+def _append_csv(csv_file, rows):
+    """Append concurrency result rows to Perf_History.csv."""
+    write_header = not os.path.exists(csv_file)
+    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        if write_header:
+            writer.writeheader()
+        writer.writerows(rows)
+    print(f'Appended {len(rows)} concurrency rows to {os.path.basename(csv_file)}')
+
+
+# ---------------------------------------------------------------------------
 # Main test runner
 # ---------------------------------------------------------------------------
 
-def run_tests(base_url, verbose=False):
+def run_tests(base_url, verbose=False, csv_file=None):
+    """Run all endpoint concurrency tests.
+
+    Returns a list of CSV row dicts if csv_file is set, else an empty list.
+    """
     session = _requests.Session()
 
-    all_issues = []
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    commit    = _git(['git', 'rev-parse', '--short', 'HEAD'])
+    branch    = _git(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+
+    all_issues  = []
+    csv_rows    = []
 
     print(f'\n{BOLD}Concurrency test harness — {base_url}{RESET}')
     print('=' * 78)
 
-    for label, path, params in ENDPOINTS:
+    for endpoint in ENDPOINTS:
+        label, path, params, csv_key = endpoint
+
         print(f'\n{BOLD}{label}{RESET}  ->  {path}')
 
         # Warm up
@@ -181,7 +233,7 @@ def run_tests(base_url, verbose=False):
         baseline_mean = statistics.mean(baseline_times)
         baseline_p95  = _pct(baseline_times, 95)
 
-        print(f'  baseline (N=1 × 5): mean={baseline_mean*1000:.1f}ms  '
+        print(f'  baseline (N=1 x 5): mean={baseline_mean*1000:.1f}ms  '
               f'p95={baseline_p95*1000:.1f}ms')
 
         # Concurrency sweep
@@ -189,18 +241,20 @@ def run_tests(base_url, verbose=False):
             times, statuses, wall = _run_concurrent(
                 session, base_url, path, params, n)
 
-            errors  = [s for s in statuses if s != 200]
+            errors   = [s for s in statuses if s != 200]
             ok_times = [t for t, s in zip(times, statuses) if s == 200]
 
             if not ok_times:
                 print(f'  N={n}: ALL REQUESTS FAILED — {set(errors)}')
                 continue
 
-            mean_t = statistics.mean(ok_times)
-            max_t  = max(ok_times)
-            p95_t  = _pct(ok_times, 95)
-            ratio  = mean_t / baseline_mean
-            colour = _colour(ratio)
+            mean_t  = statistics.mean(ok_times)
+            min_t   = min(ok_times)
+            max_t   = max(ok_times)
+            p95_t   = _pct(ok_times, 95)
+            stddev_t = statistics.stdev(ok_times) if len(ok_times) > 1 else 0.0
+            ratio   = mean_t / baseline_mean
+            colour  = _colour(ratio)
 
             err_str = f'  {len(errors)} error(s)' if errors else ''
             if verbose:
@@ -216,6 +270,21 @@ def run_tests(base_url, verbose=False):
             if ratio > 1.5:
                 all_issues.append((label, n, ratio))
 
+            if csv_file:
+                csv_rows.append({
+                    'date':      timestamp,
+                    'commit':    commit,
+                    'branch':    branch,
+                    'test':      f'conc/{csv_key}/N{n}',
+                    'mean_ms':   round(mean_t   * 1000, 3),
+                    'min_ms':    round(min_t    * 1000, 3),
+                    'max_ms':    round(max_t    * 1000, 3),
+                    'stddev_ms': round(stddev_t * 1000, 3),
+                    'median_ms': round(_pct(ok_times, 50) * 1000, 3),
+                    'rounds':    len(ok_times),
+                    'ratio':     round(ratio, 4),
+                })
+
     # Summary
     print('\n' + '=' * 78)
     if all_issues:
@@ -225,13 +294,18 @@ def run_tests(base_url, verbose=False):
                   f'(expected ~1.0 for true parallelism)')
         print()
         print('Interpretation:')
-        print('  ratio ≈ N   → GIL holding the thread or single gunicorn worker')
-        print('  ratio 1–N   → some workers free; other requests queuing')
-        print('  ratio ≈ 1   → requests running concurrently')
+        print('  ratio ~= N  -> GIL holding the thread or single gunicorn worker')
+        print('  ratio 1-N   -> some workers free; other requests queuing')
+        print('  ratio ~= 1  -> requests running concurrently')
     else:
         print(f'{GREEN}{BOLD}No blocking issues detected at tested concurrency levels.[OK]{RESET}')
 
     print()
+
+    if csv_file and csv_rows:
+        _append_csv(csv_file, csv_rows)
+
+    return csv_rows
 
 
 # ---------------------------------------------------------------------------
@@ -248,17 +322,15 @@ def start_gunicorn(workers=4, port=8001):
         '--timeout=120',
         'app:app',
     ]
-    # Try venv gunicorn first
-    import os
     venv_gunicorn = os.path.join(
-        os.path.dirname(sys.executable), 'gunicorn.exe'
-        if sys.platform == 'win32' else 'gunicorn')
+        os.path.dirname(sys.executable),
+        'gunicorn.exe' if sys.platform == 'win32' else 'gunicorn')
     if os.path.exists(venv_gunicorn):
         cmd[0] = venv_gunicorn
 
     env = os.environ.copy()
-    env['PYTHONPATH'] = os.path.dirname(os.path.abspath(__file__))
-    proc = subprocess.Popen(cmd, cwd=os.path.dirname(os.path.abspath(__file__)), env=env)
+    env['PYTHONPATH'] = ROOT
+    proc = subprocess.Popen(cmd, cwd=ROOT, env=env)
     time.sleep(4)   # give gunicorn time to bind
     return proc, f'http://127.0.0.1:{port}'
 
@@ -278,22 +350,23 @@ def main():
                         help='Gunicorn worker count (default: 4)')
     parser.add_argument('--verbose',  action='store_true',
                         help='Print individual request times')
+    parser.add_argument('--csv',      metavar='FILE', default=None,
+                        help='Append concurrency results to this CSV file '
+                             '(e.g. Perf_History.csv)')
     args = parser.parse_args()
 
-    # Test the target server (dev or user-specified)
     print(f'\n{"="*78}')
     print(f' DEV SERVER  ({args.url})')
     print(f'{"="*78}')
-    run_tests(args.url, verbose=args.verbose)
+    run_tests(args.url, verbose=args.verbose, csv_file=args.csv)
 
-    # Optionally test gunicorn
     if args.gunicorn:
         print(f'\n{"="*78}')
-        print(f' GUNICORN ({args.workers} workers)  —  starting…')
+        print(f' GUNICORN ({args.workers} workers)  —  starting...')
         print(f'{"="*78}')
         proc, gurl = start_gunicorn(workers=args.workers)
         try:
-            run_tests(gurl, verbose=args.verbose)
+            run_tests(gurl, verbose=args.verbose, csv_file=args.csv)
         finally:
             proc.terminate()
             proc.wait()

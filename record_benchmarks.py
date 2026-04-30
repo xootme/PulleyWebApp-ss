@@ -27,7 +27,7 @@ CSV_COLUMNS = [
     'date', 'commit', 'branch',
     'test',
     'mean_ms', 'min_ms', 'max_ms', 'stddev_ms', 'median_ms',
-    'rounds',
+    'rounds', 'ratio',
 ]
 
 
@@ -37,6 +37,26 @@ def _git(cmd):
                                        stderr=subprocess.DEVNULL).decode().strip()
     except subprocess.CalledProcessError:
         return 'unknown'
+
+
+def _migrate_csv():
+    """Add 'ratio' column to an existing CSV that pre-dates this column."""
+    if not os.path.exists(CSV_FILE):
+        return
+    with open(CSV_FILE, 'r', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        if 'ratio' in (reader.fieldnames or []):
+            return          # already up to date
+        rows = list(reader)
+
+    # Rewrite with updated header
+    with open(CSV_FILE, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction='ignore')
+        writer.writeheader()
+        for row in rows:
+            row.setdefault('ratio', '')
+            writer.writerow(row)
+    print(f'Migrated Perf_History.csv to include ratio column ({len(rows)} existing rows updated).')
 
 
 def run_benchmarks():
@@ -76,6 +96,7 @@ def record():
             'stddev_ms': round(s['stddev'] * 1000, 3),
             'median_ms': round(s['median'] * 1000, 3),
             'rounds':    s['rounds'],
+            'ratio':     '',        # not applicable for unit benchmarks
         })
 
     write_header = not os.path.exists(CSV_FILE)
@@ -88,17 +109,18 @@ def record():
     # Print summary table
     rows.sort(key=lambda r: r['mean_ms'], reverse=True)
     col_w = max(len(r['test']) for r in rows) + 2
-    print(f'\n{"Test":<{col_w}}  {"Mean ms":>9}  {"Min ms":>8}  {"Max ms":>8}  {"±ms":>7}')
+    print(f'\n{"Test":<{col_w}}  {"Mean ms":>9}  {"Min ms":>8}  {"Max ms":>8}  {"+-ms":>7}')
     print('-' * (col_w + 40))
     for r in rows:
         print(f'{r["test"]:<{col_w}}  {r["mean_ms"]:>9.3f}  '
               f'{r["min_ms"]:>8.3f}  {r["max_ms"]:>8.3f}  {r["stddev_ms"]:>7.3f}')
-    print(f'\nAppended {len(rows)} rows to Perf_History.csv  '
+    print(f'\nAppended {len(rows)} benchmark rows to Perf_History.csv  '
           f'(commit {commit}, branch {branch})')
 
 
 if __name__ == '__main__':
-    print('Running benchmarks…')
+    _migrate_csv()
+    print('Running benchmarks...')
     ok = run_benchmarks()
     if not ok:
         print('\nBenchmark run failed — check output above.', file=sys.stderr)

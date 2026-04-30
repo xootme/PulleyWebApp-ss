@@ -333,6 +333,28 @@
               </div>
             </div>
           </div>
+
+          <!-- Print supports (only when top flange is integrated) -->
+          <div id="flange1_support_section" style="display:none;">
+            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+              <input type="checkbox" id="flange1_supports_enabled" onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+              Add Print Supports
+            </label>
+            <div id="flange1_support_opts" style="display:none;padding-left:16px;">
+              <div style="display:flex;align-items:center;gap:6px;margin-top:4px;margin-bottom:4px;">
+                <label for="flange1_support_nozzle_dia" style="margin:0;flex:1">Nozzle Dia. (mm)</label>
+                <input type="number" id="flange1_support_nozzle_dia" value="0.4" min="0.1" max="2" step="0.05" oninput="onFlangeChange(1)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange1_support_max_spacing" style="margin:0;flex:1">Max Spacing (mm)</label>
+                <input type="number" id="flange1_support_max_spacing" value="10" min="2" max="50" step="0.5" oninput="onFlangeChange(1)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange1_support_air_gap" style="margin:0;flex:1">Air Gap (mm)</label>
+                <input type="number" id="flange1_support_air_gap" value="0.2" min="0.05" max="1" step="0.05" oninput="onFlangeChange(1)" style="width:70px">
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Hub intersection warning -->
@@ -414,9 +436,14 @@
           <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-flange', event)">⬇ Download Flanges</button>
           <div class="dl-menu hidden" id="dl-p1-flange">
             <button class="dl-item" onclick="downloadFlange(1,'top'); closeDlMenus()">Upper Flange STL</button>
-            <button class="dl-item" onclick="downloadFlange(1,'bottom'); closeDlMenus()">Lower Flange STL</button>
+            <button class="dl-item" id="flange1_dl_bottom_stl" onclick="downloadFlange(1,'bottom'); closeDlMenus()">Lower Flange STL</button>
+            <button class="dl-item fb-3d" onclick="downloadFlangeSTEP(1,'top'); closeDlMenus()">Upper Flange STEP</button>
+            <button class="dl-item fb-3d" id="flange1_dl_bottom_step" onclick="downloadFlangeSTEP(1,'bottom'); closeDlMenus()">Lower Flange STEP</button>
           </div>
         </div>
+      </div>
+      <div id="flange1_asm_wrap" class="fb-3d" style="display:none;margin-top:6px;">
+        <button class="btn-download" style="font-size:12px;" onclick="downloadFlangeAssembly(1)">⬇ Assembly STL (w/ Supports)</button>
       </div>
       <div class="dl-wrap" id="belt-svg-wrap">
         <button class="btn-download" style="background:#0f766e;border:3px solid #064e3b;"
@@ -703,6 +730,28 @@
               </div>
             </div>
           </div>
+
+          <!-- Print supports (only when top flange is integrated) -->
+          <div id="flange2_support_section" style="display:none;">
+            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+              <input type="checkbox" id="flange2_supports_enabled" onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+              Add Print Supports
+            </label>
+            <div id="flange2_support_opts" style="display:none;padding-left:16px;">
+              <div style="display:flex;align-items:center;gap:6px;margin-top:4px;margin-bottom:4px;">
+                <label for="flange2_support_nozzle_dia" style="margin:0;flex:1">Nozzle Dia. (mm)</label>
+                <input type="number" id="flange2_support_nozzle_dia" value="0.4" min="0.1" max="2" step="0.05" oninput="onFlangeChange(2)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange2_support_max_spacing" style="margin:0;flex:1">Max Spacing (mm)</label>
+                <input type="number" id="flange2_support_max_spacing" value="10" min="2" max="50" step="0.5" oninput="onFlangeChange(2)" style="width:70px">
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <label for="flange2_support_air_gap" style="margin:0;flex:1">Air Gap (mm)</label>
+                <input type="number" id="flange2_support_air_gap" value="0.2" min="0.05" max="1" step="0.05" oninput="onFlangeChange(2)" style="width:70px">
+              </div>
+            </div>
+          </div>
         </div>
         <div id="flange2_hub_warn" style="display:none;margin-top:6px;padding:5px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
           ⚠ Hub intersects the flange zone.
@@ -781,9 +830,14 @@
           <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-flange', event)">⬇ Download Flanges</button>
           <div class="dl-menu hidden" id="dl-p2-flange">
             <button class="dl-item" onclick="downloadFlange(2,'top'); closeDlMenus()">Upper Flange STL</button>
-            <button class="dl-item" onclick="downloadFlange(2,'bottom'); closeDlMenus()">Lower Flange STL</button>
+            <button class="dl-item" id="flange2_dl_bottom_stl" onclick="downloadFlange(2,'bottom'); closeDlMenus()">Lower Flange STL</button>
+            <button class="dl-item fb-3d" onclick="downloadFlangeSTEP(2,'top'); closeDlMenus()">Upper Flange STEP</button>
+            <button class="dl-item fb-3d" id="flange2_dl_bottom_step" onclick="downloadFlangeSTEP(2,'bottom'); closeDlMenus()">Lower Flange STEP</button>
           </div>
         </div>
+      </div>
+      <div id="flange2_asm_wrap" class="fb-3d" style="display:none;margin-top:6px;">
+        <button class="btn-download-p2" style="font-size:12px;" onclick="downloadFlangeAssembly(2)">⬇ Assembly STL (w/ Supports)</button>
       </div>
     </section>
 
@@ -1181,6 +1235,11 @@ async function loadSettings() {
     if (s[`flange${n}_nub_dia`]      !== undefined) _val(`flange${n}_nub_dia`,      s[`flange${n}_nub_dia`]);
     if (s[`flange${n}_nub_height`]   !== undefined) _val(`flange${n}_nub_height`,   s[`flange${n}_nub_height`]);
     if (s[`flange${n}_nub_allowance`]!== undefined) _val(`flange${n}_nub_allowance`,s[`flange${n}_nub_allowance`]);
+    if (s[`flange${n}_supports_enabled`] !== undefined)
+      document.getElementById(`flange${n}_supports_enabled`).checked = s[`flange${n}_supports_enabled`] === '1';
+    if (s[`flange${n}_support_nozzle_dia`]  !== undefined) _val(`flange${n}_support_nozzle_dia`,  s[`flange${n}_support_nozzle_dia`]);
+    if (s[`flange${n}_support_max_spacing`] !== undefined) _val(`flange${n}_support_max_spacing`, s[`flange${n}_support_max_spacing`]);
+    if (s[`flange${n}_support_air_gap`]     !== undefined) _val(`flange${n}_support_air_gap`,     s[`flange${n}_support_air_gap`]);
     // Apply visibility
     onFlangeChange(n);
   });
@@ -1880,6 +1939,10 @@ function buildParams() {
     p.flange_nub_dia        = document.getElementById('flange1_nub_dia').value;
     p.flange_nub_height     = document.getElementById('flange1_nub_height').value;
     p.flange_nub_allowance  = document.getElementById('flange1_nub_allowance').value;
+    p.flange_supports_enabled     = document.getElementById('flange1_supports_enabled').checked ? '1' : '0';
+    p.flange_support_nozzle_dia   = document.getElementById('flange1_support_nozzle_dia').value;
+    p.flange_support_max_spacing  = document.getElementById('flange1_support_max_spacing').value;
+    p.flange_support_air_gap      = document.getElementById('flange1_support_air_gap').value;
   }
   // Flange params — P2 (only in dual mode)
   if (document.getElementById('dual_enable').checked &&
@@ -1898,6 +1961,10 @@ function buildParams() {
     p.p2_flange_nub_dia        = document.getElementById('flange2_nub_dia').value;
     p.p2_flange_nub_height     = document.getElementById('flange2_nub_height').value;
     p.p2_flange_nub_allowance  = document.getElementById('flange2_nub_allowance').value;
+    p.p2_flange_supports_enabled     = document.getElementById('flange2_supports_enabled').checked ? '1' : '0';
+    p.p2_flange_support_nozzle_dia   = document.getElementById('flange2_support_nozzle_dia').value;
+    p.p2_flange_support_max_spacing  = document.getElementById('flange2_support_max_spacing').value;
+    p.p2_flange_support_air_gap      = document.getElementById('flange2_support_air_gap').value;
   }
   return p;
 }
@@ -2246,8 +2313,38 @@ function downloadSTEP(n) {
   const params = buildParams();
   params.belt_height = document.getElementById('belt_height').value;
   if (n === 2) params.pulley = '2';
+  // Add flange params with flat naming so the route can parse them
+  const fn = n.toString();
+  const pfx = n === 2 ? 'p2_' : '';
+  if (document.getElementById(`flange${fn}_enabled`).checked) {
+    params[`${pfx}flange_enabled`]      = '1';
+    params[`${pfx}flange_3dprint`]      = document.getElementById(`flange${fn}_3dprint`).checked ? '1' : '0';
+    params[`${pfx}flange_angle`]        = document.getElementById(`flange${fn}_angle`).value;
+    params[`${pfx}flange_rim_radius`]   = document.getElementById(`flange${fn}_rim_radius`).value;
+    params[`${pfx}flange_height`]       = document.getElementById(`flange${fn}_height`).value;
+    params[`${pfx}flange_plate_height`] = document.getElementById(`flange${fn}_plate_height`).value;
+    params[`${pfx}flange_bend_radius`]  = document.getElementById(`flange${fn}_bend_radius`).value;
+    params[`${pfx}flange_top_separate`] = document.getElementById(`flange${fn}_top_separate`).checked ? '1' : '0';
+    params[`${pfx}flange_nubs_enabled`] = document.getElementById(`flange${fn}_nubs_enabled`).checked ? '1' : '0';
+    params[`${pfx}flange_nub_count`]    = document.getElementById(`flange${fn}_nub_count`).value;
+    params[`${pfx}flange_nub_dia`]      = document.getElementById(`flange${fn}_nub_dia`).value;
+    params[`${pfx}flange_nub_height`]   = document.getElementById(`flange${fn}_nub_height`).value;
+    params[`${pfx}flange_nub_allowance`]        = document.getElementById(`flange${fn}_nub_allowance`).value;
+    params[`${pfx}flange_supports_enabled`]     = document.getElementById(`flange${fn}_supports_enabled`).checked ? '1' : '0';
+    params[`${pfx}flange_support_nozzle_dia`]   = document.getElementById(`flange${fn}_support_nozzle_dia`).value;
+    params[`${pfx}flange_support_max_spacing`]  = document.getElementById(`flange${fn}_support_max_spacing`).value;
+    params[`${pfx}flange_support_air_gap`]      = document.getElementById(`flange${fn}_support_air_gap`).value;
+  }
   const url = '/download/step?' + new URLSearchParams(params);
   downloadWithProgress(url, `Pulley_${n}.step`);
+}
+
+function downloadFlangeSTEP(n, which) {
+  const fp = _flangeParams(n);
+  fp.flange_which = which;
+  const suffix = which === 'top' ? 'upper' : 'lower';
+  downloadWithProgress('/download/flange-step?' + new URLSearchParams(fp),
+                       `Flange_P${n}_${suffix}.step`);
 }
 
 function downloadSTL(n) {
@@ -2688,8 +2785,28 @@ function onFlangeChange(n) {
   const nubsOn = topSep && document.getElementById(`flange${n}_nubs_enabled`).checked;
   document.getElementById(`flange${n}_nub_opts`).style.display = nubsOn ? 'block' : 'none';
 
+  // Support ribs section: only when top is integrated (3DP, not separate)
+  const suppActive = enabled && is3dp && !topSep;
+  const suppSec = document.getElementById(`flange${n}_support_section`);
+  if (suppSec) suppSec.style.display = suppActive ? 'block' : 'none';
+  const suppsOn = suppActive && document.getElementById(`flange${n}_supports_enabled`).checked;
+  const suppOpts = document.getElementById(`flange${n}_support_opts`);
+  if (suppOpts) suppOpts.style.display = suppsOn ? 'block' : 'none';
+
+  // "Download Flanges" menu: hidden in integrated 3DP mode (no separate flange files)
   const dlWrap = document.getElementById(`flange${n}_dl_wrap`);
-  if (dlWrap) dlWrap.style.display = enabled ? 'block' : 'none';
+  if (dlWrap) dlWrap.style.display = (enabled && !(is3dp && !topSep)) ? 'block' : 'none';
+
+  // Lower flange download items: hidden whenever 3DP is checked (lower flange is part of the pulley)
+  const show3dp = enabled && !is3dp;
+  const btmStl  = document.getElementById(`flange${n}_dl_bottom_stl`);
+  const btmStep = document.getElementById(`flange${n}_dl_bottom_step`);
+  if (btmStl)  btmStl.style.display  = show3dp ? '' : 'none';
+  if (btmStep) btmStep.style.display = show3dp ? '' : 'none';
+
+  // Standalone assembly button: only in integrated 3DP mode with supports on
+  const asmWrap = document.getElementById(`flange${n}_asm_wrap`);
+  if (asmWrap) asmWrap.style.display = suppsOn ? 'block' : 'none';
 
   schedulePreview();
   saveSettings();
@@ -2716,8 +2833,9 @@ function _flangeParams(n) {
   fp.hub_od = p[hubKey] || 0;
 
   // Spoke params
-  fp.spokes_enabled = document.getElementById(`spokes${n}_enabled`).checked ? '1' : '0';
-  fp.spokes_hub_od  = document.getElementById(`spokes${n}_hub_od`).value;
+  fp.spokes_enabled   = document.getElementById(`spokes${n}_enabled`).checked ? '1' : '0';
+  fp.spokes_hub_od    = document.getElementById(`spokes${n}_hub_od`).value;
+  fp.spokes_rim_depth = document.getElementById(`spokes${n}_rim_depth`).value;
 
   // Flange-specific params
   fp.flange_3dprint      = document.getElementById(`flange${n}_3dprint`).checked ? '1' : '0';
@@ -2733,6 +2851,11 @@ function _flangeParams(n) {
   fp.flange_nub_height   = document.getElementById(`flange${n}_nub_height`).value;
   fp.flange_nub_allowance= document.getElementById(`flange${n}_nub_allowance`).value;
 
+  fp.flange_supports_enabled    = document.getElementById(`flange${n}_supports_enabled`).checked ? '1' : '0';
+  fp.flange_support_nozzle_dia  = document.getElementById(`flange${n}_support_nozzle_dia`).value;
+  fp.flange_support_max_spacing = document.getElementById(`flange${n}_support_max_spacing`).value;
+  fp.flange_support_air_gap     = document.getElementById(`flange${n}_support_air_gap`).value;
+
   return fp;
 }
 
@@ -2740,6 +2863,30 @@ function downloadFlange(n, which) {
   const fp = _flangeParams(n);
   fp.flange_which = which;
   _triggerDownload('/download/flange-stl?' + new URLSearchParams(fp));
+}
+
+function downloadFlangeAssembly(n) {
+  const fp = _flangeParams(n);
+  // Add hub geometry params needed by generate_pulley_stl
+  const prefix = n === 2 ? 'p2_' : '';
+  const p = buildParams();
+  fp.hub_height        = p[`${prefix}hub_height`]       || 0;
+  fp.hub_screw_dia     = p[`${prefix}hub_screw_dia`]    || 0;
+  fp.hub_screw_count   = p[`${prefix}hub_screw_count`]  || 0;
+  fp.hub_captured_nut  = p[`${prefix}hub_captured_nut`] || '0';
+  fp.hub_flat_depth    = p[`${prefix}hub_flat_depth`]   || 0;
+  fp.hub_keyway_w      = p[`${prefix}hub_keyway_w`]     || 0;
+  fp.hub_keyway_h      = p[`${prefix}hub_keyway_h`]     || 0;
+  // Spoke geometry
+  fp.spokes_width      = document.getElementById(`spokes${n}_width`).value;
+  fp.spokes_fillet_tip = document.getElementById(`spokes${n}_fillet_tip`).value;
+  fp.spokes_fillet_base= document.getElementById(`spokes${n}_fillet_base`).value;
+  fp.spokes_count      = document.getElementById(`spokes${n}_count`).value;
+  fp.spokes_height     = document.getElementById(`spokes${n}_height`).value;
+  fp.backlash_preset   = n === 2 ? (p.p2_backlash_preset || 'STANDARD') : (p.backlash_preset || 'STANDARD');
+  fp.backlash_custom   = n === 2 ? (p.p2_backlash_custom || 0)           : (p.backlash_custom  || 0);
+  downloadWithProgress('/download/flange-assembly?' + new URLSearchParams(fp),
+                       `${fp.family}${fp.pitch}-${fp.teeth}T-Assembly.stl`);
 }
 
 function onFilletChange(n, changed) {

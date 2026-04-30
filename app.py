@@ -76,6 +76,7 @@ from exporters.step_exporter import (
 from exporters.flange_exporter import (
     generate_3dprint_flange_stl,
     generate_metal_flange_stl,
+    build_support_ribs,
 )
 
 app = Flask(__name__)
@@ -872,7 +873,60 @@ def download_stl():
             fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
             spoke_height_mm=sp_h if sp_en else 0.0,
         )
-        fname = f'{family}-{pitch}-{num_teeth}T{suffix}.stl'
+
+        # 3D-print flanges: append bottom flange and cut nub socket holes
+        _fl_enabled = request.args.get(f'{pfx}flange_enabled') == '1'
+        fp = _parse_flange_params(request.args, pfx) if _fl_enabled else {}
+        if _fl_enabled and fp.get('flange_3dprint'):
+            import trimesh, io as _io
+            from exporters.flange_exporter import (
+                generate_3dprint_flange_stl, build_socket_meshes,
+            )
+            eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+
+            # Build socket meshes before the pulley STL so they can be cut inside
+            # generate_pulley_stl_preview (avoids the STL round-trip that causes
+            # non-watertight meshes with complex spoke geometry).
+            sockets = build_socket_meshes(
+                fp, family, pitch, num_teeth, bore_mm, belt_height,
+                clearance_mm=cl_mm, print_extra_mm=pr_ex,
+                hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
+                spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
+            ) if (fp.get('nubs_enabled') and fp.get('top_separate')) else []
+
+            # generate_pulley_stl_preview cuts sockets before exporting, so
+            # the boolean runs on the native mesh (no round-trip precision loss).
+            # It centres the mesh; we track z_bottom to re-align the bottom flange.
+            stl = generate_pulley_stl_preview(
+                family, pitch, num_teeth, bore_mm, belt_height,
+                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+                spoke_height_mm=sp_h if sp_en else 0.0,
+                socket_meshes=sockets or None,
+            )
+            pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
+            z_bottom = float(pulley_mesh.bounds[0][2])
+
+            bot_bytes = generate_3dprint_flange_stl(
+                which='bottom',
+                family=family, pitch=pitch, num_teeth=num_teeth,
+                bore_mm=bore_mm, belt_height_mm=belt_height,
+                clearance_mm=cl_mm, print_extra_mm=pr_ex,
+                flange_angle_deg=fp['flange_angle_deg'],
+                rim_radius_mm=fp['rim_radius_mm'],
+                flange_height_mm=fp['flange_height_mm'],
+                hub_od_mm=eff_hub_od,
+                spokes_enabled=sp_en,
+                spoke_hub_od_mm=sp_hub,
+                rim_depth_mm=sp_rim,
+            )
+            bot_mesh = trimesh.load(_io.BytesIO(bot_bytes), file_type='stl')
+            bot_mesh.apply_translation([0.0, 0.0, z_bottom])
+            stl = trimesh.util.concatenate([pulley_mesh, bot_mesh]).export(file_type='stl')
+
+        fl_sfx = '+flange' if (_fl_enabled and fp.get('flange_3dprint')) else ''
+        fname = f'{family}-{pitch}-{num_teeth}T{suffix}{fl_sfx}.stl'
         return Response(stl, mimetype='model/stl',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
@@ -895,6 +949,10 @@ def download_step():
         # explicit hub OD was set — matches the STL download behaviour.
         eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
 
+        # Flange params: only parsed when the user has flanges enabled
+        _fl_enabled = request.args.get(f'{pfx}flange_enabled') == '1'
+        fp = _parse_flange_params(request.args, pfx) if _fl_enabled else {}
+
         kw = dict(
             family=family, pitch=pitch, num_teeth=num_teeth,
             bore_mm=bore_mm, belt_height_mm=belt_height,
@@ -910,6 +968,17 @@ def download_step():
             fillet_tip_mm=sp_ft,
             fillet_base_mm=sp_fb,
             spoke_height_mm=sp_h,
+            flange_enabled       = _fl_enabled,
+            flange_3dprint       = fp.get('flange_3dprint', True),
+            flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
+            flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
+            flange_height_mm     = fp.get('flange_height_mm', 1.5),
+            flange_top_separate  = fp.get('top_separate', True),
+            nubs_enabled         = fp.get('nubs_enabled', False),
+            nub_count            = fp.get('nub_count', 4),
+            nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
+            nub_height_mm        = fp.get('nub_height_mm', 2.0),
+            nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
         )
 
         # Try direct import first (cadquery available — Render / Python 3.12 venv).
@@ -931,8 +1000,9 @@ def download_step():
                 return f'STEP error: {result.stderr.decode()}', 400
             step_bytes = result.stdout
 
-        suffix = '-P2' if pulley == '2' else ''
-        fname  = f'{family}-{pitch}-{num_teeth}T{suffix}.step'
+        p2_sfx     = '-P2' if pulley == '2' else ''
+        fl_sfx     = '+flange' if (_fl_enabled and fp.get('flange_3dprint')) else ''
+        fname      = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
@@ -1216,6 +1286,11 @@ def _parse_flange_params(args, prefix=''):
         nub_dia_mm        = max(1.0, _safe_float(args.get(f'{prefix}flange_nub_dia'),         3.0)),
         nub_height_mm     = max(0.5, _safe_float(args.get(f'{prefix}flange_nub_height'),      2.0)),
         nub_allowance_mm  = max(0.0, _safe_float(args.get(f'{prefix}flange_nub_allowance'),   0.2)),
+        # Print support rib params (3D-print integrated-top only)
+        supports_enabled     = args.get(f'{prefix}flange_supports_enabled', '0') == '1',
+        support_nozzle_dia   = max(0.1, _safe_float(args.get(f'{prefix}flange_support_nozzle_dia'),  0.4)),
+        support_max_spacing  = max(1.0, _safe_float(args.get(f'{prefix}flange_support_max_spacing'), 10.0)),
+        support_air_gap      = max(0.0, _safe_float(args.get(f'{prefix}flange_support_air_gap'),     0.2)),
     )
 
 
@@ -1268,6 +1343,11 @@ def download_flange_stl():
                 spokes_enabled=spokes_enabled,
                 spoke_hub_od_mm=spoke_hub_od,
                 rim_depth_mm=spoke_rim_depth,
+                nubs_enabled=fp.get('nubs_enabled', False) and fp.get('top_separate', False),
+                nub_count=fp.get('nub_count', 4),
+                nub_dia_mm=fp.get('nub_dia_mm', 3.0),
+                nub_height_mm=fp.get('nub_height_mm', 2.0),
+                nub_allowance_mm=fp.get('nub_allowance_mm', 0.2),
             )
         else:
             stl_bytes = generate_metal_flange_stl(
@@ -1297,6 +1377,188 @@ def download_flange_stl():
     except Exception as e:
         import traceback
         return Response(f'Flange STL export failed:\n{traceback.format_exc()}',
+                        status=500, mimetype='text/plain')
+
+
+@app.route('/download/flange-step')
+def download_flange_step():
+    """Return STEP of a single flange plate (3D-print top with nubs, or metal top/bottom).
+
+    The 3D-print bottom flange is integrated into the pulley STEP and is not
+    available as a standalone download from this route.
+    """
+    try:
+        import json as _json, os as _os
+        args = request.args
+
+        family = args.get('family', 'HTD')
+        pitch  = args.get('pitch',  '5M')
+        key    = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return jsonify({'error': f'Unknown profile {family}/{pitch}'}), 400
+
+        spec      = PULLEY_SPECS[key]
+        num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
+        bore_mm   = _get_bore(args)
+        belt_h    = max(1.0, float(args.get('belt_height', 10.0)))
+        cl_mm     = _get_preset_value(spec, 'clearances',
+                                      args.get('clearance_preset', 'STANDARD'),
+                                      args.get('clearance_custom', 0.0))
+        pe_mm     = float(args.get('print_extra', 0.0))
+
+        hub_od          = max(0.0, float(args.get('hub_od', 0.0)))
+        spokes_enabled  = args.get('spokes_enabled', '0') == '1'
+        spoke_hub_od    = max(0.0, float(args.get('spokes_hub_od', 0.0)))
+        spoke_rim_depth = max(0.0, float(args.get('spokes_rim_depth', 0.0)))
+
+        fp    = _parse_flange_params(args)
+        which = args.get('flange_which', 'top')
+
+        kw = dict(
+            family           = family,
+            pitch            = pitch,
+            num_teeth        = num_teeth,
+            bore_mm          = bore_mm,
+            belt_height_mm   = belt_h,
+            clearance_mm     = cl_mm,
+            print_extra_mm   = pe_mm,
+            flange_3dprint   = fp['flange_3dprint'],
+            flange_angle_deg = fp['flange_angle_deg'],
+            rim_radius_mm    = fp['rim_radius_mm'],
+            flange_height_mm = fp['flange_height_mm'],
+            plate_height_mm  = fp['plate_height_mm'],
+            bend_radius_mm   = fp['bend_radius_mm'],
+            which            = which,
+            hub_od_mm        = hub_od,
+            spokes_enabled   = spokes_enabled,
+            spoke_hub_od_mm  = spoke_hub_od,
+            rim_depth_mm     = spoke_rim_depth,
+            nubs_enabled     = fp['nubs_enabled'],
+            nub_count        = fp['nub_count'],
+            nub_dia_mm       = fp['nub_dia_mm'],
+            nub_height_mm    = fp['nub_height_mm'],
+            nub_allowance_mm = fp['nub_allowance_mm'],
+        )
+
+        try:
+            from exporters.step_exporter import generate_flange_step
+            step_bytes = generate_flange_step(**kw)
+        except ImportError:
+            import subprocess, sys
+            root    = _os.path.dirname(_os.path.abspath(__file__))
+            venv_py = _os.path.join(root, '.venv312', 'Scripts', 'python.exe')
+            worker  = _os.path.join(root, 'exporters', 'step_worker.py')
+            worker_kw = dict(kw, export_type='flange')
+            result  = subprocess.run(
+                [venv_py, worker, _json.dumps(worker_kw)],
+                capture_output=True, cwd=root,
+            )
+            if result.returncode != 0:
+                return f'Flange STEP error: {result.stderr.decode()}', 400
+            step_bytes = result.stdout
+
+        suffix   = '-upper-flange' if which == 'top' else '-lower-flange'
+        type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
+        filename = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.step'
+        return Response(step_bytes, mimetype='application/step',
+                        headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except Exception as e:
+        import traceback
+        return Response(f'Flange STEP export failed:\n{traceback.format_exc()}',
+                        status=500, mimetype='text/plain')
+
+
+@app.route('/download/flange-assembly')
+def download_flange_assembly():
+    """Return an assembly STL: pulley body + bottom flange + integrated top flange + support ribs.
+
+    Only available when the top flange is integrated (flange_top_separate=0) and
+    the 3D-print mode is selected. The pulley body is generated fresh via
+    generate_pulley_stl(); both flanges and any support ribs are concatenated
+    (no boolean union — slicer handles overlapping).
+    """
+    try:
+        import trimesh as _trimesh
+        args = request.args
+
+        family = args.get('family', 'HTD')
+        pitch  = args.get('pitch',  '5M')
+        key    = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return jsonify({'error': f'Unknown profile {family}/{pitch}'}), 400
+
+        spec      = PULLEY_SPECS[key]
+        num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
+        bore_mm   = _get_bore(args)
+        belt_h    = max(1.0, float(args.get('belt_height', 10.0)))
+        cl_mm     = _get_preset_value(spec, 'clearances',
+                                      args.get('clearance_preset', 'STANDARD'),
+                                      args.get('clearance_custom', 0.0))
+        bl_mm     = _get_preset_value(spec, 'backlash',
+                                      args.get('backlash_preset', 'STANDARD'),
+                                      args.get('backlash_custom', 0.0))
+        pe_mm     = float(args.get('print_extra', 0.0))
+
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(args)
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, _ = _parse_spoke_params(args)
+
+        fp = _parse_flange_params(args)
+
+        # Pulley body mesh
+        pulley_bytes = generate_pulley_stl(
+            family, pitch, num_teeth, bore_mm, belt_h,
+            cl_mm, bl_mm, pe_mm, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+            spoke_count=sp_cnt if sp_en else 0,
+            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+            fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+            rim_depth_mm=sp_rim,
+            spoke_height_mm=sp_h if sp_en else 0.0,
+        )
+
+        import io as _io
+        pulley_mesh = _trimesh.load(_io.BytesIO(pulley_bytes), file_type='stl')
+
+        # Flange meshes (bottom + top)
+        from exporters.flange_exporter import (
+            generate_3dprint_flange_stl, build_support_ribs,
+        )
+        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+
+        flange_kw = dict(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, belt_height_mm=belt_h,
+            clearance_mm=cl_mm, print_extra_mm=pe_mm,
+            flange_angle_deg=fp['flange_angle_deg'],
+            rim_radius_mm=fp['rim_radius_mm'],
+            flange_height_mm=fp['flange_height_mm'],
+            hub_od_mm=eff_hub_od,
+            spokes_enabled=sp_en,
+            spoke_hub_od_mm=sp_hub,
+            rim_depth_mm=sp_rim,
+        )
+
+        bot_bytes = generate_3dprint_flange_stl(which='bottom', **flange_kw)
+        top_bytes = generate_3dprint_flange_stl(which='top',    **flange_kw)
+
+        bot_mesh = _trimesh.load(_io.BytesIO(bot_bytes), file_type='stl')
+        top_mesh = _trimesh.load(_io.BytesIO(top_bytes), file_type='stl')
+
+        # Support ribs
+        rib_meshes = build_support_ribs(
+            fp, family, pitch, num_teeth, bore_mm, belt_h,
+            clearance_mm=cl_mm, print_extra_mm=pe_mm,
+        )
+
+        all_meshes = [pulley_mesh, bot_mesh, top_mesh] + rib_meshes
+        combined   = _trimesh.util.concatenate(all_meshes)
+        stl_bytes  = combined.export(file_type='stl')
+
+        filename = f'{family}{pitch}-{num_teeth}T-Assembly.stl'
+        return Response(stl_bytes, mimetype='model/stl',
+                        headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except Exception as e:
+        import traceback
+        return Response(f'Assembly STL export failed:\n{traceback.format_exc()}',
                         status=500, mimetype='text/plain')
 
 
