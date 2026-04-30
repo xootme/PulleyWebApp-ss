@@ -60,12 +60,27 @@ Before committing, ensure these files reflect every user-facing change:
 - [ ] Download format options (SVG / DXF) accurate in all three help files
 - [ ] `ToDo.md` Completed section updated
 
-### Step 3 — Run performance benchmarks and concurrency tests
-
-Before pushing, record a benchmark snapshot against the current code.
-Results are appended to `Perf_History.csv` (committed alongside the code change).
+### Step 3 — Run full test harness, benchmarks, and concurrency tests
 
 **Requires the local dev server to be running** (`python app.py`) for the concurrency test.
+
+#### 3a — Full test suite (run first, before benchmarks)
+
+```bash
+.venv312/Scripts/python -m pytest tests/ -v
+```
+
+All tests must pass before proceeding. A failing test is a hard stop — do not benchmark
+or push code that breaks the suite.
+
+**Checklist:**
+- [ ] `pytest tests/` exited 0 (all tests passed)
+- [ ] No new test failures vs the previous run
+
+#### 3b — Performance benchmarks
+
+Record a benchmark snapshot against the current code.
+Results are appended to `Perf_History.csv` (committed alongside the code change).
 
 ```bash
 # Unit benchmarks (no server needed)
