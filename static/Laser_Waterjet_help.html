@@ -1,133 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Laser / Waterjet Help — Timing Pulleys</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #334155;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #334155;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #334155;
-      background: #f1f5f9;
-      border-left: 3px solid #334155;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .coming-soon {
-      font-size: 13px;
-      color: #64748b;
-      background: #f8fafc;
-      border: 2px dashed #cbd5e1;
-      border-radius: 6px;
-      padding: 20px;
-      text-align: center;
-      margin: 10px 0;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laser / Waterjet Help — Timing Pulleys</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .coming-soon { font-size: 13px; color: #94a3b8; background: #0f172a;
+                 border: 2px dashed #334155; border-radius: 6px; padding: 20px;
+                 text-align: center; margin: 10px 0; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#9870; Laser / Waterjet — Timing Pulleys</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator</p>
-</header>
+<h2>&#9870; Laser / Waterjet — Timing Pulleys</h2>
 
-<section>
-  <h2>Coming Soon</h2>
-  <div class="coming-soon">
-    &#128295; <strong>Layer cake method for laser / waterjet cut timing pulleys</strong><br><br>
-    A guide to cutting timing pulleys from sheet material by stacking and bonding layers —
-    combining 2D cut parts to achieve the required belt width.<br><br>
-    <em>To do&hellip;</em>
-  </div>
-</section>
+<h3>Layer Cake Method</h3>
+<p>The exported SVG or DXF profile can be imported into any CAD program (Fusion 360, FreeCAD,
+SolidWorks, etc.) and extruded to the thickness of your sheet material. Stack and bond multiple
+identical layers to build up the required belt width. This technique lets you produce accurate
+timing pulleys from flat sheet stock — acrylic, plywood, aluminium, or steel — using only a
+laser cutter or waterjet.</p>
+<ol>
+  <li>Download the SVG or DXF profile from the <strong>2D</strong> panel.</li>
+  <li>Import into your CAD program and extrude to your sheet thickness (e.g. 3 mm or 6 mm).</li>
+  <li>Cut the required number of layers and stack them concentrically.</li>
+  <li>Bond layers with adhesive, press-fit a hub, or fasten with through-bolts.</li>
+</ol>
+<img src="/static/LayerCakePulley.png" alt="Layer cake pulley example" style="width:100%;display:block;border-radius:4px;margin:10px 0;"/>
 
-<section>
-  <h2>Downloads for 2D Cutting</h2>
-  <div class="field">
-    <div class="field-name">SVG</div>
-    <div class="field-desc">
-      Download the pulley profile as SVG for import into laser cutter software (LightBurn, RDWorks,
-      CorelDRAW, Inkscape). The profile is at 1:1 mm scale — no scaling required.
-    </div>
-    <div class="field-tip">Set Print Extra to <code>0</code> — laser and waterjet cuts are dimensionally accurate and need no compensation.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">DXF</div>
-    <div class="field-desc">
-      Download the pulley profile as DXF (R2010 format) for import into CAD/CAM software or waterjet
-      controllers. Uses true arc entities — not polyline approximations.
-    </div>
-  </div>
-</section>
-
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+<h3>Downloads for 2D Cutting</h3>
+<ul>
+  <li><strong>SVG</strong> — Download the pulley profile as SVG for import into laser cutter software
+      (LightBurn, RDWorks, CorelDRAW, Inkscape). The profile is at 1:1 mm scale — no scaling required.
+      <div class="note">Set Print Extra to <code>0</code> — laser and waterjet cuts are dimensionally accurate and need no compensation.</div>
+  </li>
+  <li><strong>DXF</strong> — Download the pulley profile as DXF (R2010 format) for import into CAD/CAM
+      software or waterjet controllers. Uses true arc entities — not polyline approximations.</li>
+</ul>
 
 </body>
 </html>

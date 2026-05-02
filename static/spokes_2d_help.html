@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spokes — 2D Guide</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+
+  /* Spoke diagram */
+  .diagram { background: #0f172a; border: 1px solid #334155; border-radius: 4px;
+             margin: 10px 0; padding: 4px; }
+</style>
+</head>
+<body>
+
+<h2>&#9881; Spokes — 2D Guide</h2>
+
+<p>Enabling <strong>Spokes</strong> hollows out the pulley body between the outer rim ring and the hub
+boss, replacing solid material with evenly spaced radial spokes. The cutout profile appears in the 2D
+SVG and DXF exports and in the 3D preview.</p>
+
+<div class="diagram">
+  <img src="/static/2d_spoke_illistration.svg" alt="Spokes diagram" style="width:100%;display:block;background:#0f172a;"/>
+</div>
+
+<h3>Spoke Count</h3>
+<p>Number of equally spaced radial spokes. Range: 2–24. Even counts (4, 6, 8) are typical for
+symmetry. Higher counts on large pulleys fill more of the web area.</p>
+
+<h3>Hub OD (mm)</h3>
+<p>Outer diameter of the central hub boss that the spokes attach to at their inner end. This
+sets where the spoke root starts. Must be larger than the bore diameter.</p>
+<div class="warn">When spokes are active, Hub OD in the 3D panel is locked to this value — the 3D hub boss matches the spoke hub OD automatically.</div>
+
+<h3>Rim Depth (mm)</h3>
+<p>Radial thickness of the solid outer rim ring, measured inward from the tooth OD. The rim ring
+is the structural band that carries the tooth loads; the spokes attach to its inner face.</p>
+
+<h3>Spoke Width (mm)</h3>
+<p>Tangential width of each spoke at its mid-span (halfway between hub boss and rim ring). The actual
+spoke narrows slightly toward the rim tip (where the fillet tip blends in) and widens at the hub base
+(fillet base).</p>
+
+<h3>Fillet Tip (mm)</h3>
+<p>Corner radius where the spoke meets the inner face of the rim ring. A larger fillet tip reduces
+stress concentration at the rim junction and improves fatigue life. Set to <code>0</code> for a sharp
+corner.</p>
+<div class="note">If adjacent fillet arcs overlap (spoke count is high and fillet tip is large), the fillet is automatically reduced to prevent geometry errors.</div>
+
+<h3>Fillet Base (mm)</h3>
+<p>Corner radius where the spoke meets the outer face of the hub boss. A larger fillet base is
+particularly important for load-bearing spokes — it distributes bending stress over a wider area.</p>
+
+<h3>Spoke Height (mm) <em>(3D only)</em></h3>
+<p>Axial height of the spoke web. This controls how far the spokes extend through the pulley body
+in the axial direction.</p>
+<ul>
+  <li><strong>0</strong> = full belt height (spokes span the entire axial thickness).</li>
+  <li>A positive value less than belt height creates a recessed pocket above and below the spoke web,
+      leaving solid material on both faces. This is useful when you want a solid pulley face for
+      mounting or gluing a flange.</li>
+</ul>
+<div class="note">Spoke Height is only visible when 3D Features is active. The 2D SVG/DXF profile always shows the full spoke cutout regardless of this setting.</div>
+
+<h3>2D Export Behaviour</h3>
+<p>When spokes are enabled, the 2D SVG and DXF downloads include the spoke void cutout profiles.
+These can be used directly in laser or waterjet cutting software — the outer tooth profile, the
+bore, and the spoke voids are all separate closed paths on the same drawing.</p>
+<p>Use <strong>Gen. Rim Layer</strong> to download the toothed rim ring as a separate 2D file — this
+is the outer portion of the pulley without the spoke web, suitable for layer-cake stacking methods.</p>
+<div class="diagram">
+  <img src="/static/LayerCakePulley.png" alt="Layer cake pulley example" style="width:100%;display:block;border-radius:3px;"/>
+</div>
+
+</body>
+</html>
