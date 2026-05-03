@@ -72,6 +72,20 @@ FLANGE_PARAMS = {**SPOKE_PARAMS,
                  'flange_height': 1.5, 'flange_plate_height': 1.5,
                  'flange_bend_radius': 3, 'flange_top_separate': 1}
 
+# Worst-case payload: large pulley, spokes, integrated 3D-print flanges + supports.
+# Used by --heavy to test the OOM / serialisation cliff.
+HEAVY_PARAMS  = {'family': 'HTD', 'pitch': '5M', 'teeth': 80, 'bore': 12,
+                 'belt_height': 25,
+                 'spoke_count': 5, 'spoke_width': 8, 'spoke_hub_od': 30,
+                 'rim_depth': 8,   'spoke_height': 20,
+                 'spoke_fillet_tip': 3, 'spoke_fillet_base': 2,
+                 'flange_enabled': 1, 'flange_3dprint': 1,
+                 'flange_angle': 15, 'flange_rim_radius': 3, 'flange_height': 1.5,
+                 'flange_plate_height': 1.5, 'flange_bend_radius': 3,
+                 # integrated mode (no top_separate) + supports
+                 'supports_enabled': 1, 'support_nozzle_dia': 0.4,
+                 'support_max_spacing': 10, 'support_air_gap': 0.2}
+
 ENDPOINTS = [
     ('SVG  (fast / pure-Python)',    '/download/svg',        BARE_PARAMS,   'svg_bare'),
     ('DXF  (medium / ezdxf)',        '/download/dxf',        BARE_PARAMS,   'dxf_bare'),
@@ -84,6 +98,13 @@ ENDPOINTS = [
      {**FLANGE_PARAMS, 'which': 'top'},                                     'flange_top'),
 ]
 
+# Heavy endpoints — subset of endpoints using HEAVY_PARAMS.
+# Only the most expensive operations are worth testing at worst-case size.
+HEAVY_ENDPOINTS = [
+    ('HEAVY Preview STL',            '/api/preview-stl',     HEAVY_PARAMS,  'heavy_preview'),
+    ('HEAVY Download STL',           '/download/stl',        HEAVY_PARAMS,  'heavy_stl'),
+]
+
 CONCURRENCY_LEVELS = [1, 2, 4, 8]
 WARMUP_REQUESTS   = 2   # discard these before measuring baseline
 
@@ -91,8 +112,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 CSV_COLUMNS = [
     'date', 'commit', 'branch',
     'test',
-    'mean_ms', 'min_ms', 'max_ms', 'stddev_ms', 'median_ms',
-    'rounds', 'ratio',
+    'mean_ms', 'min_ms', 'max_ms', 'stddev_ms', 'median_ms', 'p95_ms', 'p99_ms',
+    'rounds', 'ratio', 'error_count', 'error_rate',
 ]
 
 
@@ -194,24 +215,29 @@ def _append_csv(csv_file, rows):
 # Main test runner
 # ---------------------------------------------------------------------------
 
-def run_tests(base_url, verbose=False, csv_file=None):
-    """Run all endpoint concurrency tests.
+def run_tests(base_url, verbose=False, csv_file=None, endpoints=None):
+    """Run endpoint concurrency tests.
 
+    endpoints: list of (label, path, params, csv_key) — defaults to ENDPOINTS.
     Returns a list of CSV row dicts if csv_file is set, else an empty list.
     """
+    if endpoints is None:
+        endpoints = ENDPOINTS
+
     session = _requests.Session()
 
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     commit    = _git(['git', 'rev-parse', '--short', 'HEAD'])
     branch    = _git(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
 
-    all_issues  = []
-    csv_rows    = []
+    ratio_issues = []   # (label, n, ratio)
+    error_issues = []   # (label, n, error_count, n_total)
+    csv_rows     = []
 
     print(f'\n{BOLD}Concurrency test harness — {base_url}{RESET}')
     print('=' * 78)
 
-    for endpoint in ENDPOINTS:
+    for endpoint in endpoints:
         label, path, params, csv_key = endpoint
 
         print(f'\n{BOLD}{label}{RESET}  ->  {path}')
@@ -241,55 +267,69 @@ def run_tests(base_url, verbose=False, csv_file=None):
             times, statuses, wall = _run_concurrent(
                 session, base_url, path, params, n)
 
-            errors   = [s for s in statuses if s != 200]
-            ok_times = [t for t, s in zip(times, statuses) if s == 200]
+            n_errors   = sum(1 for s in statuses if s != 200)
+            error_rate = n_errors / len(statuses) if statuses else 0.0
+            ok_times   = [t for t, s in zip(times, statuses) if s == 200]
 
             if not ok_times:
-                print(f'  N={n}: ALL REQUESTS FAILED — {set(errors)}')
+                print(f'  N={n}: {RED}ALL {n} REQUESTS FAILED{RESET}')
+                error_issues.append((label, n, n_errors, n))
                 continue
 
-            mean_t  = statistics.mean(ok_times)
-            min_t   = min(ok_times)
-            max_t   = max(ok_times)
-            p95_t   = _pct(ok_times, 95)
+            mean_t   = statistics.mean(ok_times)
+            min_t    = min(ok_times)
+            max_t    = max(ok_times)
+            p95_t    = _pct(ok_times, 95)
+            p99_t    = _pct(ok_times, 99)
             stddev_t = statistics.stdev(ok_times) if len(ok_times) > 1 else 0.0
-            ratio   = mean_t / baseline_mean
-            colour  = _colour(ratio)
+            ratio    = mean_t / baseline_mean
+            colour   = _colour(ratio)
 
-            err_str = f'  {len(errors)} error(s)' if errors else ''
-            if verbose:
-                detail = '  [' + '  '.join(f'{t*1000:.0f}ms' for t in ok_times) + ']'
-            else:
-                detail = ''
+            err_str = (f'  {RED}{n_errors}/{n} errors ({error_rate:.0%}){RESET}'
+                       if n_errors else '')
+            detail  = ('  [' + '  '.join(f'{t*1000:.0f}ms' for t in ok_times) + ']'
+                       if verbose else '')
 
-            print(f'  N={n}: mean={mean_t*1000:.1f}ms  max={max_t*1000:.1f}ms  '
+            print(f'  N={n}: mean={mean_t*1000:.1f}ms  p95={p95_t*1000:.1f}ms  '
                   f'wall={wall*1000:.1f}ms  '
                   f'ratio={colour}{ratio:.2f}x  {_ratio_label(ratio)}{RESET}'
                   f'{err_str}{detail}')
 
             if ratio > 1.5:
-                all_issues.append((label, n, ratio))
+                ratio_issues.append((label, n, ratio))
+            if n_errors:
+                error_issues.append((label, n, n_errors, n))
 
             if csv_file:
                 csv_rows.append({
-                    'date':      timestamp,
-                    'commit':    commit,
-                    'branch':    branch,
-                    'test':      f'conc/{csv_key}/N{n}',
-                    'mean_ms':   round(mean_t   * 1000, 3),
-                    'min_ms':    round(min_t    * 1000, 3),
-                    'max_ms':    round(max_t    * 1000, 3),
-                    'stddev_ms': round(stddev_t * 1000, 3),
-                    'median_ms': round(_pct(ok_times, 50) * 1000, 3),
-                    'rounds':    len(ok_times),
-                    'ratio':     round(ratio, 4),
+                    'date':        timestamp,
+                    'commit':      commit,
+                    'branch':      branch,
+                    'test':        f'conc/{csv_key}/N{n}',
+                    'mean_ms':     round(mean_t   * 1000, 3),
+                    'min_ms':      round(min_t    * 1000, 3),
+                    'max_ms':      round(max_t    * 1000, 3),
+                    'stddev_ms':   round(stddev_t * 1000, 3),
+                    'median_ms':   round(_pct(ok_times, 50) * 1000, 3),
+                    'p95_ms':      round(p95_t    * 1000, 3),
+                    'p99_ms':      round(p99_t    * 1000, 3),
+                    'rounds':      len(ok_times),
+                    'ratio':       round(ratio, 4),
+                    'error_count': n_errors,
+                    'error_rate':  round(error_rate, 4),
                 })
 
     # Summary
     print('\n' + '=' * 78)
-    if all_issues:
+    any_issues = ratio_issues or error_issues
+    if error_issues:
+        print(f'{BOLD}{RED}Errors detected (hard fail):{RESET}')
+        for label, n, n_err, n_total in error_issues:
+            print(f'  {RED}[ERR]{RESET}  {label}  at N={n}: '
+                  f'{n_err}/{n_total} requests failed')
+    if ratio_issues:
         print(f'{BOLD}{RED}Potential blocking issues detected:{RESET}')
-        for label, n, ratio in all_issues:
+        for label, n, ratio in ratio_issues:
             print(f'  {RED}[!!]{RESET}  {label}  at N={n}: {ratio:.2f}x baseline '
                   f'(expected ~1.0 for true parallelism)')
         print()
@@ -297,8 +337,8 @@ def run_tests(base_url, verbose=False, csv_file=None):
         print('  ratio ~= N  -> GIL holding the thread or single gunicorn worker')
         print('  ratio 1-N   -> some workers free; other requests queuing')
         print('  ratio ~= 1  -> requests running concurrently')
-    else:
-        print(f'{GREEN}{BOLD}No blocking issues detected at tested concurrency levels.[OK]{RESET}')
+    if not any_issues:
+        print(f'{GREEN}{BOLD}No blocking issues or errors detected.[OK]{RESET}')
 
     print()
 
@@ -312,26 +352,32 @@ def run_tests(base_url, verbose=False, csv_file=None):
 # Optional gunicorn launcher
 # ---------------------------------------------------------------------------
 
-def start_gunicorn(workers=4, port=8001):
-    """Start a gunicorn instance; return (process, url)."""
-    cmd = [
-        sys.executable.replace('python.exe', 'gunicorn.exe')
-        if 'python.exe' in sys.executable else 'gunicorn',
-        f'--workers={workers}',
-        f'--bind=127.0.0.1:{port}',
-        '--timeout=120',
-        'app:app',
-    ]
+def start_gunicorn(workers=2, port=8001):
+    """Start a gunicorn instance using gunicorn.conf.py; return (process, url).
+
+    workers defaults to 2 to match the production Render Starter config.
+    --workers and --bind CLI args override values in the config file.
+    """
     venv_gunicorn = os.path.join(
         os.path.dirname(sys.executable),
         'gunicorn.exe' if sys.platform == 'win32' else 'gunicorn')
-    if os.path.exists(venv_gunicorn):
-        cmd[0] = venv_gunicorn
+    gunicorn_exe = venv_gunicorn if os.path.exists(venv_gunicorn) else 'gunicorn'
+
+    conf = os.path.join(ROOT, 'gunicorn.conf.py')
+    cmd = [
+        gunicorn_exe,
+        f'--workers={workers}',
+        f'--bind=127.0.0.1:{port}',
+        'app:app',
+    ]
+    if os.path.exists(conf):
+        cmd.insert(1, f'--config={conf}')
 
     env = os.environ.copy()
     env['PYTHONPATH'] = ROOT
-    proc = subprocess.Popen(cmd, cwd=ROOT, env=env)
-    time.sleep(4)   # give gunicorn time to bind
+    proc = subprocess.Popen(cmd, cwd=ROOT, env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(5)   # give gunicorn time to fork workers and bind
     return proc, f'http://127.0.0.1:{port}'
 
 
@@ -345,9 +391,11 @@ def main():
     parser.add_argument('--url',      default='http://127.0.0.1:5000',
                         help='Base URL of a running server (default: http://127.0.0.1:5000)')
     parser.add_argument('--gunicorn', action='store_true',
-                        help='Also run against a 4-worker gunicorn instance on port 8001')
-    parser.add_argument('--workers',  type=int, default=4,
-                        help='Gunicorn worker count (default: 4)')
+                        help='Also run against a multi-worker gunicorn instance on port 8001')
+    parser.add_argument('--workers',  type=int, default=2,
+                        help='Gunicorn worker count (default: 2, matching production)')
+    parser.add_argument('--heavy',    action='store_true',
+                        help='Also run worst-case payload scenarios (large pulley + all features)')
     parser.add_argument('--verbose',  action='store_true',
                         help='Print individual request times')
     parser.add_argument('--csv',      metavar='FILE', default=None,
@@ -359,14 +407,26 @@ def main():
     print(f' DEV SERVER  ({args.url})')
     print(f'{"="*78}')
     run_tests(args.url, verbose=args.verbose, csv_file=args.csv)
+    if args.heavy:
+        print(f'\n{"="*78}')
+        print(f' DEV SERVER — HEAVY PAYLOADS  ({args.url})')
+        print(f'{"="*78}')
+        run_tests(args.url, verbose=args.verbose, csv_file=args.csv,
+                  endpoints=HEAVY_ENDPOINTS)
 
     if args.gunicorn:
         print(f'\n{"="*78}')
-        print(f' GUNICORN ({args.workers} workers)  —  starting...')
+        print(f' GUNICORN ({args.workers} workers, gunicorn.conf.py)  —  starting...')
         print(f'{"="*78}')
         proc, gurl = start_gunicorn(workers=args.workers)
         try:
             run_tests(gurl, verbose=args.verbose, csv_file=args.csv)
+            if args.heavy:
+                print(f'\n{"="*78}')
+                print(f' GUNICORN — HEAVY PAYLOADS')
+                print(f'{"="*78}')
+                run_tests(gurl, verbose=args.verbose, csv_file=args.csv,
+                          endpoints=HEAVY_ENDPOINTS)
         finally:
             proc.terminate()
             proc.wait()

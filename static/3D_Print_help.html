@@ -1,212 +1,86 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Print Help — Timing Pulleys</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #0f766e;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #0f766e;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #0f766e;
-      background: #f0fdf9;
-      border-left: 3px solid #0f766e;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      margin: 10px 0;
-    }
-    th {
-      background: #0f766e;
-      color: #fff;
-      padding: 6px 10px;
-      text-align: left;
-    }
-    td {
-      padding: 5px 10px;
-      border-bottom: 1px solid #e2e8f0;
-      vertical-align: top;
-    }
-    tr:nth-child(even) td { background: #f8fafc; }
-    code {
-      background: #f0f0f0;
-      padding: 1px 5px;
-      border-radius: 3px;
-      font-size: 13px;
-    }
-    .diagram {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 14px 18px;
-      margin: 12px 0;
-      font-family: monospace;
-      font-size: 12px;
-      color: #334;
-      line-height: 1.8;
-      white-space: pre;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Print Help — Timing Pulleys</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  img   { max-width: 50%; border-radius: 6px; border: 1px solid #334155;
+          display: block; margin: 10px auto; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#128438; 3D Printing — Timing Pulleys</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator</p>
-</header>
+<h2>&#128438; 3D Printing — Timing Pulleys</h2>
 
-<section>
-  <h2>Print Settings for Best Results</h2>
-  <table>
-    <tr><th>Setting</th><th>Recommendation</th></tr>
-    <tr><td><strong>Print orientation</strong></td><td>Flat in the XY plane — pulley face down on the bed. Tooth flanks printed in-plane are far stronger than teeth built up in layers.</td></tr>
-    <tr><td><strong>Wall count</strong></td><td>4–6 perimeters minimum. Increase walls until the slicer fills the tooth cross-section completely.</td></tr>
-    <tr><td><strong>Infill</strong></td><td>40–60 % minimum; gyroid or honeycomb for isotropic strength.</td></tr>
-    <tr><td><strong>Layer height</strong></td><td>0.15–0.20 mm for better surface detail on tooth flanks. Coarser layers leave stair-step ridges.</td></tr>
-    <tr><td><strong>Material</strong></td><td>PETG — good starting point, low warp.<br>ABS / ASA — stiffer, better under sustained load.<br>Nylon (PA12, PA-CF) — best toughness for high-torque drives.<br>Avoid PLA for anything beyond light duty.</td></tr>
-    <tr><td><strong>Print Extra</strong></td><td>(From 2D pulley design page) Start at <code>0.1 mm</code> and test-fit the belt. A snug but free-running fit maximises tooth engagement.</td></tr>
-    <tr><td><strong>Tooth count</strong></td><td>More teeth in mesh = load shared across more teeth. Prefer larger-diameter pulleys on the high-torque shaft where space allows.</td></tr>
-  </table>
-  <div class="field-tip"><strong>Quick rule of thumb:</strong> if a printed pulley strips teeth repeatedly, first increase wall count to fully solid teeth, then upgrade material before increasing tooth count or belt width.</div>
-  <div class="field-warn">Resin (SLA/MSLA) prints are dimensionally accurate but brittle — not recommended for high-torque drives. Set Print Extra to <code>0</code> for resin.</div>
-</section>
+<h3>Print Settings for Best Results</h3>
+<table>
+  <tr><th>Setting</th><th>Recommendation</th></tr>
+  <tr><td><strong>Print orientation</strong></td><td>Flat in the XY plane — pulley face down on the bed. Tooth flanks printed in-plane are far stronger than teeth built up in layers.</td></tr>
+  <tr><td><strong>Wall count</strong></td><td>4–6 perimeters minimum. Increase walls until the slicer fills the tooth cross-section completely.</td></tr>
+  <tr><td><strong>Infill</strong></td><td>40–60 % minimum; gyroid or honeycomb for isotropic strength.</td></tr>
+  <tr><td><strong>Layer height</strong></td><td>0.15–0.20 mm for better surface detail on tooth flanks. Coarser layers leave stair-step ridges.</td></tr>
+  <tr><td><strong>Material</strong></td><td>PETG — good starting point, low warp.<br>ABS / ASA — stiffer, better under sustained load.<br>Nylon (PA12, PA-CF) — best toughness for high-torque drives.<br>Avoid PLA for anything beyond light duty.</td></tr>
+  <tr><td><strong>Print Extra</strong></td><td>(From 2D pulley design page) Start at <code>0.1 mm</code> and test-fit the belt. A snug but free-running fit maximises tooth engagement.</td></tr>
+  <tr><td><strong>Tooth count</strong></td><td>More teeth in mesh = load shared across more teeth. Prefer larger-diameter pulleys on the high-torque shaft where space allows.</td></tr>
+</table>
+<div class="note"><strong>Quick rule of thumb:</strong> if a printed pulley strips teeth repeatedly, first increase wall count to fully solid teeth, then upgrade material before increasing tooth count or belt width.</div>
+<div class="warn">Resin (SLA/MSLA) prints are dimensionally accurate but brittle — not recommended for high-torque drives. Set Print Extra to <code>0</code> for resin.</div>
 
-<section>
-  <h2>Shaft Retention — Captured Nut Hub</h2>
-  <div class="field">
-    <div class="field-desc">
-      The captured nut option is a custom solution for 3D printed parts where a standard hex nut replaces
-      a tapped hole to hold the set screw. This is stronger than threading directly into plastic and survives
-      multiple tighten/loosen cycles without stripping.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">How it works</div>
-    <div class="field-desc">
-      A pocket opens from the top face of the hub. The pocket has a rectangular upper section that guides
-      the nut in, and a V-shaped lower section that matches the hex nut's lower tip and seats it axially.
-      The set screw enters radially from the hub OD, passes through the hub wall, threads into the nut,
-      and its tip contacts the shaft.
-    </div>
-    <div style="margin:12px 0;text-align:center;">
-      <img src="/static/captured_nut_hub.png" alt="Captured nut hub pocket" style="max-width:50%;border-radius:6px;border:1px solid #dde3ea;">
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-tip">Nut dimensions are taken from <strong>ISO 4032:1999</strong> — Hexagon nuts, style 1, product grades A and B.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">Assembly</div>
-    <div class="field-desc">
-      <ol style="margin: 6px 0 0 18px; line-height: 2.0;">
-        <li>Print the pulley with hub face up (hub on top).</li>
-        <li>Insert the hex nut into the pocket from above — it should seat snugly with no play. It may also help to add a drop of cyanoacrylate glue to secure the nut in the hole.</li>
-        <li>Thread the set screw in from the hub OD until it contacts the shaft.</li>
-        <li>Tighten to clamp the shaft. The nut is captured and cannot rotate.</li>
-      </ol>
-    </div>
-    <div class="field-tip">Print the hub with extra walls (6+) around the nut pocket. Thin walls between the pocket and hub OD are the first failure point under high torque.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">Auto Hub Height &amp; Oblong Lobe</div>
-    <div class="field-desc">
-      If your entered hub height is shorter than the nut requires, it is raised automatically to the
-      minimum. If the hub OD does not provide enough wall material outside the nut, the hub grows a
-      rounded lobe in the screw direction — this is normal and intentional.
-    </div>
-  </div>
-</section>
+<h3>Shaft Retention — Captured Nut Hub</h3>
+<p>The captured nut option is a custom solution for 3D printed parts where a standard hex nut replaces
+a tapped hole to hold the set screw. This is stronger than threading directly into plastic and survives
+multiple tighten/loosen cycles without stripping.</p>
 
-<section>
-  <h2>Bore &amp; Shaft Fit</h2>
-  <div class="field">
-    <div class="field-name">Dimensional tolerance</div>
-    <div class="field-desc">
-      FDM printers typically print bores 0.2–0.4 mm undersize due to material expansion. Enter the
-      nominal shaft diameter and add 0.2–0.4 mm to the bore field as a starting point, then test-fit
-      and adjust.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">D-Shaft</div>
-    <div class="field-desc">
-      For D-profile shafts, enable the D-Shaft retention option and enter the flat depth — the distance
-      from the bore wall to the flat face of the shaft. Measure your shaft directly; a typical value is
-      0.5 mm for small motor shafts.
-    </div>
-  </div>
-</section>
+<p><strong>How it works</strong></p>
+<p>A pocket opens from the top face of the hub. The pocket has a rectangular upper section that guides
+the nut in, and a V-shaped lower section that matches the hex nut's lower tip and seats it axially.
+The set screw enters radially from the hub OD, passes through the hub wall, threads into the nut,
+and its tip contacts the shaft.</p>
+<img src="/static/captured_nut_hub.png" alt="Captured nut hub pocket">
+<div class="note">Nut dimensions are taken from <strong>ISO 4032:1999</strong> — Hexagon nuts, style 1, product grades A and B.</div>
 
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+<p><strong>Assembly</strong></p>
+<ol>
+  <li>Print the pulley with hub face up (hub on top).</li>
+  <li>Insert the hex nut into the pocket from above — it should seat snugly with no play.
+      It may also help to add a drop of cyanoacrylate glue to secure the nut in the hole.</li>
+  <li>Thread the set screw in from the hub OD until it contacts the shaft.</li>
+  <li>Tighten to clamp the shaft. The nut is captured and cannot rotate.</li>
+</ol>
+<div class="note">Print the hub with extra walls (6+) around the nut pocket. Thin walls between the pocket and hub OD are the first failure point under high torque.</div>
+
+<p><strong>Auto Hub Height &amp; Oblong Lobe</strong></p>
+<p>If your entered hub height is shorter than the nut requires, it is raised automatically to the
+minimum. If the hub OD does not provide enough wall material outside the nut, the hub grows a
+rounded lobe in the screw direction — this is normal and intentional.</p>
+
+<h3>Bore &amp; Shaft Fit</h3>
+<ul>
+  <li><strong>Dimensional tolerance</strong> — FDM printers typically print bores 0.2–0.4 mm undersize
+      due to material expansion. Enter the nominal shaft diameter and add 0.2–0.4 mm to the bore field
+      as a starting point, then test-fit and adjust.</li>
+  <li><strong>D-Shaft</strong> — For D-profile shafts, enable the D-Shaft retention option and enter
+      the flat depth — the distance from the bore wall to the flat face of the shaft. Measure your shaft
+      directly; a typical value is 0.5 mm for small motor shafts.</li>
+</ul>
 
 </body>
 </html>

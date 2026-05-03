@@ -1,117 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Features Guide — Timing Pulleys</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #0078d4;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #0078d4;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #0078d4;
-      background: #eef5fc;
-      border-left: 3px solid #0078d4;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .coming-soon {
-      font-size: 13px;
-      color: #64748b;
-      background: #f8fafc;
-      border: 2px dashed #cbd5e1;
-      border-radius: 6px;
-      padding: 16px;
-      margin: 8px 0;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Features Guide — Timing Pulleys</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#9881; 3D Features Guide</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator</p>
-</header>
+<h2>&#9881; 3D Features Guide</h2>
 
-<section>
-  <h2>Belt Height</h2>
-  <div class="field">
-    <div class="field-name">Belt Height (mm)</div>
-    <div class="field-desc">
-      Axial thickness of both pulleys and the belt body in the 3D preview. Set to match your belt's nominal
-      width, then add 0.5–1 mm so the belt does not rub on any flange or hub step.<br><br>
-      Belt Height is <strong>shared by both pulleys</strong> — it is set once in the drive bar and applies
-      to the entire assembly. Common belt widths: 6 mm, 9 mm, 10 mm, 15 mm.
-    </div>
-  </div>
-</section>
+<h3>Belt Height (mm)</h3>
+<p>Axial thickness of both pulleys and the belt body in the 3D preview. Set to match your belt's nominal
+width, then add 0.5–1 mm so the belt does not rub on any flange or hub step.</p>
+<p>Belt Height is <strong>shared by both pulleys</strong> — it is set once in the drive bar and applies
+to the entire assembly. Common belt widths: 6 mm, 9 mm, 10 mm, 15 mm.</p>
 
-
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+<h3>Clearance Height (mm)</h3>
+<p>Extra axial height added to the pulley body beyond the belt height. Provides a small shoulder on
+each face so the belt sits inside the pulley rather than flush with the top face.</p>
+<p>Default: Belt Height ÷ 20 (e.g. 0.5 mm for a 10 mm belt). Set to <code>0</code> to match belt
+height exactly.</p>
 
 </body>
 </html>

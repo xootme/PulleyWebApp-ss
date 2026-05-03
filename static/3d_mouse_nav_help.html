@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Mouse Navigation — Timing Pulleys</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul   { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
+</style>
+</head>
+<body>
+
+<h2>&#128444; 3D Mouse Navigation</h2>
+
+<h3>Viewer Controls</h3>
+<p>The 3D tab shows an interactive drive preview — both pulleys and the belt in real time.
+All geometry is centred at the shared origin so both pulleys remain in frame after every update.</p>
+<table>
+  <tr><th>Action</th><th>Mouse</th><th>Trackpad</th></tr>
+  <tr><td><strong>Orbit</strong> — rotate the view</td><td>Left-click &amp; drag</td><td>One-finger drag</td></tr>
+  <tr><td><strong>Zoom</strong> — move closer or farther</td><td>Scroll wheel</td><td>Two-finger pinch / scroll</td></tr>
+  <tr><td><strong>Pan</strong> — slide the view</td><td>Right-click &amp; drag</td><td>Two-finger drag</td></tr>
+</table>
+
+<h3>Snap View Buttons</h3>
+<p>The snap bar above the 3D view jumps the camera to a preset orientation instantly.
+Use these to check tooth alignment, hub geometry, or belt wrap from a known viewpoint.</p>
+<table>
+  <tr><th>Button</th><th>Camera position</th><th>Useful for</th></tr>
+  <tr><td><strong>Top</strong></td><td>Directly above, looking down</td><td>Belt wrap, centre distance, pulley spacing</td></tr>
+  <tr><td><strong>Bot</strong></td><td>Directly below, looking up</td><td>Underside of pulleys, bore check</td></tr>
+  <tr><td><strong>Front</strong></td><td>In front of the drive, looking back</td><td>Tooth profile, belt teeth, hub height</td></tr>
+  <tr><td><strong>Back</strong></td><td>Behind the drive, looking forward</td><td>Reverse side of tooth profile</td></tr>
+  <tr><td><strong>Left</strong></td><td>Left end of the drive axle</td><td>Pulley 1 face, hub boss</td></tr>
+  <tr><td><strong>Right</strong></td><td>Right end of the drive axle</td><td>Pulley 2 face, hub boss</td></tr>
+  <tr><td><strong>Oblique</strong></td><td>45° above and to the front</td><td>General overview, default starting view</td></tr>
+</table>
+<div class="note">After snapping to a view you can still orbit, zoom, and pan freely from that position.</div>
+
+<h3>What Is Shown</h3>
+<p>The drive preview renders three parts in a single scene:</p>
+<ul>
+  <li><strong>Pulley 1</strong> (left) and <strong>Pulley 2</strong> (right) — including any hub boss and retention features.</li>
+  <li><strong>Belt</strong> in dark grey, wrapping both pulleys with correct arc of contact on each side.</li>
+</ul>
+<p>Pulleys are phase-rotated so their tooth grooves mesh precisely with the belt teeth — exactly as they
+would on a physical drive.</p>
+<div class="note">The preview geometry is exactly what the STL downloads produce — if the drive looks right in the viewer, the parts are correct.</div>
+
+</body>
+</html>

@@ -971,6 +971,16 @@ def generate_pulley_step(
         _bot_flange = _revolve_rz_profile(_bot_prof)
         result = result.union(_bot_flange, clean=False)
 
+        # Integrated top flange — union it onto the pulley top face
+        if not flange_top_separate:
+            _r_inner_top = flange_inner_r_3dprint(
+                bore_mm, hub_od_mm, _has_spokes, spoke_hub_od_mm,
+                r_tooth_OD=_R_OD, rim_depth_mm=rim_depth_mm)
+            _top_prof = profile_3dprint(_r_inner_top, _R_OD, _rim_r, _angle, _f_h)
+            _top_flange = _revolve_rz_profile(_top_prof)
+            _top_flange = _top_flange.translate((0.0, 0.0, belt_height_mm))
+            result = result.union(_top_flange, clean=False)
+
         # Cut socket holes into the pulley top face when nubs are enabled
         if flange_top_separate and nubs_enabled:
             _tooth_ht = _spec['tooth_ht']

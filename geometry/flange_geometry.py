@@ -83,6 +83,24 @@ def flange_inner_r_3dprint(
     return bore_mm / 2.0
 
 
+def flange_inner_r_3dprint_bottom(
+    bore_mm: float,
+    spokes_enabled: bool,
+    spoke_hub_od_mm: float,
+    r_tooth_OD: float = 0.0,
+    rim_depth_mm: float = 0.0,
+) -> float:
+    """Inner radius of a 3D-print BOTTOM flange.
+
+    Always extends to the bore when no spokes are present — the bottom flange
+    is integrated with the pulley body and the bore passes through it.
+    When spokes are active, stops at the inner face of the spoke rim ring.
+    """
+    if spokes_enabled and r_tooth_OD > 0.0 and rim_depth_mm > 0.0:
+        return r_tooth_OD - rim_depth_mm
+    return bore_mm / 2.0
+
+
 def flange_inner_r_metal_top(
     bore_mm: float,
     hub_od_mm: float,

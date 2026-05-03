@@ -1,451 +1,233 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Two Pulley Drive — 2D Help</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #0078d4;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #0078d4;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #0078d4;
-      background: #eef5fc;
-      border-left: 3px solid #0078d4;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-lock {
-      font-size: 12px;
-      color: #5b21b6;
-      background: #f5f3ff;
-      border-left: 3px solid #7c3aed;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .tag {
-      display: inline-block;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 1px 7px;
-      border-radius: 10px;
-      margin-right: 4px;
-      vertical-align: middle;
-    }
-    .tag-auto   { background: #dcfce7; color: #166534; }
-    .tag-input  { background: #dbeafe; color: #1e40af; }
-    .tag-read   { background: #f3f4f6; color: #6b7280; }
-    .tag-locked { background: #f5f3ff; color: #5b21b6; }
-    .diagram {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 14px 18px;
-      margin: 12px 0;
-      font-family: monospace;
-      font-size: 13px;
-      color: #334;
-      line-height: 1.8;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Two Pulley Drive — 2D Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .tag-locked { background: #2e1065; color: #c4b5fd; }
 
-    /* Formula display */
-    .formula-block {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin: 12px 0;
-    }
-    .formula-row {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-    .formula-row:last-child { margin-bottom: 0; }
-    .formula-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: #666;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      min-width: 110px;
-      flex-shrink: 0;
-    }
-    .formula {
-      font-family: 'Cambria Math', 'Georgia', serif;
-      font-size: 15px;
-      color: #1a1a2e;
-      line-height: 1.4;
-    }
-    .formula .frac {
-      display: inline-flex;
-      flex-direction: column;
-      align-items: center;
-      vertical-align: middle;
-      margin: 0 3px;
-      line-height: 1.1;
-    }
-    .formula .frac .num {
-      border-bottom: 1.5px solid #1a1a2e;
-      padding: 0 3px 1px;
-      font-size: 13px;
-    }
-    .formula .frac .den {
-      padding: 1px 3px 0;
-      font-size: 13px;
-    }
-    .formula sup { font-size: 10px; vertical-align: super; }
-    .formula var { font-style: italic; color: #0078d4; }
-
-    .belt-diagram {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      margin: 12px 0;
-      padding: 4px;
-    }
-  </style>
+  .belt-diagram { background: #0f172a; border: 1px solid #334155; border-radius: 4px;
+                  margin: 12px 0; padding: 4px; }
+  .formula-block { background: #0f172a; border: 1px solid #334155; border-radius: 4px;
+                   padding: 14px 18px; margin: 10px 0; }
+  .formula-row   { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .formula-row:last-child { margin-bottom: 0; }
+  .formula-label { font-size: 12px; font-weight: 600; color: #94a3b8;
+                   text-transform: uppercase; letter-spacing: 0.5px;
+                   min-width: 110px; flex-shrink: 0; }
+  .formula       { font-family: 'Cambria Math', 'Georgia', serif; font-size: 15px;
+                   color: #e2e8f0; line-height: 1.4; }
+  .formula .frac { display: inline-flex; flex-direction: column; align-items: center;
+                   vertical-align: middle; margin: 0 3px; line-height: 1.1; }
+  .formula .frac .num { border-bottom: 1.5px solid #e2e8f0; padding: 0 3px 1px; font-size: 13px; }
+  .formula .frac .den { padding: 1px 3px 0; font-size: 13px; }
+  .formula sup { font-size: 10px; vertical-align: super; }
+  .formula var { font-style: italic; color: #93c5fd; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#9881; Two Pulley Drive — 2D Guide</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator</p>
-</header>
+<h2>&#9881; Two Pulley Drive — 2D Guide</h2>
 
-<section>
-  <h2>Overview</h2>
-  <div class="field">
-    <div class="field-desc">
-      Enable <strong>Two Pulley Drive</strong> to design a complete belt drive system with two pulleys.
-      The tool calculates the required belt length, validates the centre distance, and keeps the gear ratio
-      consistent as you adjust tooth counts.
-    </div>
-  </div>
+<h3>Overview</h3>
+<p>Enable <strong>Two Pulley Drive</strong> to design a complete belt drive system with two pulleys.
+The tool calculates the required belt length, validates the centre distance, and keeps the gear ratio
+consistent as you adjust tooth counts.</p>
 
-  <!-- Drive diagram -->
-  <div class="belt-diagram">
-    <!--
-      Geometry (all coords exact):
-        P1: cx=110  cy=130  r=42   → top=(110, 88)  bottom=(110,172)
-        P2: cx=390  cy=130  r=65   → top=(390, 65)  bottom=(390,195)
-      Belt contacts are at the exact top/bottom of each pulley so the
-      arcs are perfect semicircles and pulleys sit centred on the bends.
-    -->
-    <svg viewBox="0 0 520 250" xmlns="http://www.w3.org/2000/svg"
-         style="width:100%;display:block;">
-      <defs>
-        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
-                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0,1 L9,5 L0,9 Z" fill="#555"/>
-        </marker>
-        <marker id="ah-blue" viewBox="0 0 10 10" refX="9" refY="5"
-                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0,1 L9,5 L0,9 Z" fill="#0078d4"/>
-        </marker>
-        <marker id="ah-amber" viewBox="0 0 10 10" refX="9" refY="5"
-                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0,1 L9,5 L0,9 Z" fill="#b45309"/>
-        </marker>
-      </defs>
+<div class="belt-diagram">
+  <svg viewBox="0 0 520 250" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 Z" fill="#94a3b8"/>
+      </marker>
+      <marker id="ah-blue" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 Z" fill="#93c5fd"/>
+      </marker>
+      <marker id="ah-amber" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 Z" fill="#f59e0b"/>
+      </marker>
+    </defs>
+    <!-- Belt -->
+    <path d="M 110 88  L 390 65  A 65 65 0 0 1 390 195  L 110 172  A 42 42 0 0 1 110 88  Z"
+          fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
+    <!-- Pulley 1 -->
+    <circle cx="110" cy="130" r="42" fill="#172032" stroke="#3b82f6" stroke-width="2.5"/>
+    <circle cx="110" cy="130" r="13" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="110" y="127" text-anchor="middle"
+          font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#93c5fd">P1</text>
+    <text x="110" y="142" text-anchor="middle"
+          font-family="system-ui,sans-serif" font-size="10" fill="#7dd3fc">(driver)</text>
+    <!-- Pulley 2 -->
+    <circle cx="390" cy="130" r="65" fill="#172032" stroke="#3b82f6" stroke-width="2.5"/>
+    <circle cx="390" cy="130" r="20" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="390" y="127" text-anchor="middle"
+          font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#93c5fd">P2</text>
+    <text x="390" y="142" text-anchor="middle"
+          font-family="system-ui,sans-serif" font-size="10" fill="#7dd3fc">(driven)</text>
+    <!-- D1 dimension -->
+    <line x1="68" y1="88"  x2="108" y2="88"  stroke="#475569" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="68" y1="172" x2="108" y2="172" stroke="#475569" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="72" y1="91"  x2="72"  y2="169"
+          stroke="#94a3b8" stroke-width="1.5"
+          marker-start="url(#ah)" marker-end="url(#ah)"/>
+    <text x="56" y="127" text-anchor="middle"
+          font-family="Georgia,serif" font-style="italic" font-size="16" fill="#e2e8f0">D</text>
+    <text x="64" y="135" font-family="Georgia,serif" font-size="11" fill="#e2e8f0">1</text>
+    <!-- D2 dimension -->
+    <line x1="464" y1="65"  x2="392" y2="65"  stroke="#475569" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="464" y1="195" x2="392" y2="195" stroke="#475569" stroke-width="1" stroke-dasharray="3 3"/>
+    <line x1="460" y1="68"  x2="460" y2="192"
+          stroke="#94a3b8" stroke-width="1.5"
+          marker-start="url(#ah)" marker-end="url(#ah)"/>
+    <text x="475" y="127" text-anchor="middle"
+          font-family="Georgia,serif" font-style="italic" font-size="16" fill="#e2e8f0">D</text>
+    <text x="483" y="135" font-family="Georgia,serif" font-size="11" fill="#e2e8f0">2</text>
+    <!-- C dimension -->
+    <circle cx="110" cy="130" r="3.5" fill="#93c5fd"/>
+    <circle cx="390" cy="130" r="3.5" fill="#93c5fd"/>
+    <line x1="114" y1="130" x2="386" y2="130"
+          stroke="#93c5fd" stroke-width="1" stroke-dasharray="6 4" opacity="0.5"/>
+    <line x1="110" y1="215" x2="390" y2="215"
+          stroke="#93c5fd" stroke-width="1.5"
+          marker-start="url(#ah-blue)" marker-end="url(#ah-blue)"/>
+    <line x1="110" y1="207" x2="110" y2="223" stroke="#93c5fd" stroke-width="1.5"/>
+    <line x1="390" y1="207" x2="390" y2="223" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="250" y="234" text-anchor="middle"
+          font-family="Georgia,serif" font-style="italic" font-size="15" fill="#93c5fd">C</text>
+    <!-- L label -->
+    <path d="M 122 76  Q 252 38  378 53" fill="none"
+          stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5 3"
+          marker-start="url(#ah-amber)" marker-end="url(#ah-amber)"/>
+    <text x="250" y="32" text-anchor="middle"
+          font-family="Georgia,serif" font-style="italic" font-size="15" fill="#f59e0b">L</text>
+    <text x="265" y="32" font-family="system-ui,sans-serif" font-size="10" fill="#f59e0b">(belt length)</text>
+  </svg>
+</div>
 
-      <!-- ── Belt ── contacts at (cx, cy±r) → perfect semicircle bends -->
-      <path d="M 110 88  L 390 65  A 65 65 0 0 1 390 195  L 110 172  A 42 42 0 0 1 110 88  Z"
-            fill="#c8d8ea" stroke="#6a8fac" stroke-width="2"/>
-
-      <!-- ── Pulley 1 (driver, smaller): cx=110 cy=130 r=42 ── -->
-      <circle cx="110" cy="130" r="42" fill="#dde8f4" stroke="#4a78a0" stroke-width="2.5"/>
-      <circle cx="110" cy="130" r="13" fill="#f2f6fa" stroke="#4a78a0" stroke-width="1.5"/>
-      <text x="110" y="127" text-anchor="middle"
-            font-family="Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#2a5878">P1</text>
-      <text x="110" y="142" text-anchor="middle"
-            font-family="Segoe UI,sans-serif" font-size="10" fill="#5a7a90">(driver)</text>
-
-      <!-- ── Pulley 2 (driven, larger): cx=390 cy=130 r=65 ── -->
-      <circle cx="390" cy="130" r="65" fill="#dde8f4" stroke="#4a78a0" stroke-width="2.5"/>
-      <circle cx="390" cy="130" r="20" fill="#f2f6fa" stroke="#4a78a0" stroke-width="1.5"/>
-      <text x="390" y="127" text-anchor="middle"
-            font-family="Segoe UI,sans-serif" font-size="12" font-weight="700" fill="#2a5878">P2</text>
-      <text x="390" y="142" text-anchor="middle"
-            font-family="Segoe UI,sans-serif" font-size="10" fill="#5a7a90">(driven)</text>
-
-      <!-- ── D1 dimension: y=88 to y=172, left of P1 ── -->
-      <line x1="68" y1="88"  x2="108" y2="88"  stroke="#aaa" stroke-width="1" stroke-dasharray="3 3"/>
-      <line x1="68" y1="172" x2="108" y2="172" stroke="#aaa" stroke-width="1" stroke-dasharray="3 3"/>
-      <line x1="72" y1="91"  x2="72"  y2="169"
-            stroke="#444" stroke-width="1.5"
-            marker-start="url(#ah)" marker-end="url(#ah)"/>
-      <text x="56" y="127" text-anchor="middle"
-            font-family="Georgia,serif" font-style="italic" font-size="16" fill="#333">D</text>
-      <text x="64" y="135" font-family="Georgia,serif" font-size="11" fill="#333">1</text>
-
-      <!-- ── D2 dimension: y=65 to y=195, right of P2 ── -->
-      <line x1="464" y1="65"  x2="392" y2="65"  stroke="#aaa" stroke-width="1" stroke-dasharray="3 3"/>
-      <line x1="464" y1="195" x2="392" y2="195" stroke="#aaa" stroke-width="1" stroke-dasharray="3 3"/>
-      <line x1="460" y1="68"  x2="460" y2="192"
-            stroke="#444" stroke-width="1.5"
-            marker-start="url(#ah)" marker-end="url(#ah)"/>
-      <text x="475" y="127" text-anchor="middle"
-            font-family="Georgia,serif" font-style="italic" font-size="16" fill="#333">D</text>
-      <text x="483" y="135" font-family="Georgia,serif" font-size="11" fill="#333">2</text>
-
-      <!-- ── C dimension: between centres at cy=130 ── -->
-      <circle cx="110" cy="130" r="3.5" fill="#0078d4"/>
-      <circle cx="390" cy="130" r="3.5" fill="#0078d4"/>
-      <line x1="114" y1="130" x2="386" y2="130"
-            stroke="#0078d4" stroke-width="1" stroke-dasharray="6 4" opacity="0.5"/>
-      <line x1="110" y1="215" x2="390" y2="215"
-            stroke="#0078d4" stroke-width="1.5"
-            marker-start="url(#ah-blue)" marker-end="url(#ah-blue)"/>
-      <line x1="110" y1="207" x2="110" y2="223" stroke="#0078d4" stroke-width="1.5"/>
-      <line x1="390" y1="207" x2="390" y2="223" stroke="#0078d4" stroke-width="1.5"/>
-      <text x="250" y="234" text-anchor="middle"
-            font-family="Georgia,serif" font-style="italic" font-size="15" fill="#0078d4">C</text>
-
-      <!-- ── L label: dashed arc above top belt span ── -->
-      <path d="M 122 76  Q 252 38  378 53" fill="none"
-            stroke="#b45309" stroke-width="1.5" stroke-dasharray="5 3"
-            marker-start="url(#ah-amber)" marker-end="url(#ah-amber)"/>
-      <text x="250" y="32" text-anchor="middle"
-            font-family="Georgia,serif" font-style="italic" font-size="15" fill="#b45309">L</text>
-      <text x="265" y="32" font-family="Segoe UI,sans-serif" font-size="10" fill="#b45309">(belt length)</text>
-    </svg>
-  </div>
-
-  <!-- Key formulas -->
-  <div class="formula-block">
-    <div class="formula-row">
-      <span class="formula-label">Gear Ratio</span>
-      <span class="formula">
-        <var>R</var> =
-        <span class="frac">
-          <span class="num">Teeth<sub style="font-size:10px">P2</sub></span>
-          <span class="den">Teeth<sub style="font-size:10px">P1</sub></span>
-        </span>
+<div class="formula-block">
+  <div class="formula-row">
+    <span class="formula-label">Gear Ratio</span>
+    <span class="formula">
+      <var>R</var> =
+      <span class="frac">
+        <span class="num">Teeth<sub style="font-size:10px">P2</sub></span>
+        <span class="den">Teeth<sub style="font-size:10px">P1</sub></span>
       </span>
-    </div>
-    <div class="formula-row">
-      <span class="formula-label">Belt Length</span>
-      <span class="formula">
-        <var>L</var> &#8776; 2<var>C</var> +
-        <span class="frac"><span class="num">&#960;</span><span class="den">2</span></span>
-        (<var>D</var><sub style="font-size:10px">1</sub> + <var>D</var><sub style="font-size:10px">2</sub>) +
-        <span class="frac">
-          <span class="num">(<var>D</var><sub style="font-size:10px">2</sub> &#8722; <var>D</var><sub style="font-size:10px">1</sub>)<sup>2</sup></span>
-          <span class="den">4<var>C</var></span>
-        </span>
+    </span>
+  </div>
+  <div class="formula-row">
+    <span class="formula-label">Belt Length<br><span style="font-size:11px;color:#94a3b8;font-family:system-ui,sans-serif">Metric</span></span>
+    <span class="formula">
+      <var>L</var> = <var>N</var><sub style="font-size:10px">teeth</sub> &times; pitch
+    </span>
+  </div>
+  <div class="formula-row">
+    <span class="formula-label">Belt Length<br><span style="font-size:11px;color:#94a3b8;font-family:system-ui,sans-serif">Imperial</span></span>
+    <span class="formula">
+      <var>L</var> &#8776; 2<var>C</var> +
+      <span class="frac"><span class="num">&#960;</span><span class="den">2</span></span>
+      (<var>D</var><sub style="font-size:10px">1</sub> + <var>D</var><sub style="font-size:10px">2</sub>) +
+      <span class="frac">
+        <span class="num">(<var>D</var><sub style="font-size:10px">2</sub> &#8722; <var>D</var><sub style="font-size:10px">1</sub>)<sup>2</sup></span>
+        <span class="den">4<var>C</var></span>
       </span>
-    </div>
+    </span>
   </div>
-</section>
+</div>
 
-<section>
-  <h2>Two Pulley Drive Toggle</h2>
-  <div class="field">
-    <div class="field-name">Two Pulley Drive (checkbox)</div>
-    <div class="field-desc">
-      When checked, the Pulley 2 panel appears and spacing/ratio controls become active.
-      When unchecked, only Pulley 1 is shown.
-    </div>
-    <div class="field-tip">Settings are saved automatically — toggling off and back on restores previous values.</div>
-  </div>
-</section>
+<h3>Two Pulley Drive Toggle</h3>
+<p>When checked, the Pulley 2 panel appears and spacing/ratio controls become active.
+When unchecked, only Pulley 1 is shown.</p>
+<div class="note">Settings are saved automatically — toggling off and back on restores previous values.</div>
 
-<section>
-  <h2>Spacing Controls</h2>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-input">Input</span> Centre Distance (mm)</div>
-    <div class="field-desc">
-      Distance between pulley centres. Primary layout dimension of the belt drive. Changing this
-      automatically recalculates the required belt tooth count.
-    </div>
-    <div class="field-tip">After typing, the centre distance snaps to the nearest value achievable by a whole-number belt tooth count.</div>
-    <div class="field-warn">If the distance is less than the minimum (shown in red), the pulleys would overlap — increase the distance or reduce pulley sizes.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">Minimum Distance Note</div>
-    <div class="field-desc">
-      Displayed in red when the centre distance is too small.
-      Minimum &#8776; (OD&#8321; + OD&#8322;) / 2 + clearance.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-auto">Auto</span> Belt Teeth</div>
-    <div class="field-desc">
-      Number of teeth on the belt, calculated from centre distance and pulley diameters using the open belt
-      length formula. Can also be typed — centre distance updates to match.
-    </div>
-    <div class="field-tip">Standard belts are sold in fixed tooth counts. Use this field to match an off-the-shelf belt and read back the resulting centre distance.</div>
-  </div>
-</section>
+<h3>Spacing Controls</h3>
+<ul>
+  <li><span class="tag tag-input">Input</span> <strong>Centre Distance (mm)</strong> — Distance between
+      pulley centres. Changing this automatically recalculates the required belt tooth count.
+      <div class="note">After typing, the centre distance snaps to the nearest value achievable by a whole-number belt tooth count.</div>
+      <div class="warn">If the distance is less than the minimum (shown in red), the pulleys would overlap — increase the distance or reduce pulley sizes.</div>
+  </li>
+  <li><span class="tag tag-auto">Auto</span> <strong>Belt Teeth</strong> — Number of teeth on the belt,
+      calculated from the centre distance and pulley diameters. For metric belts, belt length = Belt Teeth × pitch (exact).
+      For Imperial belts, the open belt formula is used. Can also be typed — centre distance and belt length update after a short pause.
+      <div class="note">Standard belts are sold in fixed tooth counts. Use this field to match an off-the-shelf belt and read back the resulting centre distance and belt length.</div>
+  </li>
+  <li><span class="tag tag-input">Input</span> <strong>Belt Length (mm)</strong> — Physical belt length
+      (Belt Teeth × pitch). Can also be typed — snaps to the nearest whole tooth count after a short pause,
+      then updates Belt Teeth and Centre Distance.
+      <div class="note">Use this field when you know the belt length from a catalogue or measurement and want to find the matching tooth count and centre distance.</div>
+  </li>
+  <li><strong>Grouped Controls Box</strong> — Centre Distance, Belt Teeth, and Belt Length are shown
+      together inside an outlined box because they are three views of the same constraint — change any one
+      and the other two update automatically.</li>
+</ul>
 
-<section>
-  <h2>Edit Priority — How the Three Values Interact</h2>
-  <div class="field">
-    <div class="field-desc">
-      The drive has three linked values: Pulley 1 size, Gear Ratio, and Pulley 2 size.
-      Behaviour depends on whether <strong>Lock Ratio</strong> is checked.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Lock Ratio &#9745; (checked — default)</div>
-    <div class="field-desc">
-      The current Gear Ratio is preserved when either pulley is edited.
-      Editing P1 recalculates P2 to maintain the ratio. Editing P2 recalculates P1 to maintain the ratio.
-      If a pulley would fall below its minimum tooth count, it is clamped at the minimum and the other pulley
-      is recalculated from there.
-    </div>
-    <div class="field-tip">Use Lock Ratio when you have a target ratio and want both pulleys to stay consistent as you explore sizes.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">Lock Ratio &#9744; (unchecked)</div>
-    <div class="field-desc">
-      Each pulley is independent. Editing either pulley only updates the Gear Ratio display — the other
-      pulley does not change.
-    </div>
-    <div class="field-tip">Use when you have fixed pulley sizes and just want to know the resulting ratio.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">Edit Gear Ratio (either mode)</div>
-    <div class="field-desc">
-      P1 stays fixed; Pulley 2 is recalculated to the closest achievable ratio with whole-number teeth.
-      Snaps to the exact achievable value after entry.
-    </div>
-  </div>
-</section>
+<h3>Edit Priority — How the Three Values Interact</h3>
+<ul>
+  <li><strong>Lock Ratio &#9745; (checked — default)</strong> — The current Gear Ratio is preserved
+      when either pulley is edited. Editing P1 recalculates P2 to maintain the ratio; editing P2
+      recalculates P1.
+      <div class="note">Use Lock Ratio when you have a target ratio and want both pulleys to stay consistent as you explore sizes.</div>
+  </li>
+  <li><strong>Lock Ratio &#9744; (unchecked)</strong> — Each pulley is independent. Editing either
+      pulley only updates the Gear Ratio display.
+      <div class="note">Use when you have fixed pulley sizes and just want to know the resulting ratio.</div>
+  </li>
+  <li><strong>Edit Gear Ratio (either mode)</strong> — P1 stays fixed; Pulley 2 is recalculated to the
+      closest achievable ratio with whole-number teeth.</li>
+</ul>
 
-<section>
-  <h2>Ratio Controls</h2>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-auto">Auto</span> Gear Ratio</div>
-    <div class="field-desc">
-      Speed reduction/increase ratio. <strong>1.0</strong> = same speed on both pulleys.
-      <strong>&gt;1.0</strong> = P2 slower (torque multiplication).
-      <strong>&lt;1.0</strong> = P2 faster (speed increase).<br>
-      Formula: R = Teeth<sub>P2</sub> / Teeth<sub>P1</sub>
-    </div>
-    <div class="field-tip">Editing keeps P1 fixed and drives P2. Snaps to the exact achievable ratio after entry.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">&#9650;/&#9660; Arrow Buttons</div>
-    <div class="field-desc">
-      Steps Pulley 2 tooth count up or down by one tooth, then updates Gear Ratio. P1 always unchanged.
-      Useful for fine-tuning when exact tooth counts matter.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Ratio Note (e.g. "20T : 30T")</div>
-    <div class="field-desc">
-      Shows the actual tooth counts for P1 and P2. The Gear Ratio field rounds to three decimal places;
-      tooth counts shown here are the ground truth.
-    </div>
-  </div>
-</section>
+<h3>Ratio Controls</h3>
+<ul>
+  <li><span class="tag tag-auto">Auto</span> <strong>Gear Ratio</strong> — Speed reduction/increase
+      ratio. <strong>1.0</strong> = same speed. <strong>&gt;1.0</strong> = P2 slower (torque multiplication).
+      <strong>&lt;1.0</strong> = P2 faster (speed increase).
+      Formula: R = Teeth<sub>P2</sub> / Teeth<sub>P1</sub></li>
+  <li><strong>&#9650;/&#9660; Arrow Buttons</strong> — Steps Pulley 2 tooth count up or down by one tooth.
+      P1 always unchanged. Useful for fine-tuning when exact tooth counts matter.</li>
+  <li><strong>Ratio Note (e.g. "20T : 30T")</strong> — Shows the actual tooth counts for P1 and P2.
+      The Gear Ratio field rounds to three decimal places; tooth counts here are the ground truth.</li>
+</ul>
 
-<section>
-  <h2>Reset Button</h2>
-  <div class="field">
-    <div class="field-name">Reset</div>
-    <div class="field-desc">
-      Clears all saved settings from browser storage and reloads the page with factory defaults.
-    </div>
-    <div class="field-warn">All customisations (both pulleys, centre distance, ratio) will be lost. This cannot be undone.</div>
-  </div>
-</section>
+<h3>Reset Button</h3>
+<p>Clears all saved settings from browser storage and reloads the page with factory defaults.</p>
+<div class="warn">All customisations (both pulleys, centre distance, ratio) will be lost. This cannot be undone.</div>
 
-<section>
-  <h2>Workflow Tips</h2>
-  <div class="field">
-    <div class="field-name">Designing for a known belt</div>
-    <div class="field-desc">
-      Set centre distance first, note the Belt Teeth count, then adjust Belt Teeth to match the nearest
-      standard belt length and read back the corrected centre distance.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Designing for a target ratio</div>
-    <div class="field-desc">
-      Enable <strong>Lock Ratio</strong>, set Pulley 1 teeth, then type the desired ratio — Pulley 2
-      updates automatically. Fine-tune with the &#9650;/&#9660; buttons. Then set centre distance to
-      match your available belt.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Downloading 2D</div>
-    <div class="field-desc">
-      Each pulley panel has <strong>Download SVG</strong> and <strong>Download DXF</strong> buttons.
-      For the complete belt drive drawing use the <strong>Download Belt</strong> button in the Pulley 1 panel.
-    </div>
-  </div>
-</section>
-
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+<h3>Workflow Tips</h3>
+<ul>
+  <li><strong>Designing for a known belt</strong> — Type the belt's physical length into
+      <strong>Belt Length</strong> — it snaps to the nearest tooth count and fills in Belt Teeth and
+      Centre Distance automatically. Alternatively, set Centre Distance first and adjust Belt Teeth to
+      match the nearest standard size.</li>
+  <li><strong>Designing for a target ratio</strong> — Enable <strong>Lock Ratio</strong>, set Pulley 1
+      teeth, then type the desired ratio — Pulley 2 updates automatically. Fine-tune with the
+      &#9650;/&#9660; buttons. Then set centre distance to match your available belt.</li>
+  <li><strong>Downloading 2D</strong> — Each pulley panel has <strong>Download SVG</strong> and
+      <strong>Download DXF</strong> buttons. For the complete belt drive drawing use the
+      <strong>Download Belt</strong> button in the Pulley 1 panel.</li>
+</ul>
 
 </body>
 </html>

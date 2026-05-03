@@ -1,356 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hub — 3D Guide</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #0078d4;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #0078d4;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    h3.sub {
-      margin: 18px 0 10px 0;
-      font-size: 1em;
-      font-weight: 700;
-      color: #334155;
-      border-bottom: 2px solid #cbd5e1;
-      padding-bottom: 4px;
-      letter-spacing: 0.03em;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #0078d4;
-      background: #eef5fc;
-      border-left: 3px solid #0078d4;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .diagram {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 14px 18px;
-      margin: 12px 0;
-      font-family: monospace;
-      font-size: 12px;
-      color: #334;
-      line-height: 1.8;
-      white-space: pre;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      margin: 10px 0;
-    }
-    th {
-      background: #0078d4;
-      color: #fff;
-      padding: 6px 10px;
-      text-align: left;
-    }
-    td {
-      padding: 5px 10px;
-      border-bottom: 1px solid #e2e8f0;
-      vertical-align: top;
-    }
-    tr:nth-child(even) td { background: #f8fafc; }
-    code {
-      background: #f0f0f0;
-      padding: 1px 5px;
-      border-radius: 3px;
-      font-size: 13px;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hub — 3D Guide</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  a     { color: #93c5fd; }
+  img   { max-width: 50%; border-radius: 6px; border: 1px solid #334155;
+          display: block; margin: 10px auto; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#9881; Hub — 3D Guide</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator</p>
-</header>
+<h2>&#9881; Hub — 3D Guide</h2>
 
-<!-- ══════════════════════════════════════════════════════════════ -->
-<section>
-  <h2>Hub Basics</h2>
+<h3>Enabling the Hub</h3>
+<p>Checkbox in the Hub section header. When checked, a cylindrical boss is built on top of the
+toothed section and included in the 3D preview and all exports (STL, STEP). When unchecked, no
+hub geometry is generated — the pulley is a plain toothed disk with a through-bore.</p>
+<div class="note">The Hub section is only visible when 3D Features is active.</div>
 
-  <div class="field">
-    <div class="field-name">Enabling the Hub</div>
-    <div class="field-desc">
-      Checkbox in the Hub section header. When checked, a cylindrical boss is built on top of the
-      toothed section and included in the 3D preview and all exports (STL, STEP). When unchecked, no
-      hub geometry is generated — the pulley is a plain toothed disk with a through-bore.
-    </div>
-    <div class="field-tip">The Hub section is only visible when 3D Features is active.</div>
-  </div>
+<h3>Hub OD (mm)</h3>
+<p>Outer diameter of the hub boss. Can be narrower or wider than the pulley OD — no restriction.
+A narrower hub tucks the boss inside the tooth rim; a wider hub creates a flange overhanging the
+teeth. For captured nut retention, the hub may grow a rounded lobe in the screw direction if the
+entered OD is too small to provide adequate wall thickness.</p>
+<div class="warn">When the Spokes option is active, Hub OD is controlled by the pulley's 2D spokes setting.</div>
 
-  <div class="field">
-    <div class="field-name">Hub OD (mm)</div>
-    <div class="field-desc">
-      Outer diameter of the hub boss. Can be narrower or wider than the pulley OD — no restriction.
-      A narrower hub tucks the boss inside the tooth rim; a wider hub creates a flange overhanging the
-      teeth. For captured nut retention, the hub may grow a rounded lobe in the screw direction if the
-      entered OD is too small to provide adequate wall thickness.
-    </div>
-    <div class="field-warn">
-      When the Spokes option is active, Hub OD is controlled by the pulley's 2D spokes setting.
-    </div>
-  </div>
+<h3>Hub Height (mm)</h3>
+<p>Axial height of the hub boss above the toothed section. The bore runs through the full combined
+height (Belt Height + Hub Height). For captured nut retention, this value is automatically raised
+if the nut pocket requires more depth than entered — the 3D model uses the adjusted height
+without changing the input field.</p>
 
-  <div class="field">
-    <div class="field-name">Hub Height (mm)</div>
-    <div class="field-desc">
-      Axial height of the hub boss above the toothed section. The bore runs through the full combined
-      height (Belt Height + Hub Height). For captured nut retention, this value is automatically raised
-      if the nut pocket requires more depth than entered — the 3D model uses the adjusted height
-      without changing the input field.
-    </div>
-  </div>
+<h3>Shaft Retention</h3>
+<ul>
+  <li><strong>None</strong> — No set screw or shaft feature is added. The bore is a plain through-hole.
+      Suitable for a light-duty fit or when you will add your own retention (e.g. shaft collar, adhesive).</li>
+  <li><strong>Set Screw (std.)</strong> — Radial screw hole(s) drilled through the full hub diameter.
+      <strong>1 screw</strong> = single perpendicular hole.
+      <strong>2 screws</strong> = holes placed 90&deg; apart. Select screw size M3–M10.</li>
+  <li><strong>Set Screw (captured nut)</strong> — A standard ISO hex nut is dropped into a pocket
+      opening from the top face of the hub. The set screw threads through the hub OD into the nut
+      and contacts the shaft. Stronger than threading into plastic.
+      <div class="note">Select screw size M3–M10 first — nut pocket dimensions are calculated automatically from ISO 4032.</div>
+      <a href="/static/3D_Print_help.html" target="_blank">&#9432; 3D Print Guide — captured nut assembly, pocket shape, print settings</a>
+  </li>
+  <li><strong>D-Shaft</strong> — A flat chord is cut in the bore to match a D-profile motor shaft.
+      See <em>D-Shaft Retention</em> below.</li>
+  <li><strong>Keyway</strong> — A rectangular slot is cut through the bore to accept a standard parallel
+      key (ISO 773 / DIN 6885). See <em>Keyway Retention</em> below.</li>
+</ul>
 
-  <h3 class="sub">Shaft Retention</h3>
+<h3>D-Shaft Retention</h3>
+<p>A D-profile shaft has one flat face milled along part of its length. Selecting D-Shaft adds a
+matching flat chord cut in the bore so the pulley cannot rotate on the shaft.</p>
+<ul>
+  <li><strong>Flat Depth (mm)</strong> — Distance from the bore wall inward to the flat face.
+      Measure your actual shaft with calipers; a typical value for small motor shafts (5–8 mm) is
+      <code>0.5 mm</code>.
+      <div class="note">The flat is oriented at 0&deg; (+X direction in the cross-section). Rotate the pulley in your slicer to match a specific orientation.</div>
+  </li>
+  <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the flat
+      face (at 0&deg;). Choose <strong>Standard</strong> for a through-hole, or
+      <strong>Captured nut</strong> for a top-pocket nut.</li>
+</ul>
 
-  <div class="field">
-    <div class="field-name">Retention — None</div>
-    <div class="field-desc">
-      No set screw or shaft feature is added. The bore is a plain through-hole. Suitable for a
-      light-duty fit or when you will add your own retention (e.g. shaft collar, adhesive).
-    </div>
-  </div>
+<h3>Keyway Retention</h3>
+<p>A rectangular slot cut through the bore that accepts a standard parallel key (ISO 773 / DIN 6885-1).
+The key sits half in the shaft keyway and half in the hub keyway, transmitting torque through shear
+rather than friction.</p>
+<ul>
+  <li><strong>Width W (mm)</strong> — Equal to key width <em>b</em> from ISO 773. Use <strong>Default Key</strong>
+      to auto-fill the correct width for your bore diameter.</li>
+  <li><strong>Hub Depth (mm)</strong> — Depth of the slot outward from the bore wall, corresponding to
+      ISO 773 value <em>t<sub>2</sub></em> + corner clearance radius <em>r</em>.
+      <div class="note">Do not use t<sub>2</sub> alone — add r to allow the key to seat flush. The Default Key button applies t<sub>2</sub> + r automatically.</div>
+  </li>
+  <li><strong>Default Key Button</strong> — Looks up your bore in the ISO 773 table and fills in Width W
+      and Hub Depth. Covers bore diameters 6–170 mm; if between entries, the next-larger standard size is used.</li>
+  <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the keyway.
+      <strong>Standard</strong> = through-hole; <strong>Captured nut</strong> = top-opening pocket with the
+      nut inner face against the keyway slot outer face.
+      <div class="note">A set screw over the keyway prevents axial movement even when the key alone would allow it.</div>
+  </li>
+  <li><strong>Keyway Orientation</strong> — Always at 0&deg; (+X direction). Rotate in your slicer or CAD tool to match a specific shaft clock position.</li>
+</ul>
 
-  <div class="field">
-    <div class="field-name">Retention — Set Screw (std.)</div>
-    <div class="field-desc">
-      Radial screw hole(s) drilled through the full hub diameter — the screw can be driven from either
-      side with a hex key. <strong>1 screw</strong> = single perpendicular hole.
-      <strong>2 screws</strong> = holes placed 90&deg; apart for more secure grip.
-      Select screw size M3–M10 to set the hole diameter.
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Retention — Set Screw (captured nut)</div>
-    <div class="field-desc">
-      A custom solution for 3D printed parts where a standard ISO hex nut replaces a tapped hole to
-      hold the set screw. The nut is dropped into a pocket that opens from the top face of the hub and
-      cannot rotate; the set screw threads through the hub OD into the nut and contacts the shaft.
-      This is stronger than threading directly into plastic and survives many tighten/loosen cycles
-      without stripping.
-    </div>
-    <div class="field-tip">Select screw size M3–M10 first — the nut pocket dimensions are calculated automatically from ISO 4032.</div>
-    <div class="field-desc" style="margin-top:8px;">
-      <a href="/static/3D_Print_help.html" target="_blank"
-         style="color:#0078d4; text-decoration:underline;">&#9432; 3D Print Guide — captured nut assembly, pocket shape, print settings</a>
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Retention — D-Shaft</div>
-    <div class="field-desc">
-      A flat chord is cut in the bore to match a D-profile motor shaft. See the
-      <em>D-Shaft Retention</em> section below.
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Retention — Keyway</div>
-    <div class="field-desc">
-      A rectangular slot is cut through the bore to accept a standard parallel key (ISO 773 / DIN 6885).
-      See the <em>Keyway Retention</em> section below.
-    </div>
-  </div>
-</section>
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<section>
-  <h2>D-Shaft Retention</h2>
-
-  <div class="field">
-    <div class="field-desc">
-      A D-profile shaft has one flat face milled along part of its length. Selecting D-Shaft adds a
-      matching flat chord cut in the bore so the pulley cannot rotate on the shaft. Torque is
-      transmitted by the flat face rather than by shaft friction alone.
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Flat Depth (mm)</div>
-    <div class="field-desc">
-      Distance from the bore wall inward to the flat face — i.e. how much material is removed from the
-      bore circle to create the flat. Measure your actual shaft with calipers; a typical value for
-      small motor shafts (5–8 mm) is <code>0.5 mm</code>.
-    </div>
-    <div class="field-tip">The flat is oriented at 0&deg; (the +X direction in the cross-section). If you need a specific orientation, rotate the pulley in your slicer.</div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Add Set Screw</div>
-    <div class="field-desc">
-      Optionally adds a radial set screw hole aligned with the flat face (at 0&deg;, perpendicular to
-      the flat). Choose <strong>Standard</strong> for a through-hole across the hub diameter, or
-      <strong>Captured nut</strong> for a top-pocket nut (same as the main hub captured nut option
-      but fixed at one screw, one position).
-    </div>
-  </div>
-</section>
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<section>
-  <h2>Keyway Retention</h2>
-
-  <div class="field">
-    <div class="field-desc">
-      A keyway is a rectangular slot cut through the bore that accepts a standard parallel key
-      (ISO 773 / DIN 6885-1). The matching key sits half in the shaft keyway and half in the hub
-      (pulley bore) keyway, transmitting torque through shear rather than friction. This is the
-      standard retention method for moderate-to-high torque industrial drives.
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Width W (mm)</div>
-    <div class="field-desc">
-      Width of the keyway slot — equal to the key width <em>b</em> from ISO 773. The slot is centred
-      in the bore at 0&deg; (the +X direction) and extends symmetrically ±W/2 in the Y direction.
-      Use the <strong>Default Key</strong> button to auto-fill the correct width for your bore diameter.
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Hub Depth (mm)</div>
-    <div class="field-desc">
-      Depth of the slot measured outward from the bore wall. This corresponds to ISO 773 value
-      <em>t<sub>2</sub></em> (hub keyway depth) plus the corner clearance radius <em>r</em>.
-      The added clearance ensures the key can fully seat without the key corners
-      binding in the slot corners. Use <strong>Default Key</strong> to auto-fill the correct value.
-    </div>
-    <div class="field-tip">Do not use t<sub>2</sub> alone — add r to allow the key to seat flush. The Default Key button applies t<sub>2</sub> + r automatically.</div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Default Key Button</div>
-    <div class="field-desc">
-      Looks up your bore diameter in the ISO 773 standard table and fills in the recommended Width W
-      and Hub Depth (t<sub>2</sub> + r) for that bore size. The table covers bore diameters from
-      6 mm to 170 mm. If your bore falls between table entries the next-larger standard size is used.
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">ISO 773 Reference</div>
-    <div class="field-desc">
-      <table>
-        <tr>
-          <th>Bore &empty; (mm)</th>
-          <th>Key b &times; h</th>
-          <th>t<sub>2</sub> (mm)</th>
-          <th>r (mm)</th>
-          <th>Hub Depth (mm)</th>
-        </tr>
-        <tr><td>6–8</td>   <td>2 &times; 2</td>  <td>1.0</td><td>0.16</td><td>1.2</td></tr>
-        <tr><td>8–10</td>  <td>3 &times; 3</td>  <td>1.4</td><td>0.16</td><td>1.6</td></tr>
-        <tr><td>10–12</td> <td>4 &times; 4</td>  <td>1.8</td><td>0.16</td><td>2.0</td></tr>
-        <tr><td>12–17</td> <td>5 &times; 5</td>  <td>2.3</td><td>0.25</td><td>2.6</td></tr>
-        <tr><td>17–22</td> <td>6 &times; 6</td>  <td>2.8</td><td>0.25</td><td>3.1</td></tr>
-        <tr><td>22–30</td> <td>8 &times; 7</td>  <td>3.3</td><td>0.25</td><td>3.6</td></tr>
-        <tr><td>30–38</td> <td>10 &times; 8</td> <td>3.3</td><td>0.40</td><td>3.7</td></tr>
-        <tr><td>38–44</td> <td>12 &times; 8</td> <td>3.3</td><td>0.40</td><td>3.7</td></tr>
-        <tr><td>44–50</td> <td>14 &times; 9</td> <td>3.8</td><td>0.40</td><td>4.2</td></tr>
-        <tr><td>50–58</td> <td>16 &times; 10</td><td>4.3</td><td>0.40</td><td>4.7</td></tr>
-        <tr><td>58–65</td> <td>18 &times; 11</td><td>4.4</td><td>0.40</td><td>4.8</td></tr>
-        <tr><td>65–75</td> <td>20 &times; 12</td><td>4.9</td><td>0.60</td><td>5.5</td></tr>
-        <tr><td>75–85</td> <td>22 &times; 14</td><td>5.4</td><td>0.60</td><td>6.0</td></tr>
-        <tr><td>85–95</td> <td>25 &times; 14</td><td>5.4</td><td>0.60</td><td>6.0</td></tr>
-        <tr><td>95–110</td><td>28 &times; 16</td><td>6.4</td><td>0.60</td><td>7.0</td></tr>
-      </table>
-    </div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Add Set Screw</div>
-    <div class="field-desc">
-      Optionally adds a radial set screw hole aligned with the keyway (at 0&deg;). Choose
-      <strong>Standard</strong> for a through-hole across the hub diameter, or
-      <strong>Captured nut</strong> for a top-opening hex nut pocket. When captured nut is selected,
-      the nut pocket inner face is positioned against the outer (bottom) face of the keyway slot rather
-      than the bore wall — this ensures the screw bears against the key, not into open space.
-    </div>
-    <div class="field-tip">A set screw over the keyway prevents axial movement of the pulley along the shaft even when the key alone would allow it.</div>
-  </div>
-
-  <div class="field">
-    <div class="field-name">Keyway Orientation</div>
-    <div class="field-desc">
-      The keyway slot is always cut at 0&deg; — it projects in the +X direction from the bore centre.
-      To match a shaft keyway at a specific clock position, rotate the pulley in your slicer or CAD
-      tool after export.
-    </div>
-  </div>
-</section>
-
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+<p>ISO 773 reference table:</p>
+<table>
+  <tr>
+    <th>Bore &empty; (mm)</th><th>Key b &times; h</th>
+    <th>t<sub>2</sub> (mm)</th><th>r (mm)</th><th>Hub Depth (mm)</th>
+  </tr>
+  <tr><td>6–8</td>    <td>2 &times; 2</td>  <td>1.0</td><td>0.16</td><td>1.2</td></tr>
+  <tr><td>8–10</td>   <td>3 &times; 3</td>  <td>1.4</td><td>0.16</td><td>1.6</td></tr>
+  <tr><td>10–12</td>  <td>4 &times; 4</td>  <td>1.8</td><td>0.16</td><td>2.0</td></tr>
+  <tr><td>12–17</td>  <td>5 &times; 5</td>  <td>2.3</td><td>0.25</td><td>2.6</td></tr>
+  <tr><td>17–22</td>  <td>6 &times; 6</td>  <td>2.8</td><td>0.25</td><td>3.1</td></tr>
+  <tr><td>22–30</td>  <td>8 &times; 7</td>  <td>3.3</td><td>0.25</td><td>3.6</td></tr>
+  <tr><td>30–38</td>  <td>10 &times; 8</td> <td>3.3</td><td>0.40</td><td>3.7</td></tr>
+  <tr><td>38–44</td>  <td>12 &times; 8</td> <td>3.3</td><td>0.40</td><td>3.7</td></tr>
+  <tr><td>44–50</td>  <td>14 &times; 9</td> <td>3.8</td><td>0.40</td><td>4.2</td></tr>
+  <tr><td>50–58</td>  <td>16 &times; 10</td><td>4.3</td><td>0.40</td><td>4.7</td></tr>
+  <tr><td>58–65</td>  <td>18 &times; 11</td><td>4.4</td><td>0.40</td><td>4.8</td></tr>
+  <tr><td>65–75</td>  <td>20 &times; 12</td><td>4.9</td><td>0.60</td><td>5.5</td></tr>
+  <tr><td>75–85</td>  <td>22 &times; 14</td><td>5.4</td><td>0.60</td><td>6.0</td></tr>
+  <tr><td>85–95</td>  <td>25 &times; 14</td><td>5.4</td><td>0.60</td><td>6.0</td></tr>
+  <tr><td>95–110</td> <td>28 &times; 16</td><td>6.4</td><td>0.60</td><td>7.0</td></tr>
+</table>
 
 </body>
 </html>

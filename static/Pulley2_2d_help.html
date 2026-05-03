@@ -1,244 +1,73 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pulley 2 — 2D Help</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #0078d4;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #0078d4;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #0078d4;
-      background: #eef5fc;
-      border-left: 3px solid #0078d4;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-lock {
-      font-size: 12px;
-      color: #5b21b6;
-      background: #f5f3ff;
-      border-left: 3px solid #7c3aed;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .tag {
-      display: inline-block;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 1px 7px;
-      border-radius: 10px;
-      margin-right: 4px;
-      vertical-align: middle;
-    }
-    .tag-auto   { background: #dcfce7; color: #166534; }
-    .tag-input  { background: #dbeafe; color: #1e40af; }
-    .tag-read   { background: #f3f4f6; color: #6b7280; }
-    .tag-locked { background: #f5f3ff; color: #5b21b6; }
-    .diagram {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 14px 18px;
-      margin: 12px 0;
-      font-family: monospace;
-      font-size: 13px;
-      color: #334;
-      line-height: 1.8;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulley 2 — 2D Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .tag-locked { background: #2e1065; color: #c4b5fd; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#9881; Pulley 2 — 2D Guide</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator · Two Pulley Drive mode</p>
-</header>
+<h2>&#9881; Pulley 2 — 2D Guide</h2>
 
-<section>
-  <h2>Overview</h2>
-  <div class="field">
-    <div class="field-desc">
-      Pulley 2 is the <strong>driven (output) pulley</strong> in a Two Pulley Drive system. It shares the
-      belt profile (family and pitch) with Pulley 1 — only size, fit, and print settings can be adjusted
-      independently. Its tooth count drives the gear ratio calculation.
-    </div>
-  </div>
-</section>
+<h3>Overview</h3>
+<p>Pulley 2 is the <strong>driven (output) pulley</strong> in a Two Pulley Drive system. It shares the
+belt profile (family and pitch) with Pulley 1 — only size, fit, and print settings can be adjusted
+independently. Its tooth count drives the gear ratio calculation.</p>
 
-<section>
-  <h2>Belt Lock</h2>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-locked">Locked</span> Belt Label (e.g. "HTD 5M")</div>
-    <div class="field-desc">
-      Shows the belt family and pitch inherited from Pulley 1. Pulley 2 always uses the same belt — a drive
-      belt cannot change pitch mid-run.
-    </div>
-    <div class="field-lock">To change the belt family or pitch, update those settings in the Pulley 1 panel.</div>
-  </div>
-</section>
+<h3>Belt Lock</h3>
+<p><span class="tag tag-locked">Locked</span> <strong>Belt Label (e.g. "HTD 5M")</strong> — Shows
+the belt family and pitch inherited from Pulley 1. Pulley 2 always uses the same belt — a drive
+belt cannot change pitch mid-run.</p>
+<div class="note">To change the belt family or pitch, update those settings in the Pulley 1 panel.</div>
 
-<section>
-  <h2>Size</h2>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-input">Input</span> Number of Teeth</div>
-    <div class="field-desc">
-      Pulley 2 has the lowest edit priority — editing it keeps Pulley 1 fixed and updates the Gear Ratio
-      to reflect the new P2/P1 relationship. More teeth on P2 = lower output speed, higher output torque.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-auto">Auto</span> Outer Diameter (mm)</div>
-    <div class="field-desc">
-      Calculated from tooth count and pitch. Can be typed to reverse-calculate the nearest whole-number
-      tooth count — useful for space constraints. The Gear Ratio updates to match, same as editing teeth
-      directly.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-input">Input</span> Bore Diameter (mm)</div>
-    <div class="field-desc">
-      Shaft hole for Pulley 2. Independent of Pulley 1 — the two pulleys can sit on different shaft sizes
-      (e.g. motor shaft vs. output shaft). Minimum 1 mm.
-    </div>
-    <div class="field-tip">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter for FDM printing tolerance.</div>
-  </div>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-read">Read-only</span> Pitch Diameter</div>
-    <div class="field-desc">
-      Theoretical belt pitch-line diameter for Pulley 2. Used for belt length and centre distance
-      calculations.<br>
-      Formula: (Teeth &times; Pitch) / &pi;
-    </div>
-  </div>
-</section>
+<h3>Size</h3>
+<ul>
+  <li><span class="tag tag-input">Input</span> <strong>Number of Teeth</strong> — Editing P2 keeps
+      Pulley 1 fixed and updates the Gear Ratio to reflect the new P2/P1 relationship.
+      More teeth on P2 = lower output speed, higher output torque.</li>
+  <li><span class="tag tag-auto">Auto</span> <strong>Outer Diameter (mm)</strong> — Calculated from
+      tooth count and pitch. Can be typed to reverse-calculate the nearest whole-number tooth count.
+      Gear Ratio updates to match.</li>
+  <li><span class="tag tag-input">Input</span> <strong>Bore Diameter (mm)</strong> — Shaft hole for
+      Pulley 2. Independent of Pulley 1. Minimum 1 mm.
+      <div class="note">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter for FDM printing tolerance.</div>
+  </li>
+  <li><span class="tag tag-read">Read-only</span> <strong>Pitch Diameter</strong> — Theoretical belt
+      pitch-line diameter for Pulley 2. Formula: (Teeth &times; Pitch) / &pi;</li>
+</ul>
 
-<section>
-  <h2>Advanced</h2>
-  <div class="field">
-    <div class="field-name">Tooth Clearance</div>
-    <div class="field-desc">
-      Controls extra room at the tip of each belt tooth in the Pulley 2 groove. Independent of Pulley 1.
-      <strong>Tight</strong> = precision. <strong>Standard</strong> = recommended default.
-      <strong>Loose</strong> = easier assembly. <strong>Custom</strong> = exact mm offset.
-    </div>
-    <div class="field-tip">Matching the clearance preset across both pulleys keeps behaviour consistent along the belt run.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">Backlash</div>
-    <div class="field-desc">
-      Side-to-side play in Pulley 2 tooth grooves. Independent of Pulley 1.
-      <strong>None / Tight / Standard / Loose / Custom</strong> — same meanings as Pulley 1.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">3D Print Compensation (mm)</div>
-    <div class="field-desc">
-      Uniform outward offset on Pulley 2 non-bore surfaces. Set independently if the two pulleys are
-      printed in different orientations or on different printers. Typical range: 0.05–0.2 mm.
-    </div>
-    <div class="field-tip">Set to 0 for laser-cut or machined parts.</div>
-  </div>
-</section>
 
-<section>
-  <h2>Download — 2D</h2>
-  <div class="field">
-    <div class="field-name">SVG Drawing</div>
-    <div class="field-desc">
-      Clean 2D SVG of Pulley 2 — teeth profile, bore, and outer diameter — at 1:1 mm scale. This is also what the 2D preview window shows.
-    </div>
-    <div class="field-tip">In Fusion 360: Insert &rarr; Insert SVG, scale 1 mm/unit, then extrude to create a solid body.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">SVG + Data</div>
-    <div class="field-desc">
-      Same drawing plus a data panel listing all key dimensions and parameters. Useful for documentation and inspection records.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Download Pulley DXF</div>
-    <div class="field-desc">
-      DXF of Pulley 2 profile and bore using true arc entities. R2010 DXF format, dimensions in millimetres.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Belt Drive (SVG or DXF)</div>
-    <div class="field-desc">
-      To download the complete two-pulley belt drive drawing, use the <strong>Download Belt</strong> button
-      in the Pulley 1 panel. SVG for CAD import; DXF with separate
-      <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.
-    </div>
-  </div>
-</section>
-
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+<h3>Download — 2D</h3>
+<ul>
+  <li><strong>SVG Drawing</strong> — Clean 2D SVG of Pulley 2 at 1:1 mm scale.
+      In Fusion 360: Insert &rarr; Insert SVG, scale 1 mm/unit, then extrude to create a solid body.</li>
+  <li><strong>SVG + Data</strong> — Same drawing plus a data panel with all key dimensions.</li>
+  <li><strong>Download Pulley DXF</strong> — DXF using true arc entities. R2010 format, in millimetres.</li>
+  <li><strong>Belt Drive (SVG or DXF)</strong> — To download the complete two-pulley belt drive drawing,
+      use the <strong>Download Belt</strong> button in the Pulley 1 panel. SVG for CAD import; DXF with
+      separate <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.</li>
+</ul>
 
 </body>
 </html>

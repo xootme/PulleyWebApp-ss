@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=16">
+  <link rel="stylesheet" href="/static/style.css?v=19">
 </head>
 <body>
 
@@ -33,20 +33,27 @@
   </label>
   <div class="drive-spacing fb-3d" id="belt_height_row">
     <label for="belt_height" style="margin:0;white-space:nowrap">Belt Height (mm)</label>
-    <input type="number" id="belt_height" value="10" min="1" max="200" step="0.5" style="width:80px" oninput="schedulePreview()">
+    <input type="number" id="belt_height" value="10" min="1" max="200" step="0.5" style="width:80px" oninput="onBeltHeightInput()">
+    <label for="clearance_height" style="margin:0 0 0 8px;white-space:nowrap">Clearance Height (mm)</label>
+    <input type="number" id="clearance_height" value="0.5" min="0" max="50" step="0.1" style="width:70px" data-auto-value="0.5" oninput="schedulePreview()">
   </div>
   <label class="drive-toggle fb-2d">
     <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
     <span>Two Pulley Drive</span>
   </label>
   <div class="drive-spacing fb-2d" id="spacing_row">
-    <label for="center_distance">Centre Distance (mm)</label>
-    <input type="number" id="center_distance" value="100" min="1" step="0.01"
-           oninput="onCenterDistanceInput()">
-    <button class="min-dist-btn" id="min_distance_btn" onclick="setMinCenterDistance()" title="Set pulleys to minimum centre distance">Min</button>
-    <label for="belt_teeth" style="margin-left:1rem">Belt Teeth</label>
-    <input type="number" id="belt_teeth" min="1" step="1" style="width:5rem"
-           oninput="onBeltTeethInput()">
+    <span class="belt-group">
+      <label for="center_distance">Centre Distance (mm)</label>
+      <input type="number" id="center_distance" value="100" min="1" step="0.01"
+             oninput="onCenterDistanceInput()">
+      <button class="min-dist-btn" id="min_distance_btn" onclick="setMinCenterDistance()" title="Set pulleys to minimum centre distance">Min</button>
+      <label for="belt_teeth">Belt Teeth</label>
+      <input type="number" id="belt_teeth" min="1" step="1" style="width:5rem"
+             oninput="onBeltTeethInput()">
+      <label for="belt_length">Belt Length (mm)</label>
+      <input type="number" id="belt_length" min="1" step="0.01" style="width:7rem"
+             oninput="onBeltLengthInput()">
+    </span>
   </div>
   <div class="drive-spacing fb-2d" id="ratio_row">
     <label for="gear_ratio">Gear Ratio</label>
@@ -66,7 +73,7 @@
     <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
     <button class="drive-info-btn fb-3d"
             onclick="openHelpUrl('/static/3D_Print_help.html')">&#9432; 3D Print</button>
-    <button class="drive-info-btn fb-3d"
+    <button class="drive-info-btn fb-2d"
             onclick="openHelpUrl('/static/Laser_Waterjet_help.html')">&#9432; Laser/Waterjet</button>
     <button class="btn-help"
             data-help2d="/static/TwoPulleyDrive_2d_help.html"
@@ -92,55 +99,67 @@
 
     <section class="card fb-2d">
       <h2>Belt Profile</h2>
-      <label for="family">Family</label>
-      <select id="family" onchange="onFamilyChange()">
-        {% for fam in families %}
-        <option value="{{ fam }}"{% if fam == 'HTD' %} selected{% endif %}>{{ fam }}</option>
-        {% endfor %}
-      </select>
-      <label for="pitch">Pitch</label>
-      <select id="pitch" onchange="onPitchChange()"></select>
+      <span style="display:inline-flex;align-items:center;gap:8px;">
+        <label for="family">Family</label>
+        <select id="family" onchange="onFamilyChange()" style="width:7rem">
+          {% for fam in families %}
+          <option value="{{ fam }}"{% if fam == 'HTD' %} selected{% endif %}>{{ fam }}</option>
+          {% endfor %}
+        </select>
+        <label for="pitch">Pitch</label>
+        <select id="pitch" onchange="onPitchChange()"></select>
+      </span>
     </section>
 
     <section class="card fb-2d">
       <h2>Size</h2>
-      <label for="teeth">Number of Teeth</label>
-      <input type="number" id="teeth" min="10" max="360" value="20" step="1" oninput="onTeethChange(1)">
-      <label for="od">Outer Diameter (mm)</label>
-      <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)">
+      <span class="belt-group">
+        <label for="teeth">Num. Teeth</label>
+        <input type="number" id="teeth" min="10" max="360" value="20" step="1" oninput="onTeethChange(1)">
+        <label for="od">Outer Dia.</label>
+        <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)" style="-moz-appearance:textfield" class="no-spin">
+      </span>
       <label for="bore">Bore Diameter (mm)</label>
       <input type="number" id="bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(1)">
       <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
     </section>
 
     <section class="card fb-2d">
-      <h2>Advanced</h2>
-      <label for="clearance_preset">Tooth Clearance</label>
-      <select id="clearance_preset" onchange="onClearancePreset(1)">
-        {% for key, label in clearance_presets.items() %}
-        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      <div id="clearance_custom_row" class="hidden">
-        <label for="clearance_custom">Custom offset (mm)</label>
-        <input type="number" id="clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
+      <div class="hub-header" onclick="toggleAdvanced(1)">
+        <span style="display:flex;align-items:center;gap:6px;">
+          Advanced
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/2d_advanced_help.html')" title="Advanced help">&#9432;</button>
+        </span>
+        <span class="hub-arrow" id="advanced1_arrow">&#9660;</span>
       </div>
-      <div class="preset-info" id="clearance_info"></div>
+      <div id="advanced1_body" style="display:none">
+        <label for="clearance_preset">Tooth Clearance</label>
+        <select id="clearance_preset" onchange="onClearancePreset(1)">
+          {% for key, label in clearance_presets.items() %}
+          <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div id="clearance_custom_row" class="hidden">
+          <label for="clearance_custom">Custom offset (mm)</label>
+          <input type="number" id="clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
+        </div>
+        <div class="preset-info" id="clearance_info"></div>
 
-      <label for="backlash_preset">Backlash</label>
-      <select id="backlash_preset" onchange="onBacklashPreset(1)">
-        {% for key, label in backlash_presets.items() %}
-        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      <div id="backlash_custom_row" class="hidden">
-        <label for="backlash_custom">Custom offset (mm)</label>
-        <input type="number" id="backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
+        <label for="backlash_preset">Backlash</label>
+        <select id="backlash_preset" onchange="onBacklashPreset(1)">
+          {% for key, label in backlash_presets.items() %}
+          <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div id="backlash_custom_row" class="hidden">
+          <label for="backlash_custom">Custom offset (mm)</label>
+          <input type="number" id="backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
+        </div>
+        <div class="preset-info" id="backlash_info"></div>
+
+        <label for="print_extra">3D Print Compensation (mm)</label>
+        <input type="number" id="print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
       </div>
-      <div class="preset-info" id="backlash_info"></div>
-
-      <label for="print_extra">3D Print Compensation (mm)</label>
-      <input type="number" id="print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
     </section>
 
     <section class="card fb-3d">
@@ -374,6 +393,7 @@
         <span style="display:flex;align-items:center;gap:7px;">
           <input type="checkbox" id="spokes1_enabled" onclick="event.stopPropagation(); onSpokesChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
           Spokes
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
         </span>
         <span class="hub-arrow" id="spokes1-arrow">&#9660;</span>
       </div>
@@ -481,7 +501,7 @@
         <button id="tab-3d"     class="preview-tab hidden fb-3d"  onclick="setPreviewTab('3d')">3D</button>
         <span id="od-label" class="fb-2d"></span>
         <button class="drive-info-btn fb-3d"
-                onclick="openHelpUrl('/static/3D_Mouse_Nav_Help.html')"
+                onclick="openHelpUrl('/static/3d_mouse_nav_help.html')"
                 title="3D navigation and snap view help">&#9432; Mouse Nav</button>
       </span>
     </div>
@@ -511,43 +531,53 @@
 
     <section class="card fb-2d">
       <h2>Size</h2>
-      <label for="p2_teeth">Number of Teeth</label>
-      <input type="number" id="p2_teeth" min="10" max="360" value="30" step="1" oninput="onTeethChange(2)">
-      <label for="p2_od">Outer Diameter (mm)</label>
-      <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)">
+      <span class="belt-group">
+        <label for="p2_teeth">Num. Teeth</label>
+        <input type="number" id="p2_teeth" min="10" max="360" value="30" step="1" oninput="onTeethChange(2)">
+        <label for="p2_od">Outer Dia.</label>
+        <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)" style="-moz-appearance:textfield" class="no-spin">
+      </span>
       <label for="p2_bore">Bore Diameter (mm)</label>
       <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(2)">
       <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
     </section>
 
     <section class="card fb-2d">
-      <h2>Advanced</h2>
-      <label for="p2_clearance_preset">Tooth Clearance</label>
-      <select id="p2_clearance_preset" onchange="onClearancePreset(2)">
-        {% for key, label in clearance_presets.items() %}
-        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      <div id="p2_clearance_custom_row" class="hidden">
-        <label for="p2_clearance_custom">Custom offset (mm)</label>
-        <input type="number" id="p2_clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
+      <div class="hub-header" onclick="toggleAdvanced(2)">
+        <span style="display:flex;align-items:center;gap:6px;">
+          Advanced
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/2d_advanced_help.html')" title="Advanced help">&#9432;</button>
+        </span>
+        <span class="hub-arrow" id="advanced2_arrow">&#9660;</span>
       </div>
-      <div class="preset-info" id="p2_clearance_info"></div>
+      <div id="advanced2_body" style="display:none">
+        <label for="p2_clearance_preset">Tooth Clearance</label>
+        <select id="p2_clearance_preset" onchange="onClearancePreset(2)">
+          {% for key, label in clearance_presets.items() %}
+          <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div id="p2_clearance_custom_row" class="hidden">
+          <label for="p2_clearance_custom">Custom offset (mm)</label>
+          <input type="number" id="p2_clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
+        </div>
+        <div class="preset-info" id="p2_clearance_info"></div>
 
-      <label for="p2_backlash_preset">Backlash</label>
-      <select id="p2_backlash_preset" onchange="onBacklashPreset(2)">
-        {% for key, label in backlash_presets.items() %}
-        <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      <div id="p2_backlash_custom_row" class="hidden">
-        <label for="p2_backlash_custom">Custom offset (mm)</label>
-        <input type="number" id="p2_backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
+        <label for="p2_backlash_preset">Backlash</label>
+        <select id="p2_backlash_preset" onchange="onBacklashPreset(2)">
+          {% for key, label in backlash_presets.items() %}
+          <option value="{{ key }}"{% if key == 'STANDARD' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div id="p2_backlash_custom_row" class="hidden">
+          <label for="p2_backlash_custom">Custom offset (mm)</label>
+          <input type="number" id="p2_backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
+        </div>
+        <div class="preset-info" id="p2_backlash_info"></div>
+
+        <label for="p2_print_extra">3D Print Compensation (mm)</label>
+        <input type="number" id="p2_print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
       </div>
-      <div class="preset-info" id="p2_backlash_info"></div>
-
-      <label for="p2_print_extra">3D Print Compensation (mm)</label>
-      <input type="number" id="p2_print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
     </section>
 
     <section class="card fb-3d">
@@ -769,6 +799,7 @@
         <span style="display:flex;align-items:center;gap:7px;">
           <input type="checkbox" id="spokes2_enabled" onclick="event.stopPropagation(); onSpokesChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
           Spokes
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
         </span>
         <span class="hub-arrow" id="spokes2-arrow">&#9660;</span>
       </div>
@@ -869,6 +900,7 @@
       <button class="bug-close" onclick="closeBugReport()" title="Close">&times;</button>
     </div>
     <div id="bug-info-panel" class="bug-info-panel" style="display:none;">
+      <strong>Test comments:</strong> This bug report tool is for testing purposes only. Reports are saved to a private log file and are not monitored regularly. For urgent issues please contact us directly.<br><br>
       <strong>What gets recorded when you submit:</strong>
       <ul>
         <li>The text you enter in the description fields above.</li>
@@ -890,6 +922,10 @@
       <input type="email" id="bug-email" class="bug-input" placeholder="you@example.com">
 
       <div id="bug-status" class="bug-status"></div>
+    </div>
+    <div class="bug-philosophy">
+      <strong>Cheap CAD Tools — Software Design Philosophy</strong><br>
+      Don't try to catch every setting that could make a part go wrong. Over-constraining the inputs leads to a poor user experience — for example, typing a number only to have the software reject it with a cryptic message. If you enter a value that produces a strange result, simply go back and try a smaller change.
     </div>
     <div class="bug-footer">
       <button class="bug-btn bug-btn-cancel" onclick="cancelBugReport()">Cancel</button>
@@ -991,6 +1027,7 @@ function saveSettings() {
     p2_print_extra:      document.getElementById('p2_print_extra').value,
     feature_build:       document.getElementById('feature_build').checked,
     belt_height:         document.getElementById('belt_height').value,
+    clearance_height:    document.getElementById('clearance_height').value,
     hub1_enabled:             document.getElementById('hub1_enabled').checked,
     hub1_open:                document.getElementById('hub1-body').classList.contains('open'),
     hub1_retention:           document.getElementById('hub1_retention').value,
@@ -1141,6 +1178,10 @@ async function loadSettings() {
     if (s.feature_build) previewTab = '3d';
   }
   if (s.belt_height !== undefined) _val('belt_height', s.belt_height);
+  if (s.clearance_height !== undefined) {
+    const chEl = document.getElementById('clearance_height');
+    if (chEl) { chEl.value = s.clearance_height; chEl.dataset.autoValue = s.clearance_height; }
+  }
 
   // Restore hub settings
   for (const n of [1, 2]) {
@@ -1399,6 +1440,7 @@ function updateBeltTeethFromCenter() {
   const Ceff = Math.max(C, R1 + R2);
   const L    = openBeltLength(R1, R2, Ceff);
   document.getElementById('belt_teeth').value = Math.ceil(L / pitchMm);
+  updateBeltLengthDisplay();
 }
 
 // Called on every center-distance keystroke
@@ -1425,12 +1467,12 @@ async function correctCenterDistance() {
   document.getElementById('center_distance').value = data.center_dist_mm.toFixed(2);
   document.getElementById('belt_teeth').value = data.n_belt;
   updateMinDistance();
+  updateBeltLengthDisplay();
   schedulePreview();
 }
 
-// Called when the user edits belt teeth directly
-async function onBeltTeethInput() {
-  clearTimeout(beltCorrectionTimer);
+// Shared: fetch belt geometry from current belt_teeth value and apply results
+async function _applyBeltTeeth() {
   const family = document.getElementById('family').value;
   const pitch  = document.getElementById('pitch').value;
   const t1 = document.getElementById('teeth').value;
@@ -1443,7 +1485,43 @@ async function onBeltTeethInput() {
   const data = await resp.json();
   document.getElementById('center_distance').value = data.center_dist_mm.toFixed(2);
   updateMinDistance();
+  updateBeltLengthDisplay();
   schedulePreview();
+}
+
+// Called on every belt_teeth keystroke — show approximate length immediately,
+// defer the API call (and centre-distance correction) until 3 s idle.
+function onBeltTeethInput() {
+  updateBeltLengthDisplay();
+  clearTimeout(beltCorrectionTimer);
+  beltCorrectionTimer = setTimeout(_applyBeltTeeth, 3000);
+  schedulePreview();
+}
+
+function updateBeltLengthDisplay() {
+  const pitchMm = currentSpec ? currentSpec.pitch_mm : 0;
+  if (pitchMm <= 0) return;
+  const n = parseInt(document.getElementById('belt_teeth').value) || 0;
+  if (n <= 0) return;
+  document.getElementById('belt_length').value = (n * pitchMm).toFixed(2);
+}
+
+// Called on every belt_length keystroke — let the user type freely;
+// snap to nearest tooth and update everything after 3 s idle.
+function onBeltLengthInput() {
+  clearTimeout(beltCorrectionTimer);
+  beltCorrectionTimer = setTimeout(correctBeltLength, 3000);
+}
+
+async function correctBeltLength() {
+  const pitchMm = currentSpec ? currentSpec.pitch_mm : 0;
+  if (pitchMm <= 0) return;
+  const len = parseFloat(document.getElementById('belt_length').value);
+  if (!len || len <= 0) return;
+  const n = Math.max(1, Math.round(len / pitchMm));
+  document.getElementById('belt_teeth').value = n;
+  document.getElementById('belt_length').value = (n * pitchMm).toFixed(2);
+  await _applyBeltTeeth();
 }
 
 // ── Family / pitch ────────────────────────────────────────────────────────────
@@ -1966,6 +2044,8 @@ function buildParams() {
     p.p2_flange_support_max_spacing  = document.getElementById('flange2_support_max_spacing').value;
     p.p2_flange_support_air_gap      = document.getElementById('flange2_support_air_gap').value;
   }
+  const chEl = document.getElementById('clearance_height');
+  if (chEl) p.clearance_height = chEl.value;
   return p;
 }
 
@@ -1989,36 +2069,35 @@ function downloadSVG(n, includeData = true) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
   params.include_data = includeData ? '1' : '0';
-  _triggerDownload('/download/svg?' + new URLSearchParams(params));
+  _triggerDownload(_dlUrl('/download/svg?' + new URLSearchParams(params)));
   if (document.getElementById(`rim_layer${n}_enabled`)?.checked) {
-    setTimeout(() => _triggerDownload('/download/svg-rim?' + new URLSearchParams(params)), 400);
+    setTimeout(() => _triggerDownload(_dlUrl('/download/svg-rim?' + new URLSearchParams(params))), 400);
   }
 }
 
 function downloadDXF(n) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
-  _triggerDownload('/download/dxf?' + new URLSearchParams(params));
+  _triggerDownload(_dlUrl('/download/dxf?' + new URLSearchParams(params)));
   if (document.getElementById(`rim_layer${n}_enabled`)?.checked) {
-    setTimeout(() => _triggerDownload('/download/dxf-rim?' + new URLSearchParams(params)), 400);
+    setTimeout(() => _triggerDownload(_dlUrl('/download/dxf-rim?' + new URLSearchParams(params))), 400);
   }
 }
 
 function downloadBeltSVG() {
-  window.location = '/download/belt-svg?' + new URLSearchParams(buildBeltParams());
+  window.location = _dlUrl('/download/belt-svg?' + new URLSearchParams(buildBeltParams()));
 }
 
 function downloadBeltSTEP() {
   const params = buildBeltParams();
   params.belt_height = document.getElementById('belt_height').value;
-  const url = '/download/belt-step?' + new URLSearchParams(params);
-  downloadWithProgress(url, 'Belt.step');
+  downloadWithProgress(_dlUrl('/download/belt-step?' + new URLSearchParams(params)), 'Belt.step');
 }
 
 function downloadBeltSTL() {
   const params = buildBeltParams();
   params.belt_height = document.getElementById('belt_height').value;
-  window.location = '/download/belt-stl?' + new URLSearchParams(params);
+  window.location = _dlUrl('/download/belt-stl?' + new URLSearchParams(params));
 }
 
 function buildBeltParams() {
@@ -2035,7 +2114,7 @@ function buildBeltParams() {
 }
 
 function downloadBeltDXF() {
-  window.location = '/download/belt-dxf?' + new URLSearchParams(buildBeltParams());
+  window.location = _dlUrl('/download/belt-dxf?' + new URLSearchParams(buildBeltParams()));
 }
 
 function updateBeltBtn() {
@@ -2052,6 +2131,24 @@ function updateBeltBtn() {
 }
 
 // ── Feature Build ─────────────────────────────────────────────────────────────
+
+function onBeltHeightInput() {
+  const bh   = Math.max(1, parseFloat(document.getElementById('belt_height').value) || 10);
+  const chEl = document.getElementById('clearance_height');
+  // Auto-update clearance_height only if it still matches the bh/20 default for the prior bh.
+  // Use a data attribute to track the last auto-set value.
+  if (chEl) {
+    const prev = parseFloat(chEl.dataset.autoValue ?? chEl.value) || 0;
+    const cur  = parseFloat(chEl.value) || 0;
+    if (Math.abs(cur - prev) < 0.001) {   // user hasn't changed it manually
+      const autoVal = Math.round(bh / 20 * 10) / 10;
+      chEl.value = autoVal;
+      chEl.dataset.autoValue = autoVal;
+    }
+  }
+  _syncDynamicBounds();
+  schedulePreview();
+}
 
 // Sync all dynamic min/max bounds that depend on other field values.
 // Called on page load and whenever belt_height or rim_radius changes.
@@ -2269,37 +2366,44 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+function _dlUrl(url) {
+  // Append a timestamp so every download click is a unique URL — prevents Edge
+  // (and any other browser) from serving a stale cached file for 127.0.0.1.
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + '_ts=' + Date.now();
+}
+
 async function downloadWithProgress(url, defaultFilename) {
   const overlay = document.getElementById('loading-overlay');
   const text = document.getElementById('loading-text');
-  
+
   text.textContent = 'Generating 3D Solid...';
   overlay.style.display = 'flex';
-  
+
   try {
     const response = await fetch(url);
     if (!response.ok) {
       const errText = await response.text();
       throw new Error(errText || `Server Error: ${response.status}`);
     }
-    
+
     let filename = defaultFilename;
     const disposition = response.headers.get('Content-Disposition');
     if (disposition && disposition.indexOf('filename=') !== -1) {
       const matches = disposition.match(/filename="([^"]+)"/);
       if (matches && matches[1]) filename = matches[1];
     }
-    
+
     const blob = await response.blob();
     const objUrl = window.URL.createObjectURL(blob);
-    
+
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = objUrl;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
-    
+
     window.URL.revokeObjectURL(objUrl);
     document.body.removeChild(a);
   } catch (e) {
@@ -2335,7 +2439,7 @@ function downloadSTEP(n) {
     params[`${pfx}flange_support_max_spacing`]  = document.getElementById(`flange${fn}_support_max_spacing`).value;
     params[`${pfx}flange_support_air_gap`]      = document.getElementById(`flange${fn}_support_air_gap`).value;
   }
-  const url = '/download/step?' + new URLSearchParams(params);
+  const url = _dlUrl('/download/step?' + new URLSearchParams(params));
   downloadWithProgress(url, `Pulley_${n}.step`);
 }
 
@@ -2343,7 +2447,7 @@ function downloadFlangeSTEP(n, which) {
   const fp = _flangeParams(n);
   fp.flange_which = which;
   const suffix = which === 'top' ? 'upper' : 'lower';
-  downloadWithProgress('/download/flange-step?' + new URLSearchParams(fp),
+  downloadWithProgress(_dlUrl('/download/flange-step?' + new URLSearchParams(fp)),
                        `Flange_P${n}_${suffix}.step`);
 }
 
@@ -2351,7 +2455,7 @@ function downloadSTL(n) {
   const params = buildParams();
   params.belt_height = document.getElementById('belt_height').value;
   if (n === 2) params.pulley = '2';
-  window.location = '/download/stl?' + new URLSearchParams(params);
+  window.location = _dlUrl('/download/stl?' + new URLSearchParams(params));
 }
 
 // ── Three.js 3D preview ───────────────────────────────────────────────────────
@@ -2648,6 +2752,14 @@ function applyISO773Default(n) {
   onHubChange(n);
 }
 
+function toggleAdvanced(n) {
+  const body  = document.getElementById(`advanced${n}_body`);
+  const arrow = document.getElementById(`advanced${n}_arrow`);
+  const open  = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  arrow.classList.toggle('open', open);
+}
+
 // Minimum wall to bore = 2× screw dia; min hub height = 2× screw dia
 function toggleHub(n) {
   const body  = document.getElementById(`hub${n}-body`);
@@ -2862,7 +2974,7 @@ function _flangeParams(n) {
 function downloadFlange(n, which) {
   const fp = _flangeParams(n);
   fp.flange_which = which;
-  _triggerDownload('/download/flange-stl?' + new URLSearchParams(fp));
+  _triggerDownload(_dlUrl('/download/flange-stl?' + new URLSearchParams(fp)));
 }
 
 function downloadFlangeAssembly(n) {
@@ -2885,7 +2997,7 @@ function downloadFlangeAssembly(n) {
   fp.spokes_height     = document.getElementById(`spokes${n}_height`).value;
   fp.backlash_preset   = n === 2 ? (p.p2_backlash_preset || 'STANDARD') : (p.backlash_preset || 'STANDARD');
   fp.backlash_custom   = n === 2 ? (p.p2_backlash_custom || 0)           : (p.backlash_custom  || 0);
-  downloadWithProgress('/download/flange-assembly?' + new URLSearchParams(fp),
+  downloadWithProgress(_dlUrl('/download/flange-assembly?' + new URLSearchParams(fp)),
                        `${fp.family}${fp.pitch}-${fp.teeth}T-Assembly.stl`);
 }
 

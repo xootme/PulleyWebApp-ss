@@ -1,200 +1,65 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pulley 1 — 3D Help</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #0078d4;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #0078d4;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #0078d4;
-      background: #eef5fc;
-      border-left: 3px solid #0078d4;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-lock {
-      font-size: 12px;
-      color: #5b21b6;
-      background: #f5f3ff;
-      border-left: 3px solid #7c3aed;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .tag {
-      display: inline-block;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 1px 7px;
-      border-radius: 10px;
-      margin-right: 4px;
-      vertical-align: middle;
-    }
-    .tag-auto   { background: #dcfce7; color: #166534; }
-    .tag-input  { background: #dbeafe; color: #1e40af; }
-    .tag-read   { background: #f3f4f6; color: #6b7280; }
-    .tag-locked { background: #f5f3ff; color: #5b21b6; }
-    .diagram {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 14px 18px;
-      margin: 12px 0;
-      font-family: monospace;
-      font-size: 13px;
-      color: #334;
-      line-height: 1.8;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulley 1 — 3D Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#9881; Pulley 1 — 3D Guide</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator</p>
-</header>
+<h2>&#9881; Pulley 1 — 3D Guide</h2>
 
+<h3>3D Preview</h3>
+<p>Click the <strong>3D</strong> tab in the preview panel to open the interactive Three.js viewer.
+The pulley — including hub boss and all retention features — renders in real time and updates
+automatically as settings change.</p>
+<ul>
+  <li><strong>Orbit:</strong> left-click and drag</li>
+  <li><strong>Zoom:</strong> scroll wheel</li>
+  <li><strong>Pan:</strong> right-click and drag (or two-finger drag on trackpad)</li>
+</ul>
+<div class="note">The preview geometry is exactly what the STL download produces — if it looks right in the viewer, the STL is correct.</div>
 
+<h3>Spokes</h3>
+<p>Enable the <strong>Spokes</strong> section to hollow out the pulley body between the rim ring and the
+hub boss, replacing solid material with evenly spaced radial spokes. This reduces print time and
+material usage on large-diameter pulleys.</p>
+<p>Click the <strong>ℹ</strong> button next to the Spokes heading for full parameter details.</p>
+<div class="note">The spoke voids also appear in the 2D SVG and DXF exports as cut profiles for laser or waterjet cutting.
+Use <em>Gen. Rim Layer</em> to export just the toothed rim ring as a separate 2D file.</div>
 
-<section>
-  <h2>3D Preview</h2>
-  <div class="field">
-    <div class="field-name">Viewer</div>
-    <div class="field-desc">
-      Click the <strong>3D</strong> tab in the preview panel to open the interactive Three.js viewer.
-      The pulley — including hub boss and all retention features — renders in real time and updates
-      automatically as settings change.<br><br>
-      <strong>Orbit:</strong> left-click and drag.&nbsp;&nbsp;
-      <strong>Zoom:</strong> scroll wheel.&nbsp;&nbsp;
-      <strong>Pan:</strong> right-click and drag (or two-finger drag on trackpad).<br><br>
-      Model is centred at origin and fits the view automatically.
-    </div>
-    <div class="field-tip">The preview geometry is exactly what the STL download produces — if it looks right in the viewer, the STL is correct.</div>
-  </div>
-</section>
+<h3>Flanges</h3>
+<p>Enable the <strong>Flanges</strong> section to add annular plates on the top and bottom faces of the
+pulley that prevent the belt from riding off axially.</p>
+<ul>
+  <li><strong>Metal</strong> — thin plate with a bent-up outer rim; downloaded as separate upper and
+      lower STL files.</li>
+  <li><strong>3D Print</strong> — solid wedge profile; the bottom flange is merged into the pulley body.
+      The top flange is optionally a separate part with gluing nubs.</li>
+</ul>
+<p>Click the <strong>ℹ</strong> button next to the Flanges heading for full parameter details.</p>
+<div class="note">When flanges are enabled, a <em>Download Flanges</em> button appears in the Download card for separate upper- and lower-flange STL files.</div>
 
-<section>
-  <h2>Spokes</h2>
-  <div class="field">
-    <div class="field-name">Spokes</div>
-    <div class="field-desc">
-      Enable the <strong>Spokes</strong> section to hollow out the pulley body between the rim ring and the
-      hub boss, replacing solid material with evenly spaced radial spokes. This reduces print time and
-      material usage on large-diameter pulleys.<br><br>
-      <strong>Spoke Count</strong> — number of spokes (2–10).<br>
-      <strong>Hub OD</strong> — outer diameter of the hub boss at the spoke root.<br>
-      <strong>Rim Depth</strong> — radial thickness of the solid outer rim ring that the spokes attach to.<br>
-      <strong>Spoke Width</strong> — tangential width of each spoke at mid-span.<br>
-      <strong>Tip / Base Fillet</strong> — corner radii where the spoke meets the rim ring (tip) and hub boss (base).<br>
-      <strong>Spoke Height</strong> — axial height of the spoke web. Max = belt height.
-    </div>
-    <div class="field-tip">
-      The spoke voids also appear in the 2D SVG and DXF exports as cut profiles for laser or waterjet cutting.
-      Use <em>Gen. Rim Layer</em> to export just the toothed rim ring as a separate 2D file.
-    </div>
-  </div>
-</section>
-
-<section>
-  <h2>Flanges</h2>
-  <div class="field">
-    <div class="field-name">Flanges</div>
-    <div class="field-desc">
-      Enable the <strong>Flanges</strong> section to add annular plates on the top and bottom faces of the
-      pulley that prevent the belt from riding off axially. Two types are available:<br><br>
-      <strong>Metal</strong> — thin plate with a bent-up outer rim; downloaded as separate upper and lower STL files.<br>
-      <strong>3D Print</strong> — solid wedge profile; the bottom flange is merged into the pulley body.
-      The top flange is optionally a separate part with gluing nubs.<br><br>
-      Click the <strong>ℹ</strong> button next to the Flanges heading for full parameter details.
-    </div>
-    <div class="field-tip">
-      When flanges are enabled, a <em>Download Flanges</em> button appears in the Download card for separate
-      upper- and lower-flange STL files.
-    </div>
-  </div>
-</section>
-
-<section>
-  <h2>Download — STL</h2>
-  <div class="field">
-    <div class="field-name">Download Pulley STL</div>
-    <div class="field-desc">
-      Binary STL of the complete 3D pulley solid — toothed body plus any hub boss, retention features,
-      spokes, and (for 3D-print flanges) the integrated bottom flange.
-      Bore subtracted as a through-hole. Exported in millimetres.
-      Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly — no CAD import required.
-    </div>
-  </div>
-</section>
-
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+<h3>Download — STL</h3>
+<p><strong>Download Pulley STL</strong> — Binary STL of the complete 3D pulley solid — toothed body
+plus any hub boss, retention features, spokes, and (for 3D-print flanges) the integrated bottom flange.
+Bore subtracted as a through-hole. Exported in millimetres.
+Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly.</p>
 
 </body>
 </html>

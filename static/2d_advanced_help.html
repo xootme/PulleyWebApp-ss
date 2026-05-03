@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced — 2D Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul   { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 6px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+</style>
+</head>
+<body>
+
+<h2>&#9881; Advanced — 2D Settings</h2>
+
+<h3>Tooth Clearance</h3>
+<p>Radial gap between the belt tooth tip and the groove bottom.</p>
+<ul>
+  <li><strong>Tight</strong> — The groove pocket is raised till it touches the ISO nominal belt tooth. In cases where the belt is designed to bottom out in the groove, this value equals the standard (0). Tightening can reduce belt noise.</li>
+  <li><strong>Std.</strong> — match the nominal values of the ISO pulley standard (value of 0).</li>
+  <li><strong>Loose</strong> — groove deepened by 5% of the tooth height; Loosening is useful for dirty environments, but can increase backlash.</li>
+  <li><strong>Custom</strong> — enter any mm value directly.</li>
+</ul>
+
+<h3>Backlash</h3>
+<p>Tangential play between the belt tooth and groove walls.</p>
+<ul>
+  <li><strong>Tight</strong> — groove side walls are narrowed until they touch the ISO nominal belt tooth. In cases where the belt is designed to contact the side walls when seated in the groove, this value equals the standard (0). Tightening is commonly used for high-accuracy CNC operations.</li>
+  <li><strong>Std.</strong> — match the nominal values of the ISO standard (value of 0).</li>
+  <li><strong>Loose</strong> — groove widened 5% the mid tooth width, so that the tooth fits more easily into the groove. Loosening is commonly used for high-speed belt applications.</li>
+  <li><strong>Custom</strong> — exact mm offset applied per side.</li>
+</ul>
+<div class="note">Too little clearance / backlash makes the belt hard to seat and increases wear.</div>
+
+<h3>3D Print Compensation (mm)</h3>
+<p>Shrinks the groove profile inward to compensate for FDM dimensional bloat — printed walls tend
+to be slightly thicker than designed, which tightens belt grooves.</p>
+<ul>
+  <li>Typical FDM value: <code>0.1–0.2 mm</code></li>
+  <li>Set to <code>0</code> for CNC machining or resin printing.</li>
+</ul>
+
+</body>
+</html>

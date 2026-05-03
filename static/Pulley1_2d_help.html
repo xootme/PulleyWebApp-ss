@@ -1,273 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pulley 1 — 2D Help</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      color: #1a1a1a;
-      background: #f0f2f5;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-    header {
-      background: #0078d4;
-      color: #fff;
-      padding: 14px 20px;
-      border-radius: 8px 8px 0 0;
-      margin-bottom: 0;
-    }
-    header h1 { font-size: 18px; font-weight: 700; }
-    header p  { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-    section {
-      background: #fff;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 16px 20px;
-      margin-bottom: 14px;
-      margin-top: 14px;
-    }
-    section h2 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #0078d4;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .field { margin-bottom: 12px; }
-    .field:last-child { margin-bottom: 0; }
-    .field-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 3px;
-    }
-    .field-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-    }
-    .field-tip {
-      font-size: 12px;
-      color: #0078d4;
-      background: #eef5fc;
-      border-left: 3px solid #0078d4;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-warn {
-      font-size: 12px;
-      color: #92400e;
-      background: #fffbeb;
-      border-left: 3px solid #f59e0b;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .field-lock {
-      font-size: 12px;
-      color: #5b21b6;
-      background: #f5f3ff;
-      border-left: 3px solid #7c3aed;
-      padding: 5px 10px;
-      border-radius: 0 4px 4px 0;
-      margin-top: 5px;
-    }
-    .tag {
-      display: inline-block;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 1px 7px;
-      border-radius: 10px;
-      margin-right: 4px;
-      vertical-align: middle;
-    }
-    .tag-auto   { background: #dcfce7; color: #166534; }
-    .tag-input  { background: #dbeafe; color: #1e40af; }
-    .tag-read   { background: #f3f4f6; color: #6b7280; }
-    .tag-locked { background: #f5f3ff; color: #5b21b6; }
-    .diagram {
-      background: #f7f9fc;
-      border: 1px solid #dde3ea;
-      border-radius: 6px;
-      padding: 14px 18px;
-      margin: 12px 0;
-      font-family: monospace;
-      font-size: 13px;
-      color: #334;
-      line-height: 1.8;
-    }
-    footer {
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-      margin-top: 24px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulley 1 — 2D Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>&#9881; Pulley 1 — 2D Guide</h1>
-  <p>Cheap CAD Tools · Timing Pulley Generator</p>
-</header>
+<h2>&#9881; Pulley 1 — 2D Guide</h2>
 
-<section>
-  <h2>Belt Profile</h2>
-  <div class="field">
-    <div class="field-name">Family &amp; Pitch</div>
-    <div class="field-desc">
-      Select the belt <strong>family</strong> then the <strong>pitch</strong>. The pitch is the centre-to-centre distance between adjacent belt teeth in millimetres.
-      <table style="margin: 10px 0; font-size: 12px; border-collapse: collapse; width: 100%;">
-        <tr style="background:#0f766e; color:#fff;">
-          <th style="padding:5px 8px; text-align:left;">Family</th>
-          <th style="padding:5px 8px; text-align:left;">Pitches</th>
-          <th style="padding:5px 8px; text-align:left;">Profile shape</th>
-          <th style="padding:5px 8px; text-align:left;">Standard</th>
-        </tr>
-        <tr><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">HTD</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">3M, 5M, 8M, 14M, 20M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Curvilinear arc flanks</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 13050:2014</td></tr>
-        <tr style="background:#f8fafc;"><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">GT</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">2M, 3M, 5M, 8M, 14M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Gates PowerGrip GT2/GT3 curvilinear arc flanks</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Gates</td></tr>
-        <tr><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">STD / S-series</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">S2M, S3M, S5M, S8M, S14M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Large-radius arc flanks with intentional tip crush</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 13050:2014 S-series</td></tr>
-        <tr style="background:#f8fafc;"><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">RPP</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">R3M, R5M, R8M, R14M, R20M</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Parabolic flanks with tip fillet</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 13050:2014 Section 8</td></tr>
-        <tr><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Imperial</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">MXL, XXL, XL, L, H, XH, XXH</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Trapezoidal flanks, 40° included angle</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 5294:2012</td></tr>
-        <tr style="background:#f8fafc;"><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">T</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">T2.5, T5, T10, T20</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">Trapezoidal flanks, 50° included angle</td><td style="padding:4px 8px; border-bottom:1px solid #e2e8f0;">ISO 17396:2017</td></tr>
-        <tr><td style="padding:4px 8px;">AT</td><td style="padding:4px 8px;">AT3, AT5, AT10, AT20</td><td style="padding:4px 8px;">Trapezoidal flanks, 50° included angle</td><td style="padding:4px 8px;">ISO 17396:2017</td></tr>
-      </table>
-    </div>
-    <div class="field-tip">Changing the Family resets the Pitch options to only those available for that family.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">STD / S-series — alternate names</div>
-    <div class="field-desc">
-      These profiles appear under several names depending on the manufacturer or region. All refer to the same ISO 13050 S-series large-radius arc-flank geometry:
-      <ul style="margin: 6px 0 0 18px; line-height: 1.8;">
-        <li><strong>S-series</strong> — ISO 13050 official designation (S2M, S3M, S5M, S8M, S14M)</li>
-        <li><strong>STD</strong> — Super Torque Drive, used by several European and Asian belt manufacturers</li>
-        <li><strong>S-HTD</strong> — occasionally used to distinguish S-series from standard HTD curvilinear profiles</li>
-        <li><strong>Synchroflex S</strong> — ContiTech / Continental trade name for their S-series belts</li>
-      </ul>
-      The "S" prefix in the pitch code (e.g. <code>S8M</code>) comes directly from the ISO S-series classification. If a belt datasheet lists an S-series pitch code, it is compatible with this profile family regardless of the trade name used.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">RPP vs STD — not the same profile</div>
-    <div class="field-desc">
-      Brecoflex and Breco use the name "RPP" (Rubber Positive Profile) for their belts, and some sources describe STD/S-series belts as "RPP S-series". However, ISO 13050 defines <em>two distinct profile families</em>:
-      <ul style="margin: 6px 0 0 18px; line-height: 1.8;">
-        <li><strong>STD / S-series</strong> — groove flanks defined by a large-radius circular arc (<code>Rbb</code>)</li>
-        <li><strong>RPP</strong> — groove flanks defined by a parabolic curve (<code>y' = K·x'²</code>) with a tip fillet radius</li>
-      </ul>
-      Check your belt datasheet: if the pitch code starts with <code>R</code> (e.g. <code>R8M</code>), select <strong>RPP</strong>. If it starts with <code>S</code> (e.g. <code>S8M</code>), select <strong>STD / S-series</strong>.
-    </div>
-  </div>
-</section>
+<h3>Belt Profile</h3>
+<p>Select the belt <strong>family</strong> then the <strong>pitch</strong>. The pitch is the
+centre-to-centre distance between adjacent belt teeth in millimetres.</p>
+<table>
+  <tr><th>Family</th><th>Pitches</th><th>Profile shape</th><th>Standard</th></tr>
+  <tr><td>HTD</td><td>3M, 5M, 8M, 14M, 20M</td><td>Curvilinear arc flanks</td><td>ISO 13050:2014</td></tr>
+  <tr><td>GT</td><td>2M, 3M, 5M, 8M, 14M</td><td>Gates PowerGrip GT2/GT3 curvilinear arc flanks</td><td>Gates</td></tr>
+  <tr><td>STD / S-series</td><td>S2M, S3M, S5M, S8M, S14M</td><td>Large-radius arc flanks with intentional tip crush</td><td>ISO 13050:2014 S-series</td></tr>
+  <tr><td>RPP</td><td>R3M, R5M, R8M, R14M, R20M</td><td>Parabolic flanks with tip fillet</td><td>ISO 13050:2014 Section 8</td></tr>
+  <tr><td>Imperial</td><td>MXL, XXL, XL, L, H, XH, XXH</td><td>Trapezoidal flanks, 40°-50° included angle</td><td>ISO 5294:2012</td></tr>
+  <tr><td>T</td><td>T2.5, T5, T10, T20</td><td>Trapezoidal flanks, 40° included angle</td><td>ISO 17396:2017</td></tr>
+  <tr><td>AT</td><td>AT3, AT5, AT10, AT20</td><td>Trapezoidal flanks, 50° included angle</td><td>ISO 17396:2017</td></tr>
+</table>
+<div class="note">Changing the Family resets the Pitch options to only those available for that family.</div>
 
-<section>
-  <h2>Size</h2>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-input">Input</span> Number of Teeth</div>
-    <div class="field-desc">
-      Determines pulley diameter directly — more teeth = larger pulley. A minimum tooth count is enforced
-      per belt specification to prevent undercutting of the tooth profile.
-    </div>
-    <div class="field-tip">A minimum tooth count is enforced per belt specification to prevent undercutting of the tooth profile.</div>
-  </div>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-auto">Auto</span> Outer Diameter (mm)</div>
-    <div class="field-desc">
-      Calculated from tooth count and pitch. Can also be typed directly — the tool finds the nearest
-      whole-number tooth count that matches the entered diameter.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-input">Input</span> Bore Diameter (mm)</div>
-    <div class="field-desc">
-      Central shaft hole diameter. Must be smaller than the pitch diameter. Minimum 1 mm.
-    </div>
-    <div class="field-tip">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter to account for FDM printing tolerance.</div>
-  </div>
-  <div class="field">
-    <div class="field-name"><span class="tag tag-read">Read-only</span> Pitch Diameter</div>
-    <div class="field-desc">
-      Theoretical belt pitch-line diameter. Used for belt length calculations.<br>
-      Formula: (Teeth &times; Pitch) / &pi;
-    </div>
-  </div>
-</section>
+<p><strong>STD / S-series — alternate names</strong></p>
+<p>These profiles appear under several names depending on the manufacturer or region. All refer to the
+same ISO 13050 S-series large-radius arc-flank geometry: <em>S-series</em> (ISO official), <em>STD</em>
+(Super Torque Drive), <em>S-HTD</em>, and <em>Synchroflex S</em> (ContiTech trade name).
+If a belt datasheet lists an S-series pitch code (e.g. <code>S8M</code>), it is compatible with this
+family regardless of the trade name used.</p>
 
-<section>
-  <h2>Advanced</h2>
-  <div class="field">
-    <div class="field-name">Tooth Clearance</div>
-    <div class="field-desc">
-      Radial gap between the belt tooth tip and the groove bottom.
-      <strong>Tight</strong> — groove depth reduced to contact the belt tooth tip.
-      <strong>Std.</strong> — exactly per the applicable standard; correct for most applications.
-      <strong>Loose</strong> — groove deepened 5% beyond Std.; easier belt seating, tolerates printed dimensional variation.
-      <strong>Custom</strong> — enter any mm value (positive = deeper groove, negative = shallower).
-    </div>
-    <div class="field-tip">Too little clearance makes the belt hard to seat and increases wear. Too much increases backlash.</div>
-  </div>
-  <div class="field">
-    <div class="field-name">Backlash</div>
-    <div class="field-desc">
-      Tangential play between belt tooth and groove — how much the pulley can rotate before engaging when reversing.
-      <strong>Tight</strong> — groove narrowed to match belt tooth root width; best for CNC or precision reversal.
-      <strong>Std.</strong> — per the applicable standard; suitable for most drives.
-      <strong>Loose</strong> — groove is widened by 5% of the belt's tooth width.
-      <strong>Custom</strong> — enter any mm value; groove widens by half this value per side.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">3D Print Compensation (mm)</div>
-    <div class="field-desc">
-      Shrinks the groove profile inward to compensate for FDM dimensional bloat. Typical starting value: <code>0.1–0.2 mm</code>. Set to <code>0</code> for CNC or resin printing.
-    </div>
-  </div>
-</section>
+<p><strong>RPP vs STD — not the same profile</strong></p>
+<p>ISO 13050 defines two distinct families: STD/S-series uses a large-radius circular arc flank
+(<code>Rbb</code>); RPP uses a parabolic curve (<code>y' = K·x'²</code>) with a tip fillet.
+Check your belt datasheet — if the pitch code starts with <code>R</code> (e.g. <code>R8M</code>),
+select <strong>RPP</strong>; if it starts with <code>S</code> (e.g. <code>S8M</code>), select
+<strong>STD / S-series</strong>.</p>
 
-<section>
-  <h2>Download — 2D</h2>
-  <div class="field">
-    <div class="field-name">SVG Drawing</div>
-    <div class="field-desc">
-      Clean 2D SVG of the pulley profile only — teeth, bore, and outer diameter — at 1:1 mm scale.
-      Import into Fusion 360 (Insert &rarr; Insert SVG, scale 1 mm/unit), FreeCAD, Inkscape, or Illustrator.
-      This is also what the 2D preview window shows.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">SVG + Data</div>
-    <div class="field-desc">
-      Same drawing plus a data panel listing all key dimensions and parameters. Useful for documentation and inspection records.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Download Pulley DXF</div>
-    <div class="field-desc">
-      DXF of the pulley profile and bore using true arc entities. R2010 DXF format, dimensions in millimetres.
-    </div>
-  </div>
-  <div class="field">
-    <div class="field-name">Download Belt (SVG or DXF)</div>
-    <div class="field-desc">
-      In single-pulley mode: belt tooth cross-section profile only.
+<h3>Size</h3>
+<ul>
+  <li><span class="tag tag-input">Input</span> <strong>Number of Teeth</strong> — Determines pulley
+      diameter directly. A minimum tooth count is enforced per belt specification to prevent undercutting.</li>
+  <li><span class="tag tag-auto">Auto</span> <strong>Outer Diameter (mm)</strong> — Calculated from
+      tooth count and pitch. Can also be typed — the tool finds the nearest whole-number tooth count.</li>
+  <li><span class="tag tag-input">Input</span> <strong>Bore Diameter (mm)</strong> — Central shaft hole
+      diameter. Must be smaller than the pitch diameter. Minimum 1 mm.
+      <div class="note">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter to account for FDM printing tolerance.</div>
+  </li>
+  <li><span class="tag tag-read">Read-only</span> <strong>Pitch Diameter</strong> — Theoretical belt
+      pitch-line diameter used for belt length calculations.
+      Formula: (Teeth &times; Pitch) / &pi;</li>
+</ul>
+
+
+<h3>Download — 2D</h3>
+<ul>
+  <li><strong>SVG Drawing</strong> — Clean 2D SVG at 1:1 mm scale (teeth, bore, OD).
+      Import into Fusion 360 (Insert &rarr; Insert SVG, scale 1 mm/unit), FreeCAD, Inkscape,
+      or Illustrator. This is also what the 2D preview window shows.</li>
+  <li><strong>SVG + Data</strong> — Same drawing plus a data panel listing all key dimensions.
+      Useful for documentation and inspection records.</li>
+  <li><strong>Download Pulley DXF</strong> — DXF of the pulley profile and bore using true arc entities.
+      R2010 DXF format, dimensions in millimetres.</li>
+  <li><strong>Download Belt (SVG or DXF)</strong> — In single-pulley mode: belt tooth cross-section only.
       In Two Pulley Drive mode: the complete two-pulley belt layout with separate
-      <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.
-    </div>
-  </div>
-</section>
-
-<footer>Cheap CAD Tools &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.</footer>
+      <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.</li>
+</ul>
 
 </body>
 </html>

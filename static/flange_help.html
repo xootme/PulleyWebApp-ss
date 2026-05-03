@@ -51,7 +51,8 @@ Each pulley has its own independent flange configuration.</p>
 </table>
 
 <h3>Inner Rim Rule</h3>
-<p>The flange plate extends inward only as far as the innermost applicable boundary:</p>
+<p>How far each flange extends inward depends on the flange type:</p>
+<p><strong>Metal flanges &amp; 3D-print top flange</strong></p>
 <ul>
   <li><strong>Spokes active</strong> — inner face of the solid rim ring
       = tooth OD radius − Rim Depth. The flange covers only the rim ring; it does not
@@ -59,10 +60,13 @@ Each pulley has its own independent flange configuration.</p>
   <li><strong>No spokes, hub present</strong> — hub OD.</li>
   <li><strong>No spokes, no hub</strong> — bore diameter.</li>
 </ul>
-<div class="note">
-  For the 3D-print bottom flange the <em>combined</em> solid (flange + pulley body) spans from
-  flange OD to bore, but the flange plate geometry itself still stops at the inner rim boundary.
-</div>
+<p><strong>3D-print bottom flange</strong></p>
+<ul>
+  <li><strong>Spokes active</strong> — inner face of the solid rim ring (same as above).</li>
+  <li><strong>No spokes</strong> — always extends to the bore, regardless of hub settings.
+      Because the bottom flange is merged into the pulley body, a solid disc from flange OD to bore
+      is structurally correct and avoids a gap around the hub boss.</li>
+</ul>
 
 <h3>Shared Settings</h3>
 <ul>
@@ -93,16 +97,39 @@ Each pulley has its own independent flange configuration.</p>
       The angled section rises from the tooth OD; the lip adds a vertical wall at the outer edge.
       Typical: 1.0–2.5 mm.</li>
   <li><strong>Top Flange as Separate Part</strong> (default: on) — When checked, the top flange
-      is exported as a separate STL and shown 20 mm above the pulley in the 3D preview.
+      is exported as a separate STL and shown above the pulley in the 3D preview.
       When unchecked, the top flange is merged into the pulley body as one combined solid.</li>
 </ul>
+
+<h3>Print Supports (Integrated Top Flange Only)</h3>
+<p>When the top flange is integrated (not separate), flying-buttress support ribs can be added
+to bridge the overhang between the pulley OD and the flange underside.</p>
+<ul>
+  <li><strong>Add Print Supports</strong> — Enables the support structure. A thin-walled tube sits
+      1 mm outside the lower flange edge; radial ribs run from the pulley OD up to the underside
+      of the upper flange. Two 1 mm slits cut through opposite sides of the tube for easy removal
+      after printing. <em>Supports are only shown in the export file (Assembly STL) — not in the 3D preview.</em></li>
+  <li><strong>Nozzle Dia. (mm)</strong> — Nozzle diameter of your printer (default 0.4 mm).
+      Controls rib tip width and tube wall thickness so the supports are one extrusion width wide.</li>
+  <li><strong>Max Spacing (mm)</strong> — Maximum angular spacing between adjacent support ribs
+      (default 10 mm). Smaller values add more ribs for better overhang support;
+      rib count is always a multiple of 4.</li>
+  <li><strong>Air Gap (mm)</strong> — Vertical gap between the support rib tips and the flange
+      underside (default 0.2 mm). A small gap ensures the supports break away cleanly.
+      Set to 0 for maximum contact (harder to remove).</li>
+</ul>
+<div class="note">
+  Support ribs are included in the <strong>Assembly STL</strong> download. The pulley STL and the
+  standalone flange STL do not include the support structure — print the assembly file when supports
+  are needed.
+</div>
 
 <h3>Gluing Nubs (3D Print, separate top flange only)</h3>
 <p>Nubs are small cylindrical pins on the underside of the top flange that seat into matching
 sockets in the pulley face, centering the flange and increasing bonding strength.</p>
 <ul>
   <li><strong>Number of Nubs</strong> — Equally spaced around the nub centre circle.
-      If adjacent nubs overlap they are merged automatically. 3–6 is typical.</li>
+      If adjacent nubs overlap they are merged automatically.</li>
   <li><strong>Nub Diameter</strong> — Diameter of each cylindrical pin and its matching socket (mm).</li>
   <li><strong>Nub Height</strong> — Depth of the socket cut into the pulley face (mm).
       The physical pin on the flange is shorter by the Socket Fit Allowance, leaving a small gap
@@ -131,15 +158,28 @@ sockets in the pulley face, centering the flange and increasing bonding strength
 
 <h3>Downloading Flanges</h3>
 <p>When Flanges are enabled, the <em>Download Flanges</em> button appears in the Download card.
-Open it to choose:</p>
+The options shown depend on flange type:</p>
+
+<p><strong>3D Print mode</strong></p>
 <ul>
-  <li><strong>Upper Flange STL</strong> — Top-face flange (3D print: separate disc when
-      "Top flange as separate part" is on; metal: upper plate).</li>
-  <li><strong>Lower Flange STL</strong> — Bottom-face flange (3D print: base ring geometry only;
-      metal: lower plate).</li>
-  <li><strong>STEP</strong> — Available for metal flanges; solid-of-revolution body suitable for
-      CAD, simulation, or CAM.</li>
+  <li><strong>Upper Flange STL</strong> — Separate top-flange disc (only visible when "Top flange as
+      separate part" is checked). Includes nub pins if nubs are enabled.</li>
+  <li><strong>Upper Flange STEP</strong> — STEP version of the top flange for CAD use.</li>
+  <li><strong>Assembly STL (w/ Supports)</strong> — Pulley body + integrated bottom flange + support
+      ribs in one file. Appears when supports are enabled. Use this file when printing the full assembly.</li>
+  <li>Lower flange download options are hidden in 3D-print mode because the bottom flange is permanently
+      merged into the pulley body — download it via the main pulley STL or Assembly STL instead.</li>
 </ul>
+
+<p><strong>Metal mode</strong></p>
+<ul>
+  <li><strong>Upper Flange STL / STEP</strong> — Top-face metal plate.</li>
+  <li><strong>Lower Flange STL / STEP</strong> — Bottom-face metal plate.</li>
+</ul>
+<div class="note">
+  STEP files are solid-of-revolution bodies suitable for CAD, simulation, or CAM import.
+  Available for both metal and 3D-print flanges.
+</div>
 
 </body>
 </html>

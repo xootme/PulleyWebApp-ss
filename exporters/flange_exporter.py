@@ -27,6 +27,7 @@ from geometry.flange_geometry import (
     profile_3dprint,
     profile_metal,
     flange_inner_r_3dprint,
+    flange_inner_r_3dprint_bottom,
     flange_inner_r_metal_top,
     flange_inner_r_metal_bottom,
 )
@@ -150,6 +151,8 @@ def generate_3dprint_flange_stl(
     R_OD, _R_gb, tooth_ht = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
     r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                      r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+    r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
+                                                r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
 
     rim_radius_mm    = max(0.5, rim_radius_mm)
     flange_height_mm = max(0.1, flange_height_mm)
@@ -158,7 +161,8 @@ def generate_3dprint_flange_stl(
     # Adaptive sections: target ~3 mm chord on the outer radius; cap at caller's sections.
     sections = max(32, min(sections, round(2 * math.pi * R_OD / 3.0)))
 
-    prof = profile_3dprint(r_inner, R_OD, rim_radius_mm, angle_deg, flange_height_mm)
+    prof     = profile_3dprint(r_inner,     R_OD, rim_radius_mm, angle_deg, flange_height_mm)
+    prof_bot = profile_3dprint(r_inner_bot, R_OD, rim_radius_mm, angle_deg, flange_height_mm)
 
     meshes = []
 
@@ -196,8 +200,7 @@ def generate_3dprint_flange_stl(
         meshes.append(top_mesh)
 
     if which in ('bottom', 'both'):
-        bot_prof = [(r, -z) for r, z in prof]
-        bot_mesh = _revolve_polygon(bot_prof, sections)
+        bot_mesh = _revolve_polygon([(r, -z) for r, z in prof_bot], sections)
         meshes.append(bot_mesh)
 
     if len(meshes) == 1:
@@ -569,8 +572,11 @@ def build_flange_meshes(
         if fp['flange_3dprint']:
             r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                              r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+            r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
+                                                        r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
             f_h = max(0.1, fp['flange_height_mm'])
-            prof = profile_3dprint(r_inner, R_OD, rim_r, angle, f_h)
+            prof     = profile_3dprint(r_inner,     R_OD, rim_r, angle, f_h)
+            prof_bot = profile_3dprint(r_inner_bot, R_OD, rim_r, angle, f_h)
 
             top = _revolve_polygon(prof, sections)
 
@@ -629,8 +635,7 @@ def build_flange_meshes(
             top.apply_translation([0.0, 0.0, top_z])
             meshes.append(top)
 
-            bot_prof = [(r, -z) for r, z in prof]
-            bot = _revolve_polygon(bot_prof, sections)
+            bot = _revolve_polygon([(r, -z) for r, z in prof_bot], sections)
             meshes.append(bot)
         else:
             plate_t = max(0.3, fp['plate_height_mm'])

@@ -3,5 +3,5 @@ services:
     name: pulleywebapp
     env: python
     buildCommand: apt-get install -y libcairo2 && pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:app --config gunicorn.conf.py
     pythonVersion: "3.12"

@@ -456,6 +456,184 @@ _BACKLASH_LABEL = {
 }
 
 
+def _spoke_callout_svg_elements(
+    R_OD: float,
+    R_bore: float,
+    R_hub: float,
+    R_rim_inner: float,
+    R_tooth_root: float,
+    bore_mm: float,
+    spoke_hub_od_mm: float,
+    rim_depth_mm: float,
+    spoke_width_mm: float,
+    fillet_tip_mm: float,
+    fillet_base_mm: float,
+    spoke_count: int,
+    sw: float,
+) -> str:
+    """Return annotation callouts for the 2D spoke parameters."""
+    if spoke_count < 2 or spoke_width_mm <= 0.0:
+        return ''
+
+    leader = max(0.18, sw * 0.72)
+    dim = max(0.12, sw * 0.55)
+    fs = max(2.2, min(3.0, R_OD * 0.095))
+    label_x = R_OD + 15.0
+    elbow_x = R_OD + 8.0
+    y0 = -R_OD + 7.0
+    row = max(8.0, fs * 2.7)
+
+    style_leader = (
+        f'stroke="#0f766e" stroke-width="{leader:.3f}" '
+        f'fill="none" stroke-linecap="round" stroke-linejoin="round"'
+    )
+    style_dim = (
+        f'stroke="#64748b" stroke-width="{dim:.3f}" '
+        f'fill="none" stroke-linecap="round" stroke-linejoin="round"'
+    )
+    text_style = (
+        'font-family="Helvetica, Arial, sans-serif" '
+        f'font-size="{fs:.3f}" fill="#0f172a"'
+    )
+    value_style = (
+        'font-family="Helvetica, Arial, sans-serif" '
+        f'font-size="{fs * 0.86:.3f}" fill="#475569"'
+    )
+
+    def text(label, value, y):
+        return (
+            f'<text x="{label_x:.4f}" y="{y:.4f}" {text_style}>{label}</text>'
+            f'<text x="{label_x:.4f}" y="{y + fs * 0.95:.4f}" {value_style}>{value}</text>'
+        )
+
+    def leader_line(sx, sy, y):
+        return (
+            f'<path d="M {sx:.4f},{sy:.4f} L {elbow_x:.4f},{y:.4f} '
+            f'L {label_x - 1.8:.4f},{y:.4f}" {style_leader}/>'
+        )
+
+    def tick(x, y, size=1.4):
+        return f'<path d="M {x:.4f},{y - size:.4f} L {x:.4f},{y + size:.4f}" {style_dim}/>'
+
+    def arc_midpoint(fcx, fcy, sx, sy, ex, ey, radius):
+        a1 = math.atan2(sy - fcy, sx - fcx)
+        a2 = math.atan2(ey - fcy, ex - fcx)
+        ccw = (a2 - a1) % (2.0 * math.pi)
+        if ccw <= math.pi:
+            am = a1 + ccw / 2.0
+        else:
+            am = a1 - ((2.0 * math.pi - ccw) / 2.0)
+        return fcx + radius * math.cos(am), fcy + radius * math.sin(am)
+
+    def zero_degree_fillet_midpoints():
+        """Return midpoint anchors for the 0-degree spoke's top base/tip fillets."""
+        half_w = spoke_width_mm / 2.0
+        if R_hub <= 0.0 or R_rim_inner <= R_hub:
+            return None, None
+
+        x_hub = math.sqrt(max(0.0, R_hub * R_hub - half_w * half_w))
+        x_rim = math.sqrt(max(0.0, R_rim_inner * R_rim_inner - half_w * half_w))
+        dx = x_rim - x_hub
+        dy = 0.0
+
+        tip_mid = None
+        if fillet_tip_mm > 0.0:
+            tip = _sv2_line_circle_fillet(
+                x_hub, half_w, dx, dy,
+                0.0, 0.0, R_rim_inner, fillet_tip_mm,
+                False, 0.0, 1.0, True,
+            )
+            if tip:
+                fcx, fcy, tlx, tly, tcx, tcy, _ = tip
+                tip_mid = arc_midpoint(fcx, fcy, tlx, tly, tcx, tcy, fillet_tip_mm)
+
+        base_mid = None
+        if fillet_base_mm > 0.0:
+            base = _sv2_line_circle_fillet(
+                x_hub, half_w, dx, dy,
+                0.0, 0.0, R_hub, fillet_base_mm,
+                True, 0.0, 1.0, False,
+            )
+            if base:
+                fcx, fcy, tlx, tly, tcx, tcy, _ = base
+                base_mid = arc_midpoint(fcx, fcy, tlx, tly, tcx, tcy, fillet_base_mm)
+
+        return base_mid, tip_mid
+
+    els = [
+        '<g id="dimension_callouts">',
+    ]
+
+    rows = {
+        'rim': y0,
+        'bore': y0 + row,
+        'hub': y0 + row * 2.0,
+        'width': y0 + row * 3.0,
+        'base': y0 + row * 4.0,
+        'tip': y0 + row * 5.0,
+        'count': y0 + row * 6.0,
+    }
+
+    # Bore diameter.
+    if R_bore > 0.0:
+        y = rows['bore']
+        els.append(leader_line(R_bore * 0.72, -R_bore * 0.72, y))
+        els.append(text('Bore', f'{bore_mm:.2f} mm dia', y - fs * 0.2))
+
+    # Hub outside diameter.
+    if R_hub > R_bore:
+        y = rows['hub']
+        els.append(leader_line(R_hub * 0.94, -R_hub * 0.34, y))
+        els.append(text('Hub OD', f'{spoke_hub_od_mm:.2f} mm dia', y - fs * 0.2))
+
+    # Rim depth, shown as the radial distance from tooth root to inner rim
+    # at 45 degrees on the rim.
+    if R_tooth_root > R_rim_inner:
+        y = rows['rim']
+        rim_a = math.radians(45.0)
+        ux = math.cos(rim_a)
+        uy = -math.sin(rim_a)
+        x_outer = ux * R_tooth_root
+        y_outer = uy * R_tooth_root
+        x_inner = ux * R_rim_inner
+        y_inner = uy * R_rim_inner
+        els.append(f'<path d="M {x_outer:.4f},{y_outer:.4f} L {x_inner:.4f},{y_inner:.4f}" {style_dim}/>')
+        els.append(tick(x_outer, y_outer))
+        els.append(tick(x_inner, y_inner))
+        els.append(leader_line((x_outer + x_inner) / 2.0, (y_outer + y_inner) / 2.0, y))
+        els.append(text('Rim Depth', f'{rim_depth_mm:.2f} mm', y - fs * 0.2))
+
+    # Spoke width across the 0-degree spoke.
+    x_mid_spoke = (R_hub + R_rim_inner) / 2.0
+    half_w = spoke_width_mm / 2.0
+    y = rows['width']
+    els.append(f'<path d="M {x_mid_spoke:.4f},{-half_w:.4f} L {x_mid_spoke:.4f},{half_w:.4f}" {style_dim}/>')
+    els.append(tick(x_mid_spoke, -half_w))
+    els.append(tick(x_mid_spoke, half_w))
+    els.append(leader_line(x_mid_spoke, 0.0, y))
+    els.append(text('Spoke Width', f'{spoke_width_mm:.2f} mm', y - fs * 0.2))
+
+    # Fillet labels land on the midpoint of the 0-degree spoke's top fillet arcs.
+    base_mid, tip_mid = zero_degree_fillet_midpoints()
+    if fillet_base_mm > 0.0:
+        y = rows['base']
+        bx, by = base_mid if base_mid else (half_w + fillet_base_mm * 0.55, R_hub + fillet_base_mm * 0.55)
+        els.append(leader_line(bx, by, y))
+        els.append(text('Fillet Base', f'R {fillet_base_mm:.2f} mm', y - fs * 0.2))
+
+    if fillet_tip_mm > 0.0:
+        y = rows['tip']
+        tx, ty = tip_mid if tip_mid else (half_w + fillet_tip_mm * 0.55, R_rim_inner - fillet_tip_mm * 0.55)
+        els.append(leader_line(tx, ty, y))
+        els.append(text('Fillet Tip', f'R {fillet_tip_mm:.2f} mm', y - fs * 0.2))
+
+    y = rows['count']
+    els.append(text('Spoke Count', str(spoke_count), y - fs * 0.2))
+
+    els.append('</g>')
+    return '\n  '.join(els)
+
+
 def _profile_key(family: str, pitch: str) -> str:
     return PROFILE_KEY_PREFIX.get(family, '') + pitch
 
@@ -478,6 +656,7 @@ def generate_svg(
     fillet_tip_mm: float = 0.0,
     fillet_base_mm: float = 0.0,
     include_data: bool = True,
+    include_callouts: bool = False,
 ) -> str:
     """
     Returns an SVG string: full pulley profile + optional info panel.
@@ -537,6 +716,7 @@ def generate_svg(
     R_tooth_root = min(math.hypot(x, y) for x, y in wrapped) if wrapped else R_OD
     R_hub_spoke  = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (R_bore + 1.0)
     if spoke_count >= 2 and spoke_width_mm > 0.0:
+        R_rim_spoke = max(R_hub_spoke + 0.5, R_tooth_root - rim_depth_mm)
         spoke_el = _spoke_void_svg_elements(
             cx=0.0, cy=0.0,
             r_tooth_root=R_tooth_root, r_hub=R_hub_spoke,
@@ -546,9 +726,25 @@ def generate_svg(
         )
         hub_el = (f'<circle cx="0" cy="0" r="{R_hub_spoke:.4f}" '
                   f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>')
+        callout_el = _spoke_callout_svg_elements(
+            R_OD=R_OD,
+            R_bore=R_bore,
+            R_hub=R_hub_spoke,
+            R_rim_inner=R_rim_spoke,
+            R_tooth_root=R_tooth_root,
+            bore_mm=bore_mm,
+            spoke_hub_od_mm=spoke_hub_od_mm,
+            rim_depth_mm=rim_depth_mm,
+            spoke_width_mm=spoke_width_mm,
+            fillet_tip_mm=fillet_tip_mm,
+            fillet_base_mm=fillet_base_mm,
+            spoke_count=spoke_count,
+            sw=sw,
+        ) if include_callouts else ''
     else:
         spoke_el = ''
         hub_el   = ''
+        callout_el = ''
 
     # ── Info panel ────────────────────────────────────────────────────────────
     # The panel has a fixed minimum width so two-column text always fits,
@@ -569,6 +765,8 @@ def generate_svg(
     # Panel must be at least 120 mm wide so columns never overlap.
     # If the pulley is wider, extend to match.
     panel_w   = max(120.0, OD_mm + padding_mm * 2)
+    if callout_el:
+        panel_w = max(panel_w, OD_mm + 140.0)
     panel_left  = -panel_w / 2.0
     panel_right =  panel_w / 2.0
 
@@ -665,9 +863,11 @@ def generate_svg(
         panel_svg = '\n  '.join(panel_els)
     else:
         # Drawing only — tight viewport around the pulley
-        vx   = -(R_OD + padding_mm)
+        extra_right = 70.0 if callout_el else 0.0
+        extra_left = 12.0 if callout_el else 0.0
+        vx   = -(R_OD + padding_mm + extra_left)
         vy   = -(R_OD + padding_mm)
-        vw   =  (R_OD + padding_mm) * 2
+        vw   =  (R_OD + padding_mm) * 2 + extra_left + extra_right
         vh   =  (R_OD + padding_mm) * 2
         panel_svg = ''
 
@@ -689,6 +889,7 @@ def generate_svg(
   {bore_el}
   {hub_el}
   {spoke_el}
+  {callout_el}
   {panel_svg}
 </svg>'''
 

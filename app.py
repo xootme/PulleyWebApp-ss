@@ -2,11 +2,17 @@
 app.py — Timing Pulley Generator web app (Flask)
 Serves the pulley generator UI and returns SVG downloads.
 """
+import hashlib
 import math
 import io
 import os
 import json
 import threading
+try:
+    import fcntl
+    _HAVE_FCNTL = True
+except ImportError:
+    _HAVE_FCNTL = False          # Windows dev environment
 from datetime import datetime
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory
 
@@ -18,21 +24,46 @@ BUILD_TIME   = datetime.now().strftime('%Y-%m-%d %H:%M')
 _LOG_DIR             = os.path.join(os.path.dirname(__file__), 'logs')
 _LOG_FILE            = os.path.join(_LOG_DIR, 'bug_reports.log')
 _DOWNLOAD_COUNT_FILE = os.path.join(_LOG_DIR, 'download_count.json')
-_download_lock       = threading.Lock()
+_download_lock       = threading.Lock()   # in-process guard (dev / single-worker)
 
 
 def _increment_download_count():
-    """Increment the persistent download counter; email at each multiple of 100."""
-    with _download_lock:
-        os.makedirs(_LOG_DIR, exist_ok=True)
+    """Increment the persistent download counter; email at each multiple of 100.
+
+    Uses fcntl.flock (exclusive file lock) on Linux so concurrent gunicorn
+    workers don't corrupt the counter file.  Falls back to a threading.Lock
+    on Windows (dev environment, single worker).
+    """
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    count = 0
+    if _HAVE_FCNTL:
+        # Open for read+write, create if missing; flock blocks until exclusive.
+        fd = os.open(_DOWNLOAD_COUNT_FILE, os.O_RDWR | os.O_CREAT, 0o644)
         try:
-            with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
-                count = int(json.load(f).get('count', 0))
-        except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
-            count = 0
-        count += 1
-        with open(_DOWNLOAD_COUNT_FILE, 'w', encoding='utf-8') as f:
-            json.dump({'count': count}, f)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            raw = os.read(fd, 256).decode('utf-8').strip()
+            try:
+                count = int(json.loads(raw).get('count', 0)) if raw else 0
+            except (ValueError, KeyError, json.JSONDecodeError):
+                count = 0
+            count += 1
+            payload = json.dumps({'count': count}).encode('utf-8')
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.ftruncate(fd, 0)
+            os.write(fd, payload)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+    else:
+        with _download_lock:
+            try:
+                with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
+                    count = int(json.load(f).get('count', 0))
+            except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
+                count = 0
+            count += 1
+            with open(_DOWNLOAD_COUNT_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'count': count}, f)
     if count % 100 == 0:
         _send_milestone_email(count)
 
@@ -85,12 +116,71 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1, x_host=1)
 # ──────────────────────────────────────────
 
+# ─── Gzip compression ─────────────────────
+from flask_compress import Compress
+app.config['COMPRESS_MIMETYPES'] = [
+    'text/html', 'text/css', 'application/javascript',
+    'image/svg+xml',                    # SVG downloads
+    'application/dxf', 'text/plain',    # DXF downloads
+    'application/octet-stream',         # STL / STEP binary
+]
+app.config['COMPRESS_LEVEL']   = 6     # balanced speed vs ratio
+app.config['COMPRESS_MIN_SIZE'] = 512  # don't compress tiny responses
+Compress(app)
+# ──────────────────────────────────────────
+
+# ─── HTTP caching ─────────────────────────
+# Routes whose output is fully determined by query parameters.
+_CACHEABLE_PREFIXES = (
+    '/download/',
+    '/api/belt', '/api/od', '/api/spec',
+    '/api/preview-stl', '/api/preview', '/api/belt-preview',
+)
+_CACHE_MAX_AGE = 3600   # 1 hour; Cloudflare + browser cache
+
+
+def _params_etag():
+    """Stable ETag derived from query-string parameters and server build time."""
+    raw = BUILD_TIME + '|' + '|'.join(f'{k}={v}' for k, v in sorted(request.args.items()))
+    return '"' + hashlib.md5(raw.encode()).hexdigest() + '"'
+
+
+@app.before_request
+def _check_client_cache():
+    """Return 304 Not Modified when the client already has the current version."""
+    if request.method != 'GET':
+        return
+    if not any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
+        return
+    etag = _params_etag()
+    incoming = request.headers.get('If-None-Match', '')
+    # flask-compress appends ':gzip' inside the ETag quotes on compressed responses
+    # e.g. "abc123" → "abc123:gzip".  Strip it before comparing.
+    incoming_norm = incoming[:-6] + '"' if incoming.endswith(':gzip"') else incoming
+    if incoming_norm == etag:
+        return Response(
+            status=304,
+            headers={'ETag': etag,
+                     'Cache-Control': f'public, max-age={_CACHE_MAX_AGE}'},
+        )
+# ──────────────────────────────────────────
+
 
 @app.after_request
 def _track_download(response):
-    """Count every successful /download/* response."""
-    if request.path.startswith('/download/') and response.status_code == 200:
-        _increment_download_count()
+    """Count every successful /download/* response and stamp cache headers."""
+    if response.status_code == 200 and request.method == 'GET':
+        if request.path.startswith('/download/'):
+            _increment_download_count()
+        if any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
+            response.headers['ETag'] = _params_etag()
+            # Downloads: no-store prevents all browser caching (Edge on 127.0.0.1
+            # ignores max-age=0 for downloads; no-store is the only reliable option).
+            # API/preview routes: full max-age for performance.
+            if request.path.startswith('/download/'):
+                response.headers['Cache-Control'] = 'no-store'
+            else:
+                response.headers['Cache-Control'] = f'public, max-age={_CACHE_MAX_AGE}'
     return response
 
 
@@ -501,6 +591,7 @@ def _build_svg_from_request(args):
         _parse_spoke_params(args, '')
 
     include_data = args.get('include_data', '1') != '0'
+    include_callouts = args.get('include_callouts', '0') == '1'
     return generate_svg(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
@@ -509,6 +600,7 @@ def _build_svg_from_request(args):
         spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
         fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
         include_data=include_data,
+        include_callouts=include_callouts,
     )
 
 
@@ -536,6 +628,7 @@ def _build_svg_from_request_p2(args):
         _parse_spoke_params(args, 'p2_')
 
     include_data = args.get('include_data', '1') != '0'
+    include_callouts = args.get('include_callouts', '0') == '1'
     return generate_svg(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
@@ -544,6 +637,7 @@ def _build_svg_from_request_p2(args):
         spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
         fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
         include_data=include_data,
+        include_callouts=include_callouts,
     )
 
 
@@ -706,7 +800,9 @@ def _parse_stl_params(args, pulley='1'):
                                   args.get('backlash_preset', 'STANDARD'),
                                   args.get('backlash_custom', 0.0))
 
-    belt_height = max(1.0, float(args.get('belt_height', 10.0)))
+    belt_height   = max(1.0, float(args.get('belt_height', 10.0)))
+    clearance_h   = max(0.0, float(args.get('clearance_height', 0.0)))
+    belt_height   = belt_height + clearance_h
     return family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex
 
 
@@ -884,46 +980,55 @@ def download_stl():
             )
             eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
 
-            # Build socket meshes before the pulley STL so they can be cut inside
-            # generate_pulley_stl_preview (avoids the STL round-trip that causes
-            # non-watertight meshes with complex spoke geometry).
-            sockets = build_socket_meshes(
-                fp, family, pitch, num_teeth, bore_mm, belt_height,
-                clearance_mm=cl_mm, print_extra_mm=pr_ex,
-                hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
-                spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
-            ) if (fp.get('nubs_enabled') and fp.get('top_separate')) else []
-
-            # generate_pulley_stl_preview cuts sockets before exporting, so
-            # the boolean runs on the native mesh (no round-trip precision loss).
-            # It centres the mesh; we track z_bottom to re-align the bottom flange.
-            stl = generate_pulley_stl_preview(
-                family, pitch, num_teeth, bore_mm, belt_height,
-                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
-                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
-                spoke_height_mm=sp_h if sp_en else 0.0,
-                socket_meshes=sockets or None,
-            )
-            pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
-            z_bottom = float(pulley_mesh.bounds[0][2])
-
-            bot_bytes = generate_3dprint_flange_stl(
-                which='bottom',
+            _flange_kw = dict(
                 family=family, pitch=pitch, num_teeth=num_teeth,
                 bore_mm=bore_mm, belt_height_mm=belt_height,
                 clearance_mm=cl_mm, print_extra_mm=pr_ex,
                 flange_angle_deg=fp['flange_angle_deg'],
                 rim_radius_mm=fp['rim_radius_mm'],
                 flange_height_mm=fp['flange_height_mm'],
-                hub_od_mm=eff_hub_od,
-                spokes_enabled=sp_en,
-                spoke_hub_od_mm=sp_hub,
-                rim_depth_mm=sp_rim,
+                hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
+                spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
             )
-            bot_mesh = trimesh.load(_io.BytesIO(bot_bytes), file_type='stl')
-            bot_mesh.apply_translation([0.0, 0.0, z_bottom])
-            stl = trimesh.util.concatenate([pulley_mesh, bot_mesh]).export(file_type='stl')
+
+            if not fp.get('top_separate'):
+                # Integrated mode: reuse the already-generated uncentered STL so
+                # flanges can be placed at natural z=0 / z=belt_height positions —
+                # same approach as the Assembly STL route, which is known to work.
+                pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
+                bot_mesh = trimesh.load(_io.BytesIO(
+                    generate_3dprint_flange_stl(which='bottom', **_flange_kw)
+                ), file_type='stl')
+                top_mesh = trimesh.load(_io.BytesIO(
+                    generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_flange_kw)
+                ), file_type='stl')
+                stl = trimesh.util.concatenate([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
+            else:
+                # Separate top flange: use preview (centered) so nub sockets can
+                # be cut via boolean on the live trimesh mesh before export.
+                sockets = build_socket_meshes(
+                    fp, family, pitch, num_teeth, bore_mm, belt_height,
+                    clearance_mm=cl_mm, print_extra_mm=pr_ex,
+                    hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
+                    spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
+                ) if fp.get('nubs_enabled') else []
+
+                stl_preview = generate_pulley_stl_preview(
+                    family, pitch, num_teeth, bore_mm, belt_height,
+                    cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+                    spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                    fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+                    spoke_height_mm=sp_h if sp_en else 0.0,
+                    socket_meshes=sockets or None,
+                )
+                pulley_mesh = trimesh.load(_io.BytesIO(stl_preview), file_type='stl')
+                z_bottom = float(pulley_mesh.bounds[0][2])
+
+                bot_mesh = trimesh.load(_io.BytesIO(
+                    generate_3dprint_flange_stl(which='bottom', **_flange_kw)
+                ), file_type='stl')
+                bot_mesh.apply_translation([0.0, 0.0, z_bottom])
+                stl = trimesh.util.concatenate([pulley_mesh, bot_mesh]).export(file_type='stl')
 
         fl_sfx = '+flange' if (_fl_enabled and fp.get('flange_3dprint')) else ''
         fname = f'{family}-{pitch}-{num_teeth}T{suffix}{fl_sfx}.stl'
@@ -1318,6 +1423,7 @@ def download_flange_stl():
         num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
         bore_mm   = _get_bore(args)
         belt_h    = max(1.0, float(args.get('belt_height', 10.0)))
+        belt_h    = belt_h + max(0.0, float(args.get('clearance_height', 0.0)))
         cl_mm     = _get_preset_value(spec, 'clearances',
                                       args.get('clearance_preset', 'STANDARD'),
                                       args.get('clearance_custom', 0.0))
@@ -1401,6 +1507,7 @@ def download_flange_step():
         num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
         bore_mm   = _get_bore(args)
         belt_h    = max(1.0, float(args.get('belt_height', 10.0)))
+        belt_h    = belt_h + max(0.0, float(args.get('clearance_height', 0.0)))
         cl_mm     = _get_preset_value(spec, 'clearances',
                                       args.get('clearance_preset', 'STANDARD'),
                                       args.get('clearance_custom', 0.0))
@@ -1491,6 +1598,7 @@ def download_flange_assembly():
         num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
         bore_mm   = _get_bore(args)
         belt_h    = max(1.0, float(args.get('belt_height', 10.0)))
+        belt_h    = belt_h + max(0.0, float(args.get('clearance_height', 0.0)))
         cl_mm     = _get_preset_value(spec, 'clearances',
                                       args.get('clearance_preset', 'STANDARD'),
                                       args.get('clearance_custom', 0.0))
