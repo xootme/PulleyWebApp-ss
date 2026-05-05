@@ -34,6 +34,7 @@ _LOG_FILE            = os.path.join(_LOG_DIR, 'bug_reports.log')
 _DOWNLOAD_COUNT_FILE = os.path.join(_LOG_DIR, 'download_count.json')
 _METRICS_FILE        = os.path.join(_LOG_DIR, 'metrics.jsonl')
 _CONSTRAINTS_FILE    = os.path.join(_LOG_DIR, 'constraint_events.jsonl')
+_BUG_COMMENTS_FILE   = os.path.join(_LOG_DIR, 'bug_comments.json')
 _METRICS_RETENTION_DAYS  = 30
 _CPU_CONSTRAINT_THRESHOLD = 80.0
 _MEM_CONSTRAINT_THRESHOLD = 85.0
@@ -323,17 +324,17 @@ def _admin_cors(response):
     if request.path.startswith('/api/admin/') or request.path.startswith('/api/subscribers/'):
         response.headers['Access-Control-Allow-Origin']  = '*'
         response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
     return response
 
 
 @app.route('/api/admin/<path:_>', methods=['OPTIONS'])
 def _admin_cors_preflight(_):
-    """Handle CORS preflight for all /api/admin/* and /api/subscribers/* routes."""
+    """Handle CORS preflight for all /api/admin/* routes."""
     r = Response('', 204)
     r.headers['Access-Control-Allow-Origin']  = '*'
     r.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-    r.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    r.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
     return r
 
 
@@ -2127,8 +2128,7 @@ def api_admin_health():
         dl_count = 0
 
     try:
-        with open(_LOG_FILE, 'r', encoding='utf-8') as f:
-            bug_count = f.read().count('=' * 60) // 2
+        bug_count = len(_parse_bug_reports())
     except Exception:
         bug_count = 0
 
@@ -2173,17 +2173,162 @@ def api_admin_constraints():
     return jsonify({'hours': hours, 'count': len(rows), 'events': rows})
 
 
+def _load_bug_comments():
+    try:
+        with open(_BUG_COMMENTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_bug_comments(data):
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    with open(_BUG_COMMENTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+def _parse_bug_reports():
+    """Parse bug_reports.log into a list of structured dicts."""
+    import re
+    try:
+        with open(_LOG_FILE, 'r', encoding='utf-8') as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return []
+
+    sep = '=' * 60
+    parts = raw.split(sep)
+    reports = []
+    i = 0
+    while i < len(parts) - 1:
+        hdr = parts[i].strip()
+        if not (hdr.startswith('Bug Report') or hdr.startswith('Feature Request')):
+            i += 1
+            continue
+        body  = parts[i + 1] if i + 1 < len(parts) else ''
+        lines = hdr.split('\n')
+        title = lines[0]
+        ver_line = lines[1] if len(lines) > 1 else ''
+
+        m = re.match(r'(Bug Report|Feature Request) — (.+)', title)
+        rtype     = m.group(1) if m else 'Bug Report'
+        timestamp = m.group(2).strip() if m else ''
+        vm = re.match(r'App Version:\s*(\S+)\s+Build:\s*(.+)', ver_line)
+        version = vm.group(1).strip() if vm else ''
+        build   = vm.group(2).strip() if vm else ''
+
+        is_feature   = rtype == 'Feature Request'
+        lbl_seeing   = 'Would like to do:' if is_feature else 'Currently seeing:'
+        lbl_should   = "Why it's useful:"  if is_feature else 'Should be seeing:'
+
+        def extract(text, lbl, *stop_lbls):
+            pos = text.find(lbl)
+            if pos == -1:
+                return ''
+            start = pos + len(lbl)
+            end   = len(text)
+            for sl in stop_lbls:
+                p = text.find(sl, start)
+                if p != -1:
+                    end = min(end, p)
+            chunk = text[start:end].strip()
+            lines_ = [l[2:] if l.startswith('  ') else l for l in chunk.split('\n')]
+            return '\n'.join(lines_).strip()
+
+        seeing    = extract(body, lbl_seeing,   lbl_should, 'Contact email:', 'App state:')
+        should_see= extract(body, lbl_should,   'Contact email:', 'App state:')
+        email     = extract(body, 'Contact email:', 'App state:')
+
+        state = {}
+        sm = re.search(r'App state:\n(\{.*)\Z', body, re.DOTALL)
+        if sm:
+            try:
+                state = json.loads(sm.group(1))
+            except Exception:
+                pass
+
+        reports.append({
+            'id':         timestamp,
+            'type':       rtype,
+            'timestamp':  timestamp,
+            'version':    version,
+            'build':      build,
+            'seeing':     seeing,
+            'should_see': should_see,
+            'email':      email,
+            'state':      state,
+            'comment':    '',
+        })
+        i += 2
+
+    comments = _load_bug_comments()
+    for r in reports:
+        r['comment'] = comments.get(r['timestamp'], '')
+    return reports
+
+
+def _write_bug_log(reports):
+    """Rewrite bug_reports.log from a list of parsed report dicts."""
+    sep = '=' * 60
+    content = ''
+    for r in reports:
+        is_feature   = r['type'] == 'Feature Request'
+        lbl_seeing   = 'Would like to do' if is_feature else 'Currently seeing'
+        lbl_should   = "Why it's useful"  if is_feature else 'Should be seeing'
+        content += (
+            f'\n{sep}\n'
+            f'{r["type"]} — {r["timestamp"]}\n'
+            f'App Version: {r["version"]}   Build: {r["build"]}\n'
+            f'{sep}\n'
+            f'{lbl_seeing}:\n  {r["seeing"] or "(not provided)"}\n\n'
+            f'{lbl_should}:\n  {r["should_see"] or "(not provided)"}\n\n'
+            f'Contact email:\n  {r["email"] or "(not provided)"}\n\n'
+            f'App state:\n{json.dumps(r["state"], indent=2)}\n'
+        )
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    with open(_LOG_FILE, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+
 @app.route('/api/admin/bug-reports')
 def api_admin_bug_reports():
     err = _admin_auth()
     if err:
         return err
-    try:
-        with open(_LOG_FILE, 'r', encoding='utf-8') as f:
-            content = f.read()
-    except FileNotFoundError:
-        content = ''
-    return jsonify({'content': content, 'size': len(content)})
+    reports = _parse_bug_reports()
+    return jsonify({'count': len(reports), 'reports': reports})
+
+
+@app.route('/api/admin/bug-reports/<ts_id>', methods=['DELETE'])
+def api_admin_bug_delete(ts_id):
+    err = _admin_auth()
+    if err:
+        return err
+    reports = _parse_bug_reports()
+    kept = [r for r in reports if r['id'] != ts_id]
+    if len(kept) == len(reports):
+        return jsonify({'error': 'not found'}), 404
+    _write_bug_log(kept)
+    comments = _load_bug_comments()
+    comments.pop(ts_id, None)
+    _save_bug_comments(comments)
+    return jsonify({'ok': True, 'remaining': len(kept)})
+
+
+@app.route('/api/admin/bug-reports/<ts_id>/comment', methods=['POST'])
+def api_admin_bug_comment(ts_id):
+    err = _admin_auth()
+    if err:
+        return err
+    data    = request.get_json(silent=True) or {}
+    comment = str(data.get('comment', '')).strip()
+    comments = _load_bug_comments()
+    if comment:
+        comments[ts_id] = comment
+    else:
+        comments.pop(ts_id, None)
+    _save_bug_comments(comments)
+    return jsonify({'ok': True})
 
 
 @app.route('/api/admin/downloads')

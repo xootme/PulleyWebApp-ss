@@ -135,8 +135,30 @@
   .event-ts { color: var(--muted); flex-shrink: 0; min-width: 130px; }
 
   /* Bug reports */
-  .bug-log { font-family: monospace; font-size: 0.82em; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 16px; max-height: 60vh; overflow-y: auto; line-height: 1.55; }
-  .bug-separator { color: var(--red); }
+  /* Bug cards */
+  .bug-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+  .bug-toolbar label { font-size:0.85em; color:var(--muted); cursor:pointer; display:flex; align-items:center; gap:6px; }
+  .bug-card { background:var(--panel); border:1px solid var(--border); border-radius:8px; margin-bottom:12px; overflow:hidden; transition: border-color 0.15s; }
+  .bug-card.selected { border-color: var(--red); }
+  .bug-card-header { display:flex; align-items:center; gap:10px; padding:12px 16px; cursor:pointer; }
+  .bug-card-header:hover { background: rgba(255,255,255,0.02); }
+  .bug-card input[type=checkbox] { flex-shrink:0; cursor:pointer; width:15px; height:15px; }
+  .bug-ts { font-size:0.82em; color:var(--muted); }
+  .bug-email { font-size:0.82em; color:#8cf; }
+  .bug-ver { font-size:0.75em; color:var(--muted); margin-left:auto; }
+  .badge.bug-type { font-size:0.75em; }
+  .badge.bug-type.bug     { background:#2a1010; color:#f88; }
+  .badge.bug-type.feature { background:#1a2a3a; color:#8cf; }
+  .bug-body { padding:0 16px 14px; border-top:1px solid var(--border); }
+  .bug-field { margin-top:10px; font-size:0.85em; }
+  .bug-field strong { color:var(--muted); font-size:0.82em; text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:3px; }
+  .bug-state-toggle { cursor:pointer; font-size:0.82em; color:var(--muted); user-select:none; }
+  .bug-state-toggle:hover { color:var(--text); }
+  .bug-state-pre { font-family:monospace; font-size:0.78em; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:10px; margin-top:6px; overflow-x:auto; white-space:pre; display:none; }
+  .bug-comment-area { width:100%; margin-top:6px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:0.85em; padding:8px; resize:vertical; min-height:60px; font-family:inherit; }
+  .bug-comment-area:focus { outline:none; border-color:var(--red); }
+  .bug-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .bug-card.selected .bug-card-header { background: rgba(118,21,22,0.08); }
 
   /* Subscribers */
   table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
@@ -261,10 +283,15 @@
 
     <!-- Bugs tab -->
     <div id="tab-bugs" class="tab-panel">
-      <div class="card">
-        <h2>Bug Reports Log <span id="bug-count" style="color:var(--muted);font-size:0.85em;font-weight:400;"></span></h2>
-        <div class="bug-log" id="bug-log">Loading…</div>
+      <div class="bug-toolbar">
+        <label><input type="checkbox" id="bug-select-all" onchange="bugSelectAll(this)"> Select all</label>
+        <button class="btn btn-sm" id="btn-bug-repro"     onclick="bugRepro()"    disabled>Repro</button>
+        <button class="btn btn-sm btn-danger" id="btn-bug-delete"  onclick="bugDelete()"   disabled>Delete</button>
+        <button class="btn btn-sm" id="btn-bug-comment"   onclick="bugComment()"  disabled>Comment</button>
+        <button class="btn btn-sm" id="btn-bug-download"  onclick="bugDownload()" disabled>Download</button>
+        <span id="bug-count" style="color:var(--muted);font-size:0.82em;margin-left:auto;"></span>
       </div>
+      <div id="bug-cards"><div class="empty">Loading…</div></div>
     </div>
 
     <!-- Downloads tab -->
@@ -508,20 +535,184 @@ function renderConstraints(c) {
 }
 
 // ── Bug Reports ───────────────────────────────────────────────────────────────
+let _bugReports = [];
+
 async function loadBugs() {
   try {
     const r = await apiFetch('/api/admin/bug-reports');
     if (!r.ok) return;
     const d = await r.json();
-    const count = (d.content.match(/={60}/g)||[]).length / 2 | 0;
-    document.getElementById('bug-count').textContent = `(${count})`;
-    const el = document.getElementById('bug-log');
-    if (!d.content) { el.innerHTML = '<span style="color:var(--muted)">No bug reports yet.</span>'; return; }
-    el.innerHTML = d.content
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/(={60})/g, '<span class="bug-separator">$1</span>');
-    el.scrollTop = el.scrollHeight;
+    _bugReports = (d.reports || []).slice().reverse(); // newest first
+    renderBugCards();
   } catch(e) { console.warn('Bugs load error', e); }
+}
+
+function renderBugCards() {
+  const container = document.getElementById('bug-cards');
+  document.getElementById('bug-count').textContent = `(${_bugReports.length})`;
+  if (!_bugReports.length) {
+    container.innerHTML = '<div class="empty">No bug reports yet.</div>';
+    return;
+  }
+  container.innerHTML = _bugReports.map(r => bugCardHtml(r)).join('');
+  bugUpdateButtons();
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function bugCardHtml(r) {
+  const isFeature = r.type === 'Feature Request';
+  const lbl1 = isFeature ? 'Would like to do' : 'Currently seeing';
+  const lbl2 = isFeature ? "Why it's useful"  : 'Should be seeing';
+  const stateJson = esc(JSON.stringify(r.state, null, 2));
+  const hasState = r.state && Object.keys(r.state).length > 0;
+  const comment = r.comment || '';
+  return `<div class="bug-card" data-id="${esc(r.id)}">
+    <div class="bug-card-header" onclick="bugCardClick(event,'${esc(r.id)}')">
+      <input type="checkbox" class="bug-cb" onclick="event.stopPropagation()" onchange="bugUpdateButtons()" data-id="${esc(r.id)}">
+      <span class="badge bug-type ${isFeature?'feature':'bug'}">${esc(r.type)}</span>
+      <span class="bug-ts">${esc(r.timestamp)}</span>
+      ${r.email ? `<span class="bug-email">${esc(r.email)}</span>` : ''}
+      <span class="bug-ver">v${esc(r.version)}</span>
+    </div>
+    <div class="bug-body" style="display:none">
+      ${r.seeing    ? `<div class="bug-field"><strong>${lbl1}</strong>${esc(r.seeing)}</div>` : ''}
+      ${r.should_see? `<div class="bug-field"><strong>${lbl2}</strong>${esc(r.should_see)}</div>` : ''}
+      ${hasState ? `<div class="bug-field">
+        <span class="bug-state-toggle" onclick="bugToggleState(this)">&#9654; App state</span>
+        <pre class="bug-state-pre">${stateJson}</pre>
+      </div>` : ''}
+      ${comment ? `<div class="bug-field"><strong>Admin note</strong><div style="color:#aef;font-size:0.88em;white-space:pre-wrap">${esc(comment)}</div></div>` : ''}
+      <div class="bug-comment-wrap" style="display:none">
+        <textarea class="bug-comment-area" placeholder="Admin note…">${esc(comment)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:6px;">
+          <button class="btn btn-sm btn-success" onclick="bugSaveComment('${esc(r.id)}',this)">Save note</button>
+          <button class="btn btn-sm" style="background:var(--border);color:var(--text)" onclick="bugCancelComment(this)">Cancel</button>
+        </div>
+      </div>
+      <div class="bug-actions">
+        <button class="btn btn-sm" style="background:#1a3a20;color:#6f6" onclick="bugReproSingle('${esc(r.id)}')">Repro</button>
+        <button class="btn btn-sm btn-danger" onclick="bugDeleteSingle('${esc(r.id)}')">Delete</button>
+        <button class="btn btn-sm" style="background:#2a2a40;color:#aaf" onclick="bugCommentSingle(this)">Comment</button>
+        <button class="btn btn-sm" style="background:#2a2040;color:#caf" onclick="bugDownloadSingle('${esc(r.id)}')">Download</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bugCardClick(e, id) {
+  if (e.target.type === 'checkbox') return;
+  const card = document.querySelector(`.bug-card[data-id="${id}"]`);
+  const body = card.querySelector('.bug-body');
+  body.style.display = body.style.display === 'none' ? 'block' : 'none';
+}
+
+function bugToggleState(el) {
+  const pre = el.nextElementSibling;
+  const open = pre.style.display !== 'none';
+  pre.style.display = open ? 'none' : 'block';
+  el.textContent = (open ? '▶' : '▼') + ' App state';
+}
+
+function bugSelectAll(cb) {
+  document.querySelectorAll('.bug-cb').forEach(c => c.checked = cb.checked);
+  document.querySelectorAll('.bug-card').forEach(c => c.classList.toggle('selected', cb.checked));
+  bugUpdateButtons();
+}
+
+function bugUpdateButtons() {
+  const sel = bugSelected();
+  document.querySelectorAll('.bug-card').forEach(c => {
+    const cb = c.querySelector('.bug-cb');
+    c.classList.toggle('selected', cb && cb.checked);
+  });
+  ['btn-bug-repro','btn-bug-delete','btn-bug-comment','btn-bug-download'].forEach(id => {
+    document.getElementById(id).disabled = sel.length === 0;
+  });
+}
+
+function bugSelected() {
+  return [...document.querySelectorAll('.bug-cb:checked')].map(c => c.dataset.id);
+}
+
+function bugById(id) { return _bugReports.find(r => r.id === id); }
+
+// ── Per-card actions ──────────────────────────────────────────────────────────
+function bugReproSingle(id) {
+  const r = bugById(id);
+  if (!r) return;
+  const params = new URLSearchParams(r.state || {});
+  window.open(`${BASE_URL}/tools/pulleys${params.toString() ? '?' + params : ''}`, '_blank');
+}
+
+async function bugDeleteSingle(id) {
+  if (!confirm('Delete this report?')) return;
+  const res = await apiFetch(`/api/admin/bug-reports/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (res.ok) { await loadBugs(); }
+  else alert('Delete failed: ' + await res.text());
+}
+
+function bugCommentSingle(btn) {
+  const body = btn.closest('.bug-body');
+  body.querySelector('.bug-comment-wrap').style.display = 'block';
+  body.querySelector('.bug-comment-area').focus();
+}
+
+function bugCancelComment(btn) {
+  btn.closest('.bug-comment-wrap').style.display = 'none';
+}
+
+async function bugSaveComment(id, btn) {
+  const wrap    = btn.closest('.bug-comment-wrap');
+  const comment = wrap.querySelector('.bug-comment-area').value;
+  const res = await apiFetch(`/api/admin/bug-reports/${encodeURIComponent(id)}/comment`, {
+    method: 'POST', body: JSON.stringify({ comment }),
+  });
+  if (res.ok) { await loadBugs(); }
+  else alert('Save failed: ' + await res.text());
+}
+
+function bugDownloadSingle(id) {
+  const r = bugById(id);
+  if (!r) return;
+  const text = [
+    `${r.type} — ${r.timestamp}`,
+    `App Version: ${r.version}   Build: ${r.build}`,
+    '='.repeat(60),
+    r.seeing     ? `\nCurrently seeing:\n  ${r.seeing}` : '',
+    r.should_see ? `\nShould be seeing:\n  ${r.should_see}` : '',
+    r.email      ? `\nContact email:\n  ${r.email}` : '',
+    `\nApp state:\n${JSON.stringify(r.state, null, 2)}`,
+    r.comment    ? `\nAdmin note:\n  ${r.comment}` : '',
+  ].filter(Boolean).join('\n');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bug-report-${r.timestamp.replace(/[: ]/g,'-')}.txt`;
+  a.click();
+}
+
+// ── Toolbar bulk actions ──────────────────────────────────────────────────────
+function bugRepro()    { bugSelected().forEach(bugReproSingle); }
+function bugDownload() { bugSelected().forEach(bugDownloadSingle); }
+
+async function bugDelete() {
+  const sel = bugSelected();
+  if (!confirm(`Delete ${sel.length} report(s)?`)) return;
+  for (const id of sel) {
+    await apiFetch(`/api/admin/bug-reports/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+  await loadBugs();
+}
+
+function bugComment() {
+  bugSelected().forEach(id => {
+    const card = document.querySelector(`.bug-card[data-id="${id}"]`);
+    if (!card) return;
+    const body = card.querySelector('.bug-body');
+    body.style.display = 'block';
+    bugCommentSingle(body.querySelector('[onclick*="bugCommentSingle"]'));
+  });
 }
 
 // ── Downloads ─────────────────────────────────────────────────────────────────
