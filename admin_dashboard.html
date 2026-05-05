@@ -144,6 +144,10 @@
   .bug-card-header:hover { background: rgba(255,255,255,0.02); }
   .bug-card input[type=checkbox] { flex-shrink:0; cursor:pointer; width:15px; height:15px; }
   .bug-ts { font-size:0.82em; color:var(--muted); }
+  .bug-hash { font-family:monospace; font-size:0.78em; color:#888; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:2px 6px; letter-spacing:0.05em; }
+  .bug-copy { background:none; border:none; cursor:pointer; color:var(--muted); padding:0 2px; line-height:0; vertical-align:middle; transition:color 0.15s; }
+  .bug-copy:hover { color:var(--text); }
+  .bug-copy.copied { color:var(--green); }
   .bug-email { font-size:0.82em; color:#8cf; }
   .bug-ver { font-size:0.75em; color:var(--muted); margin-left:auto; }
   .badge.bug-type { font-size:0.75em; }
@@ -560,6 +564,22 @@ function renderBugCards() {
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+function bugHash(id) {
+  // FNV-1a 32-bit → 8 hex chars
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0').toUpperCase();
+}
+
+async function copyHash(hash, btn) {
+  await navigator.clipboard.writeText(hash);
+  btn.classList.add('copied');
+  setTimeout(() => btn.classList.remove('copied'), 1500);
+}
+
 function bugCardHtml(r) {
   const isFeature = r.type === 'Feature Request';
   const lbl1 = isFeature ? 'Would like to do' : 'Currently seeing';
@@ -571,6 +591,7 @@ function bugCardHtml(r) {
     <div class="bug-card-header" onclick="bugCardClick(event,'${esc(r.id)}')">
       <input type="checkbox" class="bug-cb" onclick="event.stopPropagation()" onchange="bugUpdateButtons()" data-id="${esc(r.id)}">
       <span class="badge bug-type ${isFeature?'feature':'bug'}">${esc(r.type)}</span>
+      <span class="bug-hash">${bugHash(r.id)}</span><button class="bug-copy" title="Copy ID" onclick="event.stopPropagation();copyHash('${bugHash(r.id)}',this)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       <span class="bug-ts">${esc(r.timestamp)}</span>
       ${r.email ? `<span class="bug-email">${esc(r.email)}</span>` : ''}
       <span class="bug-ver">v${esc(r.version)}</span>
