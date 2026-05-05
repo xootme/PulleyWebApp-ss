@@ -1404,31 +1404,34 @@ R_BELT_SPECS = {
 # Tooth geometry (P1–P4, r1, r2) derived from PULLEY_SPECS GT groove parameters
 # and scaled from H_BELT_SPECS to match GT ht values.
 G_BELT_SPECS = {
-    # 2mm pitch — GT2 (community-measured). r1=R2=0.150, r2=R1=0.555 from PULLEY_SPECS GT2M.
+    # All GT entries derived analytically from PULLEY_SPECS (R1, R2, phi=14°):
+    #   P3  = (-R1·cos φ,  -ht + R1·(1-sin φ))     tangent point large-arc / flank
+    #   P2  = (P3x - (P2y-P3y)·tan φ,  -R2·(1-sin φ))   tangent point small-arc / flank
+    #   P1  = (P2x - R2·cos φ,  0)                  small-arc meets OD surface
+    #   r1  = R2  (small corner at OD),  r2 = R1  (large arc at tip)
+    # This construction guarantees exact tangency with the analytical solver in
+    # _belt_h_arc_centers and matches the pulley groove profile (phi=14°, X=0).
     "G2M":  {"pitch":  2.0, "hs": 1.52, "ht": 0.764, "aa": 0.254,
-             "P1": (-0.76,  0.00), "r1": 0.20,
-             "P2": (-0.55, -0.20), "P3": (-0.55, -0.23),
-             "r2": 0.57,            "P4": ( 0.00, -0.764)},
-    # 3mm pitch — GT3. r1≈R2=0.250, r2≈R1=0.955; P1-P3 from H3M, P4 at GT ht.
+             "P1": (-0.741,  0.000), "r1": 0.150,
+             "P2": (-0.596, -0.114), "P3": (-0.539, -0.343),
+             "r2": 0.555,            "P4": ( 0.000, -0.764)},
     "G3M":  {"pitch":  3.0, "hs": 2.41, "ht": 1.143, "aa": 0.381,
-             "P1": (-1.14,  0.00), "r1": 0.28,
-             "P2": (-0.83, -0.28), "P3": (-0.83, -0.33),
-             "r2": 0.86,            "P4": ( 0.00, -1.143)},
-    # 5mm pitch — GT3. r1≈R2=0.400, r2≈R1=1.542; P1-P3 from H5M, P4 at GT ht.
-    "G5M":  {"pitch":  5.0, "hs": 3.81, "ht": 1.778, "aa": 0.5715,
-             "P1": (-1.85,  0.00), "r1": 0.38,
-             "P2": (-1.44, -0.38), "P3": (-1.44, -0.48),
-             "r2": 1.50,            "P4": ( 0.00, -1.778)},
-    # 8mm pitch — GT3 (est.; catalog 17195). Belt_y preserved from H8M.
+             "P1": (-1.226,  0.000), "r1": 0.250,
+             "P2": (-0.984, -0.190), "P3": (-0.927, -0.419),
+             "r2": 0.955,            "P4": ( 0.000, -1.143)},
+    # ht=1.93mm per Gates Light Power & Precision catalog p.14 (0.076")
+    "G5M":  {"pitch":  5.0, "hs": 3.81, "ht": 1.930, "aa": 0.5715,
+             "P1": (-1.998,  0.000), "r1": 0.400,
+             "P2": (-1.610, -0.303), "P3": (-1.496, -0.761),
+             "r2": 1.542,            "P4": ( 0.000, -1.930)},
     "G8M":  {"pitch":  8.0, "hs": 5.47, "ht": 2.845, "aa": 0.686,
-             "P1": (-3.30,  0.00), "r1": 0.64,
-             "P2": (-2.55, -0.64), "P3": (-2.47, -1.07),
-             "r2": 2.47,            "P4": ( 0.00, -2.845)},
-    # 14mm pitch — GT3 (est.; catalog 17195). Belt_y preserved from H14M.
+             "P1": (-3.140,  0.000), "r1": 0.640,
+             "P2": (-2.519, -0.485), "P3": (-2.398, -0.972),
+             "r2": 2.471,            "P4": ( 0.000, -2.845)},
     "G14M": {"pitch": 14.0, "hs": 8.96, "ht": 4.978, "aa": 1.397,
-             "P1": (-5.78,  0.00), "r1": 1.12,
-             "P2": (-4.36, -1.12), "P3": (-4.30, -1.80),
-             "r2": 4.32,            "P4": ( 0.00, -4.978)},
+             "P1": (-5.494,  0.000), "r1": 1.120,
+             "P2": (-4.408, -0.849), "P3": (-4.196, -1.700),
+             "r2": 4.324,            "P4": ( 0.000, -4.978)},
 }
 
 # ── T-series belt tooth dimensions (ISO 5296) ────────────────────────────────
@@ -1558,25 +1561,83 @@ def _build_ta_belt_tooth(spec):
 # ── H-series belt tooth ───────────────────────────────────────────────────────
 
 def _belt_h_arc_centers(spec):
+    """
+    Compute C1 (r1 arc centre) and C2 (r2 arc centre) with exact tangency.
+
+    Construction (per ISO 13050 Table 9 geometry):
+      1. C1 = (P1x, -r1)  — r1 arc is tangent to OD land at P1.
+      2. The outward radial of r1 at P2 defines the flank slope.
+         C2_0 = P2 + r2 * unit(P2-C1)  (C2 when flank length = 0).
+      3. As P3 slides along the flank, C2 traces a line through C2_0
+         parallel to the flank direction (CW tangent to r1 at P2).
+      4. Intersect that locus with |C2-P4| = r2 (tip-arc through P4).
+         Take the smaller positive t so P3 stays between P2 and P4.
+
+    This guarantees (P2-C1) ⊥ flank and (P3-C2) ⊥ flank at both ends.
+    Also returns P3 (the exact tangent point) so _build_h_belt_tooth
+    does not need to use the rounded spec["P3"].
+    """
     P1x, P1y = spec["P1"];  r1 = spec["r1"]
-    P3x, P3y = spec["P3"];  P4x, P4y = spec["P4"];  r2 = spec["r2"]
+    P2x, P2y = spec["P2"]
+    P4x, P4y = spec["P4"];  r2 = spec["r2"]
+
     C1 = (P1x, P1y - r1)
-    mx, my   = (P3x+P4x)/2, (P3y+P4y)/2
-    dx, dy   = P4x-P3x, P4y-P3y
-    chord    = math.hypot(dx, dy)
-    px, py   = -dy/chord, dx/chord
-    h        = math.sqrt(max(0.0, r2**2 - (chord/2)**2))
-    Ca = (mx+h*px, my+h*py);  Cb = (mx-h*px, my-h*py)
-    return C1, (Ca if abs(Ca[0]) <= abs(Cb[0]) else Cb)
+
+    # Outward radial of r1 at P2 (defines flank normal direction)
+    d12 = math.hypot(P2x - C1[0], P2y - C1[1])
+    ux  = (P2x - C1[0]) / d12
+    uy  = (P2y - C1[1]) / d12
+
+    # Flank direction: CW tangent to r1 at P2
+    fdx, fdy = uy, -ux
+
+    # C2 when P3 = P2 (zero-length flank)
+    C20x = P2x + r2 * ux
+    C20y = P2y + r2 * uy
+
+    # Solve |C2_0 + t*flank_dir - P4|^2 = r2^2 for t
+    Ax = C20x - P4x
+    Ay = C20y - P4y
+    b  = 2.0 * (Ax * fdx + Ay * fdy)
+    c  = Ax * Ax + Ay * Ay - r2 * r2
+    disc = b * b - 4.0 * c
+    sq   = math.sqrt(max(0.0, disc))
+    t1   = (-b + sq) * 0.5
+    t2   = (-b - sq) * 0.5
+    # Take the smallest positive root (shortest flank)
+    t    = min(t1, t2) if min(t1, t2) > 1e-9 else max(t1, t2)
+
+    C2  = (C20x + t * fdx, C20y + t * fdy)
+    P3  = (P2x  + t * fdx, P2y  + t * fdy)   # exact tangent point on r2 arc
+
+    # Fallback: if computed P3 is deeper than P4 the analytical root is wrong
+    # (happens when spec P2/r2 are derived from groove geometry, not belt tooth).
+    # Use spec["P3"] and derive C2 from the perpendicular bisector of P3→P4.
+    if P3[1] < P4y and "P3" in spec:
+        P3x_s, P3y_s = spec["P3"]
+        Mx = (P3x_s + P4x) * 0.5;  My = (P3y_s + P4y) * 0.5
+        dx = P4x - P3x_s;  dy = P4y - P3y_s
+        chord = math.hypot(dx, dy)
+        h = math.sqrt(max(0.0, r2 * r2 - (chord * 0.5) ** 2))
+        # Unit perpendicular to P3→P4
+        px = -dy / chord;  py = dx / chord
+        C2a = (Mx + h * px, My + h * py)
+        C2b = (Mx - h * px, My - h * py)
+        # Pick the option whose centre is closer to the tooth centreline (smaller |x|)
+        C2 = C2a if abs(C2a[0]) <= abs(C2b[0]) else C2b
+        P3 = (P3x_s, P3y_s)
+
+    return C1, C2, P3
 
 
 def _build_h_belt_tooth(spec, res=32):
     pitch = spec["pitch"]
     P1x, _ = spec["P1"];  P2x, P2y = spec["P2"]
-    P3x, P3y = spec["P3"];  P4x, P4y = spec["P4"]
+    P4x, P4y = spec["P4"]
     r1, r2 = spec["r1"], spec["r2"]
-    C1, C2 = _belt_h_arc_centers(spec)
-    a_r1_s = math.atan2(0-C1[1], P1x-C1[0])
+    C1, C2, P3 = _belt_h_arc_centers(spec)   # P3 computed, not from spec table
+    P3x, P3y   = P3
+    a_r1_s = math.atan2(0-C1[1],   P1x-C1[0])
     a_r1_e = math.atan2(P2y-C1[1], P2x-C1[0])
     a_r2_s = math.atan2(P3y-C2[1], P3x-C2[0])
     a_r2_e = math.atan2(P4y-C2[1], P4x-C2[0])
@@ -1606,9 +1667,9 @@ def generate_h_belt_profile(pitch_key: str, n_teeth: int = 3, res: int = 32):
         bottom.extend(shifted if i==0 else shifted[1:])
     belt_y = hs - ht
     pts = list(bottom);  pts.append((half_w, belt_y));  pts.append((-half_w, belt_y))
-    C1, C2 = _belt_h_arc_centers(spec)
+    C1, C2, P3 = _belt_h_arc_centers(spec)
     return pts, {"C1": C1, "C2": C2, "P1": spec["P1"], "P2": spec["P2"],
-                 "P3": spec["P3"], "P4": spec["P4"], "belt_y": belt_y, "aa": spec["aa"]}
+                 "P3": P3, "P4": spec["P4"], "belt_y": belt_y, "aa": spec["aa"]}
 
 
 # ── G-series (GT/GT3) belt tooth ─────────────────────────────────────────────
@@ -1630,9 +1691,9 @@ def generate_g_belt_profile(pitch_key: str, n_teeth: int = 3, res: int = 32):
         bottom.extend(shifted if i==0 else shifted[1:])
     belt_y = hs - ht
     pts = list(bottom);  pts.append((half_w, belt_y));  pts.append((-half_w, belt_y))
-    C1, C2 = _belt_h_arc_centers(spec)
+    C1, C2, P3 = _belt_h_arc_centers(spec)
     return pts, {"C1": C1, "C2": C2, "P1": spec["P1"], "P2": spec["P2"],
-                 "P3": spec["P3"], "P4": spec["P4"], "belt_y": belt_y,
+                 "P3": P3, "P4": spec["P4"], "belt_y": belt_y,
                  "aa": spec["aa"], "r1": spec["r1"], "r2": spec["r2"]}
 
 

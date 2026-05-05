@@ -1877,7 +1877,8 @@ async function updatePreview() {
     const family = document.getElementById('family').value;
     const pitch  = document.getElementById('pitch').value;
     url = '/api/belt-preview?family=' + encodeURIComponent(family)
-        + '&pitch=' + encodeURIComponent(pitch);
+        + '&pitch=' + encodeURIComponent(pitch)
+        + '&_t=' + Date.now();
   } else {
     const params = buildParams();
     url = '/api/preview?' + new URLSearchParams(params);
