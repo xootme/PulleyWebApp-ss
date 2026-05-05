@@ -185,7 +185,7 @@ export default {
     }
 
     // Render-only paths (static assets, API, downloads) — route to Render unconditionally
-    const renderOnly = ['/static/', '/api/', '/download/', '/preview/'];
+    const renderOnly = ['/static/', '/api/', '/download/', '/preview/', '/admin'];
     if (renderOnly.some(p => path.startsWith(p))) {
       return fetch('https://pulleywebapp.onrender.com' + path + url.search, request);
     }

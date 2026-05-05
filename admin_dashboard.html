@@ -42,6 +42,14 @@
     color: var(--text); font-size: 0.95em; font-family: monospace;
   }
   .field input:focus { outline: none; border-color: var(--red); }
+  .field-pw { position: relative; }
+  .field-pw input { padding-right: 40px; }
+  .eye-btn {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    padding: 4px; line-height: 0; transition: color 0.15s;
+  }
+  .eye-btn:hover { color: var(--text); }
   .btn {
     display: inline-block; padding: 10px 22px; border-radius: 6px;
     border: none; cursor: pointer; font-size: 0.95em; font-weight: 600;
@@ -153,17 +161,27 @@
   <div class="login-card">
     <h1>CCT Admin Dashboard</h1>
     <p>CheapCADTools.com — PulleyWebApp</p>
-    <div class="field">
+    <div class="field" id="field-url">
       <label>App URL (base)</label>
       <input id="inp-url" type="text" value="https://cheapcadtools.com" placeholder="https://cheapcadtools.com" />
     </div>
     <div class="field">
       <label>Provision Secret (Bearer token)</label>
-      <input id="inp-token" type="password" placeholder="PROVISION_SECRET" />
+      <div class="field-pw">
+        <input id="inp-token" type="password" placeholder="PROVISION_SECRET" />
+        <button class="eye-btn" type="button" onclick="toggleEye('inp-token',this)" tabindex="-1">
+          <svg id="eye-token" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
     </div>
     <div class="field">
       <label>Render API Key</label>
-      <input id="inp-render-key" type="password" placeholder="rnd_..." />
+      <div class="field-pw">
+        <input id="inp-render-key" type="password" placeholder="rnd_..." />
+        <button class="eye-btn" type="button" onclick="toggleEye('inp-render-key',this)" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
     </div>
     <button class="btn btn-primary" onclick="doLogin()">Connect</button>
     <div id="login-error"></div>
@@ -279,6 +297,27 @@
 </div>
 
 <script>
+// ── Auto-detect origin when served from a web server ─────────────────────────
+(function() {
+  if (location.protocol !== 'file:') {
+    // Running from server — lock URL to this origin, hide the field
+    const urlField = document.getElementById('field-url');
+    const urlInput = document.getElementById('inp-url');
+    urlInput.value = location.origin;
+    urlField.style.display = 'none';
+  }
+})();
+
+// ── Eye toggle ───────────────────────────────────────────────────────────────
+const EYE_OPEN  = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+const EYE_SHUT  = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>';
+function toggleEye(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  const showing = inp.type === 'text';
+  inp.type = showing ? 'password' : 'text';
+  btn.querySelector('svg').innerHTML = showing ? EYE_OPEN : EYE_SHUT;
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let BASE_URL = '', TOKEN = '', RENDER_KEY = '';
 let refreshTimer = null;

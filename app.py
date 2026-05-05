@@ -2061,6 +2061,13 @@ def api_subscribers_remove():
     return jsonify({'ok': True, 'key': key})
 
 
+# ── Admin dashboard UI ───────────────────────────────────────────────────────
+@app.route('/admin')
+@app.route('/admin/')
+def admin_dashboard():
+    return send_from_directory(_base_dir, 'admin_dashboard.html')
+
+
 # ── Admin dashboard API ───────────────────────────────────────────────────────
 _RENDER_API_KEY    = os.environ.get('RENDER_API_KEY', '')
 _RENDER_SERVICE_ID = os.environ.get('RENDER_SERVICE_ID', 'srv-d7bve2a8qa3s738n68ig')
