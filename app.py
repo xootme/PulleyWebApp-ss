@@ -2299,6 +2299,27 @@ def api_admin_bug_reports():
     return jsonify({'count': len(reports), 'reports': reports})
 
 
+def _bug_hash(ts_id):
+    """FNV-1a 32-bit hash matching the dashboard JS bugHash() function."""
+    h = 0x811c9dc5
+    for c in ts_id:
+        h ^= ord(c)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return format(h, '08X')
+
+
+@app.route('/api/admin/bug-reports/hash/<hash_id>')
+def api_admin_bug_by_hash(hash_id):
+    err = _admin_auth()
+    if err:
+        return err
+    hash_id = hash_id.upper()
+    for r in _parse_bug_reports():
+        if _bug_hash(r['id']) == hash_id:
+            return jsonify(r)
+    return jsonify({'error': f'No report found with hash {hash_id}'}), 404
+
+
 @app.route('/api/admin/bug-reports/<ts_id>', methods=['DELETE'])
 def api_admin_bug_delete(ts_id):
     err = _admin_auth()
