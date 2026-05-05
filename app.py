@@ -2300,11 +2300,12 @@ def api_admin_bug_reports():
 
 
 def _bug_hash(ts_id):
-    """FNV-1a 32-bit hash matching the dashboard JS bugHash() function."""
+    """FNV-1a 32-bit hash matching dashboard JS bugHash() — uses ctypes for exact 32-bit multiply."""
+    import ctypes
     h = 0x811c9dc5
     for c in ts_id:
         h ^= ord(c)
-        h = (h * 0x01000193) & 0xFFFFFFFF
+        h = ctypes.c_uint32(h * 0x01000193).value
     return format(h, '08X')
 
 
