@@ -70,7 +70,7 @@ PyArmor Pro (obfuscation) → PyInstaller `--onedir` (bundle). Produces a folder
 
 ---
 
-## ADR-005 — Subscription licensing: annual licence.lic + Render provision server
+## ADR-005 — Subscription licensing: licence.lic + Render provision server
 **Date:** 2026-05-04
 **Status:** Active
 
@@ -82,7 +82,7 @@ PulleyApp sold as a subscription via Autodesk App Store. Need to control access 
 - `--period 7` requires PyArmor's servers to confirm the licence is still valid every 7 days (customer needs internet access at least weekly).
 - `--expired <date>` hard-stops the app on the expiry date regardless of internet connectivity.
 - Provision server runs as additional routes on the existing Render Flask service — no separate service needed.
-- `licence.lic` base64-encoded and stored as Render environment variable `PULLEY_LICENCE_B64`. Rotate annually by running `prepare_release.py` and updating the env var.
+- `licence.lic` base64-encoded and stored as Render environment variable `PULLEY_LICENCE_B64`. Regenerate by running `prepare_release.py` and updating the env var whenever a new local release is built.
 - Subscriber list in `logs/subscribers.json` on Render (persists via $1/month Disk add-on). Managed via `/api/subscribers/add` and `/api/subscribers/remove` with Bearer token auth.
 
 **Expiry flow:**

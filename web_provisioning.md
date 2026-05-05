@@ -225,9 +225,9 @@ See `tools_hub_architecture.html` for the full automated deployment plan (GitHub
 
 ---
 
-## 5. Desktop Release Build (Annual)
+## 5. Local Release Build
 
-Run this once per year (or per significant release) from the registered Windows dev machine.
+Run this whenever a new local release is needed, from the registered Windows dev machine.
 **Never run on CI/CD — PyArmor consumes a device slot per build machine.**
 
 ### Step A — Build the release
@@ -240,11 +240,11 @@ Run this once per year (or per significant release) from the registered Windows 
 Upload `releases/PulleyApp_<date>.zip` to a GitHub Release on the repo.
 Copy the direct download URL (e.g. `https://github.com/xootme/PulleyWebApp/releases/download/v1/PulleyApp_<date>.zip`).
 
-### Step C — Generate annual licence and Render env vars
+### Step C — Generate licence and Render env vars
 ```bash
 .venv312/Scripts/python packaging/prepare_release.py --app-url <paste URL from Step B>
 ```
-This prints three environment variables. Saves a copy to `licences/annual_<date>.env` (gitignored).
+This prints three environment variables. Saves a copy to `licences/local_release_<date>.env` (gitignored).
 
 ### Step D — Update Render environment variables
 1. Go to Render dashboard → `pulleywebapp` service → **Environment**

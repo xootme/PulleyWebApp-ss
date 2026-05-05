@@ -1930,7 +1930,7 @@ def api_report_bug():
 # ── Provision API ─────────────────────────────────────────────────────────────
 # Environment variables (set in Render dashboard):
 #   PROVISION_SECRET   — admin bearer token for /api/subscribers/add
-#   PULLEY_LICENCE_B64 — base64-encoded licence.lic (generated locally, annual)
+#   PULLEY_LICENCE_B64 — base64-encoded licence.lic (generated locally via prepare_release.py)
 #   PULLEY_LICENCE_EXPIRY — YYYY-MM-DD expiry date matching the licence
 #   PULLEY_APP_URL     — public URL to PulleyApp.zip (GitHub Release asset)
 

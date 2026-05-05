@@ -27,12 +27,12 @@ Never `git push` unless the user explicitly says "deploy".
 - `static/style.css` — all styles; bump `?v=N` on the CSS link in index.html when changing
 - `geometry/pulley_geometry.py` — 2D profile math shared by SVG, DXF, STL, and STEP
 - `static/*_help.html` — split help files: one 2D and one 3D per panel
-- `web_provisioning.md` — deploy checklist and annual release build procedure
+- `web_provisioning.md` — deploy checklist and local release build procedure
 - `DECISIONS.md` — architectural decision log
 
 ## Desktop Packaging & Distribution
 - `packaging/build_release.py` — local-only build: PyArmor obfuscation → PyInstaller → zip
-- `packaging/prepare_release.py` — generates annual licence.lic and prints Render env vars to set
+- `packaging/prepare_release.py` — generates licence.lic and prints Render env vars to set
 - `packaging/launcher.py` — PyInstaller entry point (sets `PULLEY_BASE_DIR`, opens browser)
 - `packaging/PulleyApp.spec` — PyInstaller spec
 - `packaging/generate_customer_licence.py` — one-off machine-bound licence for a specific customer
