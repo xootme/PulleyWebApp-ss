@@ -44,6 +44,87 @@ Two different 3D export formats are needed: STL (for 3D printing) and STEP (for 
 
 ---
 
+## ADR-004 — Desktop packaging: PyArmor + PyInstaller
+**Date:** 2026-05-04
+**Status:** Active
+
+**Context:**
+PulleyApp needs a distributable Windows desktop build that protects the source code and works offline.
+
+**Options evaluated:**
+| Option | Notes |
+|---|---|
+| PyArmor + PyInstaller | PyArmor obfuscates .py source; PyInstaller bundles into a folder + .exe. Proven combination. |
+| Nuitka | Compiles Python to C; stronger protection but complex build, slower compile |
+| Cx_Freeze | Bundles without obfuscation; source readable |
+| Ship source directly | No protection |
+
+**Decision:**
+PyArmor Pro (obfuscation) → PyInstaller `--onedir` (bundle). Produces a folder with a single launchable `PulleyApp.exe` suitable for taskbar pinning.
+
+**Key constraints:**
+- PyArmor Pro licence has 200 build device slots. **Build must run on the registered Windows dev machine only — never in CI/CD.** Each `docker run` consumes a slot permanently.
+- `packaging/build_release.py` is the single local build script. Run it manually after testing.
+- `sys._MEIPASS` used in `launcher.py` to resolve template/static paths inside the bundle.
+- Logs redirected to `%APPDATA%\CheapCADTools\PulleyApp\logs` via `PULLEY_LOG_DIR` env var so they survive app updates.
+
+---
+
+## ADR-005 — Subscription licensing: annual licence.lic + Render provision server
+**Date:** 2026-05-04
+**Status:** Active
+
+**Context:**
+PulleyApp sold as a subscription via Autodesk App Store. Need to control access to the desktop build and handle expiry/renewal without per-customer machine binding complexity.
+
+**Decision:**
+- One `licence.lic` per year, no machine binding, generated locally with `packaging/prepare_release.py`.
+- `--period 7` requires PyArmor's servers to confirm the licence is still valid every 7 days (customer needs internet access at least weekly).
+- `--expired <date>` hard-stops the app on the expiry date regardless of internet connectivity.
+- Provision server runs as additional routes on the existing Render Flask service — no separate service needed.
+- `licence.lic` base64-encoded and stored as Render environment variable `PULLEY_LICENCE_B64`. Rotate annually by running `prepare_release.py` and updating the env var.
+- Subscriber list in `logs/subscribers.json` on Render (persists via $1/month Disk add-on). Managed via `/api/subscribers/add` and `/api/subscribers/remove` with Bearer token auth.
+
+**Expiry flow:**
+1. Addin warns customer 30 days before `licence_expiry` date stored in `config.json`.
+2. Renewal calls `/api/provision` → returns fresh `licence.lic` + new expiry date.
+3. On cancellation: call `/api/subscribers/remove` → customer's next renewal attempt returns 403 → app hard-stops on existing licence expiry date.
+
+**Entitlement verification (primary path, once App Store registration is complete):**
+- Addin calls `GET https://apps.autodesk.com/webservices/checkentitlement?userid=<id>&appid=<appid>`
+- Result cached for the Fusion session (one API call per launch)
+- Server independently calls the same endpoint before issuing `licence.lic` (don't trust addin)
+- `AUTODESK_APP_ID` env var on Render; `AUTODESK_APP_ID` constant in `PulleyWebApp.py`
+- When `AUTODESK_APP_ID` is empty (pre-registration), falls through to `subscribers.json`
+
+**`subscribers.json` fallback (beta / pre-registration):**
+Managed via `/api/subscribers/add` and `/api/subscribers/remove` with Bearer token auth.
+Remains useful for comped accounts (support, reviewers) after App Store registration.
+
+---
+
+## ADR-006 — Fusion 360 addin distribution
+**Date:** 2026-05-04
+**Status:** Active
+
+**Context:**
+Customers need a seamless path from Autodesk App Store purchase to running PulleyApp locally with downloads auto-importing into Fusion 360.
+
+**Decision:**
+Fusion 360 addin (`Fusion Addins/PulleyWebApp/`) handles three responsibilities:
+1. **Open button** — detects local install; if missing, runs provision+install flow; if installed, launches app or opens browser.
+2. **File watcher** — background thread polls `%APPDATA%\CheapCADTools\PulleyApp\downloads\` every 2 seconds; marshals new STEP/DXF files to the Fusion UI thread via custom event for auto-import.
+3. **Shared config** — writes `fusion_watch_dir` to `%APPDATA%\CheapCADTools\config.json`; Flask server reads this to mirror downloads to the watch folder.
+
+**TEST_MODE flag** (`TEST_MODE = True` at top of `PulleyWebApp.py`):
+- Bypasses provision server entirely.
+- Creates placeholder `PulleyApp.exe` and `licence.lic` files without downloading anything.
+- Adds an Uninstall button that removes `%APPDATA%\CheapCADTools\PulleyApp\` and resets config.
+- Opens dev server at `http://127.0.0.1:5154/` instead of launching the real exe.
+- Set `TEST_MODE = False` before publishing to App Store.
+
+---
+
 ## ADR-003 — Captured nut pocket shape
 **Date:** 2026-04-11  
 **Status:** Active

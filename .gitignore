@@ -38,3 +38,7 @@ testing.html
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 # Raw JSON scratch output — Perf_History.csv is committed instead
 .benchmarks/
+
+# ── Packaging ─────────────────────────────────────────────────────────────────
+releases/           # built .zip release artefacts
+licences/           # per-customer licence.lic files

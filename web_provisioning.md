@@ -132,7 +132,8 @@ python generate_checkin_report.py
 ```
 
 This reads the current git state and `Perf_History.csv`, compares benchmarks to the
-previous commit, and writes a self-contained HTML report to `checkins/<date>_<hash>.html`.
+previous commit, writes a self-contained HTML report to `checkins/<date>_<hash>.html`,
+and automatically opens the report in the PC's default browser.
 
 **Checklist:**
 - [ ] `generate_checkin_report.py` ran without errors
@@ -224,7 +225,69 @@ See `tools_hub_architecture.html` for the full automated deployment plan (GitHub
 
 ---
 
-## 5. Architecture Lessons
+## 5. Desktop Release Build (Annual)
+
+Run this once per year (or per significant release) from the registered Windows dev machine.
+**Never run on CI/CD — PyArmor consumes a device slot per build machine.**
+
+### Step A — Build the release
+```bash
+.venv312/Scripts/python packaging/build_release.py
+# Output: releases/PulleyApp_<date>.zip
+```
+
+### Step B — Upload PulleyApp.zip
+Upload `releases/PulleyApp_<date>.zip` to a GitHub Release on the repo.
+Copy the direct download URL (e.g. `https://github.com/xootme/PulleyWebApp/releases/download/v1/PulleyApp_<date>.zip`).
+
+### Step C — Generate annual licence and Render env vars
+```bash
+.venv312/Scripts/python packaging/prepare_release.py --app-url <paste URL from Step B>
+```
+This prints three environment variables. Saves a copy to `licences/annual_<date>.env` (gitignored).
+
+### Step D — Update Render environment variables
+1. Go to Render dashboard → `pulleywebapp` service → **Environment**
+2. Set or update:
+   - `PULLEY_LICENCE_B64` — paste value from Step C
+   - `PULLEY_LICENCE_EXPIRY` — paste value from Step C (YYYY-MM-DD)
+   - `PULLEY_APP_URL` — paste GitHub Release URL from Step B
+3. Click **Save Changes** → Render redeploys automatically
+
+### Step E — Verify provision endpoint
+```bash
+curl -X POST https://www.cheapcadtools.com/api/provision \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"test","email":"test@example.com"}'
+# Expect: 403 {"error":"No active subscription found..."}
+# (Confirms server is up and auth is working)
+```
+
+---
+
+## 6. Subscriber Management
+
+Add a subscriber after an App Store purchase:
+```bash
+curl -X POST https://www.cheapcadtools.com/api/subscribers/add \
+  -H "Authorization: Bearer <PROVISION_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"<autodesk_user_id>","email":"<customer@email.com>"}'
+```
+
+Remove a subscriber on cancellation:
+```bash
+curl -X POST https://www.cheapcadtools.com/api/subscribers/remove \
+  -H "Authorization: Bearer <PROVISION_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"<autodesk_user_id>"}'
+```
+
+`PROVISION_SECRET` is set in the Render dashboard environment variables. Keep it out of git.
+
+---
+
+## 7. Architecture Lessons
 
 - **Cloudflare Workers ≠ Page Rules.** Workers have 100,000 free requests/day with no script
   limit. The 3-rule cap applies only to Page Rules — a separate product.

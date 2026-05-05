@@ -7,12 +7,18 @@ import math
 import io
 import os
 import json
+import time
 import threading
 try:
     import fcntl
     _HAVE_FCNTL = True
 except ImportError:
     _HAVE_FCNTL = False          # Windows dev environment
+try:
+    import psutil
+    _HAVE_PSUTIL = True
+except ImportError:
+    _HAVE_PSUTIL = False
 from datetime import datetime
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory
 
@@ -21,10 +27,123 @@ APP_VERSION  = '0.1'
 BUILD_TIME   = datetime.now().strftime('%Y-%m-%d %H:%M')
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
-_LOG_DIR             = os.path.join(os.path.dirname(__file__), 'logs')
+# PULLEY_LOG_DIR is set by the packaged launcher so logs go to AppData, not the install folder.
+_LOG_DIR             = os.environ.get('PULLEY_LOG_DIR',
+                           os.path.join(os.path.dirname(__file__), 'logs'))
 _LOG_FILE            = os.path.join(_LOG_DIR, 'bug_reports.log')
 _DOWNLOAD_COUNT_FILE = os.path.join(_LOG_DIR, 'download_count.json')
+_METRICS_FILE        = os.path.join(_LOG_DIR, 'metrics.jsonl')
+_CONSTRAINTS_FILE    = os.path.join(_LOG_DIR, 'constraint_events.jsonl')
+_METRICS_RETENTION_DAYS  = 30
+_CPU_CONSTRAINT_THRESHOLD = 80.0
+_MEM_CONSTRAINT_THRESHOLD = 85.0
 _download_lock       = threading.Lock()   # in-process guard (dev / single-worker)
+_metrics_lock        = threading.Lock()
+
+# Per-worker request rate counter (resets each metrics sample)
+_request_count      = 0
+_request_count_lock = threading.Lock()
+
+
+def _increment_request_count():
+    global _request_count
+    with _request_count_lock:
+        _request_count += 1
+
+
+def _sample_and_reset_request_count():
+    global _request_count
+    with _request_count_lock:
+        val = _request_count
+        _request_count = 0
+    return val
+
+
+def _trim_jsonl(path, retention_days):
+    """Drop entries older than retention_days from a .jsonl file."""
+    cutoff = time.time() - retention_days * 86400
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        kept = []
+        for l in lines:
+            try:
+                if json.loads(l).get('ts', 0) >= cutoff:
+                    kept.append(l)
+            except Exception:
+                pass
+        if len(kept) < len(lines):
+            with open(path, 'w', encoding='utf-8') as f:
+                f.writelines(kept)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+
+def _append_jsonl(path, obj):
+    with _metrics_lock:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(obj) + '\n')
+
+
+def _metrics_sampler():
+    """Background thread: sample CPU/memory/requests every 60 s."""
+    time.sleep(10)   # let gunicorn finish initialising before first sample
+    while True:
+        try:
+            os.makedirs(_LOG_DIR, exist_ok=True)
+            ts      = int(time.time())
+            req_cnt = _sample_and_reset_request_count()
+
+            if _HAVE_PSUTIL:
+                cpu     = psutil.cpu_percent(interval=None)
+                mem     = psutil.virtual_memory()
+                mem_mb  = mem.used // (1024 * 1024)
+                mem_pct = mem.percent
+                try:
+                    disk     = psutil.disk_usage(_LOG_DIR)
+                    disk_pct = disk.percent
+                except Exception:
+                    disk_pct = 0
+            else:
+                cpu = mem_mb = mem_pct = disk_pct = 0
+
+            _append_jsonl(_METRICS_FILE, {
+                'ts': ts, 'req_per_min': req_cnt,
+                'cpu': cpu, 'mem_mb': mem_mb, 'mem_pct': mem_pct,
+                'disk_pct': disk_pct,
+            })
+
+            # Constraint events
+            if cpu > _CPU_CONSTRAINT_THRESHOLD:
+                _append_jsonl(_CONSTRAINTS_FILE, {
+                    'ts': ts, 'type': 'cpu',
+                    'value': cpu, 'detail': f'CPU {cpu:.1f}%',
+                })
+            if mem_pct > _MEM_CONSTRAINT_THRESHOLD:
+                _append_jsonl(_CONSTRAINTS_FILE, {
+                    'ts': ts, 'type': 'memory',
+                    'value': mem_pct, 'detail': f'Memory {mem_pct:.1f}% ({mem_mb} MB)',
+                })
+            if req_cnt > 120:   # >2 req/s sustained over the sample window
+                _append_jsonl(_CONSTRAINTS_FILE, {
+                    'ts': ts, 'type': 'request_rate',
+                    'value': req_cnt, 'detail': f'{req_cnt} req/min',
+                })
+
+            # Trim old data once per sample
+            _trim_jsonl(_METRICS_FILE,     _METRICS_RETENTION_DAYS)
+            _trim_jsonl(_CONSTRAINTS_FILE, _METRICS_RETENTION_DAYS)
+
+        except Exception:
+            pass
+
+        time.sleep(60)
+
+
+_metrics_thread = threading.Thread(target=_metrics_sampler, daemon=True)
+_metrics_thread.start()
 
 
 def _increment_download_count():
@@ -110,7 +229,34 @@ from exporters.flange_exporter import (
     build_support_ribs,
 )
 
-app = Flask(__name__)
+# PULLEY_BASE_DIR is set by the packaged launcher to sys._MEIPASS so Flask
+# finds templates and static inside the PyInstaller bundle.
+_base_dir = os.environ.get('PULLEY_BASE_DIR', os.path.dirname(os.path.abspath(__file__)))
+
+# ── Fusion 360 addin integration ──────────────────────────────────────────────
+_FUSION_CONFIG = os.path.join(
+    os.environ.get('APPDATA', os.path.expanduser('~')),
+    'CheapCADTools', 'config.json')
+
+def _mirror_to_fusion(content: bytes, filename: str) -> None:
+    """Copy a download to the Fusion watch folder when the addin is connected."""
+    try:
+        if not os.path.exists(_FUSION_CONFIG):
+            return
+        with open(_FUSION_CONFIG) as f:
+            cfg = json.load(f)
+        watch_dir = cfg.get('fusion_watch_dir')
+        if not (cfg.get('fusion_connected') and watch_dir):
+            return
+        os.makedirs(watch_dir, exist_ok=True)
+        dest = os.path.join(watch_dir, filename)
+        with open(dest, 'wb') as f:
+            f.write(content)
+    except Exception:
+        pass  # never block a download due to Fusion mirroring
+app = Flask(__name__,
+            template_folder=os.path.join(_base_dir, 'templates'),
+            static_folder=os.path.join(_base_dir, 'static'))
 # ─── Cloudflare Worker proxy support ──────
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1, x_host=1)
@@ -146,6 +292,11 @@ def _params_etag():
 
 
 @app.before_request
+def _count_request():
+    _increment_request_count()
+
+
+@app.before_request
 def _check_client_cache():
     """Return 304 Not Modified when the client already has the current version."""
     if request.method != 'GET':
@@ -164,6 +315,35 @@ def _check_client_cache():
                      'Cache-Control': f'public, max-age={_CACHE_MAX_AGE}'},
         )
 # ──────────────────────────────────────────
+
+
+@app.after_request
+def _admin_cors(response):
+    """Allow the local admin dashboard HTML file to call admin API endpoints."""
+    if request.path.startswith('/api/admin/') or request.path.startswith('/api/subscribers/'):
+        response.headers['Access-Control-Allow-Origin']  = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
+
+
+@app.route('/api/admin/<path:_>', methods=['OPTIONS'])
+def _admin_cors_preflight(_):
+    """Handle CORS preflight for all /api/admin/* and /api/subscribers/* routes."""
+    r = Response('', 204)
+    r.headers['Access-Control-Allow-Origin']  = '*'
+    r.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+    r.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return r
+
+
+@app.route('/api/subscribers/<path:_>', methods=['OPTIONS'])
+def _subscribers_cors_preflight(_):
+    r = Response('', 204)
+    r.headers['Access-Control-Allow-Origin']  = '*'
+    r.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+    r.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return r
 
 
 @app.after_request
@@ -441,6 +621,7 @@ def download_dxf():
             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od,
             rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
         )
+        _mirror_to_fusion(dxf if isinstance(dxf, bytes) else dxf.encode(), filename)
         return Response(
             dxf,
             mimetype='application/dxf',
@@ -1108,6 +1289,7 @@ def download_step():
         p2_sfx     = '-P2' if pulley == '2' else ''
         fl_sfx     = '+flange' if (_fl_enabled and fp.get('flange_3dprint')) else ''
         fname      = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
+        _mirror_to_fusion(step_bytes, fname)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
@@ -1146,6 +1328,7 @@ def download_belt_step():
             belt_height_mm=belt_h,
         )
         filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.step'
+        _mirror_to_fusion(step_bytes, filename)
         return Response(
             step_bytes,
             mimetype='application/step',
@@ -1567,6 +1750,7 @@ def download_flange_step():
         suffix   = '-upper-flange' if which == 'top' else '-lower-flange'
         type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
         filename = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.step'
+        _mirror_to_fusion(step_bytes, filename)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
@@ -1740,6 +1924,320 @@ def api_report_bug():
     except Exception as e:
         import traceback
         return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+# ── Provision API ─────────────────────────────────────────────────────────────
+# Environment variables (set in Render dashboard):
+#   PROVISION_SECRET   — admin bearer token for /api/subscribers/add
+#   PULLEY_LICENCE_B64 — base64-encoded licence.lic (generated locally, annual)
+#   PULLEY_LICENCE_EXPIRY — YYYY-MM-DD expiry date matching the licence
+#   PULLEY_APP_URL     — public URL to PulleyApp.zip (GitHub Release asset)
+
+import base64 as _base64
+
+_PROVISION_SECRET   = os.environ.get('PROVISION_SECRET', '')
+_LICENCE_B64        = os.environ.get('PULLEY_LICENCE_B64', '')
+_LICENCE_EXPIRY     = os.environ.get('PULLEY_LICENCE_EXPIRY', '')
+_APP_DOWNLOAD_URL   = os.environ.get('PULLEY_APP_URL', '')
+_AUTODESK_APP_ID    = os.environ.get('AUTODESK_APP_ID', '')   # set after App Store registration
+_ENTITLEMENT_URL    = 'https://apps.autodesk.com/webservices/checkentitlement'
+_SUBSCRIBERS_FILE   = os.path.join(_LOG_DIR, 'subscribers.json')
+_subscribers_lock   = threading.Lock()
+
+
+def _load_subscribers():
+    try:
+        if os.path.exists(_SUBSCRIBERS_FILE):
+            with open(_SUBSCRIBERS_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _save_subscribers(data):
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    with open(_SUBSCRIBERS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def _verify_autodesk_entitlement(user_id):
+    """Return True if Autodesk confirms this user has an active App Store subscription."""
+    if not _AUTODESK_APP_ID or not user_id:
+        return False
+    try:
+        import urllib.request as _ur
+        url = f'{_ENTITLEMENT_URL}?userid={user_id}&appid={_AUTODESK_APP_ID}'
+        with _ur.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return bool(data.get('IsValid'))
+    except Exception:
+        return False
+
+
+@app.route('/api/provision', methods=['POST'])
+def api_provision():
+    """Called by the Fusion addin to verify subscription and receive install assets.
+
+    Verification order:
+      1. Autodesk Entitlement API (primary — used once AUTODESK_APP_ID is set).
+      2. Manual subscribers.json (fallback for beta users and pre-registration testing).
+    """
+    data    = request.get_json(silent=True) or {}
+    user_id = data.get('user_id', '').strip()
+    email   = data.get('email', '').lower().strip()
+
+    if not user_id and not email:
+        return jsonify({'error': 'user_id or email required'}), 400
+
+    # ── Primary: Autodesk Entitlement API ─────────────────────────────────────
+    entitled = _verify_autodesk_entitlement(user_id)
+
+    # ── Fallback: manual subscriber list (beta / pre-App-Store) ───────────────
+    if not entitled:
+        with _subscribers_lock:
+            subs = _load_subscribers()
+        record   = subs.get(user_id) or subs.get(email)
+        entitled = bool(record and record.get('active'))
+
+    if not entitled:
+        return jsonify({'error': 'No active subscription found for this account.'}), 403
+
+    if not _LICENCE_B64 or not _APP_DOWNLOAD_URL:
+        return jsonify({'error': 'Release not yet published — contact support.'}), 503
+
+    return jsonify({
+        'app_url':        _APP_DOWNLOAD_URL,
+        'licence_b64':    _LICENCE_B64,
+        'licence_expiry': _LICENCE_EXPIRY,
+    })
+
+
+@app.route('/api/subscribers/add', methods=['POST'])
+def api_subscribers_add():
+    """Admin endpoint — add or reactivate a subscriber after App Store purchase."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+
+    data    = request.get_json(silent=True) or {}
+    user_id = data.get('user_id', '').strip()
+    email   = data.get('email', '').lower().strip()
+    if not user_id and not email:
+        return jsonify({'error': 'user_id or email required'}), 400
+
+    with _subscribers_lock:
+        subs = _load_subscribers()
+        key  = user_id or email
+        subs[key] = {
+            'user_id':  user_id,
+            'email':    email,
+            'active':   True,
+            'added':    datetime.now().isoformat(),
+        }
+        _save_subscribers(subs)
+
+    return jsonify({'ok': True, 'key': key})
+
+
+@app.route('/api/subscribers/remove', methods=['POST'])
+def api_subscribers_remove():
+    """Admin endpoint — deactivate a subscriber on cancellation."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+
+    data = request.get_json(silent=True) or {}
+    key  = (data.get('user_id') or data.get('email') or '').strip()
+    if not key:
+        return jsonify({'error': 'user_id or email required'}), 400
+
+    with _subscribers_lock:
+        subs = _load_subscribers()
+        if key in subs:
+            subs[key]['active'] = False
+            _save_subscribers(subs)
+
+    return jsonify({'ok': True, 'key': key})
+
+
+# ── Admin dashboard API ───────────────────────────────────────────────────────
+_RENDER_API_KEY    = os.environ.get('RENDER_API_KEY', '')
+_RENDER_SERVICE_ID = os.environ.get('RENDER_SERVICE_ID', 'srv-d7bve2a8qa3s738n68ig')
+
+
+def _admin_auth():
+    """Return a 401 response if the request lacks a valid admin Bearer token."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+    return None
+
+
+def _read_jsonl_since(path, since_ts):
+    rows = []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    if obj.get('ts', 0) >= since_ts:
+                        rows.append(obj)
+                except Exception:
+                    pass
+    except FileNotFoundError:
+        pass
+    return rows
+
+
+@app.route('/api/admin/health')
+def api_admin_health():
+    err = _admin_auth()
+    if err:
+        return err
+
+    if _HAVE_PSUTIL:
+        cpu     = psutil.cpu_percent(interval=None)
+        mem     = psutil.virtual_memory()
+        mem_mb  = mem.used // (1024 * 1024)
+        mem_pct = mem.percent
+        try:
+            disk     = psutil.disk_usage(_LOG_DIR)
+            disk_free_mb = disk.free // (1024 * 1024)
+            disk_pct     = disk.percent
+        except Exception:
+            disk_free_mb = disk_pct = 0
+    else:
+        cpu = mem_mb = mem_pct = disk_free_mb = disk_pct = 0
+
+    try:
+        with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
+            dl_count = json.load(f).get('count', 0)
+    except Exception:
+        dl_count = 0
+
+    try:
+        with open(_LOG_FILE, 'r', encoding='utf-8') as f:
+            bug_count = f.read().count('=' * 60) // 2
+    except Exception:
+        bug_count = 0
+
+    with _subscribers_lock:
+        subs = _load_subscribers()
+    active_subs = sum(1 for s in subs.values() if s.get('active'))
+
+    return jsonify({
+        'version':          APP_VERSION,
+        'build_time':       BUILD_TIME,
+        'ts':               int(time.time()),
+        'cpu_pct':          cpu,
+        'mem_mb':           mem_mb,
+        'mem_pct':          mem_pct,
+        'disk_free_mb':     disk_free_mb,
+        'disk_pct':         disk_pct,
+        'downloads':        dl_count,
+        'bug_reports':      bug_count,
+        'active_subs':      active_subs,
+    })
+
+
+@app.route('/api/admin/metrics')
+def api_admin_metrics():
+    err = _admin_auth()
+    if err:
+        return err
+    hours    = min(int(request.args.get('hours', 24)), 720)
+    since_ts = time.time() - hours * 3600
+    rows     = _read_jsonl_since(_METRICS_FILE, since_ts)
+    return jsonify({'hours': hours, 'count': len(rows), 'data': rows})
+
+
+@app.route('/api/admin/constraints')
+def api_admin_constraints():
+    err = _admin_auth()
+    if err:
+        return err
+    hours    = min(int(request.args.get('hours', 168)), 720)
+    since_ts = time.time() - hours * 3600
+    rows     = _read_jsonl_since(_CONSTRAINTS_FILE, since_ts)
+    return jsonify({'hours': hours, 'count': len(rows), 'events': rows})
+
+
+@app.route('/api/admin/bug-reports')
+def api_admin_bug_reports():
+    err = _admin_auth()
+    if err:
+        return err
+    try:
+        with open(_LOG_FILE, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except FileNotFoundError:
+        content = ''
+    return jsonify({'content': content, 'size': len(content)})
+
+
+@app.route('/api/admin/downloads')
+def api_admin_downloads():
+    err = _admin_auth()
+    if err:
+        return err
+    try:
+        with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {'count': 0}
+    return jsonify(data)
+
+
+@app.route('/api/admin/subscribers')
+def api_admin_subscribers():
+    err = _admin_auth()
+    if err:
+        return err
+    with _subscribers_lock:
+        subs = _load_subscribers()
+    return jsonify({'count': len(subs), 'subscribers': subs})
+
+
+@app.route('/api/admin/render/service')
+def api_admin_render_service():
+    err = _admin_auth()
+    if err:
+        return err
+    if not _RENDER_API_KEY:
+        return jsonify({'error': 'RENDER_API_KEY not configured'}), 503
+    try:
+        import requests as _requests
+        r = _requests.get(
+            f'https://api.render.com/v1/services/{_RENDER_SERVICE_ID}',
+            headers={'Authorization': f'Bearer {_RENDER_API_KEY}'},
+            timeout=8,
+        )
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/admin/render/deploys')
+def api_admin_render_deploys():
+    err = _admin_auth()
+    if err:
+        return err
+    if not _RENDER_API_KEY:
+        return jsonify({'error': 'RENDER_API_KEY not configured'}), 503
+    try:
+        import requests as _requests
+        r = _requests.get(
+            f'https://api.render.com/v1/services/{_RENDER_SERVICE_ID}/deploys?limit=10',
+            headers={'Authorization': f'Bearer {_RENDER_API_KEY}'},
+            timeout=8,
+        )
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
 
 
 if __name__ == '__main__':

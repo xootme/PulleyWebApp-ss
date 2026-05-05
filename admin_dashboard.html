@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CCT Admin Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --red:    #761516;
+    --red2:   #a01c1e;
+    --silver: #eaebed;
+    --bg:     #1a1a1e;
+    --panel:  #242428;
+    --border: #333338;
+    --text:   #e8e8ec;
+    --muted:  #888;
+    --green:  #2ecc71;
+    --yellow: #f39c12;
+    --orange: #e67e22;
+    --crimson:#e74c3c;
+  }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── Login ── */
+  #login-screen {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 24px;
+  }
+  .login-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 36px 40px; width: 100%; max-width: 440px;
+  }
+  .login-card h1 { font-size: 1.4em; margin-bottom: 6px; }
+  .login-card p  { color: var(--muted); font-size: 0.88em; margin-bottom: 24px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 0.82em; color: var(--muted); margin-bottom: 6px; }
+  .field input {
+    width: 100%; padding: 10px 12px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-size: 0.95em; font-family: monospace;
+  }
+  .field input:focus { outline: none; border-color: var(--red); }
+  .btn {
+    display: inline-block; padding: 10px 22px; border-radius: 6px;
+    border: none; cursor: pointer; font-size: 0.95em; font-weight: 600;
+    transition: background 0.15s;
+  }
+  .btn-primary { background: var(--red); color: #fff; width: 100%; }
+  .btn-primary:hover { background: var(--red2); }
+  .btn-sm { padding: 5px 14px; font-size: 0.82em; }
+  .btn-danger { background: #5a1010; color: #f88; }
+  .btn-danger:hover { background: #7a1515; }
+  .btn-success { background: #1a4a2a; color: #6f6; }
+  .btn-success:hover { background: #225535; }
+  #login-error { color: #f88; font-size: 0.85em; margin-top: 12px; min-height: 18px; }
+
+  /* ── Shell ── */
+  #app { display: none; flex-direction: column; min-height: 100vh; }
+  header {
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 0 24px; display: flex; align-items: center; gap: 20px;
+    height: 56px; flex-shrink: 0;
+  }
+  header .logo { font-weight: 800; font-size: 1.1em; color: var(--red); letter-spacing: -0.5px; }
+  header .host { font-size: 0.8em; color: var(--muted); }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .status-dot.green  { background: var(--green); }
+  .status-dot.yellow { background: var(--yellow); }
+  .status-dot.red    { background: var(--crimson); }
+  .ml-auto { margin-left: auto; }
+  .refresh-wrap { display: flex; align-items: center; gap: 10px; font-size: 0.82em; color: var(--muted); }
+  .refresh-wrap label { cursor: pointer; user-select: none; }
+  #logout-btn { background: none; border: 1px solid var(--border); color: var(--muted); cursor: pointer; border-radius: 5px; padding: 5px 12px; font-size: 0.82em; }
+  #logout-btn:hover { border-color: var(--red); color: var(--text); }
+
+  nav { background: var(--panel); border-bottom: 1px solid var(--border); display: flex; padding: 0 24px; }
+  nav button {
+    background: none; border: none; color: var(--muted); padding: 14px 18px;
+    cursor: pointer; font-size: 0.88em; border-bottom: 2px solid transparent;
+    transition: color 0.15s;
+  }
+  nav button:hover { color: var(--text); }
+  nav button.active { color: var(--text); border-bottom-color: var(--red); font-weight: 600; }
+
+  main { flex: 1; padding: 24px; overflow-y: auto; }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px 24px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 16px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+  .stat { }
+  .stat .val { font-size: 2em; font-weight: 700; line-height: 1; }
+  .stat .lbl { font-size: 0.78em; color: var(--muted); margin-top: 4px; }
+  .stat .val.green  { color: var(--green); }
+  .stat .val.yellow { color: var(--yellow); }
+  .stat .val.red    { color: var(--crimson); }
+
+  /* Render status */
+  .deploy-list { list-style: none; }
+  .deploy-list li { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85em; align-items: center; }
+  .deploy-list li:last-child { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75em; font-weight: 600; }
+  .badge.live     { background: #1a3a20; color: var(--green); }
+  .badge.build    { background: #3a2e10; color: var(--yellow); }
+  .badge.failed   { background: #3a1010; color: var(--crimson); }
+  .badge.deactivated { background: #2a2a2a; color: var(--muted); }
+
+  /* Charts */
+  .chart-wrap { position: relative; height: 220px; }
+
+  /* Constraint events */
+  .event-list { list-style: none; max-height: 300px; overflow-y: auto; }
+  .event-list li { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.83em; align-items: flex-start; }
+  .event-list li:last-child { border-bottom: none; }
+  .event-type { padding: 2px 8px; border-radius: 10px; font-size: 0.78em; font-weight: 700; flex-shrink: 0; }
+  .event-type.cpu     { background: #3a1a10; color: #f88; }
+  .event-type.memory  { background: #2a1a3a; color: #b8f; }
+  .event-type.request_rate { background: #1a2a3a; color: #8cf; }
+  .event-ts { color: var(--muted); flex-shrink: 0; min-width: 130px; }
+
+  /* Bug reports */
+  .bug-log { font-family: monospace; font-size: 0.82em; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 16px; max-height: 60vh; overflow-y: auto; line-height: 1.55; }
+  .bug-separator { color: var(--red); }
+
+  /* Subscribers */
+  table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--muted); font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.06em; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .sub-active   { color: var(--green); font-weight: 600; }
+  .sub-inactive { color: var(--crimson); }
+  .add-sub-form { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .add-sub-form input { flex: 1; min-width: 140px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.88em; }
+  .add-sub-form input:focus { outline: none; border-color: var(--red); }
+
+  /* Misc */
+  .empty { color: var(--muted); font-size: 0.88em; padding: 20px 0; text-align: center; }
+  #last-update { font-size: 0.75em; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ══ Login ══════════════════════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>CCT Admin Dashboard</h1>
+    <p>CheapCADTools.com — PulleyWebApp</p>
+    <div class="field">
+      <label>App URL (base)</label>
+      <input id="inp-url" type="text" value="https://cheapcadtools.com" placeholder="https://cheapcadtools.com" />
+    </div>
+    <div class="field">
+      <label>Provision Secret (Bearer token)</label>
+      <input id="inp-token" type="password" placeholder="PROVISION_SECRET" />
+    </div>
+    <div class="field">
+      <label>Render API Key</label>
+      <input id="inp-render-key" type="password" placeholder="rnd_..." />
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">Connect</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ══ App ════════════════════════════════════════════════════════════════ -->
+<div id="app">
+  <header>
+    <div class="logo">CCT Admin</div>
+    <div id="svc-dot" class="status-dot"></div>
+    <div class="host" id="hdr-host"></div>
+    <div class="ml-auto" style="display:flex;align-items:center;gap:16px;">
+      <div class="refresh-wrap">
+        <input type="checkbox" id="auto-refresh" checked>
+        <label for="auto-refresh">Auto-refresh</label>
+        <span id="last-update"></span>
+      </div>
+      <button id="logout-btn" onclick="doLogout()">Logout</button>
+    </div>
+  </header>
+
+  <nav id="nav-tabs">
+    <button class="active" onclick="switchTab('health',this)">Health</button>
+    <button onclick="switchTab('metrics',this)">Metrics</button>
+    <button onclick="switchTab('bugs',this)">Bug Reports</button>
+    <button onclick="switchTab('downloads',this)">Downloads</button>
+    <button onclick="switchTab('subscribers',this)">Subscribers</button>
+  </nav>
+
+  <main>
+    <!-- Health tab -->
+    <div id="tab-health" class="tab-panel active">
+      <div class="card">
+        <h2>Live System Snapshot</h2>
+        <div class="stat-grid" id="health-stats"></div>
+      </div>
+      <div class="card">
+        <h2>Render Service</h2>
+        <div id="render-service-info"><span class="empty">Loading…</span></div>
+      </div>
+      <div class="card">
+        <h2>Recent Deploys</h2>
+        <ul class="deploy-list" id="deploy-list"><li class="empty">Loading…</li></ul>
+      </div>
+    </div>
+
+    <!-- Metrics tab -->
+    <div id="tab-metrics" class="tab-panel">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
+        <label style="font-size:0.85em;color:var(--muted);">Window:</label>
+        <select id="metrics-hours" onchange="loadMetrics()" style="background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.85em;">
+          <option value="6">6 h</option>
+          <option value="24" selected>24 h</option>
+          <option value="72">3 d</option>
+          <option value="168">7 d</option>
+          <option value="720">30 d</option>
+        </select>
+      </div>
+      <div class="card">
+        <h2>Requests / Min</h2>
+        <div class="chart-wrap"><canvas id="chart-req"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>CPU %</h2>
+        <div class="chart-wrap"><canvas id="chart-cpu"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Memory %</h2>
+        <div class="chart-wrap"><canvas id="chart-mem"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Resource Constraint Events <span id="constraint-count" style="color:var(--muted);font-size:0.85em;font-weight:400;"></span></h2>
+        <ul class="event-list" id="constraint-list"><li class="empty">No events in window.</li></ul>
+      </div>
+    </div>
+
+    <!-- Bugs tab -->
+    <div id="tab-bugs" class="tab-panel">
+      <div class="card">
+        <h2>Bug Reports Log <span id="bug-count" style="color:var(--muted);font-size:0.85em;font-weight:400;"></span></h2>
+        <div class="bug-log" id="bug-log">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Downloads tab -->
+    <div id="tab-downloads" class="tab-panel">
+      <div class="card">
+        <h2>Download Stats</h2>
+        <div class="stat-grid" id="dl-stats"></div>
+      </div>
+    </div>
+
+    <!-- Subscribers tab -->
+    <div id="tab-subscribers" class="tab-panel">
+      <div class="card">
+        <h2>Add Subscriber</h2>
+        <div class="add-sub-form">
+          <input id="sub-userid" placeholder="Autodesk user_id" />
+          <input id="sub-email"  placeholder="email@example.com" />
+          <button class="btn btn-success btn-sm" onclick="addSubscriber()">Add</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Subscriber List <span id="sub-count" style="color:var(--muted);font-size:0.85em;font-weight:400;"></span></h2>
+        <table>
+          <thead><tr><th>Key</th><th>User ID</th><th>Email</th><th>Status</th><th>Added</th><th></th></tr></thead>
+          <tbody id="sub-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let BASE_URL = '', TOKEN = '', RENDER_KEY = '';
+let refreshTimer = null;
+let charts = {};
+
+// ── Login / Logout ────────────────────────────────────────────────────────────
+async function doLogin() {
+  BASE_URL   = document.getElementById('inp-url').value.replace(/\/$/, '');
+  TOKEN      = document.getElementById('inp-token').value.trim();
+  RENDER_KEY = document.getElementById('inp-render-key').value.trim();
+  const err  = document.getElementById('login-error');
+  err.textContent = 'Connecting…';
+  try {
+    const r = await apiFetch('/api/admin/health');
+    if (!r.ok) { err.textContent = `Auth failed (${r.status})`; return; }
+    sessionStorage.setItem('cct_url',   BASE_URL);
+    sessionStorage.setItem('cct_token', TOKEN);
+    sessionStorage.setItem('cct_rkey',  RENDER_KEY);
+    showApp();
+  } catch(e) { err.textContent = 'Network error: ' + e.message; }
+}
+
+function doLogout() {
+  sessionStorage.clear();
+  clearInterval(refreshTimer);
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display          = 'none';
+}
+
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display          = 'flex';
+  document.getElementById('hdr-host').textContent = BASE_URL.replace('https://', '');
+  loadAll();
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => {
+    if (document.getElementById('auto-refresh').checked) loadAll();
+  }, 60000);
+}
+
+// ── API helper ────────────────────────────────────────────────────────────────
+function apiFetch(path, opts={}) {
+  const headers = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json', ...(opts.headers||{}) };
+  return fetch(BASE_URL + path, { ...opts, headers });
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#nav-tabs button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'metrics')     loadMetrics();
+  if (name === 'bugs')        loadBugs();
+  if (name === 'downloads')   loadDownloads();
+  if (name === 'subscribers') loadSubscribers();
+}
+
+// ── Load all ──────────────────────────────────────────────────────────────────
+function loadAll() {
+  loadHealth();
+  const active = document.querySelector('.tab-panel.active')?.id?.replace('tab-','');
+  if (active === 'metrics')     loadMetrics();
+  if (active === 'bugs')        loadBugs();
+  if (active === 'downloads')   loadDownloads();
+  if (active === 'subscribers') loadSubscribers();
+  document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+// ── Health ────────────────────────────────────────────────────────────────────
+async function loadHealth() {
+  try {
+    const [hRes, sRes, dRes] = await Promise.all([
+      apiFetch('/api/admin/health'),
+      apiFetch('/api/admin/render/service'),
+      apiFetch('/api/admin/render/deploys'),
+    ]);
+    if (hRes.ok) renderHealth(await hRes.json());
+    if (sRes.ok) renderServiceInfo(await sRes.json());
+    if (dRes.ok) renderDeploys(await dRes.json());
+  } catch(e) { console.warn('Health load error', e); }
+}
+
+function cpuColor(v)  { return v > 80 ? 'red' : v > 50 ? 'yellow' : 'green'; }
+function memColor(v)  { return v > 85 ? 'red' : v > 65 ? 'yellow' : 'green'; }
+function dotColor(v)  { return v > 80 ? 'red' : v > 50 ? 'yellow' : 'green'; }
+
+function renderHealth(h) {
+  document.getElementById('svc-dot').className = 'status-dot green';
+  document.getElementById('health-stats').innerHTML = `
+    <div class="stat"><div class="val ${cpuColor(h.cpu_pct)}">${h.cpu_pct.toFixed(1)}%</div><div class="lbl">CPU</div></div>
+    <div class="stat"><div class="val ${memColor(h.mem_pct)}">${h.mem_pct.toFixed(1)}%</div><div class="lbl">Memory (${h.mem_mb} MB)</div></div>
+    <div class="stat"><div class="val ${h.disk_pct > 85 ? 'red' : 'green'}">${h.disk_pct.toFixed(1)}%</div><div class="lbl">Disk (${h.disk_free_mb} MB free)</div></div>
+    <div class="stat"><div class="val">${h.downloads.toLocaleString()}</div><div class="lbl">Total Downloads</div></div>
+    <div class="stat"><div class="val">${h.active_subs}</div><div class="lbl">Active Subscribers</div></div>
+    <div class="stat"><div class="val">${h.bug_reports}</div><div class="lbl">Bug Reports</div></div>
+    <div class="stat"><div class="val" style="font-size:1em;color:var(--muted)">${h.version}</div><div class="lbl">App Version (built ${h.build_time})</div></div>
+  `;
+}
+
+function renderServiceInfo(svc) {
+  const s = svc.service || svc;
+  const sd = s.serviceDetails || {};
+  document.getElementById('render-service-info').innerHTML = `
+    <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.88em;">
+      <div><span style="color:var(--muted)">Name:</span> ${s.name || '—'}</div>
+      <div><span style="color:var(--muted)">Status:</span> ${sd.publishedDeployId ? '<span style="color:var(--green)">Live</span>' : '<span style="color:var(--yellow)">Unknown</span>'}</div>
+      <div><span style="color:var(--muted)">Plan:</span> ${sd.plan || '—'}</div>
+      <div><span style="color:var(--muted)">Region:</span> ${sd.region || '—'}</div>
+      <div><span style="color:var(--muted)">URL:</span> <a href="${s.serviceDetails?.url || ''}" target="_blank" style="color:var(--red)">${sd.url || '—'}</a></div>
+    </div>
+  `;
+}
+
+function renderDeploys(deploys) {
+  const arr = Array.isArray(deploys) ? deploys : (deploys.deploys || []);
+  if (!arr.length) { document.getElementById('deploy-list').innerHTML = '<li class="empty">No deploys found.</li>'; return; }
+  document.getElementById('deploy-list').innerHTML = arr.map(d => {
+    const dep   = d.deploy || d;
+    const st    = (dep.status || '').toLowerCase();
+    const badge = st.includes('live') ? 'live' : st.includes('build') ? 'build' : st.includes('fail') ? 'failed' : 'deactivated';
+    const ts    = dep.finishedAt || dep.createdAt || '';
+    const dt    = ts ? new Date(ts).toLocaleString() : '—';
+    return `<li><span class="badge ${badge}">${dep.status || '—'}</span><span style="flex:1">${dep.commit?.message?.split('\n')[0] || dep.id || '—'}</span><span style="color:var(--muted);font-size:0.82em">${dt}</span></li>`;
+  }).join('');
+}
+
+// ── Metrics ───────────────────────────────────────────────────────────────────
+async function loadMetrics() {
+  const hours = document.getElementById('metrics-hours').value;
+  try {
+    const [mRes, cRes] = await Promise.all([
+      apiFetch(`/api/admin/metrics?hours=${hours}`),
+      apiFetch(`/api/admin/constraints?hours=${hours}`),
+    ]);
+    if (mRes.ok) renderCharts(await mRes.json());
+    if (cRes.ok) renderConstraints(await cRes.json());
+  } catch(e) { console.warn('Metrics load error', e); }
+}
+
+const CHART_DEFAULTS = {
+  responsive: true, maintainAspectRatio: false,
+  animation: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#888', maxTicksLimit: 8, maxRotation: 0 }, grid: { color: '#2a2a2e' } },
+    y: { ticks: { color: '#888' }, grid: { color: '#2a2a2e' }, beginAtZero: true },
+  },
+};
+
+function mkChart(id, color, data, labels) {
+  const ctx = document.getElementById(id).getContext('2d');
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{ data, borderColor: color, backgroundColor: color + '22', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 }],
+    },
+    options: CHART_DEFAULTS,
+  });
+}
+
+function fmtTs(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderCharts(m) {
+  const rows   = m.data || [];
+  const labels = rows.map(r => fmtTs(r.ts));
+  mkChart('chart-req', '#761516', rows.map(r => r.req_per_min), labels);
+  mkChart('chart-cpu', '#f39c12', rows.map(r => r.cpu),         labels);
+  mkChart('chart-mem', '#3498db', rows.map(r => r.mem_pct),     labels);
+}
+
+function renderConstraints(c) {
+  const events = c.events || [];
+  document.getElementById('constraint-count').textContent = `(${events.length})`;
+  if (!events.length) {
+    document.getElementById('constraint-list').innerHTML = '<li class="empty">No constraint events in window.</li>';
+    return;
+  }
+  document.getElementById('constraint-list').innerHTML = events.slice().reverse().map(e => {
+    const dt = new Date(e.ts * 1000).toLocaleString();
+    return `<li><span class="event-ts">${dt}</span><span class="event-type ${e.type}">${e.type}</span><span>${e.detail}</span></li>`;
+  }).join('');
+}
+
+// ── Bug Reports ───────────────────────────────────────────────────────────────
+async function loadBugs() {
+  try {
+    const r = await apiFetch('/api/admin/bug-reports');
+    if (!r.ok) return;
+    const d = await r.json();
+    const count = (d.content.match(/={60}/g)||[]).length / 2 | 0;
+    document.getElementById('bug-count').textContent = `(${count})`;
+    const el = document.getElementById('bug-log');
+    if (!d.content) { el.innerHTML = '<span style="color:var(--muted)">No bug reports yet.</span>'; return; }
+    el.innerHTML = d.content
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/(={60})/g, '<span class="bug-separator">$1</span>');
+    el.scrollTop = el.scrollHeight;
+  } catch(e) { console.warn('Bugs load error', e); }
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+async function loadDownloads() {
+  try {
+    const r = await apiFetch('/api/admin/downloads');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('dl-stats').innerHTML = `
+      <div class="stat"><div class="val">${(d.count||0).toLocaleString()}</div><div class="lbl">Total Downloads</div></div>
+    `;
+  } catch(e) { console.warn('Downloads load error', e); }
+}
+
+// ── Subscribers ───────────────────────────────────────────────────────────────
+async function loadSubscribers() {
+  try {
+    const r = await apiFetch('/api/admin/subscribers');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('sub-count').textContent = `(${d.count})`;
+    const rows = Object.entries(d.subscribers || {});
+    if (!rows.length) { document.getElementById('sub-table').innerHTML = '<tr><td colspan="6" class="empty">No subscribers.</td></tr>'; return; }
+    document.getElementById('sub-table').innerHTML = rows.map(([key, s]) => {
+      const active  = s.active;
+      const added   = s.added ? new Date(s.added).toLocaleDateString() : '—';
+      return `<tr>
+        <td style="font-family:monospace;font-size:0.82em">${key}</td>
+        <td>${s.user_id||'—'}</td>
+        <td>${s.email||'—'}</td>
+        <td class="${active ? 'sub-active' : 'sub-inactive'}">${active ? 'Active' : 'Inactive'}</td>
+        <td>${added}</td>
+        <td>${active
+          ? `<button class="btn btn-danger btn-sm" onclick="removeSubscriber('${key}')">Remove</button>`
+          : `<button class="btn btn-success btn-sm" onclick="readdSubscriber('${key}','${s.user_id||''}','${s.email||''}')">Reactivate</button>`
+        }</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.warn('Subscribers load error', e); }
+}
+
+async function addSubscriber() {
+  const user_id = document.getElementById('sub-userid').value.trim();
+  const email   = document.getElementById('sub-email').value.trim();
+  if (!user_id && !email) { alert('Enter a user_id or email.'); return; }
+  const r = await apiFetch('/api/subscribers/add', { method: 'POST', body: JSON.stringify({ user_id, email }) });
+  if (r.ok) { document.getElementById('sub-userid').value = ''; document.getElementById('sub-email').value = ''; loadSubscribers(); }
+  else alert('Error: ' + (await r.text()));
+}
+
+async function removeSubscriber(key) {
+  if (!confirm(`Deactivate subscriber "${key}"?`)) return;
+  const r = await apiFetch('/api/subscribers/remove', { method: 'POST', body: JSON.stringify({ user_id: key }) });
+  if (r.ok) loadSubscribers();
+  else alert('Error: ' + (await r.text()));
+}
+
+async function readdSubscriber(key, user_id, email) {
+  const r = await apiFetch('/api/subscribers/add', { method: 'POST', body: JSON.stringify({ user_id, email }) });
+  if (r.ok) loadSubscribers();
+  else alert('Error: ' + (await r.text()));
+}
+
+// ── Auto-login from sessionStorage ───────────────────────────────────────────
+(function() {
+  const url   = sessionStorage.getItem('cct_url');
+  const token = sessionStorage.getItem('cct_token');
+  const rkey  = sessionStorage.getItem('cct_rkey');
+  if (url && token) {
+    BASE_URL = url; TOKEN = token; RENDER_KEY = rkey || '';
+    document.getElementById('inp-url').value       = url;
+    document.getElementById('inp-token').value     = token;
+    document.getElementById('inp-render-key').value = RENDER_KEY;
+    showApp();
+  }
+})();
+
+document.getElementById('inp-token').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>

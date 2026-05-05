@@ -348,6 +348,11 @@ def main():
 
     print(f'Report written -> checkins/{filename}')
 
+    # Open in default browser
+    import webbrowser
+    from pathlib import Path
+    webbrowser.open(Path(out_path).resolve().as_uri())
+
     # Print a quick console summary
     regressions = [r for r in bench_rows if r['flag'] == 'regression']
     if regressions:
