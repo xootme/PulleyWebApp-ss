@@ -7,6 +7,7 @@ import math
 import io
 import os
 import json
+import re
 import time
 import threading
 try:
@@ -2286,10 +2287,19 @@ def _load_bug_issue_urls():
         return {}
 
 
+def _normalize_issue_record(val):
+    """Upgrade a bare URL string to the structured {url, number, state} format."""
+    if isinstance(val, str):
+        m = re.search(r'/issues/(\d+)$', val)
+        return {'url': val, 'number': int(m.group(1)) if m else None, 'state': 'unknown'}
+    return val
+
+
 def _save_bug_issue_url(ts_id, url):
     os.makedirs(_LOG_DIR, exist_ok=True)
     urls = _load_bug_issue_urls()
-    urls[ts_id] = url
+    m = re.search(r'/issues/(\d+)$', url)
+    urls[ts_id] = {'url': url, 'number': int(m.group(1)) if m else None, 'state': 'open'}
     with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
         json.dump(urls, f, indent=2)
 
@@ -2371,8 +2381,17 @@ def _parse_bug_reports():
     comments   = _load_bug_comments()
     issue_urls = _load_bug_issue_urls()
     for r in reports:
-        r['comment']   = comments.get(r['timestamp'], '')
-        r['issue_url'] = issue_urls.get(r['timestamp'], '')
+        r['comment'] = comments.get(r['timestamp'], '')
+        raw = issue_urls.get(r['timestamp'])
+        if raw:
+            rec = _normalize_issue_record(raw)
+            r['issue_url']    = rec.get('url', '')
+            r['issue_number'] = rec.get('number')
+            r['issue_state']  = rec.get('state', 'unknown')
+        else:
+            r['issue_url']    = ''
+            r['issue_number'] = None
+            r['issue_state']  = None
     return reports
 
 
@@ -2465,6 +2484,84 @@ def api_admin_bug_comment(ts_id):
         comments.pop(ts_id, None)
     _save_bug_comments(comments)
     return jsonify({'ok': True})
+
+
+def _github_api(method, path, pat, body=None):
+    """Make a GitHub API call; returns (response_dict, status_code)."""
+    import urllib.request, urllib.error
+    url = f'https://api.github.com{path}'
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, method=method, headers={
+        'Authorization':       f'Bearer {pat}',
+        'Accept':              'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type':        'application/json',
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read()), r.status
+    except urllib.error.HTTPError as e:
+        return json.loads(e.read() or b'{}'), e.code
+
+
+@app.route('/api/admin/bug-reports/<ts_id>/github-close', methods=['POST'])
+def api_admin_bug_github_close(ts_id):
+    err = _admin_auth()
+    if err:
+        return err
+    pat  = os.environ.get('FEEDBACK_GITHUB_PAT', '').strip()
+    repo = os.environ.get('FEEDBACK_GITHUB_REPO', '').strip()
+    if not pat or not repo:
+        return jsonify({'error': 'GitHub not configured'}), 503
+    issue_urls = _load_bug_issue_urls()
+    raw = issue_urls.get(ts_id)
+    if not raw:
+        return jsonify({'error': 'No GitHub issue linked to this report'}), 404
+    rec    = _normalize_issue_record(raw)
+    number = rec.get('number')
+    if not number:
+        return jsonify({'error': 'Cannot determine issue number from URL'}), 400
+    data   = request.get_json(silent=True) or {}
+    target = 'closed' if data.get('state', 'closed') == 'closed' else 'open'
+    resp, status = _github_api('PATCH', f'/repos/{repo}/issues/{number}', pat, {'state': target})
+    if status not in (200, 201):
+        return jsonify({'error': resp.get('message', 'GitHub error'), 'status': status}), 502
+    rec['state'] = resp.get('state', target)
+    issue_urls[ts_id] = rec
+    with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(issue_urls, f, indent=2)
+    return jsonify({'ok': True, 'state': rec['state']})
+
+
+@app.route('/api/admin/github-sync', methods=['POST'])
+def api_admin_github_sync():
+    err = _admin_auth()
+    if err:
+        return err
+    pat  = os.environ.get('FEEDBACK_GITHUB_PAT', '').strip()
+    repo = os.environ.get('FEEDBACK_GITHUB_REPO', '').strip()
+    if not pat or not repo:
+        return jsonify({'ok': False, 'error': 'GitHub not configured', 'updated': {}})
+    issue_urls = _load_bug_issue_urls()
+    updated = {}
+    changed = False
+    for ts_id, raw in issue_urls.items():
+        rec    = _normalize_issue_record(raw)
+        number = rec.get('number')
+        if not number:
+            continue
+        resp, status = _github_api('GET', f'/repos/{repo}/issues/{number}', pat)
+        if status == 200:
+            new_state = resp.get('state', 'unknown')
+            if rec.get('state') != new_state:
+                rec['state'] = new_state
+                issue_urls[ts_id] = rec
+                changed = True
+            updated[ts_id] = new_state
+    if changed:
+        with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(issue_urls, f, indent=2)
+    return jsonify({'ok': True, 'updated': updated})
 
 
 @app.route('/api/admin/downloads')

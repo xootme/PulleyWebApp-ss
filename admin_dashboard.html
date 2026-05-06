@@ -168,10 +168,18 @@
   .bug-state-toggle { cursor:pointer; font-size:0.82em; color:var(--muted); user-select:none; }
   .bug-state-toggle:hover { color:var(--text); }
   .bug-state-pre { font-family:monospace; font-size:0.78em; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:10px; margin-top:6px; overflow-x:auto; white-space:pre; display:none; }
-  .bug-comment-area { width:100%; margin-top:6px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:0.85em; padding:8px; resize:vertical; min-height:60px; font-family:inherit; }
-  .bug-comment-area:focus { outline:none; border-color:var(--red); }
-  .bug-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .bug-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
   .bug-card.selected .bug-card-header { background: rgba(118,21,22,0.08); }
+  /* GitHub issue state icon */
+  .issue-state { display:inline-flex; align-items:center; flex-shrink:0; line-height:0; }
+  .issue-state svg { display:block; }
+  .issue-state.open    { color: #3fb950; }
+  .issue-state.closed  { color: #a371f7; }
+  .issue-state.unknown { color: #888; }
+  /* GitHub link in header */
+  .bug-gh-header { display:inline-flex; align-items:center; flex-shrink:0; color:var(--muted); text-decoration:none; padding:3px; border-radius:4px; line-height:0; transition:color 0.15s; }
+  .bug-gh-header:hover { color:#8cf; }
+  /* GitHub link in body (legacy — body actions) */
   .bug-gh-link { font-size:0.8em; color:#8cf; text-decoration:none; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border:1px solid #2a4060; border-radius:4px; }
   .bug-gh-link:hover { background:#1a2a40; }
   .dl-breakdown { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px; margin-top:16px; }
@@ -322,10 +330,8 @@
     <div id="tab-bugs" class="tab-panel">
       <div class="bug-toolbar">
         <label><input type="checkbox" id="bug-select-all" onchange="bugSelectAll(this)"> Select all</label>
-        <button class="btn btn-sm" id="btn-bug-repro"     onclick="bugRepro()"    disabled>Repro</button>
-        <button class="btn btn-sm btn-danger" id="btn-bug-delete"  onclick="bugDelete()"   disabled>Delete</button>
-        <button class="btn btn-sm" id="btn-bug-comment"   onclick="bugComment()"  disabled>Comment</button>
-        <button class="btn btn-sm" id="btn-bug-download"  onclick="bugDownload()" disabled>Download</button>
+        <button class="btn btn-sm" id="btn-bug-repro"   onclick="bugRepro()"   disabled>Repro</button>
+        <button class="btn btn-sm btn-danger" id="btn-bug-delete" onclick="bugDelete()" disabled>Delete</button>
         <span id="bug-count" style="color:var(--muted);font-size:0.82em;margin-left:auto;"></span>
       </div>
       <div id="bug-cards"><div class="empty">Loading…</div></div>
@@ -603,14 +609,50 @@ function renderConstraints(c) {
 // ── Bug Reports ───────────────────────────────────────────────────────────────
 let _bugReports = [];
 
+const SVG_ISSUE_OPEN   = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-label="Open"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0z"/></svg>`;
+const SVG_ISSUE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-label="Closed"><path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5z"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-8 6.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z"/></svg>`;
+const SVG_ISSUE_UNK    = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-label="Unknown"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0zm5.788-1.5c0-.75.56-1.25 1.212-1.25.65 0 1.212.5 1.212 1.25a.75.75 0 0 0 1.5 0c0-1.555-1.226-2.75-2.712-2.75C7.024 3.75 5.8 4.945 5.8 6.5a.75.75 0 0 0 1.5 0zM8 11a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/></svg>`;
+const SVG_GITHUB       = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>`;
+
+function issueStateIcon(state) {
+  if (state === 'open')   return `<span class="issue-state open"   title="Open on GitHub">${SVG_ISSUE_OPEN}</span>`;
+  if (state === 'closed') return `<span class="issue-state closed" title="Closed on GitHub">${SVG_ISSUE_CLOSED}</span>`;
+  if (state === 'unknown') return `<span class="issue-state unknown" title="Status unknown">${SVG_ISSUE_UNK}</span>`;
+  return '';
+}
+
 async function loadBugs() {
   try {
     const r = await apiFetch('/api/admin/bug-reports');
     if (!r.ok) return;
     const d = await r.json();
-    _bugReports = (d.reports || []).slice().reverse(); // newest first
+    _bugReports = (d.reports || []).slice().reverse();
     renderBugCards();
+    syncGithubStates();
   } catch(e) { console.warn('Bugs load error', e); }
+}
+
+async function syncGithubStates() {
+  try {
+    const r = await apiFetch('/api/admin/github-sync', { method: 'POST' });
+    if (!r.ok) return;
+    const { updated } = await r.json();
+    for (const [id, state] of Object.entries(updated || {})) {
+      const rep = _bugReports.find(r => r.id === id);
+      if (rep) rep.issue_state = state;
+      const card = document.querySelector(`.bug-card[data-id="${CSS.escape(id)}"]`);
+      if (!card) continue;
+      const stEl = card.querySelector('.issue-state');
+      if (stEl) stEl.outerHTML = issueStateIcon(state);
+      const closeBtn = card.querySelector('.bug-close-btn');
+      if (closeBtn) {
+        const nowOpen = state === 'open';
+        closeBtn.textContent = nowOpen ? 'Close issue' : 'Reopen';
+        closeBtn.dataset.targetState = nowOpen ? 'closed' : 'open';
+        closeBtn.style.color = nowOpen ? '#f88' : '#8cf';
+      }
+    }
+  } catch(e) { /* GitHub sync is best-effort */ }
 }
 
 function renderBugCards() {
@@ -627,7 +669,6 @@ function renderBugCards() {
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function bugHash(id) {
-  // FNV-1a 32-bit — Math.imul for exact 32-bit multiply (avoids float64 precision loss)
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);
@@ -644,11 +685,23 @@ async function copyHash(hash, btn) {
 
 function bugCardHtml(r) {
   const isFeature = r.type === 'Feature Request';
-  const lbl1 = isFeature ? 'Would like to do' : 'Currently seeing';
-  const lbl2 = isFeature ? "Why it's useful"  : 'Should be seeing';
+  const lbl1      = isFeature ? 'Would like to do' : 'Currently seeing';
+  const lbl2      = isFeature ? "Why it's useful"  : 'Should be seeing';
   const stateJson = esc(JSON.stringify(r.state, null, 2));
-  const hasState = r.state && Object.keys(r.state).length > 0;
-  const comment = r.comment || '';
+  const hasState  = r.state && Object.keys(r.state).length > 0;
+
+  const stateIcon = r.issue_url ? issueStateIcon(r.issue_state || 'unknown') : '';
+  const ghLink    = r.issue_url
+    ? `<a class="bug-gh-header" href="${esc(r.issue_url)}" target="_blank" title="View on GitHub" onclick="event.stopPropagation()">${SVG_GITHUB}</a>`
+    : '';
+
+  const isOpen     = r.issue_state === 'open';
+  const closeLabel = isOpen ? 'Close issue' : 'Reopen';
+  const closeColor = isOpen ? '#f88' : '#8cf';
+  const closeBtn   = r.issue_url
+    ? `<button class="btn btn-sm bug-close-btn" style="background:#2a2a2a;color:${closeColor}" data-target-state="${isOpen?'closed':'open'}" onclick="bugGithubClose('${esc(r.id)}',this)">${closeLabel}</button>`
+    : '';
+
   return `<div class="bug-card" data-id="${esc(r.id)}">
     <div class="bug-card-header" onclick="bugCardClick(event,'${esc(r.id)}')">
       <input type="checkbox" class="bug-cb" onclick="event.stopPropagation()" onchange="bugUpdateButtons()" data-id="${esc(r.id)}">
@@ -656,29 +709,20 @@ function bugCardHtml(r) {
       <span class="bug-hash">${bugHash(r.id)}</span><button class="bug-copy" title="Copy ID" onclick="event.stopPropagation();copyHash('${bugHash(r.id)}',this)"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       <span class="bug-ts">${esc(r.timestamp)}</span>
       ${r.email ? `<span class="bug-email">${esc(r.email)}</span>` : ''}
-      <span class="bug-ver">v${esc(r.version)}</span>
+      <span class="bug-ver" style="margin-left:auto">v${esc(r.version)}</span>
+      ${stateIcon}${ghLink}
     </div>
     <div class="bug-body" style="display:none">
-      ${r.seeing    ? `<div class="bug-field"><strong>${lbl1}</strong>${esc(r.seeing)}</div>` : ''}
-      ${r.should_see? `<div class="bug-field"><strong>${lbl2}</strong>${esc(r.should_see)}</div>` : ''}
+      ${r.seeing     ? `<div class="bug-field"><strong>${lbl1}</strong>${esc(r.seeing)}</div>`     : ''}
+      ${r.should_see ? `<div class="bug-field"><strong>${lbl2}</strong>${esc(r.should_see)}</div>` : ''}
       ${hasState ? `<div class="bug-field">
         <span class="bug-state-toggle" onclick="bugToggleState(this)">&#9654; App state</span>
         <pre class="bug-state-pre">${stateJson}</pre>
       </div>` : ''}
-      ${comment ? `<div class="bug-field"><strong>Admin note</strong><div style="color:#aef;font-size:0.88em;white-space:pre-wrap">${esc(comment)}</div></div>` : ''}
-      <div class="bug-comment-wrap" style="display:none">
-        <textarea class="bug-comment-area" placeholder="Admin note…">${esc(comment)}</textarea>
-        <div style="display:flex;gap:8px;margin-top:6px;">
-          <button class="btn btn-sm btn-success" onclick="bugSaveComment('${esc(r.id)}',this)">Save note</button>
-          <button class="btn btn-sm" style="background:var(--border);color:var(--text)" onclick="bugCancelComment(this)">Cancel</button>
-        </div>
-      </div>
       <div class="bug-actions">
         <button class="btn btn-sm" style="background:#1a3a20;color:#6f6" onclick="bugReproSingle('${esc(r.id)}')">Repro</button>
+        ${closeBtn}
         <button class="btn btn-sm btn-danger" onclick="bugDeleteSingle('${esc(r.id)}')">Delete</button>
-        <button class="btn btn-sm" style="background:#2a2a40;color:#aaf" onclick="bugCommentSingle(this)">Comment</button>
-        <button class="btn btn-sm" style="background:#2a2040;color:#caf" onclick="bugDownloadSingle('${esc(r.id)}')">Download</button>
-        ${r.issue_url ? `<a class="bug-gh-link" href="${esc(r.issue_url)}" target="_blank"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>GitHub</a>` : ''}
       </div>
     </div>
   </div>`;
@@ -686,7 +730,7 @@ function bugCardHtml(r) {
 
 function bugCardClick(e, id) {
   if (e.target.type === 'checkbox') return;
-  const card = document.querySelector(`.bug-card[data-id="${id}"]`);
+  const card = document.querySelector(`.bug-card[data-id="${CSS.escape(id)}"]`);
   const body = card.querySelector('.bug-body');
   body.style.display = body.style.display === 'none' ? 'block' : 'none';
 }
@@ -710,7 +754,7 @@ function bugUpdateButtons() {
     const cb = c.querySelector('.bug-cb');
     c.classList.toggle('selected', cb && cb.checked);
   });
-  ['btn-bug-repro','btn-bug-delete','btn-bug-comment','btn-bug-download'].forEach(id => {
+  ['btn-bug-repro','btn-bug-delete'].forEach(id => {
     document.getElementById(id).disabled = sel.length === 0;
   });
 }
@@ -736,49 +780,32 @@ async function bugDeleteSingle(id) {
   else alert('Delete failed: ' + await res.text());
 }
 
-function bugCommentSingle(btn) {
-  const body = btn.closest('.bug-body');
-  body.querySelector('.bug-comment-wrap').style.display = 'block';
-  body.querySelector('.bug-comment-area').focus();
-}
-
-function bugCancelComment(btn) {
-  btn.closest('.bug-comment-wrap').style.display = 'none';
-}
-
-async function bugSaveComment(id, btn) {
-  const wrap    = btn.closest('.bug-comment-wrap');
-  const comment = wrap.querySelector('.bug-comment-area').value;
-  const res = await apiFetch(`/api/admin/bug-reports/${encodeURIComponent(id)}/comment`, {
-    method: 'POST', body: JSON.stringify({ comment }),
+async function bugGithubClose(id, btn) {
+  const targetState = btn.dataset.targetState;
+  btn.disabled = true;
+  btn.textContent = '…';
+  const res = await apiFetch(`/api/admin/bug-reports/${encodeURIComponent(id)}/github-close`, {
+    method: 'POST', body: JSON.stringify({ state: targetState }),
   });
-  if (res.ok) { await loadBugs(); }
-  else alert('Save failed: ' + await res.text());
-}
-
-function bugDownloadSingle(id) {
-  const r = bugById(id);
-  if (!r) return;
-  const text = [
-    `${r.type} — ${r.timestamp}`,
-    `App Version: ${r.version}   Build: ${r.build}`,
-    '='.repeat(60),
-    r.seeing     ? `\nCurrently seeing:\n  ${r.seeing}` : '',
-    r.should_see ? `\nShould be seeing:\n  ${r.should_see}` : '',
-    r.email      ? `\nContact email:\n  ${r.email}` : '',
-    `\nApp state:\n${JSON.stringify(r.state, null, 2)}`,
-    r.comment    ? `\nAdmin note:\n  ${r.comment}` : '',
-  ].filter(Boolean).join('\n');
-  const blob = new Blob([text], { type: 'text/plain' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `bug-report-${r.timestamp.replace(/[: ]/g,'-')}.txt`;
-  a.click();
+  if (res.ok) {
+    const { state } = await res.json();
+    const rep = bugById(id);
+    if (rep) rep.issue_state = state;
+    const nowOpen = state === 'open';
+    btn.textContent            = nowOpen ? 'Close issue' : 'Reopen';
+    btn.dataset.targetState    = nowOpen ? 'closed' : 'open';
+    btn.style.color            = nowOpen ? '#f88' : '#8cf';
+    const card = btn.closest('.bug-card');
+    const stEl = card.querySelector('.issue-state');
+    if (stEl) stEl.outerHTML = issueStateIcon(state);
+  } else {
+    alert('GitHub error: ' + await res.text());
+  }
+  btn.disabled = false;
 }
 
 // ── Toolbar bulk actions ──────────────────────────────────────────────────────
-function bugRepro()    { bugSelected().forEach(bugReproSingle); }
-function bugDownload() { bugSelected().forEach(bugDownloadSingle); }
+function bugRepro() { bugSelected().forEach(bugReproSingle); }
 
 async function bugDelete() {
   const sel = bugSelected();
@@ -787,16 +814,6 @@ async function bugDelete() {
     await apiFetch(`/api/admin/bug-reports/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
   await loadBugs();
-}
-
-function bugComment() {
-  bugSelected().forEach(id => {
-    const card = document.querySelector(`.bug-card[data-id="${id}"]`);
-    if (!card) return;
-    const body = card.querySelector('.bug-body');
-    body.style.display = 'block';
-    bugCommentSingle(body.querySelector('[onclick*="bugCommentSingle"]'));
-  });
 }
 
 // ── Downloads ─────────────────────────────────────────────────────────────────
