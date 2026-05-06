@@ -64,6 +64,15 @@
   .btn-success:hover { background: #225535; }
   #login-error { color: #f88; font-size: 0.85em; margin-top: 12px; min-height: 18px; }
 
+  /* ── Settings panel ── */
+  .settings-btn { background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; border-radius:5px; padding:5px 10px; font-size:0.82em; display:flex; align-items:center; gap:5px; }
+  .settings-btn:hover { border-color:var(--red); color:var(--text); }
+  #settings-panel { display:none; position:fixed; top:56px; right:16px; width:320px; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; z-index:200; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+  #settings-panel h3 { font-size:0.82em; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:14px; }
+  #settings-panel .field { margin-bottom:12px; }
+  #settings-panel .field label { font-size:0.8em; color:var(--muted); display:block; margin-bottom:5px; }
+  #settings-overlay { display:none; position:fixed; inset:0; z-index:199; }
+
   /* ── Shell ── */
   #app { display: none; flex-direction: column; min-height: 100vh; }
   header {
@@ -163,6 +172,12 @@
   .bug-comment-area:focus { outline:none; border-color:var(--red); }
   .bug-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
   .bug-card.selected .bug-card-header { background: rgba(118,21,22,0.08); }
+  .bug-gh-link { font-size:0.8em; color:#8cf; text-decoration:none; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border:1px solid #2a4060; border-radius:4px; }
+  .bug-gh-link:hover { background:#1a2a40; }
+  .dl-breakdown { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px; margin-top:16px; }
+  .dl-fmt { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px 14px; }
+  .dl-fmt .val { font-size:1.6em; font-weight:700; }
+  .dl-fmt .lbl { font-size:0.75em; color:var(--muted); margin-top:3px; text-transform:uppercase; letter-spacing:0.06em; }
 
   /* Subscribers */
   table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
@@ -187,30 +202,27 @@
   <div class="login-card">
     <h1>CCT Admin Dashboard</h1>
     <p>CheapCADTools.com — PulleyWebApp</p>
-    <div class="field" id="field-url">
-      <label>App URL (base)</label>
-      <input id="inp-url" type="text" value="https://cheapcadtools.com" placeholder="https://cheapcadtools.com" />
-    </div>
-    <div class="field">
-      <label>Provision Secret (Bearer token)</label>
-      <div class="field-pw">
-        <input id="inp-token" type="password" placeholder="PROVISION_SECRET" />
-        <button class="eye-btn" type="button" onclick="toggleEye('inp-token',this)" tabindex="-1">
-          <svg id="eye-token" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
+    <form id="login-form" onsubmit="doLogin(event)" autocomplete="on">
+      <div class="field" id="field-url">
+        <label>App URL</label>
+        <input id="inp-url" type="url" value="https://cheapcadtools.com" placeholder="https://cheapcadtools.com" autocomplete="url" />
       </div>
-    </div>
-    <div class="field">
-      <label>Render API Key</label>
-      <div class="field-pw">
-        <input id="inp-render-key" type="password" placeholder="rnd_..." />
-        <button class="eye-btn" type="button" onclick="toggleEye('inp-render-key',this)" tabindex="-1">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
+      <div class="field">
+        <label>Username</label>
+        <input id="inp-user" type="text" value="admin" placeholder="admin" autocomplete="username" />
       </div>
-    </div>
-    <button class="btn btn-primary" onclick="doLogin()">Connect</button>
-    <div id="login-error"></div>
+      <div class="field">
+        <label>Password</label>
+        <div class="field-pw">
+          <input id="inp-token" type="password" placeholder="" autocomplete="current-password" />
+          <button class="eye-btn" type="button" onclick="toggleEye('inp-token',this)" tabindex="-1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+      <div id="login-error"></div>
+    </form>
   </div>
 </div>
 
@@ -226,9 +238,30 @@
         <label for="auto-refresh">Auto-refresh</label>
         <span id="last-update"></span>
       </div>
+      <button class="settings-btn" onclick="toggleSettings()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
       <button id="logout-btn" onclick="doLogout()">Logout</button>
     </div>
   </header>
+
+  <!-- Settings panel -->
+  <div id="settings-overlay" onclick="closeSettings()"></div>
+  <div id="settings-panel">
+    <h3>Settings</h3>
+    <div class="field">
+      <label>Render API Key</label>
+      <div class="field-pw">
+        <input id="inp-render-key" type="password" placeholder="rnd_..." autocomplete="off" />
+        <button class="eye-btn" type="button" onclick="toggleEye('inp-render-key',this)" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save</button>
+    <div id="settings-msg" style="font-size:0.82em;color:var(--green);margin-top:8px;min-height:16px;"></div>
+  </div>
 
   <nav id="nav-tabs">
     <button class="active" onclick="switchTab('health',this)">Health</button>
@@ -303,6 +336,7 @@
       <div class="card">
         <h2>Download Stats</h2>
         <div class="stat-grid" id="dl-stats"></div>
+        <div class="dl-breakdown" id="dl-breakdown" style="display:none"></div>
       </div>
     </div>
 
@@ -350,30 +384,36 @@ function toggleEye(inputId, btn) {
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let BASE_URL = '', TOKEN = '', RENDER_KEY = '';
+let BASE_URL = '', TOKEN = '', RENDER_KEY = '', ADMIN_USER = '';
 let refreshTimer = null;
 let charts = {};
 
 // ── Login / Logout ────────────────────────────────────────────────────────────
-async function doLogin() {
+async function doLogin(e) {
+  if (e) e.preventDefault();
   BASE_URL   = document.getElementById('inp-url').value.replace(/\/$/, '');
+  ADMIN_USER = document.getElementById('inp-user').value.trim() || 'admin';
   TOKEN      = document.getElementById('inp-token').value.trim();
-  RENDER_KEY = document.getElementById('inp-render-key').value.trim();
   const err  = document.getElementById('login-error');
   err.textContent = 'Connecting…';
   try {
     const r = await apiFetch('/api/admin/health');
     if (!r.ok) { err.textContent = `Auth failed (${r.status})`; return; }
     sessionStorage.setItem('cct_url',   BASE_URL);
+    sessionStorage.setItem('cct_user',  ADMIN_USER);
     sessionStorage.setItem('cct_token', TOKEN);
-    sessionStorage.setItem('cct_rkey',  RENDER_KEY);
+    RENDER_KEY = sessionStorage.getItem('cct_rkey') || '';
+    document.getElementById('inp-render-key').value = RENDER_KEY;
     showApp();
   } catch(e) { err.textContent = 'Network error: ' + e.message; }
 }
 
 function doLogout() {
-  sessionStorage.clear();
+  sessionStorage.removeItem('cct_url');
+  sessionStorage.removeItem('cct_user');
+  sessionStorage.removeItem('cct_token');
   clearInterval(refreshTimer);
+  document.getElementById('inp-token').value = '';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display          = 'none';
 }
@@ -381,12 +421,34 @@ function doLogout() {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display          = 'flex';
-  document.getElementById('hdr-host').textContent = BASE_URL.replace('https://', '');
+  document.getElementById('hdr-host').textContent = (ADMIN_USER ? ADMIN_USER + ' @ ' : '') + BASE_URL.replace('https://', '');
   loadAll();
   clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {
     if (document.getElementById('auto-refresh').checked) loadAll();
   }, 60000);
+}
+
+// ── Settings panel ────────────────────────────────────────────────────────────
+function toggleSettings() {
+  const panel   = document.getElementById('settings-panel');
+  const overlay = document.getElementById('settings-overlay');
+  const open    = panel.style.display === 'block';
+  panel.style.display   = open ? 'none' : 'block';
+  overlay.style.display = open ? 'none' : 'block';
+}
+
+function closeSettings() {
+  document.getElementById('settings-panel').style.display   = 'none';
+  document.getElementById('settings-overlay').style.display = 'none';
+}
+
+function saveSettings() {
+  RENDER_KEY = document.getElementById('inp-render-key').value.trim();
+  sessionStorage.setItem('cct_rkey', RENDER_KEY);
+  const msg = document.getElementById('settings-msg');
+  msg.textContent = 'Saved.';
+  setTimeout(() => { msg.textContent = ''; closeSettings(); }, 800);
 }
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -445,7 +507,7 @@ function renderHealth(h) {
     <div class="stat"><div class="val">${h.downloads.toLocaleString()}</div><div class="lbl">Total Downloads</div></div>
     <div class="stat"><div class="val">${h.active_subs}</div><div class="lbl">Active Subscribers</div></div>
     <div class="stat"><div class="val">${h.bug_reports}</div><div class="lbl">Bug Reports</div></div>
-    <div class="stat"><div class="val" style="font-size:1em;color:var(--muted)">${h.version}</div><div class="lbl">App Version (built ${h.build_time})</div></div>
+    <div class="stat"><div class="val" style="font-size:1.2em">${h.version}</div><div class="lbl">Version &mdash; ${h.build_time}</div></div>
   `;
 }
 
@@ -616,6 +678,7 @@ function bugCardHtml(r) {
         <button class="btn btn-sm btn-danger" onclick="bugDeleteSingle('${esc(r.id)}')">Delete</button>
         <button class="btn btn-sm" style="background:#2a2a40;color:#aaf" onclick="bugCommentSingle(this)">Comment</button>
         <button class="btn btn-sm" style="background:#2a2040;color:#caf" onclick="bugDownloadSingle('${esc(r.id)}')">Download</button>
+        ${r.issue_url ? `<a class="bug-gh-link" href="${esc(r.issue_url)}" target="_blank"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>GitHub</a>` : ''}
       </div>
     </div>
   </div>`;
@@ -737,6 +800,9 @@ function bugComment() {
 }
 
 // ── Downloads ─────────────────────────────────────────────────────────────────
+const FMT_LABELS = { step: 'STEP', stl: 'STL', svg: 'SVG', dxf: 'DXF', other: 'Other' };
+const FMT_COLORS = { step: '#f39c12', stl: '#2ecc71', svg: '#3498db', dxf: '#9b59b6', other: '#888' };
+
 async function loadDownloads() {
   try {
     const r = await apiFetch('/api/admin/downloads');
@@ -745,6 +811,20 @@ async function loadDownloads() {
     document.getElementById('dl-stats').innerHTML = `
       <div class="stat"><div class="val">${(d.count||0).toLocaleString()}</div><div class="lbl">Total Downloads</div></div>
     `;
+    const byFmt = d.by_format || {};
+    const fmtKeys = Object.keys(byFmt).sort((a,b) => byFmt[b]-byFmt[a]);
+    const breakdown = document.getElementById('dl-breakdown');
+    if (fmtKeys.length) {
+      breakdown.style.display = 'grid';
+      breakdown.innerHTML = fmtKeys.map(k => `
+        <div class="dl-fmt">
+          <div class="val" style="color:${FMT_COLORS[k]||'#aaa'}">${byFmt[k].toLocaleString()}</div>
+          <div class="lbl">${FMT_LABELS[k]||k}</div>
+        </div>
+      `).join('');
+    } else {
+      breakdown.style.display = 'none';
+    }
   } catch(e) { console.warn('Downloads load error', e); }
 }
 
@@ -800,18 +880,18 @@ async function readdSubscriber(key, user_id, email) {
 // ── Auto-login from sessionStorage ───────────────────────────────────────────
 (function() {
   const url   = sessionStorage.getItem('cct_url');
+  const user  = sessionStorage.getItem('cct_user');
   const token = sessionStorage.getItem('cct_token');
-  const rkey  = sessionStorage.getItem('cct_rkey');
+  const rkey  = sessionStorage.getItem('cct_rkey') || '';
   if (url && token) {
-    BASE_URL = url; TOKEN = token; RENDER_KEY = rkey || '';
-    document.getElementById('inp-url').value       = url;
-    document.getElementById('inp-token').value     = token;
+    BASE_URL = url; ADMIN_USER = user || 'admin'; TOKEN = token; RENDER_KEY = rkey;
+    document.getElementById('inp-url').value        = url;
+    document.getElementById('inp-user').value       = ADMIN_USER;
+    document.getElementById('inp-token').value      = token;
     document.getElementById('inp-render-key').value = RENDER_KEY;
     showApp();
   }
 })();
-
-document.getElementById('inp-token').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 </script>
 </body>
 </html>

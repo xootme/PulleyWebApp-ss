@@ -35,6 +35,7 @@ _DOWNLOAD_COUNT_FILE = os.path.join(_LOG_DIR, 'download_count.json')
 _METRICS_FILE        = os.path.join(_LOG_DIR, 'metrics.jsonl')
 _CONSTRAINTS_FILE    = os.path.join(_LOG_DIR, 'constraint_events.jsonl')
 _BUG_COMMENTS_FILE   = os.path.join(_LOG_DIR, 'bug_comments.json')
+_BUG_ISSUE_URLS_FILE = os.path.join(_LOG_DIR, 'bug_issue_urls.json')
 _METRICS_RETENTION_DAYS  = 30
 _CPU_CONSTRAINT_THRESHOLD = 80.0
 _MEM_CONSTRAINT_THRESHOLD = 85.0
@@ -147,7 +148,7 @@ _metrics_thread = threading.Thread(target=_metrics_sampler, daemon=True)
 _metrics_thread.start()
 
 
-def _increment_download_count():
+def _increment_download_count(fmt=None):
     """Increment the persistent download counter; email at each multiple of 100.
 
     Uses fcntl.flock (exclusive file lock) on Linux so concurrent gunicorn
@@ -161,13 +162,18 @@ def _increment_download_count():
         fd = os.open(_DOWNLOAD_COUNT_FILE, os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
-            raw = os.read(fd, 256).decode('utf-8').strip()
+            raw = os.read(fd, 4096).decode('utf-8').strip()
             try:
-                count = int(json.loads(raw).get('count', 0)) if raw else 0
-            except (ValueError, KeyError, json.JSONDecodeError):
-                count = 0
-            count += 1
-            payload = json.dumps({'count': count}).encode('utf-8')
+                data = json.loads(raw) if raw else {}
+            except (ValueError, json.JSONDecodeError):
+                data = {}
+            count = int(data.get('count', 0)) + 1
+            data['count'] = count
+            if fmt:
+                by_fmt = data.get('by_format', {})
+                by_fmt[fmt] = int(by_fmt.get(fmt, 0)) + 1
+                data['by_format'] = by_fmt
+            payload = json.dumps(data).encode('utf-8')
             os.lseek(fd, 0, os.SEEK_SET)
             os.ftruncate(fd, 0)
             os.write(fd, payload)
@@ -178,12 +184,17 @@ def _increment_download_count():
         with _download_lock:
             try:
                 with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
-                    count = int(json.load(f).get('count', 0))
+                    data = json.load(f)
             except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
-                count = 0
-            count += 1
+                data = {}
+            count = int(data.get('count', 0)) + 1
+            data['count'] = count
+            if fmt:
+                by_fmt = data.get('by_format', {})
+                by_fmt[fmt] = int(by_fmt.get(fmt, 0)) + 1
+                data['by_format'] = by_fmt
             with open(_DOWNLOAD_COUNT_FILE, 'w', encoding='utf-8') as f:
-                json.dump({'count': count}, f)
+                json.dump(data, f)
     if count % 100 == 0:
         _send_milestone_email(count)
 
@@ -352,7 +363,18 @@ def _track_download(response):
     """Count every successful /download/* response and stamp cache headers."""
     if response.status_code == 200 and request.method == 'GET':
         if request.path.startswith('/download/'):
-            _increment_download_count()
+            _path = request.path.lower()
+            if 'step' in _path:
+                _fmt = 'step'
+            elif 'stl' in _path:
+                _fmt = 'stl'
+            elif 'dxf' in _path:
+                _fmt = 'dxf'
+            elif 'svg' in _path:
+                _fmt = 'svg'
+            else:
+                _fmt = 'other'
+            _increment_download_count(_fmt)
         if any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
             response.headers['ETag'] = _params_etag()
             # Downloads: no-store prevents all browser caching (Edge on 127.0.0.1
@@ -1976,6 +1998,8 @@ def api_report_bug():
 
         issue_url = _create_github_issue(report_label, timestamp, label_seeing, label_should,
                                          seeing, should_see, email, state, report_type)
+        if issue_url:
+            _save_bug_issue_url(timestamp, issue_url)
 
         _send_report_email(report_label, timestamp, label_seeing, label_should,
                            seeing, should_see, email, state)
@@ -2254,6 +2278,22 @@ def _save_bug_comments(data):
         json.dump(data, f, indent=2)
 
 
+def _load_bug_issue_urls():
+    try:
+        with open(_BUG_ISSUE_URLS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_bug_issue_url(ts_id, url):
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    urls = _load_bug_issue_urls()
+    urls[ts_id] = url
+    with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(urls, f, indent=2)
+
+
 def _parse_bug_reports():
     """Parse bug_reports.log into a list of structured dicts."""
     import re
@@ -2328,9 +2368,11 @@ def _parse_bug_reports():
         })
         i += 2
 
-    comments = _load_bug_comments()
+    comments   = _load_bug_comments()
+    issue_urls = _load_bug_issue_urls()
     for r in reports:
-        r['comment'] = comments.get(r['timestamp'], '')
+        r['comment']   = comments.get(r['timestamp'], '')
+        r['issue_url'] = issue_urls.get(r['timestamp'], '')
     return reports
 
 
@@ -2401,6 +2443,11 @@ def api_admin_bug_delete(ts_id):
     comments = _load_bug_comments()
     comments.pop(ts_id, None)
     _save_bug_comments(comments)
+    issue_urls = _load_bug_issue_urls()
+    if ts_id in issue_urls:
+        issue_urls.pop(ts_id)
+        with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(issue_urls, f, indent=2)
     return jsonify({'ok': True, 'remaining': len(kept)})
 
 
