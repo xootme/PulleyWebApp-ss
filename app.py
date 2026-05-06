@@ -1271,11 +1271,16 @@ def download_step():
         # Try direct import first (cadquery available — Render / Python 3.12 venv).
         # Fall back to subprocess when Flask is running on Python 3.14 (local dev)
         # and cadquery lives in a separate .venv312 on Windows.
+        # In the PyInstaller desktop bundle cadquery cannot be bundled; redirect to web.
         try:
             from exporters.step_exporter import generate_pulley_step
             step_bytes = generate_pulley_step(**kw)
-        except ImportError:
-            import subprocess, sys
+        except ImportError as _ie:
+            import subprocess, sys, traceback as _tb
+            import logging as _log
+            _log.getLogger(__name__).error('STEP import failed: %s\n%s', _ie, _tb.format_exc())
+            if getattr(sys, 'frozen', False):
+                return f'STEP import error in bundle: {_ie}', 400
             root    = os.path.dirname(os.path.abspath(__file__))
             venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
             worker  = os.path.join(root, 'exporters', 'step_worker.py')
@@ -1940,6 +1945,10 @@ _PROVISION_SECRET   = os.environ.get('PROVISION_SECRET', '')
 _LICENCE_B64        = os.environ.get('PULLEY_LICENCE_B64', '')
 _LICENCE_EXPIRY     = os.environ.get('PULLEY_LICENCE_EXPIRY', '')
 _APP_DOWNLOAD_URL   = os.environ.get('PULLEY_APP_URL', '')
+_APP_VERSION        = os.environ.get('PULLEY_APP_VERSION', '')
+_APP_CHANGELOG      = os.environ.get('PULLEY_APP_CHANGELOG', '')
+_RUNTIME_URL        = os.environ.get('PULLEY_RUNTIME_URL', '')
+_RUNTIME_VERSION    = os.environ.get('PULLEY_RUNTIME_VERSION', '')
 _AUTODESK_APP_ID    = os.environ.get('AUTODESK_APP_ID', '')   # set after App Store registration
 _ENTITLEMENT_URL    = 'https://apps.autodesk.com/webservices/checkentitlement'
 _SUBSCRIBERS_FILE   = os.path.join(_LOG_DIR, 'subscribers.json')
@@ -2008,9 +2017,13 @@ def api_provision():
         return jsonify({'error': 'Release not yet published — contact support.'}), 503
 
     return jsonify({
-        'app_url':        _APP_DOWNLOAD_URL,
-        'licence_b64':    _LICENCE_B64,
-        'licence_expiry': _LICENCE_EXPIRY,
+        'app_url':          _APP_DOWNLOAD_URL,
+        'app_version':      _APP_VERSION,
+        'app_changelog':    _APP_CHANGELOG,
+        'runtime_url':      _RUNTIME_URL,
+        'runtime_version':  _RUNTIME_VERSION,
+        'licence_b64':      _LICENCE_B64,
+        'licence_expiry':   _LICENCE_EXPIRY,
     })
 
 
