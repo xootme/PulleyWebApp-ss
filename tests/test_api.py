@@ -319,18 +319,22 @@ def test_download_flange_stl_3dprint_lower(client):
 
 
 def test_download_flange_stl_metal_upper(client):
+    # Metal flanges are always returned as a combined both-sides file
     r = client.get(f'/download/flange-stl?{_FLANGE_METAL}&flange_which=top')
     assert r.status_code == 200
     cd = r.headers.get('Content-Disposition', '')
-    assert 'upper-flange' in cd
     assert 'Metal' in cd
+    assert 'flanges' in cd
     assert len(r.data) > 84
 
 
 def test_download_flange_stl_metal_lower(client):
+    # Metal flanges are always returned as a combined both-sides file
     r = client.get(f'/download/flange-stl?{_FLANGE_METAL}&flange_which=bottom')
     assert r.status_code == 200
-    assert 'lower-flange' in r.headers.get('Content-Disposition', '')
+    cd = r.headers.get('Content-Disposition', '')
+    assert 'Metal' in cd
+    assert 'flanges' in cd
     assert len(r.data) > 84
 
 

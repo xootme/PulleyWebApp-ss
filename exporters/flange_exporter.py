@@ -89,6 +89,44 @@ def _revolve_polygon(
 
 
 # ---------------------------------------------------------------------------
+# Bore-profile subtraction helper
+# ---------------------------------------------------------------------------
+
+def _subtract_bore_profile(mesh, bore_mm, flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0):
+    """Subtract a D-flat or keyway slot through a flange mesh at the bore axis."""
+    from shapely.geometry import Polygon as _ShapelyPoly
+    cutters = []
+    R_bore = bore_mm / 2.0
+    if flat_depth_mm > 0.0:
+        # Use a cylindrical-segment cutter (arc + chord) so it never extends
+        # beyond the bore circle into the flange ring.
+        flat_x    = R_bore - flat_depth_mm
+        cos_theta = max(-1.0, min(1.0, flat_x / R_bore))
+        theta     = math.acos(cos_theta)
+        n_arc     = 32
+        angles    = [-theta + i * 2.0 * theta / n_arc for i in range(n_arc + 1)]
+        pts       = [(R_bore * math.cos(a), R_bore * math.sin(a)) for a in angles]
+        # pts[0]=(flat_x,-y_int), pts[-1]=(flat_x,+y_int); Shapely closes with the chord
+        seg_poly  = _ShapelyPoly(pts)
+        seg_solid = trimesh.creation.extrude_polygon(seg_poly, 510.0)
+        seg_solid.apply_translation([0.0, 0.0, -255.0])
+        cutters.append(seg_solid)
+    if keyway_w_mm > 0.0 and keyway_h_mm > 0.0:
+        box = trimesh.creation.box(extents=[keyway_h_mm + 1.0, keyway_w_mm, 500.0])
+        box.apply_translation([R_bore + (keyway_h_mm + 1.0) / 2.0 - 0.5, 0.0, 0.0])
+        cutters.append(box)
+    if not cutters:
+        return mesh
+    for c in cutters:
+        try:
+            result = trimesh.boolean.difference([mesh, c], engine='manifold')
+            if result is not None and len(result.vertices) > 0:
+                mesh = result
+        except Exception:
+            pass
+    return mesh
+
+
 # Spec helpers
 # ---------------------------------------------------------------------------
 
@@ -137,6 +175,10 @@ def generate_3dprint_flange_stl(
     nub_dia_mm: float = 3.0,
     nub_height_mm: float = 2.0,
     nub_allowance_mm: float = 0.2,
+    # Bore profile
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """Return binary STL of one or both 3D-print flanges.
 
@@ -196,11 +238,13 @@ def generate_3dprint_flange_stl(
                 except Exception:
                     pass  # fall back to flange without nubs
 
+        top_mesh = _subtract_bore_profile(top_mesh, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
         top_mesh.apply_translation([0.0, 0.0, belt_height_mm])
         meshes.append(top_mesh)
 
     if which in ('bottom', 'both'):
         bot_mesh = _revolve_polygon([(r, -z) for r, z in prof_bot], sections)
+        bot_mesh = _subtract_bore_profile(bot_mesh, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
         meshes.append(bot_mesh)
 
     if len(meshes) == 1:
@@ -228,18 +272,22 @@ def generate_metal_flange_stl(
     rim_radius_mm: float = 3.0,
     plate_height_mm: float = 1.0,
     bend_radius_mm: float = 0.0,   # 0 → default to 1.5 * plate_height
-    which: str = 'top',            # 'top' | 'bottom'
+    which: str = 'top',            # 'top' | 'bottom' | 'both'
     # Hub / spoke params
     hub_od_mm: float = 0.0,
     spokes_enabled: bool = False,
     spoke_hub_od_mm: float = 0.0,
     rim_depth_mm: float = 0.0,
     sections: int = 64,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """Return binary STL of a metal flange plate.
 
     ``which='top'`` produces the upper plate (positioned above belt_height_mm).
     ``which='bottom'`` produces the lower plate (positioned below Z=0).
+    ``which='both'`` produces both plates concatenated (no union — they don't intersect).
     """
     R_OD, _R_gb, _th = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
 
@@ -256,6 +304,24 @@ def generate_metal_flange_stl(
     # Adaptive sections: target ~3 mm chord on the outer radius; cap at caller's sections.
     sections = max(32, min(sections, round(2 * math.pi * R_OD / 3.0)))
 
+    if which == 'both':
+        r_inner_top = flange_inner_r_metal_top(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
+                                               r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+        prof_top = profile_metal(r_inner_top, R_OD, rim_mm, angle_deg, plate_t, bend_mm)
+        top_mesh = _revolve_polygon(prof_top, sections)
+        top_mesh = _subtract_bore_profile(top_mesh, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+        top_mesh.apply_translation([0.0, 0.0, belt_height_mm])
+
+        r_inner_bot = flange_inner_r_metal_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
+                                                  r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+        prof_bot = profile_metal(r_inner_bot, R_OD, rim_mm, angle_deg, plate_t, bend_mm)
+        prof_bot_flipped = [(r, -z) for r, z in prof_bot]
+        bot_mesh = _revolve_polygon(prof_bot_flipped, sections)
+        bot_mesh = _subtract_bore_profile(bot_mesh, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+
+        result = trimesh.util.concatenate([top_mesh, bot_mesh])
+        return result.export(file_type='stl')
+
     if which == 'top':
         r_inner = flange_inner_r_metal_top(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                            r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
@@ -267,15 +333,12 @@ def generate_metal_flange_stl(
 
     if which == 'top':
         mesh = _revolve_polygon(prof, sections)
-        # Bottom face of flat section (Z=0 in profile) sits at belt_height_mm
+        mesh = _subtract_bore_profile(mesh, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
         mesh.apply_translation([0.0, 0.0, belt_height_mm])
     else:
-        # Negate Z so the bend faces downward (away from pulley).
-        # After negation: Z=0 is the contact face resting on the pulley bottom;
-        # the plate and bend extend toward −Z.
         prof_flipped = [(r, -z) for r, z in prof]
         mesh = _revolve_polygon(prof_flipped, sections)
-        # No translation needed: contact face is already at Z=0.
+        mesh = _subtract_bore_profile(mesh, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
 
     return mesh.export(file_type='stl')
 
@@ -548,6 +611,9 @@ def build_flange_meshes(
     spoke_hub_od_mm: float = 0.0,
     rim_depth_mm: float = 0.0,
     sections: int = 48,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> list:
     """Return [top_mesh, bottom_mesh] trimesh objects for the 3D preview.
 
@@ -627,6 +693,7 @@ def build_flange_meshes(
                     except Exception:
                         pass  # fall back to flange without nubs
 
+            top = _subtract_bore_profile(top, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
             if fp.get('top_separate', False):
                 # Float 10 mm above the hub top to reveal the nub face
                 top_z = belt_height_mm + hub_height_mm + 10.0
@@ -636,6 +703,7 @@ def build_flange_meshes(
             meshes.append(top)
 
             bot = _revolve_polygon([(r, -z) for r, z in prof_bot], sections)
+            bot = _subtract_bore_profile(bot, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
             meshes.append(bot)
         else:
             plate_t = max(0.3, fp['plate_height_mm'])
@@ -646,6 +714,7 @@ def build_flange_meshes(
                                                    r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
             prof_top = profile_metal(r_inner_top, R_OD, rim_r, angle, plate_t, bend_r)
             top = _revolve_polygon(prof_top, sections)
+            top = _subtract_bore_profile(top, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
             top.apply_translation([0.0, 0.0, belt_height_mm])
             meshes.append(top)
 
@@ -654,6 +723,7 @@ def build_flange_meshes(
             prof_bot = profile_metal(r_inner_bot, R_OD, rim_r, angle, plate_t, bend_r)
             prof_bot = [(r, -z) for r, z in prof_bot]  # flip: bend faces down, contact face at Z=0
             bot = _revolve_polygon(prof_bot, sections)
+            bot = _subtract_bore_profile(bot, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
             meshes.append(bot)
 
         return meshes

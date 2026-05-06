@@ -278,7 +278,8 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                       captured_nut: bool = False,
                       flat_depth_mm: float = 0.0,
                       keyway_w_mm: float = 0.0,
-                      keyway_h_mm: float = 0.0) -> trimesh.Trimesh:
+                      keyway_h_mm: float = 0.0,
+                      hub_z_start: float = None) -> trimesh.Trimesh:
     """
     Union a hub boss onto `body`, subtract the bore through the full height,
     then optionally drill radial set-screw holes and (for captured_nut=True)
@@ -314,6 +315,9 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
     R_bore    = bore_mm / 2.0
     hub_valid = hub_height_mm > 0.0 and hub_od_mm > bore_mm
     R_hub     = hub_od_mm / 2.0 if hub_valid else 0.0
+
+    if hub_z_start is None:
+        hub_z_start = belt_height_mm
 
     do_screws = hub_valid and screw_dia_mm > 0.0 and screw_count > 0
 
@@ -357,11 +361,18 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
 
-    hub_top      = belt_height_mm + hub_height_mm
+    hub_top      = hub_z_start + hub_height_mm
     total_height = belt_height_mm
 
     # ── Hub boss ──────────────────────────────────────────────────────────────
     if hub_valid and body.is_watertight:
+        if hub_z_start > belt_height_mm:
+            conn = trimesh.creation.cylinder(radius=R_hub, height=hub_z_start - belt_height_mm,
+                                             sections=_BORE_SECTIONS)
+            conn.apply_translation([0.0, 0.0, belt_height_mm + (hub_z_start - belt_height_mm) / 2.0])
+            conn.fix_normals()
+            body = trimesh.boolean.union([body, conn], engine='manifold')
+
         if captured_nut and need_oblong:
             # Extend hub with lobes in each screw direction
             hub_poly = ShapelyPoint(0, 0).buffer(R_hub, resolution=_BORE_SECTIONS)
@@ -373,11 +384,11 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                         R_hub, resolution=_BORE_SECTIONS))
             hub_poly = shapely_orient(hub_poly, sign=1.0)
             hub_mesh = trimesh.creation.extrude_polygon(hub_poly, hub_height_mm)
-            hub_mesh.apply_translation([0.0, 0.0, belt_height_mm])
+            hub_mesh.apply_translation([0.0, 0.0, hub_z_start])
         else:
             hub_mesh = trimesh.creation.cylinder(
                 radius=R_hub, height=hub_height_mm, sections=_BORE_SECTIONS)
-            hub_mesh.apply_translation([0.0, 0.0, belt_height_mm + hub_height_mm / 2.0])
+            hub_mesh.apply_translation([0.0, 0.0, hub_z_start + hub_height_mm / 2.0])
 
         hub_mesh.fix_normals()
         body         = trimesh.boolean.union([body, hub_mesh], engine='manifold')
@@ -442,7 +453,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                 pkt_cx = R_bore
 
         else:
-            z_screw  = belt_height_mm + hub_height_mm / 2.0
+            z_screw  = hub_z_start + hub_height_mm / 2.0
             hole_len = R_hub * 2.0 + 2.0
             hole_cx  = 0.0   # centred — full-diameter for standard set screw
 
@@ -525,6 +536,8 @@ def generate_pulley_stl(
     fillet_base_mm: float = 0.0,
     rim_depth_mm: float = 0.0,
     spoke_height_mm: float = 0.0,
+    flange_enabled: bool = False,
+    flange_height_mm: float = 0.0,
 ) -> bytes:
     """
     Return binary STL bytes of an extruded timing pulley solid.
@@ -534,9 +547,9 @@ def generate_pulley_stl(
     (z=belt_height_mm to z=belt_height_mm+hub_height_mm).  The hub OD may
     exceed the pulley OD.  The bore is subtracted through the full height.
     """
-    outline = _build_outline_points(
+    outline, _R_OD_stl, _ = _build_outline_points(
         family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
-    )[0]
+    )
 
     outer_poly = ShapelyPolygon(outline)
     outer_poly = shapely_orient(outer_poly, sign=1.0)
@@ -603,9 +616,22 @@ def generate_pulley_stl(
         body = trimesh.creation.extrude_polygon(outer_poly, belt_height_mm)
         body.fix_normals()
 
+    # Determine hub_z_start: raise hub above top flange when hub/lobe overhangs pulley OD
+    R_hub_stl = hub_od_mm / 2.0
+    hub_valid_stl = hub_height_mm > 0.0 and hub_od_mm > bore_mm
+    eff_r_stl = R_hub_stl
+    if hub_valid_stl and captured_nut and screw_dia_mm > 0.0 and screw_count > 0:
+        _waf_stl, _t_stl = _nut_dims(screw_dia_mm)
+        _min_hub_r_stl = bore_mm / 2.0 + 3.0 * _t_stl
+        eff_r_stl = max(R_hub_stl, _min_hub_r_stl)
+    hub_z_start_stl = belt_height_mm
+    if flange_enabled and hub_valid_stl and eff_r_stl > _R_OD_stl:
+        hub_z_start_stl = belt_height_mm + flange_height_mm
+
     result = _add_hub_and_bore(body, belt_height_mm, bore_mm,
                                hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
-                               captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+                               captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm,
+                               hub_z_start=hub_z_start_stl)
     return result.export(file_type='stl')
 
 
@@ -646,6 +672,7 @@ def generate_pulley_step(
     nub_dia_mm: float = 3.0,
     nub_height_mm: float = 2.0,
     nub_allowance_mm: float = 0.2,
+    _return_cq: bool = False,
 ) -> bytes:
     """
     Return STEP bytes of a timing pulley with all hub features using cadquery B-rep.
@@ -701,7 +728,10 @@ def generate_pulley_step(
         step  = math.pi / 2.0
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
-    hub_top      = belt_height_mm + hub_height_mm
+    hub_z_start  = belt_height_mm
+    if flange_enabled and hub_valid and eff_r > _R_OD:
+        hub_z_start = belt_height_mm + flange_height_mm
+    hub_top      = hub_z_start + hub_height_mm
     total_height = hub_top if hub_valid else belt_height_mm
 
     # ── Spoke pre-calculations ────────────────────────────────────────────────
@@ -795,6 +825,12 @@ def generate_pulley_step(
     #    faces(">Z").workplane() + extrude() is CadQuery's native "boss" pattern.
     #    OCCT treats it as one continuous solid — no boolean union, no seam.
     if hub_valid:
+        # Add connecting cylinder when hub is raised above belt face (flange overhang case)
+        if hub_z_start > belt_height_mm:
+            conn = (cq.Workplane('XY').workplane(offset=belt_height_mm)
+                    .circle(R_hub).extrude(hub_z_start - belt_height_mm, clean=False))
+            result = result.union(conn, clean=False)
+
         hub_wp = result.faces(">Z").workplane()
         if captured_nut and need_oblong:
             _ob_off = min_hub_r - R_hub
@@ -802,14 +838,14 @@ def generate_pulley_step(
             # proper circle edges — not the tessellated polyline that Shapely
             # .buffer() → .exterior.coords would produce.
             hub_lobe = (cq.Workplane('XY')
-                        .workplane(offset=belt_height_mm)
+                        .workplane(offset=hub_z_start)
                         .circle(R_hub)
                         .extrude(hub_height_mm, clean=False))
             for angle in screw_angles:
                 _lx = _ob_off * math.cos(angle)
                 _ly = _ob_off * math.sin(angle)
                 extra_lobe = (cq.Workplane('XY')
-                              .workplane(offset=belt_height_mm)
+                              .workplane(offset=hub_z_start)
                               .moveTo(_lx, _ly)
                               .circle(R_hub)
                               .extrude(hub_height_mm, clean=False))
@@ -826,7 +862,7 @@ def generate_pulley_step(
                 # Chamfer cone extends through the full spoke zone + top pocket.
                 # Clamped to R_hub - 0.5 so the tip radius stays >= 0.5 mm.
                 _ch = min(spk_h + pocket_depth, R_hub - 0.5)
-                _z0 = belt_height_mm   # lobe bottom face Z
+                _z0 = hub_z_start   # lobe bottom face Z
 
                 for _sc_angle in screw_angles:
                     _lcx = _ob_off * math.cos(_sc_angle)
@@ -855,12 +891,41 @@ def generate_pulley_step(
                     except Exception:
                         pass   # skip if taper fails for this geometry
         else:
-            result = hub_wp.circle(R_hub).extrude(hub_height_mm, clean=False)
+            if hub_z_start > belt_height_mm:
+                result = result.union(
+                    cq.Workplane('XY').workplane(offset=hub_z_start)
+                    .circle(R_hub).extrude(hub_height_mm, clean=False), clean=False)
+            else:
+                result = hub_wp.circle(R_hub).extrude(hub_height_mm, clean=False)
+
+    # ── 3b. 3D-print bottom flange (union before bore/keyway so cuts pass through) ─
+    # Must happen here so steps 4 & 5 can cut through the flange material.
+    _bot_flange_unioned = False
+    if flange_enabled and flange_3dprint:
+        _key_b  = _profile_key(family, pitch)
+        _spec_b = PULLEY_SPECS[_key_b]
+        _pld_b  = _spec_b.get('pitch_line_diff', _spec_b.get('pitchLineDiff', 0.0))
+        _R_OD_b = getOuterDiameter(num_teeth, _spec_b['pitch'],
+                                   _pld_b + print_extra_mm - clearance_mm) / 2.0
+        _has_spokes_b = spoke_count > 0
+        _r_inner_b = flange_inner_r_3dprint(
+            bore_mm, hub_od_mm, _has_spokes_b, spoke_hub_od_mm,
+            r_tooth_OD=_R_OD_b, rim_depth_mm=rim_depth_mm)
+        _angle_b = max(8.0, min(25.0, flange_angle_deg))
+        _rim_r_b = max(0.5, flange_rim_radius_mm)
+        _f_h_b   = max(0.1, flange_height_mm)
+        _prof_b  = profile_3dprint(_r_inner_b, _R_OD_b, _rim_r_b, _angle_b, _f_h_b)
+        _bot_prof_b = [(_r, -_z) for _r, _z in _prof_b]
+        _bot_flange_mesh = _revolve_rz_profile(_bot_prof_b)
+        result = result.union(_bot_flange_mesh, clean=False)
+        _bot_flange_unioned = True
 
     # ── 4. Bore: explicit solid cut (more reliable than cutThruAll on splines) ─
+    # Extend bore downward by flange depth so it passes through the bottom flange.
+    _flange_h_ext = flange_height_mm if _bot_flange_unioned else 0.0
     if R_bore > 0.5:
         extra  = 0.5
-        bore_h = total_height + extra * 2
+        bore_h = total_height + _flange_h_ext + extra * 2
         if flat_depth_mm > 0.0:
             # Build D-bore with a true arc + one straight line so the STEP file
             # carries an exact circle edge rather than a tessellated polyline.
@@ -873,20 +938,21 @@ def generate_pulley_step(
                           .threePointArc((-R_bore, 0.0), (flat_x, -y_int))
                           .close()                 # straight line = the flat face
                           .extrude(bore_h, clean=False)
-                          .translate((0.0, 0.0, -extra)))
+                          .translate((0.0, 0.0, -extra - _flange_h_ext)))
         else:
             bore_solid = (cq.Workplane('XY')
                           .circle(R_bore)
                           .extrude(bore_h, clean=False)
-                          .translate((0.0, 0.0, -extra)))
+                          .translate((0.0, 0.0, -extra - _flange_h_ext)))
         result = result.cut(bore_solid, clean=False)
 
     # ── 5. Keyway slot ────────────────────────────────────────────────────────
     if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5:
         kw_depth = keyway_h_mm
+        kw_h_total = total_height + _flange_h_ext + 1.0
         kw_box = (cq.Workplane('XY')
-                  .box(kw_depth + 1.0, keyway_w_mm, total_height + 1.0, clean=False)
-                  .translate((R_bore + kw_depth / 2.0, 0.0, total_height / 2.0)))
+                  .box(kw_depth + 1.0, keyway_w_mm, kw_h_total, clean=False)
+                  .translate((R_bore + kw_depth / 2.0, 0.0, (total_height - _flange_h_ext) / 2.0)))
         result = result.cut(kw_box, clean=False)
 
     # ── 6. Set-screw holes + nut pockets ──────────────────────────────────────
@@ -914,7 +980,7 @@ def generate_pulley_step(
                 hole_cx  = (eff_r + R_bore) / 2.0
                 pkt_cx   = R_bore
         else:
-            z_screw  = belt_height_mm + hub_height_mm / 2.0
+            z_screw  = hub_z_start + hub_height_mm / 2.0
             # Hole goes from hub OD inward to bore — not through the other side.
             # +0.5 overshoot on each end so the bore and hub surface cuts are clean.
             hole_len = R_hub - R_bore + 1.0
@@ -952,7 +1018,7 @@ def generate_pulley_step(
                     pocket = pocket.rotate((0, 0, 0), (0, 0, 1), math.degrees(angle))
                 result = result.cut(pocket, clean=False)
 
-    # ── 7. 3D-print bottom flange (integrated with pulley body) ────────────────
+    # ── 7. 3D-print flanges: bottom already unioned in step 3b; add top if integrated ─
     if flange_enabled and flange_3dprint:
         _key  = _profile_key(family, pitch)
         _spec = PULLEY_SPECS[_key]
@@ -960,16 +1026,9 @@ def generate_pulley_step(
         _R_OD = getOuterDiameter(num_teeth, _spec['pitch'],
                                  _pld + print_extra_mm - clearance_mm) / 2.0
         _has_spokes = spoke_count > 0
-        _r_inner = flange_inner_r_3dprint(
-            bore_mm, hub_od_mm, _has_spokes, spoke_hub_od_mm,
-            r_tooth_OD=_R_OD, rim_depth_mm=rim_depth_mm)
         _angle   = max(8.0, min(25.0, flange_angle_deg))
         _rim_r   = max(0.5, flange_rim_radius_mm)
         _f_h     = max(0.1, flange_height_mm)
-        _prof    = profile_3dprint(_r_inner, _R_OD, _rim_r, _angle, _f_h)
-        _bot_prof = [(_r, -_z) for _r, _z in _prof]
-        _bot_flange = _revolve_rz_profile(_bot_prof)
-        result = result.union(_bot_flange, clean=False)
 
         # Integrated top flange — union it onto the pulley top face
         if not flange_top_separate:
@@ -997,6 +1056,9 @@ def generate_pulley_step(
                          .extrude(_sock_h, clean=False)
                          .translate((0.0, 0.0, belt_height_mm - _sock_h)))
                 result = result.cut(_sock, clean=False)
+
+    if _return_cq:
+        return result
 
     # ── Export to File ────────────────────────────────────────────────────────
     ext = '.stl' if export_fmt.upper() == 'STL' else '.step'
@@ -1034,6 +1096,10 @@ def generate_flange_step(
     nub_dia_mm: float = 3.0,
     nub_height_mm: float = 2.0,
     nub_allowance_mm: float = 0.2,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
+    _return_cq: bool = False,
 ) -> bytes:
     """Return STEP bytes of a single flange (top 3D-print, or metal top/bottom).
 
@@ -1103,10 +1169,200 @@ def generate_flange_step(
             prof_flipped = [(r, -z) for r, z in prof]
             flange = _revolve_rz_profile(prof_flipped)
 
+    # ── Bore profile (D-flat / keyway) cut through the flange ────────────────
+    R_bore = bore_mm / 2.0
+    if R_bore > 0.5 and r_inner > R_bore:
+        # Flange inner hole is larger than bore; cut the annular ring down to bore
+        # so D-flat and keyway have material to cut into.
+        cut_h = 200.0
+        if which == 'top':
+            bore_cyl = (cq.Workplane('XY').circle(R_bore)
+                        .extrude(cut_h, clean=False)
+                        .translate((0.0, 0.0, belt_height_mm - 0.5)))
+        else:
+            bore_cyl = (cq.Workplane('XY').circle(R_bore)
+                        .extrude(cut_h, clean=False)
+                        .translate((0.0, 0.0, -cut_h + 0.5)))
+        flange = flange.cut(bore_cyl, clean=False)
+    if R_bore > 0.5 and flat_depth_mm > 0.0:
+        flat_x    = R_bore - flat_depth_mm
+        cos_theta = max(-1.0, min(1.0, flat_x / R_bore))
+        theta     = math.acos(cos_theta)
+        y_int     = R_bore * math.sin(theta)
+        cut_h = 200.0
+        z_off = belt_height_mm - 0.5 if which == 'top' else -cut_h + 0.5
+        d_cut = (cq.Workplane('XY')
+                 .moveTo(flat_x, y_int)
+                 .threePointArc((-R_bore, 0.0), (flat_x, -y_int))
+                 .close()
+                 .extrude(cut_h, clean=False)
+                 .translate((0.0, 0.0, z_off)))
+        flange = flange.cut(d_cut, clean=False)
+    if R_bore > 0.5 and keyway_w_mm > 0.0 and keyway_h_mm > 0.0:
+        kw_depth = keyway_h_mm
+        cut_h = 200.0
+        z_off = belt_height_mm - 0.5 if which == 'top' else -cut_h + 0.5
+        kw_cut = (cq.Workplane('XY')
+                  .box(kw_depth + 1.0, keyway_w_mm, cut_h, clean=False)
+                  .translate((R_bore + kw_depth / 2.0, 0.0, z_off + cut_h / 2.0)))
+        flange = flange.cut(kw_cut, clean=False)
+
+    if _return_cq:
+        return flange
+
     tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
     tmp.close()
     try:
         cq.exporters.export(flange, tmp.name)
+        with open(tmp.name, 'rb') as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+# ── Multipart STEP assembly helpers ───────────────────────────────────────────
+
+def _flange_kw_from_pulley_kw(kw: dict) -> dict:
+    """Map generate_pulley_step kw dict to generate_flange_step kwargs."""
+    return dict(
+        family           = kw['family'],
+        pitch            = kw['pitch'],
+        num_teeth        = kw['num_teeth'],
+        bore_mm          = kw['bore_mm'],
+        belt_height_mm   = kw.get('belt_height_mm', 10.0),
+        clearance_mm     = kw.get('clearance_mm', 0.0),
+        print_extra_mm   = kw.get('print_extra_mm', 0.0),
+        flange_3dprint   = kw.get('flange_3dprint', True),
+        flange_angle_deg = kw.get('flange_angle_deg', 15.0),
+        rim_radius_mm    = kw.get('flange_rim_radius_mm', 3.0),
+        flange_height_mm = kw.get('flange_height_mm', 1.5),
+        plate_height_mm  = kw.get('plate_height_mm', 1.0),
+        bend_radius_mm   = kw.get('bend_radius_mm', 0.0),
+        hub_od_mm        = kw.get('hub_od_mm', 0.0),
+        spokes_enabled   = kw.get('spoke_count', 0) > 0,
+        spoke_hub_od_mm  = kw.get('spoke_hub_od_mm', 0.0),
+        rim_depth_mm     = kw.get('rim_depth_mm', 0.0),
+        nubs_enabled     = kw.get('nubs_enabled', False),
+        nub_count        = kw.get('nub_count', 4),
+        nub_dia_mm       = kw.get('nub_dia_mm', 3.0),
+        nub_height_mm    = kw.get('nub_height_mm', 2.0),
+        nub_allowance_mm = kw.get('nub_allowance_mm', 0.2),
+        flat_depth_mm    = kw.get('flat_depth_mm', 0.0),
+        keyway_w_mm      = kw.get('keyway_w_mm', 0.0),
+        keyway_h_mm      = kw.get('keyway_h_mm', 0.0),
+    )
+
+
+_PULLEY_STEP_EXTRA = {'plate_height_mm', 'bend_radius_mm'}
+
+
+def generate_pulley_assembly_step(kw: dict) -> bytes:
+    """Return a multipart STEP assembly: pulley body + all separate flange parts.
+
+    The 3D-print top flange (when separate) is positioned in contact with the
+    pulley top face at Z = belt_height_mm.  Metal flanges (top and bottom) are
+    also included as separate named parts when flange_3dprint=False.
+    """
+    import cadquery as cq
+    import tempfile, os
+
+    flange_enabled = kw.get('flange_enabled', False)
+    flange_3dprint = kw.get('flange_3dprint', True)
+    flange_top_sep = kw.get('flange_top_separate', True)
+
+    pulley_kw = {k: v for k, v in kw.items() if k not in _PULLEY_STEP_EXTRA}
+    pulley = generate_pulley_step(**pulley_kw, _return_cq=True)
+
+    assy = cq.Assembly()
+    assy.add(pulley, name='Pulley')
+
+    if flange_enabled:
+        fl = _flange_kw_from_pulley_kw(kw)
+        if flange_3dprint and flange_top_sep:
+            top = generate_flange_step(**fl, which='top', _return_cq=True)
+            assy.add(top, name='TopFlange')
+        elif not flange_3dprint:
+            top = generate_flange_step(**fl, which='top', _return_cq=True)
+            bot = generate_flange_step(**fl, which='bottom', _return_cq=True)
+            assy.add(top, name='TopFlange')
+            assy.add(bot, name='BottomFlange')
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
+    tmp.close()
+    try:
+        assy.save(tmp.name)
+        with open(tmp.name, 'rb') as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None) -> bytes:
+    """Return one multipart STEP with all pulleys, flanges, and optionally the belt.
+
+    When belt_kw is provided the belt uses its own belt_height_mm (no clearance added).
+    In dual-pulley mode P2 is placed at center_dist_mm from P1 when a belt is
+    included, or at od1+od2+20 mm otherwise.
+    """
+    import cadquery as cq
+    import tempfile, os
+
+    assy = cq.Assembly()
+
+    def _add(kw, prefix, x_off=0.0):
+        loc = cq.Location(cq.Vector(x_off, 0, 0))
+        pulley_kw = {k: v for k, v in kw.items() if k not in _PULLEY_STEP_EXTRA}
+        pulley = generate_pulley_step(**pulley_kw, _return_cq=True)
+        assy.add(pulley, name=f'{prefix}Pulley', loc=loc)
+
+        if kw.get('flange_enabled', False):
+            fl = _flange_kw_from_pulley_kw(kw)
+            if kw.get('flange_3dprint', True) and kw.get('flange_top_separate', True):
+                top = generate_flange_step(**fl, which='top', _return_cq=True)
+                assy.add(top, name=f'{prefix}TopFlange', loc=loc)
+            elif not kw.get('flange_3dprint', True):
+                top = generate_flange_step(**fl, which='top', _return_cq=True)
+                bot = generate_flange_step(**fl, which='bottom', _return_cq=True)
+                assy.add(top, name=f'{prefix}TopFlange', loc=loc)
+                assy.add(bot, name=f'{prefix}BottomFlange', loc=loc)
+
+    _add(kw1, 'P1_', 0.0)
+
+    if kw2:
+        if belt_kw:
+            x_off = belt_kw['center_dist_mm']
+        else:
+            key1  = _profile_key(kw1['family'], kw1['pitch'])
+            spec1 = PULLEY_SPECS[key1]
+            pld1  = spec1.get('pitch_line_diff', spec1.get('pitchLineDiff', 0.0))
+            od1   = getOuterDiameter(kw1['num_teeth'], spec1['pitch'],
+                                     pld1 + kw1.get('print_extra_mm', 0.0)
+                                         - kw1.get('clearance_mm', 0.0)) / 2.0
+            key2  = _profile_key(kw2['family'], kw2['pitch'])
+            spec2 = PULLEY_SPECS[key2]
+            pld2  = spec2.get('pitch_line_diff', spec2.get('pitchLineDiff', 0.0))
+            od2   = getOuterDiameter(kw2['num_teeth'], spec2['pitch'],
+                                     pld2 + kw2.get('print_extra_mm', 0.0)
+                                         - kw2.get('clearance_mm', 0.0)) / 2.0
+            x_off = od1 + od2 + 20.0
+        _add(kw2, 'P2_', x_off)
+
+    if belt_kw:
+        belt = generate_belt_step(
+            family         = belt_kw['family'],
+            pitch          = belt_kw['pitch'],
+            num_teeth_left = belt_kw['num_teeth_left'],
+            num_teeth_right= belt_kw['num_teeth_right'],
+            center_dist_mm = belt_kw['center_dist_mm'],
+            belt_height_mm = belt_kw['belt_height_mm'],  # raw height, no clearance
+            _return_cq     = True,
+        )
+        assy.add(belt, name='Belt')
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
+    tmp.close()
+    try:
+        assy.save(tmp.name)
         with open(tmp.name, 'rb') as f:
             return f.read()
     finally:
@@ -1293,7 +1549,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                        flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0,
                        spoke_count=0, spoke_width_mm=0.0, spoke_hub_od_mm=0.0,
                        fillet_tip_mm=0.0, fillet_base_mm=0.0, rim_depth_mm=0.0,
-                       spoke_height_mm=0.0):
+                       spoke_height_mm=0.0, flange_enabled=False, flange_height_mm=0.0):
     """
     Build a single watertight pulley trimesh solid.
 
@@ -1328,8 +1584,6 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         step  = math.pi / 2.0
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
-    hub_top      = belt_height_mm + hub_height_mm
-    total_height = hub_top if hub_valid else belt_height_mm
 
     # ── 2D bore cross-section (D-shaped or round) ─────────────────────────────
     if R_bore > 0.5:
@@ -1362,9 +1616,14 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         bore_2d = None
 
     # ── Belt section: outer toothed profile minus bore hole ───────────────────
-    outline = _build_outline_points(
+    outline, _R_OD_mesh, _ = _build_outline_points(
         family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm
-    )[0]
+    )
+    hub_z_start  = belt_height_mm
+    if flange_enabled and hub_valid and eff_r > _R_OD_mesh:
+        hub_z_start = belt_height_mm + flange_height_mm
+    hub_top      = hub_z_start + hub_height_mm
+    total_height = hub_top if hub_valid else belt_height_mm
     outline = _rot2d(outline, phase)
     outer_poly = ShapelyPolygon(outline)
     outer_poly = shapely_orient(outer_poly, sign=1.0)
@@ -1454,7 +1713,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         hub_cross = hub_outer.difference(bore_2d) if bore_2d is not None else hub_outer
         hub_cross = _largest_poly(hub_cross)
         hub_mesh  = trimesh.creation.extrude_polygon(hub_cross, hub_height_mm)
-        hub_mesh.apply_translation([0.0, 0.0, belt_height_mm])
+        hub_mesh.apply_translation([0.0, 0.0, hub_z_start])
         hub_mesh.fix_normals()
         body = trimesh.util.concatenate([belt_mesh, hub_mesh])
         body.fix_normals()
@@ -1518,7 +1777,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                 hole_cx  = (eff_r + R_bore) / 2.0
                 pkt_cx   = R_bore
         else:
-            z_screw  = belt_height_mm + hub_height_mm / 2.0
+            z_screw  = hub_z_start + hub_height_mm / 2.0
             hole_len = R_hub * 2.0 + 2.0
             hole_cx  = 0.0
 
@@ -1696,7 +1955,9 @@ def generate_drive_stl_preview(
                             spoke_count=spoke_count1, spoke_width_mm=spoke_width_mm1,
                             spoke_hub_od_mm=spoke_hub_od_mm1, fillet_tip_mm=fillet_tip_mm1,
                             fillet_base_mm=fillet_base_mm1, rim_depth_mm=rim_depth_mm1,
-                            spoke_height_mm=spoke_height_mm1)
+                            spoke_height_mm=spoke_height_mm1,
+                            flange_enabled=bool(flange1),
+                            flange_height_mm=flange1.get('flange_height_mm', 1.5) if flange1 else 0.0)
     p1.apply_translation([cx1, 0.0, 0.0])
 
     p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
@@ -1709,7 +1970,9 @@ def generate_drive_stl_preview(
                             spoke_count=spoke_count2, spoke_width_mm=spoke_width_mm2,
                             spoke_hub_od_mm=spoke_hub_od_mm2, fillet_tip_mm=fillet_tip_mm2,
                             fillet_base_mm=fillet_base_mm2, rim_depth_mm=rim_depth_mm2,
-                            spoke_height_mm=spoke_height_mm2)
+                            spoke_height_mm=spoke_height_mm2,
+                            flange_enabled=bool(flange2),
+                            flange_height_mm=flange2.get('flange_height_mm', 1.5) if flange2 else 0.0)
     p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────
@@ -1732,7 +1995,10 @@ def generate_drive_stl_preview(
                                          hub_height_mm=hub_height_mm1,
                                          spokes_enabled=sp_en1,
                                          spoke_hub_od_mm=spoke_hub_od_mm1,
-                                         rim_depth_mm=rim_depth_mm1):
+                                         rim_depth_mm=rim_depth_mm1,
+                                         flat_depth_mm=flat_depth_mm1,
+                                         keyway_w_mm=keyway_w_mm1,
+                                         keyway_h_mm=keyway_h_mm1):
                 m.apply_translation([cx1, 0.0, 0.0])
                 fl_meshes1.append(m)
             # Subtract socket holes from p1 when nubs are active
@@ -1763,7 +2029,10 @@ def generate_drive_stl_preview(
                                          hub_height_mm=hub_height_mm2,
                                          spokes_enabled=sp_en2,
                                          spoke_hub_od_mm=spoke_hub_od_mm2,
-                                         rim_depth_mm=rim_depth_mm2):
+                                         rim_depth_mm=rim_depth_mm2,
+                                         flat_depth_mm=flat_depth_mm2,
+                                         keyway_w_mm=keyway_w_mm2,
+                                         keyway_h_mm=keyway_h_mm2):
                 m.apply_translation([cx2, 0.0, 0.0])
                 fl_meshes2.append(m)
             # Subtract socket holes from p2 when nubs are active
@@ -1840,6 +2109,8 @@ def generate_pulley_stl_preview(
     fillet_base_mm: float = 0.0,
     rim_depth_mm: float = 0.0,
     spoke_height_mm: float = 0.0,
+    flange_enabled: bool = False,
+    flange_height_mm: float = 0.0,
     socket_meshes: list = None,
 ) -> bytes:
     """
@@ -1860,6 +2131,7 @@ def generate_pulley_stl_preview(
         spoke_hub_od_mm=spoke_hub_od_mm, fillet_tip_mm=fillet_tip_mm,
         fillet_base_mm=fillet_base_mm, rim_depth_mm=rim_depth_mm,
         spoke_height_mm=spoke_height_mm,
+        flange_enabled=flange_enabled, flange_height_mm=flange_height_mm,
     )
     if socket_meshes:
         # Union sockets first so overlapping cylinders are resolved into one solid
@@ -1882,6 +2154,7 @@ def generate_belt_step(
     num_teeth_right: int,
     center_dist_mm: float,
     belt_height_mm: float,
+    _return_cq: bool = False,
 ) -> bytes:
     """
     Return STEP bytes of a two-pulley belt cross-section.
@@ -1911,6 +2184,9 @@ def generate_belt_step(
     inner_solid = _segs_to_cq_sketch(inner_segs, cq.Workplane('XY')).extrude(belt_height_mm)
 
     result = outer_solid.cut(inner_solid)
+
+    if _return_cq:
+        return result
 
     # ── Export ────────────────────────────────────────────────────────────────
     tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)

@@ -455,10 +455,9 @@
         <div class="dl-wrap">
           <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-flange', event)">⬇ Download Flanges</button>
           <div class="dl-menu hidden" id="dl-p1-flange">
-            <button class="dl-item" onclick="downloadFlange(1,'top'); closeDlMenus()">Upper Flange STL</button>
+            <button class="dl-item" id="flange1_dl_both_stl" onclick="downloadFlange(1,'both'); closeDlMenus()" style="display:none">Flanges STL</button>
+            <button class="dl-item" id="flange1_dl_top_stl" onclick="downloadFlange(1,'top'); closeDlMenus()">Upper Flange STL</button>
             <button class="dl-item" id="flange1_dl_bottom_stl" onclick="downloadFlange(1,'bottom'); closeDlMenus()">Lower Flange STL</button>
-            <button class="dl-item fb-3d" onclick="downloadFlangeSTEP(1,'top'); closeDlMenus()">Upper Flange STEP</button>
-            <button class="dl-item fb-3d" id="flange1_dl_bottom_step" onclick="downloadFlangeSTEP(1,'bottom'); closeDlMenus()">Lower Flange STEP</button>
           </div>
         </div>
       </div>
@@ -474,6 +473,10 @@
           <button class="dl-item fb-3d" onclick="downloadBeltSTEP(); closeDlMenus()">STEP</button>
           <button class="dl-item fb-3d" onclick="downloadBeltSTL(); closeDlMenus()">STL</button>
         </div>
+      </div>
+      <div class="dl-wrap" id="dl-all-step-wrap" style="display:none;margin-top:6px;">
+        <button class="btn-download" style="background:#7c3aed;border:3px solid #4c1d95;"
+                onclick="downloadAllSTEP()">⬇ Download All (STEP)</button>
       </div>
     </section>
 
@@ -860,10 +863,9 @@
         <div class="dl-wrap">
           <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-flange', event)">⬇ Download Flanges</button>
           <div class="dl-menu hidden" id="dl-p2-flange">
-            <button class="dl-item" onclick="downloadFlange(2,'top'); closeDlMenus()">Upper Flange STL</button>
+            <button class="dl-item" id="flange2_dl_both_stl" onclick="downloadFlange(2,'both'); closeDlMenus()" style="display:none">Flanges STL</button>
+            <button class="dl-item" id="flange2_dl_top_stl" onclick="downloadFlange(2,'top'); closeDlMenus()">Upper Flange STL</button>
             <button class="dl-item" id="flange2_dl_bottom_stl" onclick="downloadFlange(2,'bottom'); closeDlMenus()">Lower Flange STL</button>
-            <button class="dl-item fb-3d" onclick="downloadFlangeSTEP(2,'top'); closeDlMenus()">Upper Flange STEP</button>
-            <button class="dl-item fb-3d" id="flange2_dl_bottom_step" onclick="downloadFlangeSTEP(2,'bottom'); closeDlMenus()">Lower Flange STEP</button>
           </div>
         </div>
       </div>
@@ -1351,6 +1353,7 @@ function onDualToggle() {
     updateGearRatioFromTeeth();
     setDefaultCenterDistance();
   }
+  updateBeltBtn();
   schedulePreview();
 }
 
@@ -2121,8 +2124,10 @@ function downloadBeltDXF() {
 function updateBeltBtn() {
   const family    = document.getElementById('family').value;
   const hasBelt   = BELT_FAMILIES.has(family);
+  const dual      = document.getElementById('dual_enable').checked;
   document.getElementById('belt-svg-wrap').classList.toggle('hidden', !hasBelt);
   document.getElementById('tab-belt')    .classList.toggle('hidden', !hasBelt);
+  document.getElementById('dl-all-step-wrap').style.display = (hasBelt && dual) ? '' : 'none';
   // If switching away from a belt-only family, reset to pulley tab
   if (!hasBelt && previewTab === 'belt') {
     previewTab = 'pulley';
@@ -2444,12 +2449,37 @@ function downloadSTEP(n) {
   downloadWithProgress(url, `Pulley_${n}.step`);
 }
 
-function downloadFlangeSTEP(n, which) {
-  const fp = _flangeParams(n);
-  fp.flange_which = which;
-  const suffix = which === 'top' ? 'upper' : 'lower';
-  downloadWithProgress(_dlUrl('/download/flange-step?' + new URLSearchParams(fp)),
-                       `Flange_P${n}_${suffix}.step`);
+function downloadAllSTEP() {
+  const params = buildParams();
+  params.belt_height = document.getElementById('belt_height').value;
+  const dual = document.getElementById('dual_enable').checked;
+  if (dual) params.dual = 'true';
+  // P1 flanges
+  const addFlangeParams = (n, pfx) => {
+    const fn = n.toString();
+    if (document.getElementById(`flange${fn}_enabled`).checked) {
+      params[`${pfx}flange_enabled`]      = '1';
+      params[`${pfx}flange_3dprint`]      = document.getElementById(`flange${fn}_3dprint`).checked ? '1' : '0';
+      params[`${pfx}flange_angle`]        = document.getElementById(`flange${fn}_angle`).value;
+      params[`${pfx}flange_rim_radius`]   = document.getElementById(`flange${fn}_rim_radius`).value;
+      params[`${pfx}flange_height`]       = document.getElementById(`flange${fn}_height`).value;
+      params[`${pfx}flange_plate_height`] = document.getElementById(`flange${fn}_plate_height`).value;
+      params[`${pfx}flange_bend_radius`]  = document.getElementById(`flange${fn}_bend_radius`).value;
+      params[`${pfx}flange_top_separate`] = document.getElementById(`flange${fn}_top_separate`).checked ? '1' : '0';
+      params[`${pfx}flange_nubs_enabled`] = document.getElementById(`flange${fn}_nubs_enabled`).checked ? '1' : '0';
+      params[`${pfx}flange_nub_count`]    = document.getElementById(`flange${fn}_nub_count`).value;
+      params[`${pfx}flange_nub_dia`]      = document.getElementById(`flange${fn}_nub_dia`).value;
+      params[`${pfx}flange_nub_height`]   = document.getElementById(`flange${fn}_nub_height`).value;
+      params[`${pfx}flange_nub_allowance`] = document.getElementById(`flange${fn}_nub_allowance`).value;
+    }
+  };
+  addFlangeParams(1, '');
+  if (dual) addFlangeParams(2, 'p2_');
+  const t1 = document.getElementById('teeth').value;
+  const fname = dual
+    ? `All-${t1}T+${document.getElementById('p2_teeth').value}T.step`
+    : `All-${t1}T.step`;
+  downloadWithProgress(_dlUrl('/download/all-step?' + new URLSearchParams(params)), fname);
 }
 
 function downloadSTL(n) {
@@ -2906,16 +2936,16 @@ function onFlangeChange(n) {
   const suppOpts = document.getElementById(`flange${n}_support_opts`);
   if (suppOpts) suppOpts.style.display = suppsOn ? 'block' : 'none';
 
-  // "Download Flanges" menu: hidden in integrated 3DP mode (no separate flange files)
+  // "Download Flanges" menu: only when 3DP top-separate (metal and integrated 3DP are in pulley STL)
   const dlWrap = document.getElementById(`flange${n}_dl_wrap`);
-  if (dlWrap) dlWrap.style.display = (enabled && !(is3dp && !topSep)) ? 'block' : 'none';
+  if (dlWrap) dlWrap.style.display = (enabled && is3dp && topSep) ? 'block' : 'none';
 
   // Lower flange download items: hidden whenever 3DP is checked (lower flange is part of the pulley)
   const show3dp = enabled && !is3dp;
-  const btmStl  = document.getElementById(`flange${n}_dl_bottom_stl`);
   const btmStep = document.getElementById(`flange${n}_dl_bottom_step`);
-  if (btmStl)  btmStl.style.display  = show3dp ? '' : 'none';
   if (btmStep) btmStep.style.display = show3dp ? '' : 'none';
+  // Update top/bottom vs combined STL button visibility based on 3DP vs metal
+  updateFlangeDlButtons(n);
 
   // Standalone assembly button: only in integrated 3DP mode with supports on
   const asmWrap = document.getElementById(`flange${n}_asm_wrap`);
@@ -2941,9 +2971,13 @@ function _flangeParams(n) {
   fp.clearance_custom = n === 2 ? p.p2_clearance_custom : p.clearance_custom;
   fp.print_extra      = n === 2 ? p.p2_print_extra      : p.print_extra;
 
-  // Hub params
+  // Hub params (including bore profile)
   const hubKey = n === 2 ? 'p2_hub_od' : 'hub_od';
-  fp.hub_od = p[hubKey] || 0;
+  const pfxHub = n === 2 ? 'p2_' : '';
+  fp.hub_od    = p[hubKey] || 0;
+  fp.flat_depth  = p[`${pfxHub}hub_flat_depth`] || 0;
+  fp.keyway_w    = p[`${pfxHub}hub_keyway_w`]   || 0;
+  fp.keyway_h    = p[`${pfxHub}hub_keyway_h`]   || 0;
 
   // Spoke params
   fp.spokes_enabled   = document.getElementById(`spokes${n}_enabled`).checked ? '1' : '0';
@@ -2970,6 +3004,16 @@ function _flangeParams(n) {
   fp.flange_support_air_gap     = document.getElementById(`flange${n}_support_air_gap`).value;
 
   return fp;
+}
+
+function updateFlangeDlButtons(n) {
+  // Download section is only visible for 3DP + top-separate; only the top flange is separate.
+  const bothBtn = document.getElementById(`flange${n}_dl_both_stl`);
+  const topBtn  = document.getElementById(`flange${n}_dl_top_stl`);
+  const botBtn  = document.getElementById(`flange${n}_dl_bottom_stl`);
+  if (bothBtn) bothBtn.style.display = 'none';
+  if (topBtn)  topBtn.style.display  = '';
+  if (botBtn)  botBtn.style.display  = 'none';
 }
 
 function downloadFlange(n, which) {

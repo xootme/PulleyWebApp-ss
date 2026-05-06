@@ -22,7 +22,15 @@ def main():
     params = json.loads(sys.argv[1])
     export_type = params.pop('export_type', 'pulley')
 
-    if export_type == 'flange':
+    if export_type == 'assembly':
+        from exporters.step_exporter import generate_pulley_assembly_step
+        step_bytes = generate_pulley_assembly_step(params)
+    elif export_type == 'all':
+        from exporters.step_exporter import generate_all_parts_step
+        kw2      = params.pop('kw2', None)
+        belt_kw  = params.pop('belt_kw', None)
+        step_bytes = generate_all_parts_step(params, kw2, belt_kw)
+    elif export_type == 'flange':
         from exporters.step_exporter import generate_flange_step
         step_bytes = generate_flange_step(
             family           = params['family'],
