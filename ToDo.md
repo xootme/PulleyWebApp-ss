@@ -2,6 +2,25 @@
 
 ## Backlog
 
+### STEP Geometry — `C:\Users\cmyer\Documents\small_step\`
+Rust project (no deps). Build: `cargo +stable-x86_64-pc-windows-gnu build`
+
+**Done:**
+- [x] Investigated STEP AP214 structure — learned entity syntax, unit declarations, TRIMMED_CURVE, MANIFOLD_SOLID_BREP
+- [x] Confirmed pulleys can use CIRCLE + TRIMMED_CURVE for land/root arcs; LINE for flanks
+- [x] Built Rust StepBuilder that emits all required AP214 entities
+- [x] HTD-3M 20T geometry: profile math, wrap_point/wrap_arc, 9 segments per tooth
+- [x] Generates `htd_3m_20t.step` (~507 KB); loads in eDrawings (SolidWorks viewer)
+
+**Known issues — what to fix next:**
+- [ ] **Non-manifold topology**: each face creates fresh VERTEX_POINT/EDGE_CURVE entities even at shared corners — adjacent faces must reuse the same edge entities. Needs a coordinate→vertex_id cache in StepBuilder.
+- [ ] **Top/bottom faces not closed**: outer profile edge loop has direction/winding issues; top and bottom annular faces (with bore hole) don't seal the solid
+- [ ] **Bore appears solid**: bore cylindrical face winding is reversed — bore should cut inward, not fill
+- [ ] **Teeth look triangular**: the arc wrapping for tip/root fillets produces incorrect angles after rotation; the 9-primitive profile geometry needs debugging against a known-good reference profile
+- [ ] **Unit crash**: `SI_UNIT(.MILLI.,.METRE.)` (correct format) causes OCC crash on TransferRoots due to non-manifold topology failing validation at mm scale; old 3-arg format gives 1000× wrong scale. Fix is the manifold topology issue above.
+- [ ] Consider outputting SHELL_BASED_SURFACE_MODEL instead of MANIFOLD_SOLID_BREP until topology is clean
+- [ ] Consider adding SURFACE_CURVE + PCURVE on each edge for full AP214 compliance (required for SolidWorks/Fusion direct import without repair)
+
 ### Packaging
 - [ ] PyArmor — machine-specific licence install
 - [ ] PyArmor — time-expiring licence install

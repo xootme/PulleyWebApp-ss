@@ -1860,6 +1860,57 @@ def download_flange_assembly():
                         status=500, mimetype='text/plain')
 
 
+def _create_github_issue(report_label, timestamp, label_seeing, label_should,
+                         seeing, should_see, email, state, report_type):
+    """Create a GitHub issue in the feedback repo. Silently skips if PAT not set."""
+    pat  = os.environ.get('FEEDBACK_GITHUB_PAT', '').strip()
+    repo = os.environ.get('FEEDBACK_GITHUB_REPO', '').strip()  # e.g. xootme/cct-feedback
+    if not pat or not repo:
+        return
+    try:
+        import urllib.request, urllib.error
+        state_json = json.dumps(state, indent=2)
+        params_summary = (
+            f"**Family:** {state.get('family','?')}  "
+            f"**Pitch:** {state.get('pitch','?')}  "
+            f"**Teeth:** {state.get('teeth','?')}  "
+            f"**Bore:** {state.get('bore','?')}"
+        )
+        body = (
+            f"**Type:** {report_label}\n"
+            f"**Submitted:** {timestamp}\n"
+            f"**App Version:** {state.get('app_version', APP_VERSION)}  "
+            f"**Build:** {state.get('build_time', BUILD_TIME)}\n\n"
+            f"---\n\n"
+            f"**{label_seeing}:**\n{seeing or '_(not provided)_'}\n\n"
+            f"**{label_should}:**\n{should_see or '_(not provided)_'}\n\n"
+            f"**Contact email:** {email or '_(not provided)_'}\n\n"
+            f"---\n\n"
+            f"**Parameters:** {params_summary}\n\n"
+            f"<details><summary>Full app state</summary>\n\n"
+            f"```json\n{state_json}\n```\n\n</details>\n"
+        )
+        title = f"[{report_label}] {(seeing or should_see or 'No description')[:80]}"
+        label = 'feature-request' if report_type == 'feature' else 'bug'
+        payload = json.dumps({'title': title, 'body': body, 'labels': [label]}).encode()
+        req = urllib.request.Request(
+            f'https://api.github.com/repos/{repo}/issues',
+            data=payload,
+            headers={
+                'Authorization': f'Bearer {pat}',
+                'Accept':        'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+                'Content-Type':  'application/json',
+            },
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            resp = json.loads(r.read())
+        return resp.get('html_url')
+    except Exception:
+        pass  # GitHub failure must never break the log write
+
+
 def _send_report_email(report_label, timestamp, label_seeing, label_should,
                        seeing, should_see, email, state):
     """Fire-and-forget SendGrid notification. Silently skips if key not set."""
@@ -1923,10 +1974,13 @@ def api_report_bug():
         with open(_LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(entry)
 
+        issue_url = _create_github_issue(report_label, timestamp, label_seeing, label_should,
+                                         seeing, should_see, email, state, report_type)
+
         _send_report_email(report_label, timestamp, label_seeing, label_should,
                            seeing, should_see, email, state)
 
-        return jsonify({'ok': True})
+        return jsonify({'ok': True, 'issue_url': issue_url})
     except Exception as e:
         import traceback
         return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
