@@ -2176,10 +2176,14 @@ def api_report_bug():
 # The desktop app calls /api/desktop/activate on first run, then /api/desktop/verify
 # every DESKTOP_VERIFY_DAYS days. Offline grace: DESKTOP_GRACE_DAYS days.
 
-_DESKTOP_LICENCES_FILE = os.path.join(_LOG_DIR, 'desktop_licences.json')
-_desktop_licences_lock = threading.Lock()
-_DESKTOP_VERIFY_DAYS   = 7
-_DESKTOP_GRACE_DAYS    = 14   # allow offline this long before hard-blocking
+_DESKTOP_LICENCES_FILE  = os.path.join(_LOG_DIR, 'desktop_licences.json')
+_desktop_licences_lock  = threading.Lock()
+_DESKTOP_VERIFY_DAYS    = 7
+_DESKTOP_GRACE_DAYS     = 14   # allow offline this long before hard-blocking
+_WC_WEBHOOK_SECRET      = os.environ.get('WC_WEBHOOK_SECRET', '')
+_LMFWC_SITE_URL         = os.environ.get('LMFWC_SITE_URL', 'https://cheapcadtools.com')
+_LMFWC_CONSUMER_KEY     = os.environ.get('LMFWC_CONSUMER_KEY', '')
+_LMFWC_CONSUMER_SECRET  = os.environ.get('LMFWC_CONSUMER_SECRET', '')
 
 
 def _load_desktop_licences():
@@ -2224,6 +2228,74 @@ def api_desktop_licence_import():
         }
         _save_desktop_licences(licences)
     return jsonify({'ok': True, 'valid_until': valid_until})
+
+
+@app.route('/api/desktop/licence-import-wc', methods=['POST'])
+def api_desktop_licence_import_wc():
+    """WooCommerce 'Order updated' webhook — imports LMFWC licence keys for completed orders."""
+    import hmac as _hmac_mod
+    import hashlib as _hash_mod
+    import base64 as _b64_mod
+    import urllib.request as _ur
+
+    # Validate WooCommerce HMAC-SHA256 signature
+    sig = request.headers.get('X-WC-Webhook-Signature', '')
+    raw = request.get_data()
+    if _WC_WEBHOOK_SECRET:
+        expected = _b64_mod.b64encode(
+            _hmac_mod.new(_WC_WEBHOOK_SECRET.encode(), raw, _hash_mod.sha256).digest()
+        ).decode()
+        if not _hmac_mod.compare_digest(expected, sig):
+            return jsonify({'error': 'invalid signature'}), 401
+
+    order = request.get_json(silent=True) or {}
+
+    # Only process completed orders
+    if order.get('status') != 'completed':
+        return jsonify({'ok': True, 'skipped': 'not completed'}), 200
+
+    order_id = order.get('id')
+    email    = (order.get('billing', {}).get('email', '') or '').lower().strip()
+    if not order_id:
+        return jsonify({'error': 'missing order id'}), 400
+
+    # Fetch licence keys from LMFWC REST API
+    creds = _b64_mod.b64encode(
+        f'{_LMFWC_CONSUMER_KEY}:{_LMFWC_CONSUMER_SECRET}'.encode()
+    ).decode()
+    lmfwc_url = f'{_LMFWC_SITE_URL}/wp-json/lmfwc/v2/licenses?order_id={order_id}'
+    req = _ur.Request(lmfwc_url, headers={'Authorization': f'Basic {creds}'})
+    try:
+        with _ur.urlopen(req, timeout=10) as resp:
+            lmfwc_data = json.loads(resp.read())
+    except Exception as exc:
+        return jsonify({'error': f'LMFWC API error: {exc}'}), 502
+
+    licenses = lmfwc_data.get('data', [])
+    if not licenses:
+        return jsonify({'error': 'no licences found for this order'}), 404
+
+    imported = []
+    with _desktop_licences_lock:
+        db = _load_desktop_licences()
+        for lic in licenses:
+            key = (lic.get('licenseKey') or '').strip().upper()
+            if not key:
+                continue
+            expires = lic.get('expiresAt')
+            valid_until = expires if expires else (datetime.now() + timedelta(days=365)).isoformat()
+            db[key] = {
+                'email':           email,
+                'order_id':        str(order_id),
+                'created_at':      datetime.now().isoformat(),
+                'valid_until':     valid_until,
+                'activations':     [],
+                'max_activations': 2,
+            }
+            imported.append(key)
+        _save_desktop_licences(db)
+
+    return jsonify({'ok': True, 'imported': len(imported)})
 
 
 @app.route('/api/desktop/activate', methods=['POST'])
