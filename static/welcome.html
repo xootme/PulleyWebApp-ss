@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to CheapCAD Tools</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      max-width: 700px;
+      width: 100%;
+      padding: 40px 48px;
+    }
+    .logo {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 8px;
+    }
+    .tagline {
+      font-size: 16px;
+      color: #94a3b8;
+      margin-bottom: 32px;
+    }
+    h2 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 28px 0 12px;
+    }
+    p {
+      font-size: 15px;
+      line-height: 1.7;
+      color: #cbd5e1;
+      margin-bottom: 12px;
+    }
+    ul {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+    li {
+      font-size: 15px;
+      line-height: 1.8;
+      color: #cbd5e1;
+    }
+    .highlight {
+      background: #0f4c75;
+      border-left: 3px solid #3b82f6;
+      border-radius: 4px;
+      padding: 12px 16px;
+      margin: 20px 0;
+      font-size: 14px;
+      color: #bfdbfe;
+    }
+    .steps {
+      counter-reset: step;
+      padding-left: 0;
+      list-style: none;
+      margin: 16px 0 24px;
+    }
+    .steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .steps li::before {
+      content: counter(step);
+      background: #3b82f6;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      min-width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+    .steps li span { line-height: 1.7; }
+    .btn {
+      display: inline-block;
+      background: #3b82f6;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 10px 24px;
+      border-radius: 6px;
+      text-decoration: none;
+      margin-top: 8px;
+    }
+    .btn:hover { background: #2563eb; }
+    .divider {
+      border: none;
+      border-top: 1px solid #334155;
+      margin: 32px 0;
+    }
+    .footer {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 32px;
+    }
+    .footer a { color: #60a5fa; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">CheapCAD Tools</div>
+    <h1>Welcome to PulleyApp</h1>
+    <p class="tagline">Standalone edition — runs locally on your PC, no internet required after activation.</p>
+
+    <h2>What is PulleyApp?</h2>
+    <p>
+      PulleyApp generates precision timing-pulley profiles for HTD, GT, T, AT, RPP, STD,
+      and Imperial belt standards. Export 2D drawings (SVG, DXF) and 3D models (STEP, STL)
+      ready for CNC machining or 3D printing.
+    </p>
+
+    <div class="highlight">
+      This standalone edition runs entirely on your PC for fast, responsive performance.
+      It is not integrated into CAD software — files are exported and imported manually.
+    </div>
+
+    <h2>Getting Started</h2>
+    <ol class="steps">
+      <li><span>A Start Menu shortcut will be created so you can launch PulleyApp any time from the Windows Start Menu.</span></li>
+      <li><span>Enter your licence key when prompted. Your key was emailed to you after purchase — check your order confirmation from cheapcadtools.com.</span></li>
+      <li><span>PulleyApp opens in your default browser at <strong>http://127.0.0.1:5154</strong>. Keep the PulleyApp window in your taskbar while using it.</span></li>
+      <li><span>Configure your pulley parameters, then click <strong>Download</strong> to export SVG, DXF, STEP, or STL files.</span></li>
+    </ol>
+
+    <h2>Your Licence</h2>
+    <ul>
+      <li>Valid for <strong>1 year</strong> from date of purchase.</li>
+      <li>Can be activated on <strong>up to 2 computers</strong>.</li>
+      <li>Covers all current and future CheapCAD Tools standalone products for the duration of the subscription.</li>
+      <li>Renew at any time at <a href="https://cheapcadtools.com/shop" target="_blank">cheapcadtools.com/shop</a>.</li>
+    </ul>
+
+    <h2>System Requirements</h2>
+    <ul>
+      <li>Windows 10 or 11 (64-bit)</li>
+      <li>Any modern web browser (Chrome, Edge, Firefox)</li>
+      <li>Internet connection required for activation and annual renewal only</li>
+    </ul>
+
+    <hr class="divider">
+
+    <p>You can close this page — PulleyApp will ask for your licence key next.</p>
+    <a class="btn" href="javascript:window.close()">Close and Continue</a>
+
+    <p class="footer">
+      Questions? <a href="mailto:support@cheapcadtools.com">support@cheapcadtools.com</a>
+      &nbsp;·&nbsp;
+      <a href="https://cheapcadtools.com" target="_blank">cheapcadtools.com</a>
+    </p>
+  </div>
+</body>
+</html>

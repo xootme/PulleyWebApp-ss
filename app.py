@@ -20,7 +20,7 @@ try:
     _HAVE_PSUTIL = True
 except ImportError:
     _HAVE_PSUTIL = False
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory
 
 # ── App version ───────────────────────────────────────────────────────────────
@@ -2170,6 +2170,112 @@ def api_report_bug():
 
 
 # ── Provision API ─────────────────────────────────────────────────────────────
+# ── Desktop app licence system ────────────────────────────────────────────────
+# Licence keys are sold via WooCommerce (cheapcadtools.com/shop).
+# On order completion WooCommerce calls /api/desktop/licence-import (Bearer PROVISION_SECRET).
+# The desktop app calls /api/desktop/activate on first run, then /api/desktop/verify
+# every DESKTOP_VERIFY_DAYS days. Offline grace: DESKTOP_GRACE_DAYS days.
+
+_DESKTOP_LICENCES_FILE = os.path.join(_LOG_DIR, 'desktop_licences.json')
+_desktop_licences_lock = threading.Lock()
+_DESKTOP_VERIFY_DAYS   = 7
+_DESKTOP_GRACE_DAYS    = 14   # allow offline this long before hard-blocking
+
+
+def _load_desktop_licences():
+    try:
+        if os.path.exists(_DESKTOP_LICENCES_FILE):
+            with open(_DESKTOP_LICENCES_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _save_desktop_licences(data):
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    with open(_DESKTOP_LICENCES_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+@app.route('/api/desktop/licence-import', methods=['POST'])
+def api_desktop_licence_import():
+    """Admin/webhook: register a new licence key. Called by WooCommerce on order completion."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+    data       = request.get_json(silent=True) or {}
+    key        = data.get('licence_key', '').strip().upper()
+    email      = data.get('email', '').lower().strip()
+    order_id   = str(data.get('order_id', ''))
+    valid_years = max(1, int(data.get('valid_years', 1)))
+    if not key:
+        return jsonify({'error': 'licence_key required'}), 400
+    valid_until = (datetime.now() + timedelta(days=365 * valid_years)).isoformat()
+    with _desktop_licences_lock:
+        licences = _load_desktop_licences()
+        licences[key] = {
+            'email':           email,
+            'order_id':        order_id,
+            'created_at':      datetime.now().isoformat(),
+            'valid_until':     valid_until,
+            'activations':     [],
+            'max_activations': 2,
+        }
+        _save_desktop_licences(licences)
+    return jsonify({'ok': True, 'valid_until': valid_until})
+
+
+@app.route('/api/desktop/activate', methods=['POST'])
+def api_desktop_activate():
+    """Called by desktop app on first run: bind a licence key to this machine."""
+    data       = request.get_json(silent=True) or {}
+    key        = data.get('licence_key', '').strip().upper()
+    machine_id = data.get('machine_id', '').strip()
+    hostname   = (data.get('hostname', '') or '')[:64]
+    if not key or not machine_id:
+        return jsonify({'error': 'licence_key and machine_id required'}), 400
+    with _desktop_licences_lock:
+        licences = _load_desktop_licences()
+        rec = licences.get(key)
+        if not rec:
+            return jsonify({'error': 'Invalid licence key — check your order email.'}), 404
+        if datetime.fromisoformat(rec['valid_until']) < datetime.now():
+            return jsonify({'error': 'Licence expired — renew at cheapcadtools.com'}), 403
+        for act in rec['activations']:
+            if act['machine_id'] == machine_id:
+                return jsonify({'ok': True, 'valid_until': rec['valid_until']})
+        if len(rec['activations']) >= rec.get('max_activations', 2):
+            return jsonify({'error': 'Activation limit reached (2 computers max). Email support@cheapcadtools.com to reset.'}), 403
+        rec['activations'].append({
+            'machine_id':   machine_id,
+            'hostname':     hostname,
+            'activated_at': datetime.now().isoformat(),
+        })
+        _save_desktop_licences(licences)
+    return jsonify({'ok': True, 'valid_until': rec['valid_until']})
+
+
+@app.route('/api/desktop/verify', methods=['POST'])
+def api_desktop_verify():
+    """Called by desktop app on startup (every ~7 days) to confirm licence still valid."""
+    data       = request.get_json(silent=True) or {}
+    key        = data.get('licence_key', '').strip().upper()
+    machine_id = data.get('machine_id', '').strip()
+    if not key or not machine_id:
+        return jsonify({'error': 'licence_key and machine_id required'}), 400
+    with _desktop_licences_lock:
+        licences = _load_desktop_licences()
+        rec = licences.get(key)
+    if not rec:
+        return jsonify({'error': 'Invalid licence key'}), 404
+    if datetime.fromisoformat(rec['valid_until']) < datetime.now():
+        return jsonify({'error': 'Licence expired — renew at cheapcadtools.com'}), 403
+    if not any(act['machine_id'] == machine_id for act in rec['activations']):
+        return jsonify({'error': 'Machine not activated for this licence'}), 403
+    return jsonify({'ok': True, 'valid_until': rec['valid_until']})
+
+
 # Environment variables (set in Render dashboard):
 #   PROVISION_SECRET   — admin bearer token for /api/subscribers/add
 #   PULLEY_LICENCE_B64 — base64-encoded licence.lic (generated locally via prepare_release.py)

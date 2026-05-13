@@ -59,9 +59,13 @@ RUNTIME_PACKAGES = [
     'scipy',
     'numpy',
     'vtkmodules',
+    'runtype', 'multimethod', 'nlopt', 'path', 'pyparsing', 'ezdxf',
+]
+RUNTIME_PY_FILES = [     # single .py shims directly in site-packages
+    'vtk.py',
 ]
 RUNTIME_LIBS = [         # *.libs companion directories
-    'cadquery_ocp.libs', 'shapely.libs', 'scipy.libs', 'numpy.libs',
+    'cadquery_ocp.libs', 'vtk.libs', 'shapely.libs', 'scipy.libs', 'numpy.libs',
 ]
 RUNTIME_PYD_FILES = [    # single .pyd files that live directly in site-packages
     'manifold3d',
@@ -295,6 +299,14 @@ def step6b_build_runtime():
         for name in RUNTIME_PYD_FILES:
             for pyd in sp.glob(f'{name}*.pyd'):
                 zf.write(pyd, pkg_root / pyd.name)
+
+        # Single .py shim files directly in site-packages
+        for name in RUNTIME_PY_FILES:
+            src = sp / name
+            if src.exists():
+                zf.write(src, pkg_root / name)
+            else:
+                print(f'  [WARN] {name} not found, skipping')
 
     size_mb = runtime_zip.stat().st_size / 1_048_576
     print(f'  Created {RUNTIME_ASSET}  ({size_mb:.1f} MB)')
