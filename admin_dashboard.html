@@ -583,21 +583,30 @@ function mkChart(id, color, data, timestamps) {
 
   const xScale = multiDay ? {
     ticks: {
-      color: ctx => dayBoundary.has(ctx.index) ? '#ccc' : '#888',
+      color: ctx => dayBoundary.has(ctx.tick.value) ? '#ccc' : '#888',
       maxRotation: 0,
-      callback(val, index) {
-        if (dayBoundary.has(index)) {
-          const d = new Date(timestamps[index] * 1000);
+      callback(val) {
+        // val is the original data index on a category scale
+        if (dayBoundary.has(val)) {
+          const d = new Date(timestamps[val] * 1000);
           return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
         }
-        // Show time label every 6 hours; hide the rest to avoid crowding
-        const d = new Date(timestamps[index] * 1000);
-        if (d.getMinutes() === 0 && d.getHours() % 6 === 0) return labels[index];
-        return '';
+        return labels[val];
       },
     },
     grid: {
       color: ctx => dayBoundary.has(ctx.index) ? '#555' : '#2a2a2e',
+    },
+    afterBuildTicks(axis) {
+      // Build exact tick set: day boundaries + first data point in each 6-hour window
+      const wanted = new Set(dayBoundary);
+      let lastWindow = -1;
+      timestamps.forEach((ts, i) => {
+        const window6h = Math.floor(ts / (6 * 3600));
+        if (window6h !== lastWindow) { wanted.add(i); lastWindow = window6h; }
+      });
+      const sorted = [...wanted].sort((a, b) => a - b);
+      axis.ticks = sorted.map(i => ({ value: i, label: labels[i] }));
     },
   } : {
     ticks: { color: '#888', maxTicksLimit: 8, maxRotation: 0 },
