@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory
 
 # ── App version ───────────────────────────────────────────────────────────────
-APP_VERSION  = '0.1'
+APP_VERSION  = '1.0'
 BUILD_TIME   = datetime.now().strftime('%Y-%m-%d %H:%M')
 
 # ── Logs ─────────────────────────────────────────────────────────────────────

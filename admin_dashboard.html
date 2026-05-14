@@ -557,40 +557,77 @@ async function loadMetrics() {
   } catch(e) { console.warn('Metrics load error', e); }
 }
 
-const CHART_DEFAULTS = {
-  responsive: true, maintainAspectRatio: false,
-  animation: false,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { ticks: { color: '#888', maxTicksLimit: 8, maxRotation: 0 }, grid: { color: '#2a2a2e' } },
-    y: { ticks: { color: '#888' }, grid: { color: '#2a2a2e' }, beginAtZero: true },
-  },
-};
-
-function mkChart(id, color, data, labels) {
+function mkChart(id, color, data, timestamps) {
   const ctx = document.getElementById(id).getContext('2d');
   if (charts[id]) charts[id].destroy();
+
+  const spanHours = timestamps.length > 1
+    ? (timestamps[timestamps.length - 1] - timestamps[0]) / 3600 : 0;
+  const multiDay = spanHours > 24;
+
+  // Find indices where the calendar day changes (day boundaries)
+  const dayBoundary = new Set();
+  if (multiDay) {
+    let prevDay = null;
+    timestamps.forEach((ts, i) => {
+      const day = new Date(ts * 1000).toDateString();
+      if (prevDay !== null && day !== prevDay) dayBoundary.add(i);
+      prevDay = day;
+    });
+  }
+
+  const labels = timestamps.map(ts => {
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  });
+
+  const xScale = multiDay ? {
+    ticks: {
+      color: ctx => dayBoundary.has(ctx.index) ? '#ccc' : '#888',
+      maxRotation: 0,
+      callback(val, index) {
+        if (dayBoundary.has(index)) {
+          const d = new Date(timestamps[index] * 1000);
+          return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+        // Show time label every 6 hours; hide the rest to avoid crowding
+        const d = new Date(timestamps[index] * 1000);
+        if (d.getMinutes() === 0 && d.getHours() % 6 === 0) return labels[index];
+        return '';
+      },
+    },
+    grid: {
+      color: ctx => dayBoundary.has(ctx.index) ? '#555' : '#2a2a2e',
+    },
+  } : {
+    ticks: { color: '#888', maxTicksLimit: 8, maxRotation: 0 },
+    grid: { color: '#2a2a2e' },
+  };
+
   charts[id] = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
       datasets: [{ data, borderColor: color, backgroundColor: color + '22', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 }],
     },
-    options: CHART_DEFAULTS,
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: xScale,
+        y: { ticks: { color: '#888' }, grid: { color: '#2a2a2e' }, beginAtZero: true },
+      },
+    },
   });
 }
 
-function fmtTs(ts) {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
 function renderCharts(m) {
-  const rows   = m.data || [];
-  const labels = rows.map(r => fmtTs(r.ts));
-  mkChart('chart-req', '#761516', rows.map(r => r.req_per_min), labels);
-  mkChart('chart-cpu', '#f39c12', rows.map(r => r.cpu),         labels);
-  mkChart('chart-mem', '#3498db', rows.map(r => r.mem_pct),     labels);
+  const rows = m.data || [];
+  const ts   = rows.map(r => r.ts);
+  mkChart('chart-req', '#761516', rows.map(r => r.req_per_min), ts);
+  mkChart('chart-cpu', '#f39c12', rows.map(r => r.cpu),         ts);
+  mkChart('chart-mem', '#3498db', rows.map(r => r.mem_pct),     ts);
 }
 
 function renderConstraints(c) {
