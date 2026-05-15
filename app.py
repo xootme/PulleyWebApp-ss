@@ -600,6 +600,7 @@ def download_svg():
             teeth = request.args.get('teeth', '20')
             svg   = _build_svg_from_request(request.args)
             filename = f'{family}-{pitch}-{teeth}T.svg'
+        svg = _embed_svg(svg, request.args)
         return Response(
             svg,
             mimetype='image/svg+xml',
@@ -650,7 +651,8 @@ def download_dxf():
             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od,
             rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
         )
-        _mirror_to_fusion(dxf if isinstance(dxf, bytes) else dxf.encode(), filename)
+        dxf = _embed_dxf(dxf if isinstance(dxf, bytes) else dxf.encode(), request.args)
+        _mirror_to_fusion(dxf, filename)
         return Response(
             dxf,
             mimetype='application/dxf',
@@ -978,6 +980,53 @@ def download_belt_svg():
         )
     except Exception as e:
         return f'Error generating belt SVG: {e}', 400
+
+
+def _cct_meta(args) -> dict:
+    """Build the CCT metadata dict from request args."""
+    return {'cct': dict(args), 'v': APP_VERSION}
+
+
+def _embed_step(step_bytes: bytes, args) -> bytes:
+    """Inject CCT design params as a comment in the STEP header."""
+    try:
+        import re as _re2
+        blob = json.dumps(_cct_meta(args), separators=(',', ':'))
+        comment = f'/* CCT:{blob} */\n'
+        text = step_bytes.decode('utf-8', errors='replace')
+        # Insert after the HEADER ENDSEC line, before DATA
+        text = _re2.sub(r'(ENDSEC;\s*\n)(DATA;)', rf'\1{comment}\2', text, count=1)
+        return text.encode('utf-8')
+    except Exception:
+        return step_bytes
+
+
+def _embed_dxf(dxf_bytes: bytes, args) -> bytes:
+    """Store CCT design params as a group-code 999 comment before the DXF EOF marker."""
+    try:
+        blob    = json.dumps(_cct_meta(args), separators=(',', ':'))
+        comment = f'999\nCCT:{blob}\n'.encode('utf-8')
+        for eof_marker in (b'  0\r\nEOF\r\n', b'  0\nEOF\n', b'0\r\nEOF\r\n', b'0\nEOF\n'):
+            if eof_marker in dxf_bytes:
+                return dxf_bytes.replace(eof_marker, comment + eof_marker, 1)
+        return dxf_bytes + comment
+    except Exception:
+        return dxf_bytes
+
+
+def _embed_svg(svg_str: str, args) -> str:
+    """Inject CCT design params as an SVG <metadata> element."""
+    try:
+        import re as _re3
+        blob = json.dumps(_cct_meta(args), separators=(',', ':'))
+        meta_tag = f'<metadata><cct>{blob}</cct></metadata>'
+        m = _re3.search(r'<svg\b[^>]*>', svg_str)
+        if m:
+            pos = m.end()
+            return svg_str[:pos] + '\n' + meta_tag + svg_str[pos:]
+    except Exception:
+        pass
+    return svg_str
 
 
 def _parse_stl_params(args, pulley='1'):
@@ -1365,6 +1414,7 @@ def download_step():
         p2_sfx = '-P2' if pulley == '2' else ''
         fl_sfx = '+flanges' if _fl_enabled else ''
         fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
+        step_bytes = _embed_step(step_bytes, request.args)
         _mirror_to_fusion(step_bytes, fname)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})

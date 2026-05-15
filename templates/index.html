@@ -1002,6 +1002,52 @@ let teethLock2   = false;
   }, true);
 })();
 
+// ── Restore design from URL params (set by Fusion addin or file metadata) ─────
+function loadParamsFromUrl() {
+  const p = new URLSearchParams(window.location.search);
+  if (!p.has('family') && !p.has('teeth')) return false;
+
+  const set = (id, key) => {
+    const val = p.get(key !== undefined ? key : id);
+    if (val === null) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = (val === 'true' || val === '1');
+    else el.value = val;
+  };
+
+  set('family');  set('pitch');  set('teeth');  set('bore');
+  set('print_extra');
+  set('clearance_preset');  set('clearance_custom');
+  set('backlash_preset');   set('backlash_custom');
+  set('belt_height');
+
+  if (p.get('dual') === 'true') {
+    set('dual_enable', 'dual');
+    set('center_distance');
+    set('p2_teeth');  set('p2_bore');  set('p2_print_extra');
+    set('p2_clearance_preset');  set('p2_clearance_custom');
+    set('p2_backlash_preset');   set('p2_backlash_custom');
+  }
+
+  if (p.has('hub_od')) {
+    set('hub1_enabled', 'hub_enabled');
+    const en = document.getElementById('hub1_enabled');
+    if (en) en.checked = true;
+    set('hub1_od', 'hub_od');  set('hub1_height', 'hub_height');
+  }
+
+  set('spokes_enabled');  set('spokes_count');  set('spokes_width');
+  set('spokes_hub_od');   set('spokes_rim_depth');
+  set('spokes_fillet_tip');  set('spokes_fillet_base');  set('spokes_height');
+
+  // Flange
+  set('flange_enabled');  set('flange_angle_deg');
+  set('flange_rim_radius_mm');  set('flange_height_mm');
+
+  return true;
+}
+
 // ── Settings persistence (localStorage) ──────────────────────────────────────
 const SETTINGS_KEY = 'pulley_last';
 
@@ -1299,6 +1345,7 @@ function resetSettings() {
 window.onload = async () => {
   populatePitches('HTD');
   const restored = await loadSettings();
+  loadParamsFromUrl();   // URL params override saved settings when present
   _syncNubHeightMax();
 
   // Apply Feature Build tab state now that the DOM is fully ready.
