@@ -2367,7 +2367,9 @@ _RUNTIME_VERSION    = os.environ.get('PULLEY_RUNTIME_VERSION', '')
 _AUTODESK_APP_ID    = os.environ.get('AUTODESK_APP_ID', '')   # set after App Store registration
 _ENTITLEMENT_URL    = 'https://apps.autodesk.com/webservices/checkentitlement'
 _SUBSCRIBERS_FILE   = os.path.join(_LOG_DIR, 'subscribers.json')
+_PURCHASES_FILE     = os.path.join(_LOG_DIR, 'autodesk_purchases.json')
 _subscribers_lock   = threading.Lock()
+_purchases_lock     = threading.Lock()
 
 
 def _load_subscribers():
@@ -2440,6 +2442,113 @@ def api_provision():
         'licence_b64':      _LICENCE_B64,
         'licence_expiry':   _LICENCE_EXPIRY,
     })
+
+
+@app.route('/api/autodesk-ipn', methods=['POST'])
+def api_autodesk_ipn():
+    """Instant Payment Notification from the Autodesk App Store.
+
+    Autodesk POSTs application/x-www-form-urlencoded with fields including:
+      buyer_adsk_account — buyer's Autodesk email
+      appId              — app identifier (matches AUTODESK_APP_ID once registered)
+      txn_id             — transaction ID
+      payment_status     — 'Completed', 'Refunded', 'Reversed', etc.
+      mc_gross           — amount (0.00 for free tier)
+      txn_type           — transaction type
+
+    We log every notification and send a welcome email on first Completed purchase.
+    """
+    payload = request.form.to_dict()
+    app.logger.info(f'Autodesk IPN received: {payload}')
+
+    status    = payload.get('payment_status', '').strip()
+    txn_id    = payload.get('txn_id', '').strip()
+    email     = payload.get('buyer_adsk_account', '').lower().strip()
+    app_id    = payload.get('appId', '').strip()
+    txn_type  = payload.get('txn_type', '').strip()
+    amount    = payload.get('mc_gross', '0.00').strip()
+
+    # Reject notifications for other apps if AUTODESK_APP_ID is configured
+    if _AUTODESK_APP_ID and app_id and app_id != _AUTODESK_APP_ID:
+        app.logger.warning(f'IPN appId mismatch: got {app_id}, expected {_AUTODESK_APP_ID}')
+        return '', 200  # always return 200 to Autodesk
+
+    record = {
+        'ts':           int(time.time()),
+        'txn_id':       txn_id,
+        'txn_type':     txn_type,
+        'status':       status,
+        'email':        email,
+        'app_id':       app_id,
+        'amount':       amount,
+        'raw':          payload,
+    }
+
+    # Persist to log
+    with _purchases_lock:
+        try:
+            purchases = []
+            if os.path.exists(_PURCHASES_FILE):
+                with open(_PURCHASES_FILE) as f:
+                    purchases = json.load(f)
+        except Exception:
+            purchases = []
+        purchases.append(record)
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        with open(_PURCHASES_FILE, 'w') as f:
+            json.dump(purchases, f, indent=2)
+
+    # Send welcome email on first Completed purchase for this buyer
+    if status == 'Completed' and email:
+        already_welcomed = any(
+            p.get('email') == email and p.get('status') == 'Completed' and p.get('ts') != record['ts']
+            for p in purchases
+        )
+        if not already_welcomed:
+            _send_ipn_welcome_email(email, txn_id)
+
+    return '', 200
+
+
+def _send_ipn_welcome_email(email, txn_id):
+    """Send a purchase confirmation / getting-started email via SendGrid."""
+    sg_key = os.environ.get('SENDGRID_API_KEY', '')
+    if not sg_key:
+        return
+    try:
+        import urllib.request as _ur
+        body = json.dumps({
+            'personalizations': [{'to': [{'email': email}]}],
+            'from': {'email': 'support@cheapcadtools.com', 'name': 'CheapCAD Tools'},
+            'subject': 'Welcome to CheapCAD Tools — your subscription is active',
+            'content': [{
+                'type': 'text/plain',
+                'value': (
+                    f'Hi,\n\n'
+                    f'Thank you for subscribing to CheapCAD Tools on the Autodesk App Store!\n\n'
+                    f'Your subscription is now active. Restart Fusion 360 and the CheapCAD Tools '
+                    f'panel will install automatically.\n\n'
+                    f'Transaction ID: {txn_id}\n\n'
+                    f'If you have any questions, reply to this email or visit '
+                    f'https://cheapcadtools.com/contact/\n\n'
+                    f'— CheapCAD Tools'
+                ),
+            }],
+        }).encode()
+        req = _ur.Request(
+            'https://api.sendgrid.com/v3/mail/send',
+            data=body,
+            headers={
+                'Authorization': f'Bearer {sg_key}',
+                'Content-Type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ur.urlopen(req, timeout=10):
+            pass
+        app.logger.info(f'IPN welcome email sent to {email}')
+    except Exception as exc:
+        app.logger.error(f'IPN welcome email failed: {exc}')
 
 
 @app.route('/api/subscribers/add', methods=['POST'])
