@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=19">
+  <link rel="stylesheet" href="/static/style.css?v=20">
 </head>
 <body>
 
@@ -71,6 +71,7 @@
   </div>
   <div class="drive-bar-right">
     <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
+    <button class="import-btn fb-2d" onclick="openImportDialog()" title="Import design from an exported STEP, DXF, or SVG file">&#128194; Import</button>
     <button class="drive-info-btn fb-3d"
             onclick="openHelpUrl('/static/3D_Print_help.html')">&#9432; 3D Print</button>
     <button class="drive-info-btn fb-2d"
@@ -889,6 +890,29 @@
   </div>
 </div>
 
+<!-- ── Import Design Modal ── -->
+<div id="import-overlay">
+  <div id="import-box">
+    <div class="import-header">
+      <span class="import-title">&#128194; Import Design</span>
+      <button class="bug-close" onclick="cancelImport()" title="Close">&times;</button>
+    </div>
+    <div class="import-info">
+      <p>Every file exported from this tool — STEP, DXF, and SVG — contains embedded design parameters. Selecting an exported file here will read those parameters and restore your design exactly as it was when exported.</p>
+    </div>
+    <div class="import-body">
+      <label class="bug-label" for="import-file-input">Select exported file</label>
+      <input type="file" id="import-file-input" class="import-file-input"
+             accept=".step,.stp,.dxf,.svg,.stl">
+      <div id="import-status" class="bug-status"></div>
+    </div>
+    <div class="bug-footer">
+      <button class="bug-btn bug-btn-cancel" onclick="cancelImport()">Cancel</button>
+      <button class="bug-btn bug-btn-submit" id="import-btn-go" onclick="executeImport()">Import</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Bug Report Modal ── -->
 <div id="bug-report-overlay">
   <div id="bug-report-box">
@@ -946,8 +970,9 @@
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
-const APP_VERSION   = {{ app_version | tojson }};
-const BUILD_TIME    = {{ build_time | tojson }};
+const APP_VERSION        = {{ app_version | tojson }};
+const BUILD_TIME         = {{ build_time | tojson }};
+const CCT_SCHEMA_VERSION = {{ cct_schema_version | tojson }};
 let previewTab = 'pulley';   // 'pulley' | 'belt'
 let currentSpec  = null;
 let currentSpec2 = null;
@@ -1002,11 +1027,17 @@ let teethLock2   = false;
   }, true);
 })();
 
-// ── Restore design from URL params (set by Fusion addin or file metadata) ─────
-function loadParamsFromUrl() {
-  const p = new URLSearchParams(window.location.search);
-  if (!p.has('family') && !p.has('teeth')) return false;
+// ── Migrate older CCT param schemas to current ────────────────────────────────
+function migrateParams(p) {
+  const sv = parseInt(p.get('sv') || '1', 10);
+  // sv 1 is the current schema — nothing to migrate yet.
+  // Future example:
+  //   if (sv < 2) { if (p.has('old_key') && !p.has('new_key')) p.set('new_key', p.get('old_key')); }
+  return p;
+}
 
+// ── Apply a URLSearchParams object to the form ────────────────────────────────
+function _applyUrlParams(p) {
   const set = (id, key) => {
     const val = p.get(key !== undefined ? key : id);
     if (val === null) return;
@@ -1016,7 +1047,12 @@ function loadParamsFromUrl() {
     else el.value = val;
   };
 
-  set('family');  set('pitch');  set('teeth');  set('bore');
+  // Family must be applied first so pitch dropdown is populated correctly
+  if (p.has('family')) {
+    set('family');
+    populatePitches(p.get('family'));
+  }
+  set('pitch');  set('teeth');  set('bore');
   set('print_extra');
   set('clearance_preset');  set('clearance_custom');
   set('backlash_preset');   set('backlash_custom');
@@ -1031,7 +1067,6 @@ function loadParamsFromUrl() {
   }
 
   if (p.has('hub_od')) {
-    set('hub1_enabled', 'hub_enabled');
     const en = document.getElementById('hub1_enabled');
     if (en) en.checked = true;
     set('hub1_od', 'hub_od');  set('hub1_height', 'hub_height');
@@ -1041,10 +1076,18 @@ function loadParamsFromUrl() {
   set('spokes_hub_od');   set('spokes_rim_depth');
   set('spokes_fillet_tip');  set('spokes_fillet_base');  set('spokes_height');
 
-  // Flange
   set('flange_enabled');  set('flange_angle_deg');
   set('flange_rim_radius_mm');  set('flange_height_mm');
 
+  schedulePreview();
+}
+
+// ── Restore design from URL params (set by Fusion addin or file metadata) ─────
+function loadParamsFromUrl() {
+  const p = new URLSearchParams(window.location.search);
+  if (!p.has('family') && !p.has('teeth')) return false;
+  migrateParams(p);
+  _applyUrlParams(p);
   return true;
 }
 
@@ -2097,6 +2140,7 @@ function buildParams() {
   }
   const chEl = document.getElementById('clearance_height');
   if (chEl) p.clearance_height = chEl.value;
+  p.sv = CCT_SCHEMA_VERSION;
   return p;
 }
 
@@ -2416,8 +2460,90 @@ async function submitBugReport() {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     closeBugReport();
+    cancelImport();
   }
 });
+
+// ── Import Design ─────────────────────────────────────────────────────────────
+function openImportDialog() {
+  document.getElementById('import-file-input').value = '';
+  const st = document.getElementById('import-status');
+  st.textContent = '';
+  st.className = 'bug-status';
+  document.getElementById('import-btn-go').disabled = false;
+  document.getElementById('import-overlay').style.display = 'flex';
+}
+function cancelImport() {
+  document.getElementById('import-overlay').style.display = 'none';
+}
+document.getElementById('import-overlay').addEventListener('click', function(e) {
+  if (e.target === this) cancelImport();
+});
+
+function _parseCctFromText(text, ext) {
+  let m;
+  if (ext === '.step' || ext === '.stp' || ext === '.stl') {
+    m = text.match(/\/\* CCT:(\{.+?\}) \*\//);
+  } else if (ext === '.dxf') {
+    m = text.match(/999\nCCT:(\{.+})/);
+  } else if (ext === '.svg') {
+    m = text.match(/<cct>([\s\S]+?)<\/cct>/);
+  }
+  if (!m) return null;
+  try {
+    const data = JSON.parse(m[1]);
+    const params = Object.assign({}, data.cct || data);
+    if ('sv' in data) params.sv = data.sv;
+    return params;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function executeImport() {
+  const fileInput = document.getElementById('import-file-input');
+  const statusEl  = document.getElementById('import-status');
+  const btn       = document.getElementById('import-btn-go');
+
+  if (!fileInput.files || !fileInput.files.length) {
+    statusEl.textContent = 'Please select a file first.';
+    statusEl.className   = 'bug-status bug-status-error';
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const dot  = file.name.lastIndexOf('.');
+  const ext  = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+
+  statusEl.textContent = 'Reading…';
+  statusEl.className   = 'bug-status';
+  btn.disabled = true;
+
+  try {
+    const text   = await file.text();
+    const params = _parseCctFromText(text, ext);
+    if (!params) {
+      statusEl.textContent = 'No CheapCAD Tools design data found in this file. Only files exported from this tool contain embedded parameters.';
+      statusEl.className   = 'bug-status bug-status-error';
+      btn.disabled = false;
+      return;
+    }
+    if (!params.family && !params.teeth) {
+      statusEl.textContent = 'Design data found but does not contain pulley parameters (family / teeth). The file may have been exported by a very early version.';
+      statusEl.className   = 'bug-status bug-status-error';
+      btn.disabled = false;
+      return;
+    }
+    const p = new URLSearchParams(params);
+    migrateParams(p);
+    _applyUrlParams(p);
+    cancelImport();
+  } catch (e) {
+    statusEl.textContent = 'Could not read file: ' + e.message;
+    statusEl.className   = 'bug-status bug-status-error';
+    btn.disabled = false;
+  }
+}
 
 function _dlUrl(url) {
   // Append a timestamp so every download click is a unique URL — prevents Edge

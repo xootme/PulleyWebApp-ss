@@ -21,6 +21,18 @@ Rust project (no deps). Build: `cargo +stable-x86_64-pc-windows-gnu build`
 - [ ] Consider outputting SHELL_BASED_SURFACE_MODEL instead of MANIFOLD_SOLID_BREP until topology is clean
 - [ ] Consider adding SURFACE_CURVE + PCURVE on each edge for full AP214 compliance (required for SolidWorks/Fusion direct import without repair)
 
+### Design Metadata in Exported Files
+- [x] Embed CCT params as JSON in STEP (`/* CCT:{...} */` comment after HEADER)
+- [x] Embed CCT params as JSON in DXF (group-code 999 comment before EOF)
+- [x] Embed CCT params as JSON in SVG (`<metadata>` element)
+- [x] Web app: restore design from URL query params (`loadParamsFromUrl`)
+- [x] Web app: Import button (2D toolbar) — file picker reads embedded metadata client-side, restores all fields
+- [x] Schema versioning (`sv` field) in all three formats; `migrateParams()` in web app for future param renames
+- [x] Fusion addin: sidebar palette replaces separate toolbar button; "Restore from File" in sidebar
+- [x] Test harness: `tests/test_repro.py` — unit, download-route, and round-trip tests for all three formats
+- [x] **STL: embed CCT params by appending trailer after last triangle** (binary STL ignores
+  trailing bytes; read back with same `/* CCT:{...} */` regex as STEP)
+
 ### Packaging
 - [ ] PyArmor — machine-specific licence install
 - [ ] PyArmor — time-expiring licence install

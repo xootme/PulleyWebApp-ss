@@ -24,8 +24,11 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory
 
 # ── App version ───────────────────────────────────────────────────────────────
-APP_VERSION  = '1.0'
-BUILD_TIME   = datetime.now().strftime('%Y-%m-%d %H:%M')
+APP_VERSION        = '1.0'
+# Increment when a param is renamed, split, or its meaning changes.
+# New optional params never need a bump — missing keys just use form defaults.
+CCT_SCHEMA_VERSION = 1
+BUILD_TIME         = datetime.now().strftime('%Y-%m-%d %H:%M')
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
 # PULLEY_LOG_DIR is set by the packaged launcher so logs go to AppData, not the install folder.
@@ -462,6 +465,7 @@ def index():
         belt_families=sorted(BELT_FAMILIES),
         app_version=APP_VERSION,
         build_time=BUILD_TIME,
+        cct_schema_version=CCT_SCHEMA_VERSION,
     )
 
 
@@ -984,7 +988,7 @@ def download_belt_svg():
 
 def _cct_meta(args) -> dict:
     """Build the CCT metadata dict from request args."""
-    return {'cct': dict(args), 'v': APP_VERSION}
+    return {'cct': dict(args), 'v': APP_VERSION, 'sv': CCT_SCHEMA_VERSION}
 
 
 def _embed_step(step_bytes: bytes, args) -> bytes:
@@ -1012,6 +1016,21 @@ def _embed_dxf(dxf_bytes: bytes, args) -> bytes:
         return dxf_bytes + comment
     except Exception:
         return dxf_bytes
+
+
+def _embed_stl(stl_bytes: bytes, args) -> bytes:
+    """Append CCT design params as a text trailer after the last STL triangle.
+
+    Binary STL parsers stop after reading the declared triangle count, so the
+    trailing bytes are silently ignored by all standard CAD tools and slicers.
+    Read back with the same /* CCT:{...} */ regex used for STEP.
+    """
+    try:
+        blob    = json.dumps(_cct_meta(args), separators=(',', ':'))
+        trailer = f'\n/* CCT:{blob} */\n'.encode('utf-8')
+        return stl_bytes + trailer
+    except Exception:
+        return stl_bytes
 
 
 def _embed_svg(svg_str: str, args) -> str:
@@ -1325,6 +1344,7 @@ def download_stl():
 
         fl_sfx = '+flange' if _fl_enabled else ''
         fname = f'{family}-{pitch}-{num_teeth}T{suffix}{fl_sfx}.stl'
+        stl = _embed_stl(stl if isinstance(stl, bytes) else bytes(stl), request.args)
         return Response(stl, mimetype='model/stl',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
@@ -1894,6 +1914,7 @@ def download_flange_stl():
         type_tag  = '3DP' if fp['flange_3dprint'] else 'Metal'
         filename  = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.stl'
 
+        stl_bytes = _embed_stl(stl_bytes, request.args)
         return Response(
             stl_bytes,
             mimetype='model/stl',
@@ -2083,6 +2104,7 @@ def download_flange_assembly():
         stl_bytes  = combined.export(file_type='stl')
 
         filename = f'{family}{pitch}-{num_teeth}T-Assembly.stl'
+        stl_bytes = _embed_stl(stl_bytes, request.args)
         return Response(stl_bytes, mimetype='model/stl',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:

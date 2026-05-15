@@ -429,6 +429,17 @@ footer a:hover { text-decoration: underline; }
   white-space: nowrap;
 }
 .reset-btn:hover { background: #fee2e2; border-color: #f87171; color: #b91c1c; }
+.import-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+.import-btn:hover { background: #dbeafe; border-color: #3b82f6; }
 .drive-info-btn {
   padding: 3px 10px;
   font-size: 12px;
@@ -820,6 +831,69 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 }
 .bug-btn-submit:hover:not(:disabled) { background: #005fa3; border-color: #005fa3; }
 .bug-btn-submit:disabled { opacity: 0.55; cursor: default; }
+
+/* ── Import design modal ─────────────────────────────────────────────────── */
+#import-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1100;
+  align-items: center;
+  justify-content: center;
+}
+#import-box {
+  background: #fff;
+  border-radius: 8px;
+  width: min(480px, 96vw);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+.import-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid #dde3ea;
+  background: #eff6ff;
+  flex-shrink: 0;
+}
+.import-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+.import-info {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #e8edf3;
+  background: #f8fafc;
+}
+.import-info p {
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.55;
+  margin: 0;
+}
+.import-body {
+  padding: 16px 20px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.import-file-input {
+  width: 100%;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 6px 4px;
+  border: 1px solid #c8d6e2;
+  border-radius: 4px;
+  background: #fff;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.import-file-input:focus { outline: none; border-color: #0078d4; }
 
 /* ── Bug report info button & panel ─────────────────────────────────────── */
 .bug-info-btn {
