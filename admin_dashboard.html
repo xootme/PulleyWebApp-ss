@@ -277,6 +277,7 @@
     <button onclick="switchTab('bugs',this)">Bug Reports</button>
     <button onclick="switchTab('downloads',this)">Downloads</button>
     <button onclick="switchTab('subscribers',this)">Subscribers</button>
+    <button onclick="switchTab('sales',this)">Sales</button>
   </nav>
 
   <main>
@@ -343,6 +344,21 @@
         <h2>Download Stats</h2>
         <div class="stat-grid" id="dl-stats"></div>
         <div class="dl-breakdown" id="dl-breakdown" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Sales tab -->
+    <div id="tab-sales" class="tab-panel">
+      <div class="card">
+        <h2>Sales Summary</h2>
+        <div class="stat-grid" id="sales-stats"></div>
+      </div>
+      <div class="card">
+        <h2>Purchase Log</h2>
+        <table>
+          <thead><tr><th>Date</th><th>Email</th><th>Status</th><th>Amount</th><th>Txn ID</th><th>Type</th></tr></thead>
+          <tbody id="sales-table"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+        </table>
       </div>
     </div>
 
@@ -473,6 +489,7 @@ function switchTab(name, btn) {
   if (name === 'bugs')        loadBugs();
   if (name === 'downloads')   loadDownloads();
   if (name === 'subscribers') loadSubscribers();
+  if (name === 'sales')       loadSales();
 }
 
 // ── Load all ──────────────────────────────────────────────────────────────────
@@ -483,6 +500,7 @@ function loadAll() {
   if (active === 'bugs')        loadBugs();
   if (active === 'downloads')   loadDownloads();
   if (active === 'subscribers') loadSubscribers();
+  if (active === 'sales')       loadSales();
   document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 
@@ -938,6 +956,41 @@ async function readdSubscriber(key, user_id, email) {
   const r = await apiFetch('/api/subscribers/add', { method: 'POST', body: JSON.stringify({ user_id, email }) });
   if (r.ok) loadSubscribers();
   else alert('Error: ' + (await r.text()));
+}
+
+// ── Sales ─────────────────────────────────────────────────────────────────────
+async function loadSales() {
+  try {
+    const r = await apiFetch('/api/admin/sales');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    const STATUS_COLOR = { Completed: 'var(--green)', Refunded: 'var(--crimson)', Reversed: 'var(--crimson)' };
+
+    document.getElementById('sales-stats').innerHTML = `
+      <div class="stat-box"><div class="stat-label">Total Sales</div><div class="stat-value">${d.total}</div></div>
+      <div class="stat-box"><div class="stat-label">Revenue (USD)</div><div class="stat-value">$${d.revenue.toFixed(2)}</div></div>
+    `;
+
+    const rows = d.purchases || [];
+    if (!rows.length) {
+      document.getElementById('sales-table').innerHTML = '<tr><td colspan="6" class="empty">No purchases recorded yet.</td></tr>';
+      return;
+    }
+    document.getElementById('sales-table').innerHTML = rows.map(p => {
+      const dt     = p.ts ? new Date(p.ts * 1000).toLocaleString() : '—';
+      const color  = STATUS_COLOR[p.status] || 'var(--muted)';
+      const amount = p.amount && parseFloat(p.amount) > 0 ? `$${parseFloat(p.amount).toFixed(2)}` : '—';
+      return `<tr>
+        <td style="white-space:nowrap">${dt}</td>
+        <td>${p.email || '—'}</td>
+        <td style="color:${color};font-weight:600">${p.status || '—'}</td>
+        <td>${amount}</td>
+        <td style="font-family:monospace;font-size:0.8em">${p.txn_id || '—'}</td>
+        <td style="color:var(--muted);font-size:0.82em">${p.txn_type || '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.warn('Sales load error', e); }
 }
 
 // ── Auto-login from sessionStorage ───────────────────────────────────────────

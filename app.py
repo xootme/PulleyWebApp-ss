@@ -3032,6 +3032,25 @@ def api_admin_subscribers():
     return jsonify({'count': len(subs), 'subscribers': subs})
 
 
+@app.route('/api/admin/sales')
+def api_admin_sales():
+    err = _admin_auth()
+    if err:
+        return err
+    with _purchases_lock:
+        try:
+            purchases = json.load(open(_PURCHASES_FILE)) if os.path.exists(_PURCHASES_FILE) else []
+        except Exception:
+            purchases = []
+    completed = [p for p in purchases if p.get('status') == 'Completed']
+    total_revenue = sum(float(p.get('amount', 0) or 0) for p in completed)
+    return jsonify({
+        'total':       len(completed),
+        'revenue':     round(total_revenue, 2),
+        'purchases':   sorted(purchases, key=lambda p: p.get('ts', 0), reverse=True),
+    })
+
+
 @app.route('/api/admin/render/service')
 def api_admin_render_service():
     err = _admin_auth()
