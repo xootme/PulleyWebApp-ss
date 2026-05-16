@@ -71,7 +71,7 @@
   </div>
   <div class="drive-bar-right">
     <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
-    <button class="import-btn fb-2d" onclick="openImportDialog()" title="Import design from an exported STEP, DXF, or SVG file">&#128194; Import</button>
+    <button class="import-btn fb-2d" onclick="openImportDialog()" title="Import design from an exported STEP, DXF, SVG, or STL file">&#128194; Import</button>
     <button class="drive-info-btn fb-3d"
             onclick="openHelpUrl('/static/3D_Print_help.html')">&#9432; 3D Print</button>
     <button class="drive-info-btn fb-2d"
@@ -898,7 +898,7 @@
       <button class="bug-close" onclick="cancelImport()" title="Close">&times;</button>
     </div>
     <div class="import-info">
-      <p>Every file exported from this tool — STEP, DXF, and SVG — contains embedded design parameters. Selecting an exported file here will read those parameters and restore your design exactly as it was when exported.</p>
+      <p>Every file exported from this tool — STEP, DXF, SVG, and STL — contains embedded design parameters. Selecting an exported file here will read those parameters and restore your design exactly as it was when exported.</p>
     </div>
     <div class="import-body">
       <label class="bug-label" for="import-file-input">Select exported file</label>

@@ -2489,15 +2489,19 @@ def api_provision():
     if not user_id and not email:
         return jsonify({'error': 'user_id or email required'}), 400
 
-    # ── Primary: Autodesk Entitlement API ─────────────────────────────────────
-    entitled = _verify_autodesk_entitlement(user_id)
+    # ── Dev backdoor (remove before public launch) ────────────────────────────
+    if data.get('backdoor_key') == 'xoot':
+        entitled = True
+    else:
+        # ── Primary: Autodesk Entitlement API ─────────────────────────────────
+        entitled = _verify_autodesk_entitlement(user_id)
 
-    # ── Fallback: manual subscriber list (beta / pre-App-Store) ───────────────
-    if not entitled:
-        with _subscribers_lock:
-            subs = _load_subscribers()
-        record   = subs.get(user_id) or subs.get(email)
-        entitled = bool(record and record.get('active'))
+        # ── Fallback: manual subscriber list (beta / pre-App-Store) ───────────
+        if not entitled:
+            with _subscribers_lock:
+                subs = _load_subscribers()
+            record   = subs.get(user_id) or subs.get(email)
+            entitled = bool(record and record.get('active'))
 
     if not entitled:
         return jsonify({'error': 'No active subscription found for this account.'}), 403

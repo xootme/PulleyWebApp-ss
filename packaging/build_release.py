@@ -409,7 +409,22 @@ def step7_update_render():
         print(f'  [OK] PULLEY_APP_VERSION   = {VERSION}')
         print(f'  [OK] PULLEY_APP_CHANGELOG = {changelog[:60]}...' if len(changelog) > 60 else f'  [OK] PULLEY_APP_CHANGELOG = {changelog}')
     except urllib.error.HTTPError as e:
-        print(f'  [WARN] Render update failed: {e.code}')
+        print(f'  [WARN] Render env var update failed: {e.code}')
+        return
+
+    # Trigger a redeploy so the running service picks up the new env vars immediately.
+    # Without this, PULLEY_APP_VERSION only takes effect after the next git-push deploy.
+    deploy_req = urllib.request.Request(
+        f'{base}/deploys',
+        data=json.dumps({'clearCache': 'do_not_clear'}).encode(),
+        headers=headers, method='POST')
+    try:
+        with urllib.request.urlopen(deploy_req) as resp:
+            deploy = json.loads(resp.read())
+        print(f'  [OK] Render redeploy triggered (id={deploy.get("id", "?")})')
+        print(f'       Service will be live with new version in ~2 minutes.')
+    except urllib.error.HTTPError as e:
+        print(f'  [WARN] Render redeploy trigger failed: {e.code} — redeploy manually in dashboard')
 
 
 def _get_render_token():

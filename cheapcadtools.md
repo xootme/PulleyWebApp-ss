@@ -130,5 +130,62 @@ c.close()
 *   **Constraint events** logged to `/var/data/logs/constraint_events.jsonl` when CPU >80%, memory >85%, or req rate >120/min.
 *   **Retention:** 30 days; trimmed automatically on each metrics sample.
 
+## Autodesk IPN (Instant Payment Notification)
+
+Autodesk App Store sends a form-encoded POST to this endpoint after every transaction.
+
+*   **Route:** `POST /api/autodesk-ipn`
+*   **Content-Type:** `application/x-www-form-urlencoded`
+*   **Response:** Always `'', 200` — Autodesk requires a 200 regardless of outcome; any other status causes retries.
+
+### Key fields
+
+| Field | Description |
+|---|---|
+| `buyer_adsk_account` | Buyer's email address |
+| `appId` | App Store app ID (must match `AUTODESK_APP_ID` env var) |
+| `txn_id` | Unique transaction ID |
+| `payment_status` | `Completed`, `Refunded`, or `Reversed` |
+| `mc_gross` | Amount charged (e.g. `"19.99"`) |
+| `txn_type` | Transaction type string from Autodesk |
+
+### Processing logic
+
+1. If `AUTODESK_APP_ID` is set and `appId` doesn't match → log warning and return 200 (ignore).
+2. On `Completed`: append record to `logs/autodesk_purchases.json` (guarded by `_purchases_lock` threading lock).
+3. On first `Completed` for a given email (dedup check against existing records): call `_send_ipn_welcome_email(email, txn_id)`.
+4. `Refunded`/`Reversed`: logged but no special action taken (no subscriber removal — handled manually).
+
+### Welcome email
+
+*   Sent via SendGrid REST API using `SENDGRID_API_KEY` env var.
+*   No-op if `SENDGRID_API_KEY` is not set (logs a warning instead).
+*   Deduplication: checks existing purchase records before sending — re-delivery of the same IPN won't send a second email.
+*   From address and template body are hardcoded in `_send_ipn_welcome_email()` in `app.py`.
+
+### Purchase log format (`logs/autodesk_purchases.json`)
+
+```json
+[
+  {
+    "timestamp": "2026-05-15T12:34:56.789012",
+    "email": "buyer@example.com",
+    "txn_id": "abc123",
+    "status": "Completed",
+    "gross": "19.99",
+    "app_id": "your-app-id"
+  }
+]
+```
+
+### Testing locally
+
+Simulate an IPN POST with curl:
+```sh
+curl -X POST http://localhost:5000/api/autodesk-ipn \
+  -d "buyer_adsk_account=test@example.com&appId=YOUR_APP_ID&txn_id=test001&payment_status=Completed&mc_gross=19.99&txn_type=web_accept"
+```
+Expected response: HTTP 200, empty body.
+
 ## Site Purpose
 An experimental platform ("Vibe Coding" project) serving as a landing page to sell simple, high-quality CAD tools—starting with a Fusion 360 Timing Belt Pulley Generator—at highly affordable prices compared to the cost of custom coding them from scratch.

@@ -58,11 +58,37 @@ Before committing, ensure these files reflect every user-facing change:
 - [ ] Download format options (SVG / DXF) accurate in all three help files
 - [ ] `ToDo.md` Completed section updated
 
-### Step 3 — Run full test harness, benchmarks, and concurrency tests
+### Step 3 — Check CCT metadata schema
+
+Review whether any input parameters were added, removed, or renamed in this diff.
+If so, update the metadata schema in both places and bump the version number.
+
+**Where to look in the diff:**
+- New or removed form fields in `templates/index.html`
+- New or removed query-string parameters in download routes (`app.py`)
+- Any renamed parameter keys passed to `_cct_meta()`
+
+**What to update:**
+
+| Location | What to change |
+|---|---|
+| `app.py` → `_cct_meta()` | Add/remove keys from the dict passed to `_cct_meta()` so new params are embedded in all exported files |
+| `app.py` → `CCT_SCHEMA_VERSION` | Increment by 1 if any param was renamed or removed (not needed for new optional additions) |
+| `PulleyWebApp.py` → `_extract_cct_metadata()` | Update regex or field handling if the embedding format changed |
+| `templates/index.html` → `migrateParams()` | Add an `if (sv < N)` migration block for any renamed param so old exported files still restore correctly |
+
+**Checklist:**
+- [ ] Checked diff for added/removed/renamed parameters
+- [ ] `_cct_meta()` updated if new params need embedding
+- [ ] `CCT_SCHEMA_VERSION` incremented if a param was renamed or removed
+- [ ] `migrateParams()` updated with migration block if schema version was bumped
+- [ ] `_extract_cct_metadata()` updated if embedding format changed
+
+### Step 4 — Run full test harness, benchmarks, and concurrency tests
 
 **Requires the local dev server to be running** (`python app.py`) for the concurrency test.
 
-#### 3a — Full test suite (run first, before benchmarks)
+#### 4a — Full test suite (run first, before benchmarks)
 
 ```bash
 .venv312/Scripts/python -m pytest tests/ -v
@@ -75,7 +101,7 @@ or push code that breaks the suite.
 - [ ] `pytest tests/` exited 0 (all tests passed)
 - [ ] No new test failures vs the previous run
 
-#### 3b — Performance benchmarks
+#### 4b — Performance benchmarks
 
 Record a benchmark snapshot against the current code.
 Results are appended to `Perf_History.csv` (committed alongside the code change).
@@ -114,7 +140,7 @@ investigating.
 - [ ] Heavy payload tests passed without `[ERR]` flags (`--heavy`)
 - [ ] `Perf_History.csv` staged for commit
 
-### Step 4 — Commit and push
+### Step 5 — Commit and push
 
 ```bash
 git add .
@@ -123,7 +149,7 @@ git push origin main
 ```
 *Render will detect the push and go live within ~2 minutes.*
 
-### Step 5 — Generate deploy report card
+### Step 6 — Generate deploy report card
 
 After every push, run the report generator to capture a snapshot of this deploy:
 
@@ -252,6 +278,7 @@ This prints three environment variables. Saves a copy to `licences/local_release
    - `PULLEY_LICENCE_B64` — paste value from Step C
    - `PULLEY_LICENCE_EXPIRY` — paste value from Step C (YYYY-MM-DD)
    - `PULLEY_APP_URL` — paste GitHub Release URL from Step B
+   - `PULLEY_APP_VERSION` — paste value from Step C (YYYYMMDD date string; used by the addin to detect when a new download is available)
 3. Click **Save Changes** → Render redeploys automatically
 
 ### Step E — Verify provision endpoint
