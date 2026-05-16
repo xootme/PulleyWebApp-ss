@@ -3,7 +3,7 @@
 ## Backlog
 
 ### Before Public Launch
-- [ ] **Remove dev backdoor password** — delete `DEV_BACKDOOR_KEY` from `PulleyWebApp.py` (Fusion addin) and the `backdoor_key == 'xoot'` block from `/api/provision` in `app.py`
+- [ ] **Remove dev backdoor password** — delete `DEV_BACKDOOR_KEY` from `PulleyWebApp.py` (Fusion addin), the `backdoor_key == 'xoot'` block from `/api/provision` in `app.py`, and `_DEV_BACKDOOR` from `packaging/launcher.py`
 
 
 

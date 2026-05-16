@@ -2439,7 +2439,19 @@ async function submitBugReport() {
       body: JSON.stringify({ seeing, should_see, email, state, report_type: isFeature ? 'feature' : 'bug' }),
     });
     const data = await resp.json();
-    if (resp.ok && data.ok) {
+    if (resp.ok && data.ok && data.warning) {
+      statusEl.className = 'bug-status bug-status-warn';
+      statusEl.textContent = data.warning;
+      if (data.report_filename) {
+        const link = document.createElement('a');
+        link.href = '/api/bug-report-file/' + encodeURIComponent(data.report_filename);
+        link.textContent = '\nDownload report file';
+        link.style.display = 'block';
+        link.style.marginTop = '8px';
+        link.download = data.report_filename;
+        statusEl.appendChild(link);
+      }
+    } else if (resp.ok && data.ok) {
       statusEl.textContent = 'Thank you — your report has been saved.';
       statusEl.className   = 'bug-status bug-status-ok';
       _clearBugFields();

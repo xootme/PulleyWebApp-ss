@@ -21,7 +21,7 @@ try:
 except ImportError:
     _HAVE_PSUTIL = False
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, Response, jsonify, send_from_directory
+from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file
 
 # ── App version ───────────────────────────────────────────────────────────────
 APP_VERSION        = '1.0'
@@ -991,6 +991,24 @@ def _cct_meta(args) -> dict:
     return {'cct': dict(args), 'v': APP_VERSION, 'sv': CCT_SCHEMA_VERSION}
 
 
+def _rename_step_product(step_bytes: bytes, product_name: str) -> bytes:
+    """Replace the PRODUCT name(s) in a STEP file so Fusion 360 uses the right component name."""
+    try:
+        import re as _re_sp
+        text = step_bytes.decode('utf-8', errors='replace')
+        # STEP PRODUCT entity: PRODUCT('old_name','old_name','',(...))
+        # Replace both the name and description fields (first two quoted args).
+        safe = product_name.replace("'", " ")
+        text = _re_sp.sub(
+            r"PRODUCT\('[^']*','[^']*',",
+            f"PRODUCT('{safe}','{safe}',",
+            text,
+        )
+        return text.encode('utf-8')
+    except Exception:
+        return step_bytes
+
+
 def _embed_step(step_bytes: bytes, args) -> bytes:
     """Inject CCT design params as a comment in the STEP header."""
     try:
@@ -1434,6 +1452,7 @@ def download_step():
         p2_sfx = '-P2' if pulley == '2' else ''
         fl_sfx = '+flanges' if _fl_enabled else ''
         fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
+        step_bytes = _rename_step_product(step_bytes, fname[:-5])
         step_bytes = _embed_step(step_bytes, request.args)
         _mirror_to_fusion(step_bytes, fname)
         return Response(step_bytes, mimetype='application/step',
@@ -1583,6 +1602,7 @@ def download_all_step():
         t1     = kw1['num_teeth']
         fname  = (f'{family}-{pitch}-{t1}T+{kw2["num_teeth"]}T-all.step'
                   if kw2 else f'{family}-{pitch}-{t1}T-all.step')
+        step_bytes = _rename_step_product(step_bytes, fname[:-5])
         _mirror_to_fusion(step_bytes, fname)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
@@ -2008,6 +2028,7 @@ def download_flange_step():
         suffix   = '-upper-flange' if which == 'top' else '-lower-flange'
         type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
         filename = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.step'
+        step_bytes = _rename_step_product(step_bytes, filename[:-5])
         _mirror_to_fusion(step_bytes, filename)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
@@ -2204,6 +2225,22 @@ def api_report_bug():
         state       = data.get('state', {})          # dict of current app params
         report_type = str(data.get('report_type', 'bug')).strip()
 
+        # Desktop app: no GitHub PAT configured locally — forward to production server
+        _forward_failed = False
+        if not os.environ.get('FEEDBACK_GITHUB_PAT') and os.environ.get('PULLEY_BASE_DIR'):
+            try:
+                payload = json.dumps(data).encode()
+                req = urllib.request.Request(
+                    'https://cheapcadtools.com/api/report-bug',
+                    data=payload,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    return Response(resp.read(), status=resp.status, mimetype='application/json')
+            except Exception:
+                _forward_failed = True  # fall through to local save, then warn the user
+
         if not seeing and not should_see:
             return jsonify({'error': 'At least one description field is required.'}), 400
 
@@ -2235,10 +2272,38 @@ def api_report_bug():
         _send_report_email(report_label, timestamp, label_seeing, label_should,
                            seeing, should_see, email, state)
 
+        if _forward_failed:
+            ts_safe = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_filename = f'bug_report_{ts_safe}.txt'
+            report_path = os.path.join(_LOG_DIR, report_filename)
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(entry.strip())
+            return jsonify({
+                'ok': True,
+                'warning': (
+                    'Your report was saved locally but could not be sent to CheapCADTools '
+                    '(no internet connection or server unreachable).\n\n'
+                    'To submit it manually, email the report file to info@cheapcadtools.com, '
+                    'or reconnect and submit again.'
+                ),
+                'report_filename': report_filename,
+            })
         return jsonify({'ok': True, 'issue_url': issue_url})
     except Exception as e:
         import traceback
         return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+@app.route('/api/bug-report-file/<filename>')
+def api_bug_report_file(filename):
+    """Serve a locally-saved bug report text file for download."""
+    safe = os.path.basename(filename)
+    if not safe.startswith('bug_report_') or not safe.endswith('.txt'):
+        return jsonify({'error': 'Not found'}), 404
+    path = os.path.join(_LOG_DIR, safe)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'Not found'}), 404
+    return send_file(path, as_attachment=True, download_name=safe, mimetype='text/plain')
 
 
 # ── Provision API ─────────────────────────────────────────────────────────────

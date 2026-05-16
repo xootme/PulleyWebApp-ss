@@ -32,7 +32,8 @@ from geometry.pulley_geometry import (
 )
 from geometry.flange_geometry import (
     profile_3dprint, profile_metal,
-    flange_inner_r_3dprint, flange_inner_r_metal_top, flange_inner_r_metal_bottom,
+    flange_inner_r_3dprint, flange_inner_r_3dprint_bottom,
+    flange_inner_r_metal_top, flange_inner_r_metal_bottom,
 )
 from shapely.affinity import rotate as shapely_rotate
 
@@ -908,8 +909,8 @@ def generate_pulley_step(
         _R_OD_b = getOuterDiameter(num_teeth, _spec_b['pitch'],
                                    _pld_b + print_extra_mm - clearance_mm) / 2.0
         _has_spokes_b = spoke_count > 0
-        _r_inner_b = flange_inner_r_3dprint(
-            bore_mm, hub_od_mm, _has_spokes_b, spoke_hub_od_mm,
+        _r_inner_b = flange_inner_r_3dprint_bottom(
+            bore_mm, _has_spokes_b, spoke_hub_od_mm,
             r_tooth_OD=_R_OD_b, rim_depth_mm=rim_depth_mm)
         _angle_b = max(8.0, min(25.0, flange_angle_deg))
         _rim_r_b = max(0.5, flange_rim_radius_mm)

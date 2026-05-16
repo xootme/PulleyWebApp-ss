@@ -794,6 +794,7 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 }
 .bug-status-ok    { color: #16a34a; font-weight: 600; }
 .bug-status-error { color: #dc2626; font-weight: 600; }
+.bug-status-warn  { color: #b45309; font-weight: 600; white-space: pre-line; }
 .bug-philosophy {
   font-size: 12px;
   color: #666;
