@@ -635,6 +635,9 @@ def download_dxf():
             cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('p2_clearance_custom', 0.0))
             bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('p2_backlash_custom',  0.0))
             sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, _, _ = _parse_spoke_params(request.args, 'p2_')
+            flat_depth_mm = max(0.0, float(request.args.get('p2_hub_flat_depth', 0.0)))
+            keyway_w_mm   = max(0.0, float(request.args.get('p2_hub_keyway_w',   0.0)))
+            keyway_h_mm   = max(0.0, float(request.args.get('p2_hub_keyway_h',   0.0)))
             filename = f'{family}-{pitch}-{num_teeth}T-P2.dxf'
         else:
             num_teeth = max(spec['min_teeth'], int(request.args.get('teeth', spec['min_teeth'])))
@@ -645,6 +648,9 @@ def download_dxf():
             cl_mm = _get_preset_value(spec, 'clearances', cl_preset, request.args.get('clearance_custom', 0.0))
             bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, request.args.get('backlash_custom',  0.0))
             sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, _, _ = _parse_spoke_params(request.args, '')
+            flat_depth_mm = max(0.0, float(request.args.get('hub_flat_depth', 0.0)))
+            keyway_w_mm   = max(0.0, float(request.args.get('hub_keyway_w',   0.0)))
+            keyway_h_mm   = max(0.0, float(request.args.get('hub_keyway_h',   0.0)))
             filename = f'{family}-{pitch}-{num_teeth}T.dxf'
 
         dxf = generate_dxf(
@@ -654,6 +660,7 @@ def download_dxf():
             spoke_count=sp_cnt if sp_en else 0,
             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od,
             rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+            flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
         )
         dxf = _embed_dxf(dxf if isinstance(dxf, bytes) else dxf.encode(), request.args)
         _mirror_to_fusion(dxf, filename)
@@ -771,6 +778,9 @@ def _build_png_from_request(args, size_px=480):
     bl_mm = _get_preset_value(spec, 'backlash',   bl_preset, args.get('backlash_custom',  0.0))
     sp_en, sp_hub_od, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, sp_split = \
         _parse_spoke_params(args, '')
+    flat_depth_mm = max(0.0, float(args.get('hub_flat_depth', 0.0)))
+    keyway_w_mm   = max(0.0, float(args.get('hub_keyway_w',   0.0)))
+    keyway_h_mm   = max(0.0, float(args.get('hub_keyway_h',   0.0)))
     return generate_png(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
@@ -781,6 +791,9 @@ def _build_png_from_request(args, size_px=480):
         rim_depth_mm=sp_rim,
         fillet_tip_mm=sp_ft,
         fillet_base_mm=sp_fb,
+        flat_depth_mm=flat_depth_mm,
+        keyway_w_mm=keyway_w_mm,
+        keyway_h_mm=keyway_h_mm,
     )
 
 
@@ -808,6 +821,9 @@ def _build_svg_from_request(args):
 
     include_data = args.get('include_data', '1') != '0'
     include_callouts = args.get('include_callouts', '0') == '1'
+    flat_depth_mm = max(0.0, float(args.get('hub_flat_depth', 0.0)))
+    keyway_w_mm   = max(0.0, float(args.get('hub_keyway_w',   0.0)))
+    keyway_h_mm   = max(0.0, float(args.get('hub_keyway_h',   0.0)))
     return generate_svg(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
@@ -817,6 +833,7 @@ def _build_svg_from_request(args):
         fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
         include_data=include_data,
         include_callouts=include_callouts,
+        flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
     )
 
 
@@ -845,6 +862,9 @@ def _build_svg_from_request_p2(args):
 
     include_data = args.get('include_data', '1') != '0'
     include_callouts = args.get('include_callouts', '0') == '1'
+    flat_depth_mm = max(0.0, float(args.get('p2_hub_flat_depth', 0.0)))
+    keyway_w_mm   = max(0.0, float(args.get('p2_hub_keyway_w',   0.0)))
+    keyway_h_mm   = max(0.0, float(args.get('p2_hub_keyway_h',   0.0)))
     return generate_svg(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
@@ -854,6 +874,7 @@ def _build_svg_from_request_p2(args):
         fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
         include_data=include_data,
         include_callouts=include_callouts,
+        flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
     )
 
 
@@ -885,6 +906,14 @@ def _build_png_dual_from_request(args, size_px=480):
         _parse_spoke_params(args, '')
     sp2_en, sp2_hub_od, sp2_rim, sp2_w, sp2_ft, sp2_fb, sp2_cnt, sp2_h, sp2_split = \
         _parse_spoke_params(args, 'p2_')
+
+    flat1 = max(0.0, float(args.get('hub_flat_depth',    0.0)))
+    kw1   = max(0.0, float(args.get('hub_keyway_w',      0.0)))
+    kh1   = max(0.0, float(args.get('hub_keyway_h',      0.0)))
+    flat2 = max(0.0, float(args.get('p2_hub_flat_depth', 0.0)))
+    kw2   = max(0.0, float(args.get('p2_hub_keyway_w',   0.0)))
+    kh2   = max(0.0, float(args.get('p2_hub_keyway_h',   0.0)))
+
     return generate_png_dual(
         family=family, pitch=pitch,
         num_teeth1=num_teeth1, bore_mm1=bore1, clearance_mm1=cl1, backlash_mm1=bl1, print_extra_mm1=pr_ex1,
@@ -896,6 +925,8 @@ def _build_png_dual_from_request(args, size_px=480):
         spoke_count2=sp2_cnt if sp2_en else 0,
         spoke_width_mm2=sp2_w, spoke_hub_od_mm2=sp2_hub_od, rim_depth_mm2=sp2_rim,
         fillet_tip_mm2=sp2_ft, fillet_base_mm2=sp2_fb,
+        flat_depth_mm1=flat1, keyway_w_mm1=kw1, keyway_h_mm1=kh1,
+        flat_depth_mm2=flat2, keyway_w_mm2=kw2, keyway_h_mm2=kh2,
     )
 
 
@@ -1423,6 +1454,9 @@ def download_step():
         # When flanges are enabled use the assembly exporter (multipart STEP with
         # pulley body + separate flange parts in the same file).
         _use_assembly = _fl_enabled
+        p2_sfx = '-P2' if pulley == '2' else ''
+        fl_sfx = '+flanges' if _fl_enabled else ''
+        fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
         try:
             if _use_assembly:
                 from exporters.step_exporter import generate_pulley_assembly_step
@@ -1449,9 +1483,6 @@ def download_step():
                 return f'STEP error: {result.stderr.decode()}', 400
             step_bytes = result.stdout
 
-        p2_sfx = '-P2' if pulley == '2' else ''
-        fl_sfx = '+flanges' if _fl_enabled else ''
-        fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
         step_bytes = _rename_step_product(step_bytes, fname[:-5])
         step_bytes = _embed_step(step_bytes, request.args)
         _mirror_to_fusion(step_bytes, fname)
@@ -1574,6 +1605,10 @@ def download_all_step():
                 belt_height_mm = raw_belt_h,
             )
 
+        _t1 = kw1['num_teeth']
+        _fname_stem = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all'
+                       if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all')
+
         try:
             from exporters.step_exporter import generate_all_parts_step
             step_bytes = generate_all_parts_step(kw1, kw2, belt_kw)
@@ -1597,12 +1632,8 @@ def download_all_step():
                 return f'STEP error: {result.stderr.decode()}', 400
             step_bytes = result.stdout
 
-        family = kw1['family']
-        pitch  = kw1['pitch']
-        t1     = kw1['num_teeth']
-        fname  = (f'{family}-{pitch}-{t1}T+{kw2["num_teeth"]}T-all.step'
-                  if kw2 else f'{family}-{pitch}-{t1}T-all.step')
-        step_bytes = _rename_step_product(step_bytes, fname[:-5])
+        fname = _fname_stem + '.step'
+        # All-parts STEP is always an assembly — don't overwrite individual part names.
         _mirror_to_fusion(step_bytes, fname)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
@@ -1975,6 +2006,9 @@ def download_flange_step():
         pe_mm     = float(args.get('print_extra', 0.0))
 
         hub_od          = max(0.0, float(args.get('hub_od', 0.0)))
+        flat_depth_mm   = max(0.0, float(args.get('flat_depth', 0.0)))
+        keyway_w_mm     = max(0.0, float(args.get('keyway_w', 0.0)))
+        keyway_h_mm     = max(0.0, float(args.get('keyway_h', 0.0)))
         spokes_enabled  = args.get('spokes_enabled', '0') == '1'
         spoke_hub_od    = max(0.0, float(args.get('spokes_hub_od', 0.0)))
         spoke_rim_depth = max(0.0, float(args.get('spokes_rim_depth', 0.0)))
@@ -2006,6 +2040,9 @@ def download_flange_step():
             nub_dia_mm       = fp['nub_dia_mm'],
             nub_height_mm    = fp['nub_height_mm'],
             nub_allowance_mm = fp['nub_allowance_mm'],
+            flat_depth_mm    = flat_depth_mm,
+            keyway_w_mm      = keyway_w_mm,
+            keyway_h_mm      = keyway_h_mm,
         )
 
         try:

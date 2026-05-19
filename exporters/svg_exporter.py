@@ -657,6 +657,9 @@ def generate_svg(
     fillet_base_mm: float = 0.0,
     include_data: bool = True,
     include_callouts: bool = False,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> str:
     """
     Returns an SVG string: full pulley profile + optional info panel.
@@ -706,11 +709,31 @@ def generate_svg(
     path_d = " ".join(d_parts)
 
     sw = max(0.15, R_OD * 2.0 * 0.004)   # stroke width scaled to pulley size
-    bore_el = (
-        f'<circle cx="0" cy="0" r="{R_bore:.4f}" '
-        f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>'
-        if R_bore > 0 else ''
-    )
+    if R_bore > 0:
+        if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+            from exporters.step_exporter import _build_bore_2d
+            _bore_poly = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+            if _bore_poly is not None:
+                coords = list(_bore_poly.exterior.coords)
+                _d = ' '.join(
+                    f"{'M' if j == 0 else 'L'} {x:.4f} {-y:.4f}"
+                    for j, (x, y) in enumerate(coords[:-1])
+                ) + ' Z'
+                bore_el = (
+                    f'<path d="{_d}" fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>'
+                )
+            else:
+                bore_el = (
+                    f'<circle cx="0" cy="0" r="{R_bore:.4f}" '
+                    f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>'
+                )
+        else:
+            bore_el = (
+                f'<circle cx="0" cy="0" r="{R_bore:.4f}" '
+                f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>'
+            )
+    else:
+        bore_el = ''
 
     # ── Spoke voids + hub circle ──────────────────────────────────────────────
     R_tooth_root = min(math.hypot(x, y) for x, y in wrapped) if wrapped else R_OD
@@ -1064,6 +1087,12 @@ def generate_svg_dual(
     fillet_tip_mm2: float = 0.0,
     fillet_base_mm2: float = 0.0,
     include_data: bool = True,
+    flat_depth_mm1: float = 0.0,
+    keyway_w_mm1: float = 0.0,
+    keyway_h_mm1: float = 0.0,
+    flat_depth_mm2: float = 0.0,
+    keyway_w_mm2: float = 0.0,
+    keyway_h_mm2: float = 0.0,
 ) -> str:
     """
     SVG of two pulleys with the belt wrapped around them.
@@ -1261,16 +1290,24 @@ def generate_svg_dual(
             f'stroke-linejoin="round"/>'
         )
 
-    bore1_el = (
-        f'<circle cx="{cx1:.4f}" cy="{cy:.4f}" r="{bore_mm1/2:.4f}" '
-        f'fill="none" stroke="#1a1a1a" stroke-width="{sw1:.4f}"/>'
-        if bore_mm1 > 0 else ''
-    )
-    bore2_el = (
-        f'<circle cx="{cx2:.4f}" cy="{cy:.4f}" r="{bore_mm2/2:.4f}" '
-        f'fill="none" stroke="#1a1a1a" stroke-width="{sw2:.4f}"/>'
-        if bore_mm2 > 0 else ''
-    )
+    def _bore_el(bore_mm, cx_off, flat_depth, kw_w, kw_h, sw):
+        if bore_mm <= 0:
+            return ''
+        if flat_depth > 0.0 or (kw_w > 0.0 and kw_h > 0.0):
+            from exporters.step_exporter import _build_bore_2d
+            _bp = _build_bore_2d(bore_mm, flat_depth, kw_w, kw_h)
+            if _bp is not None:
+                coords = list(_bp.exterior.coords)
+                _d = ' '.join(
+                    f"{'M' if j == 0 else 'L'} {cx_off + x:.4f} {-y:.4f}"
+                    for j, (x, y) in enumerate(coords[:-1])
+                ) + ' Z'
+                return f'<path d="{_d}" fill="none" stroke="#1a1a1a" stroke-width="{sw:.4f}"/>'
+        return (f'<circle cx="{cx_off:.4f}" cy="{cy:.4f}" r="{bore_mm/2:.4f}" '
+                f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.4f}"/>')
+
+    bore1_el = _bore_el(bore_mm1, cx1, flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, sw1)
+    bore2_el = _bore_el(bore_mm2, cx2, flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, sw2)
 
     # ── Spoke voids (dual) ────────────────────────────────────────────────────
     def _dual_spokes(wrapped_pts, R_OD, bore_mm, cx_off,

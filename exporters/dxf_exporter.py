@@ -190,6 +190,9 @@ def generate_dxf(
     rim_depth_mm: float = 2.0,
     fillet_tip_mm: float = 0.0,
     fillet_base_mm: float = 0.0,
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """
     Return a DXF file as bytes.
@@ -222,13 +225,27 @@ def generate_dxf(
     # ── Pulley profile — SPLINE per tooth groove + ARC per OD land ───────────
     _segs_to_dxf(msp, segs, prof)
 
-    # ── Bore circle ─────────────────────────────────────────────────────────
+    # ── Bore (circle, D-flat, or keyway) ────────────────────────────────────
     if bore_mm > 0:
-        msp.add_circle(
-            center=(0.0, 0.0, 0.0),
-            radius=bore_mm / 2.0,
-            dxfattribs={'layer': 'BORE'},
-        )
+        _bore_drawn = False
+        if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+            from exporters.step_exporter import _build_bore_2d
+            _bp = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+            if _bp is not None:
+                coords = list(_bp.exterior.coords)[:-1]
+                msp.add_lwpolyline(
+                    [(x, y) for x, y in coords],
+                    format='xy',
+                    close=True,
+                    dxfattribs={'layer': 'BORE'},
+                )
+                _bore_drawn = True
+        if not _bore_drawn:
+            msp.add_circle(
+                center=(0.0, 0.0, 0.0),
+                radius=bore_mm / 2.0,
+                dxfattribs={'layer': 'BORE'},
+            )
 
     # ── Hub circle ───────────────────────────────────────────────────────────
     # ── Spoke void outlines ──────────────────────────────────────────────────

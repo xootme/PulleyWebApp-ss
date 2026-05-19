@@ -500,9 +500,9 @@
       </div>
       <!-- Right side controls -->
       <span style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;">
-        <button id="tab-pulley" class="preview-tab active fb-2d" onclick="setPreviewTab('pulley')">Pulley</button>
-        <button id="tab-belt"   class="preview-tab hidden fb-2d"  onclick="setPreviewTab('belt')">Belt</button>
-        <button id="tab-3d"     class="preview-tab hidden fb-3d"  onclick="setPreviewTab('3d')">3D</button>
+        <button id="tab-pulley" class="preview-tab active"     onclick="setPreviewTab('pulley')">2D</button>
+        <button id="tab-belt"   class="preview-tab hidden fb-2d" onclick="setPreviewTab('belt')">Belt</button>
+        <button id="tab-3d"     class="preview-tab hidden fb-3d" onclick="setPreviewTab('3d')">3D</button>
         <span id="od-label" class="fb-2d"></span>
         <button class="drive-info-btn fb-3d"
                 onclick="openHelpUrl('/static/3d_mouse_nav_help.html')"
@@ -1039,45 +1039,150 @@ function migrateParams(p) {
 // ── Apply a URLSearchParams object to the form ────────────────────────────────
 function _applyUrlParams(p) {
   const set = (id, key) => {
-    const val = p.get(key !== undefined ? key : id);
-    if (val === null) return;
+    const v = p.get(key !== undefined ? key : id);
+    if (v === null) return;
     const el = document.getElementById(id);
     if (!el) return;
-    if (el.type === 'checkbox') el.checked = (val === 'true' || val === '1');
-    else el.value = val;
+    if (el.type === 'checkbox') el.checked = (v === 'true' || v === '1');
+    else el.value = v;
   };
+  const chk = (id, on) => { const el = document.getElementById(id); if (el) el.checked = !!on; };
+  const setv = (id, v)  => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  const screwSizeOf = dia => Object.entries(HUB_SCREW_DIA).find(([, v]) => v === parseFloat(dia))?.[0] ?? null;
 
-  // Family must be applied first so pitch dropdown is populated correctly
-  if (p.has('family')) {
-    set('family');
-    populatePitches(p.get('family'));
-  }
-  set('pitch');  set('teeth');  set('bore');
-  set('print_extra');
+  // ── Basic P1 ─────────────────────────────────────────────────────────────────
+  if (p.has('family')) { set('family'); populatePitches(p.get('family')); }
+  set('pitch');  set('teeth');  set('bore');  set('print_extra');
   set('clearance_preset');  set('clearance_custom');
   set('backlash_preset');   set('backlash_custom');
-  set('belt_height');
+  set('belt_height');  set('clearance_height');
 
-  if (p.get('dual') === 'true') {
-    set('dual_enable', 'dual');
+  // ── Dual / P2 ─────────────────────────────────────────────────────────────────
+  const isDual = p.get('dual') === 'true';
+  if (isDual) {
+    chk('dual_enable', true);
+    document.getElementById('panel2')     ?.classList.remove('hidden');
+    document.getElementById('spacing_row')?.classList.remove('hidden');
+    document.getElementById('ratio_row')  ?.classList.remove('hidden');
     set('center_distance');
     set('p2_teeth');  set('p2_bore');  set('p2_print_extra');
     set('p2_clearance_preset');  set('p2_clearance_custom');
     set('p2_backlash_preset');   set('p2_backlash_custom');
+    if (p.has('n_belt')) set('belt_teeth', 'n_belt');
   }
 
-  if (p.has('hub_od')) {
-    const en = document.getElementById('hub1_enabled');
-    if (en) en.checked = true;
-    set('hub1_od', 'hub_od');  set('hub1_height', 'hub_height');
+  // ── Hub restore ───────────────────────────────────────────────────────────────
+  const restoreHub = (n, pre) => {
+    if (!p.has(`${pre}od`)) return;
+    const fbEl = document.getElementById('feature_build');
+    if (fbEl && !fbEl.checked) { fbEl.checked = true; document.body.classList.add('feature-build'); }
+    chk(`hub${n}_enabled`, true);
+    set(`hub${n}_od`,     `${pre}od`);
+    set(`hub${n}_height`, `${pre}height`);
+
+    const hasKeyway = p.has(`${pre}keyway_w`);
+    const hasDShaft = p.has(`${pre}flat_depth`);
+    const hasScrewD = p.has(`${pre}screw_dia`);
+    const captNut   = p.get(`${pre}captured_nut`);
+    let retention   = 'none';
+    if (hasKeyway)      retention = 'keyway';
+    else if (hasDShaft) retention = 'd_shaft';
+    else if (hasScrewD) retention = captNut === '1' ? 'set_screw_nut' : 'set_screw_std';
+    const retEl = document.getElementById(`hub${n}_retention`);
+    if (retEl) retEl.value = retention;
+
+    if (retention === 'set_screw_nut' || retention === 'set_screw_std') {
+      const sz = screwSizeOf(p.get(`${pre}screw_dia`));
+      if (sz) setv(`hub${n}_screw_size`, sz);
+      set(`hub${n}_screw_count`, `${pre}screw_count`);
+    } else if (retention === 'd_shaft') {
+      set(`hub${n}_flat_depth`, `${pre}flat_depth`);
+      if (hasScrewD) {
+        chk(`hub${n}_dshaft_screw`, true);
+        const sz = screwSizeOf(p.get(`${pre}screw_dia`));
+        if (sz) setv(`hub${n}_dshaft_screw_size`, sz);
+        setv(`hub${n}_dshaft_screw_type`, captNut === '1' ? 'set_screw_nut' : 'set_screw_std');
+      }
+    } else if (retention === 'keyway') {
+      set(`hub${n}_keyway_w`, `${pre}keyway_w`);
+      set(`hub${n}_keyway_h`, `${pre}keyway_h`);
+      if (hasScrewD) {
+        chk(`hub${n}_keyway_screw`, true);
+        const sz = screwSizeOf(p.get(`${pre}screw_dia`));
+        if (sz) setv(`hub${n}_keyway_screw_size`, sz);
+        setv(`hub${n}_keyway_screw_type`, captNut === '1' ? 'set_screw_nut' : 'set_screw_std');
+      }
+    }
+    onHubChange(n);
+  };
+  restoreHub(1, 'hub_');
+  if (isDual) restoreHub(2, 'p2_hub_');
+
+  // ── Spokes P1 ─────────────────────────────────────────────────────────────────
+  if (p.has('spokes_enabled')) {
+    chk('spokes1_enabled', true);
+    set('spokes1_hub_od',      'spokes_hub_od');
+    set('spokes1_rim_depth',   'spokes_rim_depth');
+    set('spokes1_width',       'spokes_width');
+    set('spokes1_fillet_tip',  'spokes_fillet_tip');
+    set('spokes1_fillet_base', 'spokes_fillet_base');
+    set('spokes1_count',       'spokes_count');
+    set('spokes1_height',      'spokes_height');
   }
 
-  set('spokes_enabled');  set('spokes_count');  set('spokes_width');
-  set('spokes_hub_od');   set('spokes_rim_depth');
-  set('spokes_fillet_tip');  set('spokes_fillet_base');  set('spokes_height');
+  // ── Spokes P2 ─────────────────────────────────────────────────────────────────
+  if (isDual && p.has('p2_spokes_enabled')) {
+    chk('spokes2_enabled', true);
+    set('spokes2_hub_od',      'p2_spokes_hub_od');
+    set('spokes2_rim_depth',   'p2_spokes_rim_depth');
+    set('spokes2_width',       'p2_spokes_width');
+    set('spokes2_fillet_tip',  'p2_spokes_fillet_tip');
+    set('spokes2_fillet_base', 'p2_spokes_fillet_base');
+    set('spokes2_count',       'p2_spokes_count');
+    set('spokes2_height',      'p2_spokes_height');
+  }
 
-  set('flange_enabled');  set('flange_angle_deg');
-  set('flange_rim_radius_mm');  set('flange_height_mm');
+  // ── Flanges P1 ────────────────────────────────────────────────────────────────
+  if (p.has('flange_enabled')) {
+    chk('flange1_enabled', true);
+    set('flange1_3dprint',              'flange_3dprint');
+    set('flange1_angle',                'flange_angle');
+    set('flange1_rim_radius',           'flange_rim_radius');
+    set('flange1_height',               'flange_height');
+    set('flange1_plate_height',         'flange_plate_height');
+    set('flange1_bend_radius',          'flange_bend_radius');
+    set('flange1_top_separate',         'flange_top_separate');
+    set('flange1_nubs_enabled',         'flange_nubs_enabled');
+    set('flange1_nub_count',            'flange_nub_count');
+    set('flange1_nub_dia',              'flange_nub_dia');
+    set('flange1_nub_height',           'flange_nub_height');
+    set('flange1_nub_allowance',        'flange_nub_allowance');
+    set('flange1_supports_enabled',     'flange_supports_enabled');
+    set('flange1_support_nozzle_dia',   'flange_support_nozzle_dia');
+    set('flange1_support_max_spacing',  'flange_support_max_spacing');
+    set('flange1_support_air_gap',      'flange_support_air_gap');
+  }
+
+  // ── Flanges P2 ────────────────────────────────────────────────────────────────
+  if (isDual && p.has('p2_flange_enabled')) {
+    chk('flange2_enabled', true);
+    set('flange2_3dprint',              'p2_flange_3dprint');
+    set('flange2_angle',                'p2_flange_angle');
+    set('flange2_rim_radius',           'p2_flange_rim_radius');
+    set('flange2_height',               'p2_flange_height');
+    set('flange2_plate_height',         'p2_flange_plate_height');
+    set('flange2_bend_radius',          'p2_flange_bend_radius');
+    set('flange2_top_separate',         'p2_flange_top_separate');
+    set('flange2_nubs_enabled',         'p2_flange_nubs_enabled');
+    set('flange2_nub_count',            'p2_flange_nub_count');
+    set('flange2_nub_dia',              'p2_flange_nub_dia');
+    set('flange2_nub_height',           'p2_flange_nub_height');
+    set('flange2_nub_allowance',        'p2_flange_nub_allowance');
+    set('flange2_supports_enabled',     'p2_flange_supports_enabled');
+    set('flange2_support_nozzle_dia',   'p2_flange_support_nozzle_dia');
+    set('flange2_support_max_spacing',  'p2_flange_support_max_spacing');
+    set('flange2_support_air_gap',      'p2_flange_support_air_gap');
+  }
 
   schedulePreview();
 }
@@ -1471,6 +1576,7 @@ function clampBore(el) {
 
 function _clampHubInput(el) {
   if (!el) return;
+  if (document.activeElement === el) return;  // user is still typing; global auto-clamp handles it
   const v = parseFloat(el.value);
   if (isNaN(v)) return;
   const mn = el.min !== '' ? parseFloat(el.min) : -Infinity;
@@ -1974,6 +2080,7 @@ async function updatePreview() {
         + '&_t=' + Date.now();
   } else {
     const params = buildParams();
+    params._t = Date.now();
     url = '/api/preview?' + new URLSearchParams(params);
   }
   img.src = url;
@@ -1997,6 +2104,15 @@ function buildParams() {
     backlash_preset:  bp,
     backlash_custom:  document.getElementById('backlash_custom').value,
   };
+  // Bore profile (D-flat / keyway) is always included so 2D preview reflects hub bore
+  // even when 3D Features is toggled off.
+  const _r1 = document.getElementById('hub1_retention').value;
+  if (_r1 === 'd_shaft') {
+    p.hub_flat_depth = parseFloat(document.getElementById('hub1_flat_depth').value) || 0.5;
+  } else if (_r1 === 'keyway') {
+    p.hub_keyway_w = parseFloat(document.getElementById('hub1_keyway_w').value) || 4;
+    p.hub_keyway_h = parseFloat(document.getElementById('hub1_keyway_h').value) || 2;
+  }
   if (fb && document.getElementById('hub1_enabled').checked) {
     p.hub_od     = document.getElementById('hub1_od').value;
     p.hub_height = document.getElementById('hub1_height').value;
@@ -2007,7 +2123,6 @@ function buildParams() {
       p.hub_screw_count   = parseInt(document.getElementById('hub1_screw_count').value) || 1;
       p.hub_captured_nut  = r1 === 'set_screw_nut' ? '1' : '0';
     } else if (r1 === 'd_shaft') {
-      p.hub_flat_depth = parseFloat(document.getElementById('hub1_flat_depth').value) || 0.5;
       if (document.getElementById('hub1_dshaft_screw').checked) {
         const dsType1 = document.getElementById('hub1_dshaft_screw_type').value;
         const sz1 = document.getElementById('hub1_dshaft_screw_size').value;
@@ -2016,8 +2131,6 @@ function buildParams() {
         p.hub_captured_nut = dsType1 === 'set_screw_nut' ? '1' : '0';
       }
     } else if (r1 === 'keyway') {
-      p.hub_keyway_w = parseFloat(document.getElementById('hub1_keyway_w').value) || 4;
-      p.hub_keyway_h = parseFloat(document.getElementById('hub1_keyway_h').value) || 2;
       if (document.getElementById('hub1_keyway_screw').checked) {
         const kwType1 = document.getElementById('hub1_keyway_screw_type').value;
         const sz1 = document.getElementById('hub1_keyway_screw_size').value;
@@ -2041,6 +2154,14 @@ function buildParams() {
       p2_backlash_preset:  bp2,
       p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
     });
+    // P2 bore profile always included
+    const _r2 = document.getElementById('hub2_retention').value;
+    if (_r2 === 'd_shaft') {
+      p.p2_hub_flat_depth = parseFloat(document.getElementById('hub2_flat_depth').value) || 0.5;
+    } else if (_r2 === 'keyway') {
+      p.p2_hub_keyway_w = parseFloat(document.getElementById('hub2_keyway_w').value) || 4;
+      p.p2_hub_keyway_h = parseFloat(document.getElementById('hub2_keyway_h').value) || 2;
+    }
     if (fb && document.getElementById('hub2_enabled').checked) {
       p.p2_hub_od     = document.getElementById('hub2_od').value;
       p.p2_hub_height = document.getElementById('hub2_height').value;
@@ -2051,7 +2172,6 @@ function buildParams() {
         p.p2_hub_screw_count   = parseInt(document.getElementById('hub2_screw_count').value) || 1;
         p.p2_hub_captured_nut  = r2 === 'set_screw_nut' ? '1' : '0';
       } else if (r2 === 'd_shaft') {
-        p.p2_hub_flat_depth = parseFloat(document.getElementById('hub2_flat_depth').value) || 0.5;
         if (document.getElementById('hub2_dshaft_screw').checked) {
           const dsType2 = document.getElementById('hub2_dshaft_screw_type').value;
           const sz2 = document.getElementById('hub2_dshaft_screw_size').value;
@@ -2060,8 +2180,6 @@ function buildParams() {
           p.p2_hub_captured_nut = dsType2 === 'set_screw_nut' ? '1' : '0';
         }
       } else if (r2 === 'keyway') {
-        p.p2_hub_keyway_w = parseFloat(document.getElementById('hub2_keyway_w').value) || 4;
-        p.p2_hub_keyway_h = parseFloat(document.getElementById('hub2_keyway_h').value) || 2;
         if (document.getElementById('hub2_keyway_screw').checked) {
           const kwType2 = document.getElementById('hub2_keyway_screw_type').value;
           const sz2 = document.getElementById('hub2_keyway_screw_size').value;
@@ -3312,7 +3430,7 @@ function onHubChange(n) {
   saveSettings();
   if (document.getElementById('feature_build').checked &&
       document.getElementById(`hub${n}_enabled`).checked) {
-    schedulePreview3D();
+    schedulePreview();
   }
 }
 
@@ -3324,7 +3442,7 @@ function onHubEnabledChange(n) {
   body.style.pointerEvents = enabled ? '' : 'none';
   saveSettings();
   if (document.getElementById('feature_build').checked) {
-    schedulePreview3D();
+    schedulePreview();
   }
 }
 

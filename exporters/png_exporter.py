@@ -512,6 +512,9 @@ def generate_png(
     bg_color=(250, 251, 252),
     groove_color=(26, 26, 26),
     bore_color=(26, 26, 26),
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """Rasterise the SVG export to PNG.  Falls back to legacy Pillow renderer if Cairo unavailable."""
     if _check_cairosvg():
@@ -524,6 +527,7 @@ def generate_png(
             spoke_hub_od_mm=spoke_hub_od_mm, rim_depth_mm=rim_depth_mm,
             fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
             include_data=False,
+            flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
         )
         return _svg_to_png(svg, size_px)
     return _generate_png_legacy(
@@ -534,6 +538,7 @@ def generate_png(
         rim_depth_mm=rim_depth_mm, fillet_tip_mm=fillet_tip_mm,
         fillet_base_mm=fillet_base_mm, size_px=size_px,
         bg_color=bg_color, groove_color=groove_color, bore_color=bore_color,
+        flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
     )
 
 
@@ -555,6 +560,9 @@ def _generate_png_legacy(
     bg_color=(250, 251, 252),
     groove_color=(26, 26, 26),
     bore_color=(26, 26, 26),
+    flat_depth_mm: float = 0.0,
+    keyway_w_mm: float = 0.0,
+    keyway_h_mm: float = 0.0,
 ) -> bytes:
     """Legacy Pillow-based renderer — kept for reference."""
     key = _profile_key(family, pitch)
@@ -612,12 +620,19 @@ def _generate_png_legacy(
             y_mm = R_OD * math.cos(a)
             poly_px.append(to_px(x_mm, y_mm))
 
-    # ── Bore circle as sampled polygon ───────────────────────────────────────
-    BORE_SAMPLES = max(64, num_teeth * 4)
+    # ── Bore polygon (circle, D-flat, or keyway) ─────────────────────────────
     bore_px = []
-    for i in range(BORE_SAMPLES):
-        a = 2.0 * math.pi * i / BORE_SAMPLES
-        bore_px.append(to_px(R_bore * math.sin(a), R_bore * math.cos(a)))
+    if R_bore > 0:
+        if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+            from exporters.step_exporter import _build_bore_2d
+            _bp = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+            if _bp is not None:
+                bore_px = [to_px(x, y) for x, y in list(_bp.exterior.coords)[:-1]]
+        if not bore_px:
+            BORE_SAMPLES = max(64, num_teeth * 4)
+            for i in range(BORE_SAMPLES):
+                a = 2.0 * math.pi * i / BORE_SAMPLES
+                bore_px.append(to_px(R_bore * math.sin(a), R_bore * math.cos(a)))
 
     # ── Spoke void polygons (mm) ─────────────────────────────────────────────
     spoke_void_px = []
@@ -728,6 +743,12 @@ def generate_png_dual(
     bg_color=(250, 251, 252),
     groove_color=(26, 26, 26),
     bore_color=(26, 26, 26),
+    flat_depth_mm1: float = 0.0,
+    keyway_w_mm1: float = 0.0,
+    keyway_h_mm1: float = 0.0,
+    flat_depth_mm2: float = 0.0,
+    keyway_w_mm2: float = 0.0,
+    keyway_h_mm2: float = 0.0,
 ) -> bytes:
     """Rasterise the dual SVG export to PNG.  Falls back to legacy Pillow renderer if Cairo unavailable."""
     if _check_cairosvg():
@@ -748,6 +769,8 @@ def generate_png_dual(
             spoke_hub_od_mm2=spoke_hub_od_mm2, rim_depth_mm2=rim_depth_mm2,
             fillet_tip_mm2=fillet_tip_mm2, fillet_base_mm2=fillet_base_mm2,
             include_data=False,
+            flat_depth_mm1=flat_depth_mm1, keyway_w_mm1=keyway_w_mm1, keyway_h_mm1=keyway_h_mm1,
+            flat_depth_mm2=flat_depth_mm2, keyway_w_mm2=keyway_w_mm2, keyway_h_mm2=keyway_h_mm2,
         )
         return _svg_to_png(svg, size_px)
     return _generate_png_dual_legacy(
@@ -767,6 +790,8 @@ def generate_png_dual(
         fillet_tip_mm2=fillet_tip_mm2, fillet_base_mm2=fillet_base_mm2,
         size_px=size_px, bg_color=bg_color,
         groove_color=groove_color, bore_color=bore_color,
+        flat_depth_mm1=flat_depth_mm1, keyway_w_mm1=keyway_w_mm1, keyway_h_mm1=keyway_h_mm1,
+        flat_depth_mm2=flat_depth_mm2, keyway_w_mm2=keyway_w_mm2, keyway_h_mm2=keyway_h_mm2,
     )
 
 
@@ -800,6 +825,12 @@ def _generate_png_dual_legacy(
     bg_color=(250, 251, 252),
     groove_color=(26, 26, 26),
     bore_color=(26, 26, 26),
+    flat_depth_mm1: float = 0.0,
+    keyway_w_mm1: float = 0.0,
+    keyway_h_mm1: float = 0.0,
+    flat_depth_mm2: float = 0.0,
+    keyway_w_mm2: float = 0.0,
+    keyway_h_mm2: float = 0.0,
 ) -> bytes:
     """Legacy Pillow-based dual renderer — kept for reference."""
     wrapped1, R_OD1, edge_a1, spec1 = _build_pulley_poly(
@@ -977,16 +1008,29 @@ def _generate_png_dual_legacy(
             draw.polygon(sv, fill=bg_color)
         draw.line(sp + [sp[0]], fill=PULLEY_STROKE, width=line_w, joint='curve')
 
-    for R_bore, cx_off in ((R_bore1, cx1), (R_bore2, cx2)):
-        if R_bore > 0:
-            bp = bore_poly(R_bore, cx_off, 0)
-            sp = ss_pts(bp)
-            if len(sp) > 2:
-                draw.polygon(sp, fill=bg_color)
-                draw.line(sp + [sp[0]], fill=bore_color, width=line_w, joint='curve')
+    BORE_SAMPLES_D = max(64, 4 * max(num_teeth1, num_teeth2))
+    for bore_mm, flat_depth, kw_w, kw_h, cx_off in (
+        (bore_mm1, flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, cx1),
+        (bore_mm2, flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, cx2),
+    ):
+        R_bore = bore_mm / 2.0
+        if R_bore <= 0:
+            continue
+        bore_pts_mm = []
+        if flat_depth > 0.0 or (kw_w > 0.0 and kw_h > 0.0):
+            from exporters.step_exporter import _build_bore_2d
+            _bp = _build_bore_2d(bore_mm, flat_depth, kw_w, kw_h)
+            if _bp is not None:
+                bore_pts_mm = [(x + cx_off, y) for x, y in list(_bp.exterior.coords)[:-1]]
+        if not bore_pts_mm:
+            bore_pts_mm = [(R_bore * math.sin(a) + cx_off, R_bore * math.cos(a))
+                           for a in (2.0 * math.pi * i / BORE_SAMPLES_D for i in range(BORE_SAMPLES_D))]
+        sp = ss_pts(bore_pts_mm)
+        if len(sp) > 2:
+            draw.polygon(sp, fill=bg_color)
+            draw.line(sp + [sp[0]], fill=bore_color, width=line_w, joint='curve')
 
     # Hub circles
-    BORE_SAMPLES_D = max(64, 4 * max(num_teeth1, num_teeth2))
     for R_hub, cx_off in ((R_hub1, cx1), (R_hub2, cx2)):
         if R_hub > 0:
             hp = bore_poly(R_hub, cx_off, 0)
