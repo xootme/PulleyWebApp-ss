@@ -175,6 +175,50 @@ git push origin main
 > Reports accumulate in `checkins/` as a permanent audit trail. Each file is named
 > `YYYY-MM-DD_<short-hash>.html` and is fully self-contained (no external dependencies).
 
+### Step 7 — Build and publish a new desktop release
+
+The web app is now live, but the desktop app (running locally at port 5154) is a **separate
+artifact** and is not updated by a git push. Any fix or feature that affects the desktop app
+must go through this step.
+
+**Run on the registered Windows dev machine only — never on CI/CD.**
+
+#### 7a — Build the release
+```bash
+.venv312/Scripts/python packaging/build_release.py
+# Output: releases/PulleyApp_<date>.zip
+```
+
+#### 7b — Upload PulleyApp.zip
+Upload `releases/PulleyApp_<date>.zip` to a GitHub Release on the repo.
+Copy the direct download URL.
+
+#### 7c — Generate licence and env vars
+```bash
+.venv312/Scripts/python packaging/prepare_release.py --app-url <paste URL from 7b>
+```
+
+#### 7d — Update Render environment variables
+Go to Render dashboard → `pulleywebapp` service → **Environment** and set:
+- `PULLEY_APP_URL` — GitHub Release download URL
+- `PULLEY_APP_VERSION` — date string printed by `prepare_release.py` (e.g. `20260520`)
+- `PULLEY_LICENCE_B64` — base64 licence printed by `prepare_release.py`
+- `PULLEY_LICENCE_EXPIRY` — expiry date printed by `prepare_release.py`
+
+Click **Save Changes** → Render redeploys automatically.
+
+> **Why this matters:** The Fusion 360 addin compares the local `version.txt` against
+> `PULLEY_APP_VERSION` on Render. If the env var is not bumped, the addin will never
+> show the update banner — even if the web app has received fixes via git push.
+
+**Checklist:**
+- [ ] `build_release.py` ran without errors
+- [ ] Zip uploaded to GitHub Release
+- [ ] `prepare_release.py` ran and printed env vars
+- [ ] All four Render env vars updated
+- [ ] Render redeployed successfully
+- [ ] Addin update banner appears when opening Timing Pulleys in Fusion 360
+
 ---
 
 ## 3. Infrastructure Settings

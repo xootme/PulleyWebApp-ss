@@ -54,7 +54,7 @@ import urllib.error as _urllib_err
 from datetime import datetime as _dt, timedelta as _td
 
 _PROVISION_URL    = 'https://cheapcadtools.com'
-_LICENCE_FILE     = os.path.join(_appdata, 'CheapCADTools', 'PulleyApp', 'licence.dat')
+_LICENCE_FILE     = os.path.join(_appdata, 'CheapCADTools', 'licence.dat')
 _VERIFY_DAYS      = 7    # call server at most every N days
 _GRACE_DAYS       = 14   # allow offline this long before hard-blocking
 _DEV_BACKDOOR     = 'xoot'  # TODO: remove before public launch
@@ -71,6 +71,21 @@ def _machine_id():
     except Exception:
         s = f"{_platform.node()}:{os.environ.get('USERNAME', '')}"
         return _hashlib.sha256(s.encode()).hexdigest()[:32]
+
+
+def _migrate_licence():
+    """Move licence.dat from old INSTALL_DIR location to parent CheapCADTools\ folder."""
+    old = os.path.join(_appdata, 'CheapCADTools', 'PulleyApp', 'licence.dat')
+    if os.path.exists(old) and not os.path.exists(_LICENCE_FILE):
+        try:
+            import shutil as _shutil
+            os.makedirs(os.path.dirname(_LICENCE_FILE), exist_ok=True)
+            _shutil.copy2(old, _LICENCE_FILE)
+            os.remove(old)
+        except Exception:
+            pass
+
+_migrate_licence()
 
 
 def _load_licence():
