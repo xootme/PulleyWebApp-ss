@@ -427,13 +427,14 @@ def _spoke_void_svg_elements(cx, cy, r_tooth_root, r_hub, spoke_count,
                            f'fill="none" {stroke}/>')
         else:
             # Single line-line base fillet arc
-            fcx, fcy, trx, try_, tlx, tly = ll
-            fs, ff = to_svg(fcx, fcy)
-            xs_s, ys_s = to_svg(trx, try_)
-            xe_s, ye_s = to_svg(tlx, tly)
-            els.append(f'<path d="M {xs_s:.4f},{ys_s:.4f} '
-                       f'{svg_fillet_arc(fs, ff, xs_s, ys_s, xe_s, ye_s, fillet_base)}" '
-                       f'fill="none" {stroke}/>')
+            if ll is not None:
+                fcx, fcy, trx, try_, tlx, tly = ll
+                fs, ff = to_svg(fcx, fcy)
+                xs_s, ys_s = to_svg(trx, try_)
+                xe_s, ye_s = to_svg(tlx, tly)
+                els.append(f'<path d="M {xs_s:.4f},{ys_s:.4f} '
+                           f'{svg_fillet_arc(fs, ff, xs_s, ys_s, xe_s, ye_s, fillet_base)}" '
+                           f'fill="none" {stroke}/>')
 
     return '\n  '.join(els)
 

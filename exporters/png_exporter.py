@@ -621,6 +621,7 @@ def _generate_png_legacy(
             poly_px.append(to_px(x_mm, y_mm))
 
     # ── Bore polygon (circle, D-flat, or keyway) ─────────────────────────────
+    BORE_SAMPLES = max(64, num_teeth * 4)
     bore_px = []
     if R_bore > 0:
         if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
@@ -629,7 +630,6 @@ def _generate_png_legacy(
             if _bp is not None:
                 bore_px = [to_px(x, y) for x, y in list(_bp.exterior.coords)[:-1]]
         if not bore_px:
-            BORE_SAMPLES = max(64, num_teeth * 4)
             for i in range(BORE_SAMPLES):
                 a = 2.0 * math.pi * i / BORE_SAMPLES
                 bore_px.append(to_px(R_bore * math.sin(a), R_bore * math.cos(a)))

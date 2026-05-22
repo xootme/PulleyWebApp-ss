@@ -79,3 +79,77 @@ This same API is shared by CAD plugins (embedded UI, direct download, or agent-m
 1. **Embedded UI** — iframe/webview of `cheapcadtools.com/tools/pulleys`; works today with zero server changes once CORS/iframe headers are added
 2. **Direct download** — plugin reads CAD context (bore, pitch, etc.), calls `/download/step|dxf|stl`, imports file without user touching a browser
 3. **Agent-mediated** — CAD-native AI (Onshape AI, Fusion Copilot, etc.) reads OpenAPI spec, calls endpoints on user's behalf
+
+---
+
+## CAD Plugin Roadmap (excluding Fusion 360 and OnShape)
+
+### SolidWorks — Listener App
+**Approach:** Standalone Windows tray app (no COM add-in registration needed). Same file-watch pattern as the Fusion addin.
+
+**Status:** Initial implementation at `solidworks_listener/listener.py`
+
+**Architecture:**
+- On startup: writes `solidworks_connected=true` + `solidworks_watch_dir=<tmp>` to `%APPDATA%\CheapCADTools\config.json`
+- `watchdog` `Observer` monitors the temp folder for `.step`/`.stp`/`.dxf` files
+- On new file: `win32com.client.GetActiveObject("SldWorks.Application")` → `OpenDoc6()` imports into the running SolidWorks session; no registration required
+- On clean exit: clears `solidworks_connected` so Flask stops mirroring files
+- Flask side: `_mirror_to_solidworks()` in `app.py` mirrors all STEP/DXF downloads when connected (same pattern as `_mirror_to_fusion`)
+- Tray menu: Open Web App / Exit; icon drawn in code (no asset file needed)
+
+**Pending:**
+- [ ] Test with an actual SolidWorks installation — verify `OpenDoc6` param types (byref VARIANTs in pywin32)
+- [ ] Handle the case where SolidWorks launches *after* the listener is started (currently requires SW to be open first)
+- [ ] Optionally auto-launch SolidWorks if not running (use `win32com.client.Dispatch("SldWorks.Application")`)
+- [ ] Add to packaging pipeline — separate PyInstaller build, `windows=True` (no console); PyArmor optional for this helper
+- [ ] Distribution: bundle as `CheapCADTools-SolidWorks-Listener-setup.exe` using a lightweight installer (NSIS or Inno Setup), or just a zip
+- [ ] Startup shortcut / auto-start entry in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- [ ] App Store / distribution channel: direct download from `cheapcadtools.com`; no Autodesk/SolidWorks marketplace needed for a standalone exe
+
+**Dependencies (`solidworks_listener/requirements.txt`):** `pystray`, `Pillow`, `watchdog`, `pywin32`
+
+---
+
+### FreeCAD — Macro / Workbench
+**Approach:** Python-native. A simple Macro is the fastest path; a full Workbench gives a persistent toolbar/panel.
+
+**Architecture options:**
+- **Macro (simplest):** Python script the user runs from FreeCAD's Macro menu. Calls `/download/step` with current params → `FreeCAD.ActiveDocument.importFile(tmp_path)`. No installation.
+- **Workbench (full):** Python package registered in `~/.FreeCAD/Mod/`. Adds a sidebar panel (Qt `QDockWidget`) or toolbar buttons. Opens the CCT web app in a `QWebEngineView` embedded in the panel (same thin-launcher pattern as Fusion/OnShape).
+
+**Pending:**
+- [ ] Decide: Macro only, or full Workbench?
+- [ ] Macro path: write `cct_pulleys.FCMacro` — prompts for params (or reads from open document units), calls Flask download route, imports result
+- [ ] Workbench path: create `~/.FreeCAD/Mod/CCTPulleys/` package; `InitGui.py` registers workbench; panel hosts `QWebEngineView` pointed at CCT web app
+- [ ] File-watch import pattern: FreeCAD Python has `FreeCAD.ActiveDocument.importFile(path)` — no COM needed, works cross-platform
+- [ ] Distribution: FreeCAD Addon Manager (GitHub repo with `package.xml` metadata); no marketplace fees
+
+---
+
+### AutoCAD — Listener App or .NET Plugin
+**Approach:** Two viable options, same trade-off as SolidWorks.
+
+**Option A — Listener App (simplest, same pattern as SolidWorks):**
+- Standalone tray app (Python or C#) watches a folder
+- Imports via AutoCAD COM automation: `AutoCAD.Application` → `ActiveDocument.SendCommand("_IMPORT\n" + path + "\n")` or `Import()` via the AutoCAD API object model
+- No AutoCAD plugin registration; works with any AutoCAD version that exposes COM
+
+**Option B — ObjectARX / .NET Plugin:**
+- Full AutoCAD add-in: C# .NET class library loaded via `NETLOAD` command
+- `PaletteSet` hosts a `WebBrowser` / `WebView2` control showing the CCT web app (same thin-launcher pattern)
+- `Application.DocumentManager.MdiActiveDocument.SendStringToExecute()` for command execution
+- Registration: user runs `NETLOAD` once, or add to `acad.lsp` startup
+
+**Pending:**
+- [ ] Decide: listener app or .NET plugin?
+- [ ] Listener path: extend `solidworks_listener/` pattern — add AutoCAD COM variant; `win32com.client.GetActiveObject("AutoCAD.Application")` → `SendCommand` or `Import`
+- [ ] .NET path: scaffold a C# AutoCAD plugin project; host WebView2 in a `PaletteSet`; mirror Fusion addin's file-watch approach using `System.IO.FileSystemWatcher`
+- [ ] Distribution: Autodesk App Store (same store as Fusion — unified account); or direct download
+
+---
+
+### Other Platforms (research only)
+- **CATIA / Dassault** — CAA C++ SDK required; very heavyweight; not worth pursuing for v1
+- **Inventor** — Autodesk; similar COM automation pattern to AutoCAD; could reuse `solidworks_listener` approach
+- **Rhino / Grasshopper** — Python scripting via RhinoCommon; Grasshopper component could call `/download/step` and import; low effort relative to install base
+- **NX (Siemens)** — NXOpen API (C++ or Python); niche; skip for now

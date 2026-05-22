@@ -979,6 +979,7 @@ let currentSpec2 = null;
 let previewTimer       = null;
 let ratioSnapTimer     = null;
 let beltCorrectionTimer = null;
+let _lastValidBeltTeeth = null;   // last belt_teeth value that returned a valid center dist
 let teethTimer1  = null;
 let teethTimer2  = null;
 let odTimer1     = null;
@@ -1593,9 +1594,13 @@ function _calcMinC() {
 }
 
 function updateMinDistance() {
-  const minC = _calcMinC();
-  const btn  = document.getElementById('min_distance_btn');
-  const cd   = parseFloat(document.getElementById('center_distance').value) || 0;
+  const minC  = _calcMinC();
+  const btn   = document.getElementById('min_distance_btn');
+  const cdEl  = document.getElementById('center_distance');
+  const cd    = parseFloat(cdEl.value) || 0;
+  // If the value is now valid (>0), clear any stale out-of-range highlight that was
+  // left over from a previous invalid entry and not cleared by a programmatic update.
+  if (cd > 0) cdEl.classList.remove('input-out-of-range');
   if (minC === null) { btn.classList.remove('min-dist-warn'); return; }
   btn.classList.toggle('min-dist-warn', cd < minC);
 }
@@ -1626,6 +1631,23 @@ function openBeltLength(R1, R2, C) {
   return 2 * C * Math.cos(alpha) + R1 * (Math.PI - 2 * alpha) + R2 * (Math.PI + 2 * alpha);
 }
 
+function _showBeltError(msg) {
+  let el = document.getElementById('belt-error-note');
+  if (!el) {
+    el = document.createElement('span');
+    el.id = 'belt-error-note';
+    el.style.cssText = 'color:#c0392b;font-size:0.82em;margin-left:6px;white-space:nowrap';
+    const ref = document.getElementById('belt_length');
+    if (ref && ref.parentNode) ref.parentNode.insertBefore(el, ref.nextSibling);
+  }
+  el.textContent = '⚠ ' + msg;
+}
+
+function _clearBeltError() {
+  const el = document.getElementById('belt-error-note');
+  if (el) el.textContent = '';
+}
+
 // Immediately update belt teeth from the current center distance (no server call)
 function updateBeltTeethFromCenter() {
   const pitchMm = currentSpec ? currentSpec.pitch_mm : 0;
@@ -1638,7 +1660,10 @@ function updateBeltTeethFromCenter() {
   const R2   = t2 * pitchMm / (2 * Math.PI);
   const Ceff = Math.max(C, R1 + R2);
   const L    = openBeltLength(R1, R2, Ceff);
-  document.getElementById('belt_teeth').value = Math.ceil(L / pitchMm);
+  const n = Math.ceil(L / pitchMm);
+  document.getElementById('belt_teeth').value = n;
+  _lastValidBeltTeeth = n;
+  _clearBeltError();
   updateBeltLengthDisplay();
 }
 
@@ -1665,6 +1690,8 @@ async function correctCenterDistance() {
   const data = await resp.json();
   document.getElementById('center_distance').value = data.center_dist_mm.toFixed(2);
   document.getElementById('belt_teeth').value = data.n_belt;
+  _lastValidBeltTeeth = data.n_belt;
+  _clearBeltError();
   updateMinDistance();
   updateBeltLengthDisplay();
   schedulePreview();
@@ -1680,8 +1707,20 @@ async function _applyBeltTeeth() {
   if (!n || parseInt(n) <= 0) return;
   const resp = await fetch(
     `/api/belt?mode=from_teeth&family=${family}&pitch=${pitch}&teeth1=${t1}&teeth2=${t2}&n_belt=${n}`);
-  if (!resp.ok) return;
+  if (!resp.ok) {
+    // Belt too short — revert belt_teeth to last known-good value and warn the user
+    const errData = await resp.json().catch(() => ({}));
+    const msg = errData.error || 'Belt too short for this pulley pair';
+    _showBeltError(msg);
+    if (_lastValidBeltTeeth !== null) {
+      document.getElementById('belt_teeth').value = _lastValidBeltTeeth;
+      updateBeltLengthDisplay();
+    }
+    return;
+  }
+  _clearBeltError();
   const data = await resp.json();
+  _lastValidBeltTeeth = parseInt(n);
   document.getElementById('center_distance').value = data.center_dist_mm.toFixed(2);
   updateMinDistance();
   updateBeltLengthDisplay();
@@ -1708,6 +1747,7 @@ function updateBeltLengthDisplay() {
 // Called on every belt_length keystroke — let the user type freely;
 // snap to nearest tooth and update everything after 3 s idle.
 function onBeltLengthInput() {
+  _clearBeltError();
   clearTimeout(beltCorrectionTimer);
   beltCorrectionTimer = setTimeout(correctBeltLength, 3000);
 }

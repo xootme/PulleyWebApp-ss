@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timing Pulleys — CheapCAD Tools</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #1a1a1e;
+  color: #e8e8ec;
+  padding: 14px 14px 20px;
+  font-size: 13px;
+}
+.logo { font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #761516; }
+h1 { font-size: 16px; font-weight: 700; color: #f1f5f9; margin: 2px 0 12px; }
+
+/* Context badge */
+.ctx { font-size: 10px; color: #555; margin-bottom: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ctx-id { background: #222; border-radius: 3px; padding: 1px 5px; font-family: monospace; color: #666; }
+.ctx-none { color: #444; font-style: italic; }
+
+/* Section headers */
+.sec { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+       color: #555; margin: 12px 0 6px; }
+
+/* Form rows */
+.row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+.row label { flex: 0 0 88px; color: #999; font-size: 12px; }
+.row .unit { color: #555; font-size: 11px; margin-left: 2px; }
+select, input[type=number], input[type=text], input[type=password] {
+  flex: 1;
+  background: #26262c;
+  border: 1px solid #3a3a42;
+  border-radius: 5px;
+  color: #e8e8ec;
+  padding: 5px 7px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+select:focus, input:focus { border-color: #761516; }
+input[type=number] { width: 70px; }
+
+/* Bore sub-rows */
+.bore-sub { display: none; padding-left: 96px; margin-bottom: 6px; }
+.bore-sub.show { display: flex; gap: 8px; align-items: center; }
+.bore-sub label { flex: 0 0 60px; color: #777; font-size: 11px; }
+
+/* Collapsible section */
+.collapse-hdr {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  color: #666; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; margin: 10px 0 0; user-select: none;
+}
+.collapse-hdr:hover { color: #888; }
+.collapse-arrow { font-size: 10px; transition: transform .15s; }
+.collapse-arrow.open { transform: rotate(90deg); }
+.collapse-body { display: none; padding-top: 8px; }
+.collapse-body.open { display: block; }
+
+/* Divider */
+hr { border: none; border-top: 1px solid #2a2a32; margin: 12px 0; }
+
+/* Buttons */
+.btn-import {
+  display: block; width: 100%; padding: 12px 14px;
+  background: #761516; color: #fff; border: none; border-radius: 7px;
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  margin-top: 14px; transition: background .15s;
+}
+.btn-import:hover:not(:disabled) { background: #a01c1e; }
+.btn-import:disabled { opacity: 0.4; cursor: default; }
+
+.btn-browser {
+  display: block; width: 100%; padding: 8px 14px;
+  background: #26262c; color: #aaa; border: 1px solid #3a3a42; border-radius: 7px;
+  font-family: inherit; font-size: 12px; cursor: pointer; margin-top: 8px;
+  transition: background .15s;
+}
+.btn-browser:hover { background: #2e2e36; color: #ddd; }
+
+/* Status */
+.status { font-size: 11px; color: #555; margin-top: 10px; min-height: 16px; text-align: center; }
+.status.ok  { color: #2ecc71; }
+.status.err { color: #e74c3c; }
+.status.busy { color: #e8a020; }
+
+/* Manual ctx inputs */
+.manual-ctx { font-size: 11px; color: #555; }
+.manual-ctx input { font-size: 11px; padding: 4px 6px; }
+</style>
+</head>
+<body>
+
+<div class="logo">CheapCAD Tools</div>
+<h1>Timing Pulleys</h1>
+
+<!-- OnShape document context -->
+<div class="ctx" id="ctxArea">
+  <span class="ctx-none" id="ctxNone">Waiting for OnShape context…</span>
+  <span id="ctxDocBadge" style="display:none">Doc <span class="ctx-id" id="ctxDocId"></span></span>
+  <span id="ctxWsBadge"  style="display:none">Ws <span class="ctx-id" id="ctxWsId"></span></span>
+</div>
+
+<!-- ── Belt Profile ─────────────────────────────────────────── -->
+<div class="sec">Belt Profile</div>
+
+<div class="row">
+  <label>Family</label>
+  <select id="family" onchange="onFamilyChange()">
+    <option>HTD</option><option>GT</option><option>T</option>
+    <option>AT</option><option>STD</option><option>RPP</option>
+    <option>Imperial</option>
+  </select>
+</div>
+<div class="row">
+  <label>Pitch</label>
+  <select id="pitch"></select>
+</div>
+<div class="row">
+  <label>Teeth</label>
+  <input type="number" id="teeth" value="20" min="10" max="360">
+</div>
+<div class="row">
+  <label>Belt Height</label>
+  <input type="number" id="belt_height" value="9" min="1" max="100" step="0.5">
+  <span class="unit">mm</span>
+</div>
+
+<!-- ── Bore ─────────────────────────────────────────────────── -->
+<div class="sec">Bore</div>
+
+<div class="row">
+  <label>Diameter</label>
+  <input type="number" id="bore" value="8" min="1" max="200" step="0.5">
+  <span class="unit">mm</span>
+</div>
+<div class="row">
+  <label>Type</label>
+  <select id="bore_type" onchange="onBoreTypeChange()">
+    <option value="round">Round</option>
+    <option value="dflat">D-flat</option>
+    <option value="keyway">Keyway</option>
+  </select>
+</div>
+<div class="bore-sub" id="boreSubDflat">
+  <label>Flat Depth</label>
+  <input type="number" id="hub_flat_depth" value="1.5" min="0.1" max="20" step="0.1">
+  <span class="unit">mm</span>
+</div>
+<div class="bore-sub" id="boreSubKeyway">
+  <label>Width</label>
+  <input type="number" id="hub_keyway_w" value="3" min="0.5" max="20" step="0.5">
+  <span class="unit">mm</span>
+  <label style="flex:0 0 30px; margin-left:8px">H</label>
+  <input type="number" id="hub_keyway_h" value="1.8" min="0.5" max="20" step="0.1">
+  <span class="unit">mm</span>
+</div>
+
+<!-- ── Hub ──────────────────────────────────────────────────── -->
+<div class="collapse-hdr" onclick="toggleSection('hub')">
+  <span class="collapse-arrow" id="hub-arrow">▶</span>
+  Hub Boss
+</div>
+<div class="collapse-body" id="hub-body">
+  <div class="row">
+    <label>OD</label>
+    <input type="number" id="hub_od" value="0" min="0" max="200" step="0.5">
+    <span class="unit">mm (0 = none)</span>
+  </div>
+  <div class="row">
+    <label>Height</label>
+    <input type="number" id="hub_height" value="0" min="0" max="100" step="0.5">
+    <span class="unit">mm</span>
+  </div>
+</div>
+
+<!-- ── Spokes ───────────────────────────────────────────────── -->
+<div class="collapse-hdr" onclick="toggleSection('spokes')">
+  <span class="collapse-arrow" id="spokes-arrow">▶</span>
+  Spokes
+</div>
+<div class="collapse-body" id="spokes-body">
+  <div class="row">
+    <label>Count</label>
+    <input type="number" id="spokes_count" value="4" min="2" max="12">
+  </div>
+  <div class="row">
+    <label>Width</label>
+    <input type="number" id="spokes_width" value="4" min="1" max="30" step="0.5">
+    <span class="unit">mm</span>
+  </div>
+  <div class="row">
+    <label>Hub OD</label>
+    <input type="number" id="spokes_hub_od" value="16" min="0" max="200" step="0.5">
+    <span class="unit">mm</span>
+  </div>
+  <div class="row">
+    <label>Rim Depth</label>
+    <input type="number" id="spokes_rim_depth" value="2" min="0.5" max="20" step="0.5">
+    <span class="unit">mm</span>
+  </div>
+</div>
+
+<!-- ── Settings ─────────────────────────────────────────────── -->
+<hr>
+<div class="collapse-hdr" onclick="toggleSection('settings')">
+  <span class="collapse-arrow" id="settings-arrow">▶</span>
+  OnShape API Settings
+</div>
+<div class="collapse-body" id="settings-body">
+  <div style="font-size:10px;color:#555;margin-bottom:8px;line-height:1.5">
+    Generate API keys at <strong style="color:#666">cad.onshape.com → Account → API Keys</strong>.
+    Keys are stored in your browser only.
+  </div>
+  <div class="row">
+    <label>Access Key</label>
+    <input type="text" id="accessKey" placeholder="Access key" autocomplete="off" oninput="saveKeys()">
+  </div>
+  <div class="row">
+    <label>Secret Key</label>
+    <input type="password" id="secretKey" placeholder="Secret key" autocomplete="off" oninput="saveKeys()">
+  </div>
+
+  <!-- Manual document context (fallback when not running inside OnShape iframe) -->
+  <div class="manual-ctx" style="margin-top:10px">
+    <div style="color:#444;margin-bottom:6px">Manual context (for testing outside OnShape):</div>
+    <div class="row">
+      <label>Document ID</label>
+      <input type="text" id="manualDocId" placeholder="e.g. abc123…" oninput="onManualCtx()">
+    </div>
+    <div class="row">
+      <label>Workspace ID</label>
+      <input type="text" id="manualWsId"  placeholder="e.g. def456…" oninput="onManualCtx()">
+    </div>
+  </div>
+</div>
+
+<button class="btn-import" id="btnImport" onclick="doImport()">
+  Import STEP to OnShape
+</button>
+
+<button class="btn-browser" onclick="openBrowser()">
+  Open in Browser (online)
+</button>
+
+<div class="status" id="status"></div>
+
+<script>
+// ── Pitch tables ──────────────────────────────────────────────────────────────
+const PITCHES = {
+  HTD:      ['3M','5M','8M','14M','20M'],
+  GT:       ['2M','3M','5M','8M','14M'],
+  STD:      ['2M','3M','5M','8M','14M'],
+  T:        ['T2.5','T5','T10','T20'],
+  AT:       ['AT3','AT5','AT10','AT20'],
+  Imperial: ['MXL','XL','L','H','XH','XXH'],
+  RPP:      ['3M','5M','8M','14M','20M'],
+};
+const DEFAULT_PITCH = { HTD:'5M', GT:'5M', STD:'5M', T:'T5', AT:'AT5', Imperial:'XL', RPP:'5M' };
+const DEFAULT_BELT_H = {
+  '3M':3.6, 'T2.5':3.6, 'AT3':3.6,
+  '5M':9, 'T5':9, 'AT5':9, 'S5M':9,
+  '8M':20, 'AT10':20, 'T10':16,
+  '14M':30, 'T20':30, 'AT20':30, '20M':38,
+  '2M':3.6, 'MXL':3.05, 'XL':5.6, 'L':7.9, 'H':12.7, 'XH':19, 'XXH':25.4,
+};
+
+function onFamilyChange() {
+  const fam   = document.getElementById('family').value;
+  const sel   = document.getElementById('pitch');
+  const cur   = sel.value;
+  sel.innerHTML = PITCHES[fam].map(p =>
+    `<option${p===cur?' selected':''}>${p}</option>`).join('');
+  if (!PITCHES[fam].includes(cur)) sel.value = DEFAULT_PITCH[fam];
+  onPitchChange();
+}
+
+function onPitchChange() {
+  const p = document.getElementById('pitch').value;
+  if (DEFAULT_BELT_H[p]) document.getElementById('belt_height').value = DEFAULT_BELT_H[p];
+}
+
+// init pitch list
+onFamilyChange();
+document.getElementById('pitch').addEventListener('change', onPitchChange);
+
+// ── Bore type ─────────────────────────────────────────────────────────────────
+function onBoreTypeChange() {
+  const t = document.getElementById('bore_type').value;
+  document.getElementById('boreSubDflat').className  = 'bore-sub' + (t==='dflat'  ?' show':'');
+  document.getElementById('boreSubKeyway').className = 'bore-sub' + (t==='keyway' ?' show':'');
+}
+
+// ── Collapsible sections ──────────────────────────────────────────────────────
+function toggleSection(id) {
+  const body  = document.getElementById(id + '-body');
+  const arrow = document.getElementById(id + '-arrow');
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+}
+
+// ── API key persistence ───────────────────────────────────────────────────────
+function saveKeys() {
+  localStorage.setItem('os_ak', document.getElementById('accessKey').value);
+  localStorage.setItem('os_sk', document.getElementById('secretKey').value);
+}
+(function loadKeys() {
+  document.getElementById('accessKey').value = localStorage.getItem('os_ak') || '';
+  document.getElementById('secretKey').value = localStorage.getItem('os_sk') || '';
+})();
+
+// ── OnShape postMessage context ───────────────────────────────────────────────
+let osDocId = '', osWsId = '', osServer = 'cad.onshape.com';
+
+const urlParams = new URLSearchParams(window.location.search);
+const onshapeOrigin = urlParams.get('server') || '';
+
+// Announce readiness to OnShape
+if (window.parent !== window) {
+  const target = onshapeOrigin ? onshapeOrigin : '*';
+  window.parent.postMessage({ messageName: 'applicationInit' }, target);
+}
+
+window.addEventListener('message', (evt) => {
+  if (onshapeOrigin && evt.origin !== onshapeOrigin) return;
+  const msg = evt.data;
+  if (!msg || typeof msg !== 'object') return;
+  const did = msg.documentId;
+  const wid = msg.workspaceId;
+  if (did) { osDocId = did; osWsId = wid || ''; updateCtxBadge(); }
+});
+
+function updateCtxBadge() {
+  if (!osDocId) return;
+  document.getElementById('ctxNone').style.display     = 'none';
+  document.getElementById('ctxDocBadge').style.display = 'inline';
+  document.getElementById('ctxDocId').textContent      = osDocId.slice(0, 8) + '…';
+  if (osWsId) {
+    document.getElementById('ctxWsBadge').style.display = 'inline';
+    document.getElementById('ctxWsId').textContent      = osWsId.slice(0, 8) + '…';
+  }
+}
+
+function onManualCtx() {
+  const did = document.getElementById('manualDocId').value.trim();
+  const wid = document.getElementById('manualWsId').value.trim();
+  if (did) { osDocId = did; osWsId = wid; updateCtxBadge(); }
+}
+
+// ── Build query string (mirrors /download/step params) ────────────────────────
+function buildQS(spokesOn) {
+  const bt = document.getElementById('bore_type').value;
+  const p = {
+    family:       document.getElementById('family').value,
+    pitch:        document.getElementById('pitch').value,
+    teeth:        document.getElementById('teeth').value,
+    belt_height:  document.getElementById('belt_height').value,
+    bore:         document.getElementById('bore').value,
+    hub_od:       document.getElementById('hub_od').value,
+    hub_height:   document.getElementById('hub_height').value,
+    hub_flat_depth: bt === 'dflat'  ? document.getElementById('hub_flat_depth').value : '0',
+    hub_keyway_w:   bt === 'keyway' ? document.getElementById('hub_keyway_w').value    : '0',
+    hub_keyway_h:   bt === 'keyway' ? document.getElementById('hub_keyway_h').value    : '0',
+    spokes_enabled: spokesOn ? '1' : '0',
+    spokes_count:       document.getElementById('spokes_count').value,
+    spokes_width:       document.getElementById('spokes_width').value,
+    spokes_hub_od:      document.getElementById('spokes_hub_od').value,
+    spokes_rim_depth:   document.getElementById('spokes_rim_depth').value,
+    spokes_fillet_tip:  '1',
+    spokes_fillet_base: '1.5',
+  };
+  return new URLSearchParams(p).toString();
+}
+
+// ── Import ────────────────────────────────────────────────────────────────────
+async function doImport() {
+  const ak = document.getElementById('accessKey').value.trim();
+  const sk = document.getElementById('secretKey').value.trim();
+  if (!ak || !sk) { setStatus('Enter OnShape API key and secret in Settings.', 'err'); toggleSection('settings'); return; }
+  if (!osDocId)   { setStatus('No document context. Enter Document ID in Settings.', 'err'); toggleSection('settings'); return; }
+
+  const spokesOn = document.getElementById('spokes-body').classList.contains('open') &&
+                   parseInt(document.getElementById('spokes_count').value) >= 2;
+  const qs = buildQS(spokesOn);
+
+  setStatus('Generating STEP…', 'busy');
+  document.getElementById('btnImport').disabled = true;
+
+  try {
+    const resp = await fetch('/api/onshape/import', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        documentId:  osDocId,
+        workspaceId: osWsId,
+        server:      osServer,
+        accessKey:   ak,
+        secretKey:   sk,
+        qs:          qs,
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      setStatus('✓ ' + (data.filename || 'STEP') + ' imported — check your document.', 'ok');
+    } else {
+      setStatus('Error: ' + (data.error || 'Unknown error'), 'err');
+    }
+  } catch (e) {
+    setStatus('Network error: ' + e.message, 'err');
+  } finally {
+    document.getElementById('btnImport').disabled = false;
+  }
+}
+
+function openBrowser() {
+  window.open('https://pulleywebapp.onrender.com', '_blank');
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + (cls || '');
+}
+</script>
+</body>
+</html>

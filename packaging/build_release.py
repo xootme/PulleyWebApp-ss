@@ -420,8 +420,10 @@ def step7_update_render():
         headers=headers, method='POST')
     try:
         with urllib.request.urlopen(deploy_req) as resp:
-            deploy = json.loads(resp.read())
-        print(f'  [OK] Render redeploy triggered (id={deploy.get("id", "?")})')
+            body = resp.read()
+            deploy = json.loads(body) if body.strip() else {}
+        deploy_id = deploy.get('id', '?') if deploy else 'triggered'
+        print(f'  [OK] Render redeploy triggered (id={deploy_id})')
         print(f'       Service will be live with new version in ~2 minutes.')
     except urllib.error.HTTPError as e:
         print(f'  [WARN] Render redeploy trigger failed: {e.code} — redeploy manually in dashboard')

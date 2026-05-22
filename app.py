@@ -275,6 +275,32 @@ def _mirror_to_fusion(content: bytes, filename: str) -> None:
             '_mirror_to_fusion failed for %s: %s\n%s',
             filename, _mirror_err, _tb.format_exc()
         )
+
+# ── SolidWorks listener integration ───────────────────────────────────────────
+# Config key is shared with Fusion (same file); SolidWorks listener writes
+# solidworks_connected + solidworks_watch_dir when it starts up.
+def _mirror_to_solidworks(content: bytes, filename: str) -> None:
+    """Copy a download to the SolidWorks watch folder when the listener is running."""
+    try:
+        if not os.path.exists(_FUSION_CONFIG):
+            return
+        with open(_FUSION_CONFIG) as f:
+            cfg = json.load(f)
+        watch_dir = cfg.get('solidworks_watch_dir')
+        if not (cfg.get('solidworks_connected') and watch_dir):
+            return
+        os.makedirs(watch_dir, exist_ok=True)
+        dest = os.path.join(watch_dir, filename)
+        with open(dest, 'wb') as f:
+            f.write(content)
+    except Exception as _mirror_err:
+        import traceback as _tb
+        import logging as _lg
+        _lg.getLogger(__name__).error(
+            '_mirror_to_solidworks failed for %s: %s\n%s',
+            filename, _mirror_err, _tb.format_exc()
+        )
+
 app = Flask(__name__,
             template_folder=os.path.join(_base_dir, 'templates'),
             static_folder=os.path.join(_base_dir, 'static'))
@@ -467,6 +493,141 @@ def index():
         build_time=BUILD_TIME,
         cct_schema_version=CCT_SCHEMA_VERSION,
     )
+
+
+@app.route('/onshape')
+def onshape_panel():
+    """OnShape Application Extension panel."""
+    return render_template('onshape_panel.html')
+
+
+@app.route('/api/onshape/import', methods=['POST'])
+def api_onshape_import():
+    """Generate STEP for the given pulley params and upload to an OnShape document.
+
+    Body (JSON):
+        documentId, workspaceId, server (default cad.onshape.com),
+        accessKey, secretKey  — OnShape API key credentials
+        qs                    — URL query string identical to /download/step params
+    """
+    import hmac as _hmac, hashlib as _hs, base64 as _b64, uuid as _uid
+    import requests as _rq
+    from io import BytesIO
+    from datetime import datetime, timezone as _tz
+    from urllib.parse import parse_qs as _pqs
+
+    try:
+        body       = request.get_json(force=True)
+        doc_id     = body['documentId'].strip()
+        ws_id      = body['workspaceId'].strip()
+        server     = body.get('server', 'cad.onshape.com').strip().rstrip('/')
+        if not server.startswith('http'):
+            server = 'https://' + server
+        ak         = body['accessKey'].strip()
+        sk         = body['secretKey'].strip()
+        qs         = body.get('qs', '')
+
+        # Parse query string → plain dict for existing param helpers
+        raw  = _pqs(qs, keep_blank_values=True)
+        args = {k: v[0] for k, v in raw.items()}
+
+        pulley = args.get('pulley', '1')
+        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(args, pulley)
+        pfx = 'p2_' if pulley == '2' else ''
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(args, pfx)
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
+            _parse_spoke_params(args, pfx)
+        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+        _fl_enabled = args.get(f'{pfx}flange_enabled') == '1'
+        fp = _parse_flange_params(args, pfx) if _fl_enabled else {}
+
+        kw = dict(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, belt_height_mm=belt_height,
+            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+            hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+            screw_dia_mm=sd, screw_count=sc,
+            captured_nut=cn, flat_depth_mm=fd,
+            keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spoke_count=sp_c if sp_en else 0,
+            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+            rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+            spoke_height_mm=sp_h,
+            flange_enabled=_fl_enabled,
+            flange_3dprint=fp.get('flange_3dprint', True),
+            flange_angle_deg=fp.get('flange_angle_deg', 15.0),
+            flange_rim_radius_mm=fp.get('rim_radius_mm', 3.0),
+            flange_height_mm=fp.get('flange_height_mm', 1.5),
+            flange_top_separate=fp.get('top_separate', True),
+            nubs_enabled=fp.get('nubs_enabled', False),
+            nub_count=fp.get('nub_count', 4),
+            nub_dia_mm=fp.get('nub_dia_mm', 3.0),
+            nub_height_mm=fp.get('nub_height_mm', 2.0),
+            nub_allowance_mm=fp.get('nub_allowance_mm', 0.2),
+            plate_height_mm=fp.get('plate_height_mm', 1.0),
+            bend_radius_mm=fp.get('bend_radius_mm', 0.0),
+        )
+        fname = f'{family}-{pitch}-{num_teeth}T.step'
+
+        # ── Generate STEP ─────────────────────────────────────────────────────
+        try:
+            from exporters.step_exporter import generate_pulley_step
+            step_bytes = generate_pulley_step(
+                **{k: v for k, v in kw.items() if k not in ('plate_height_mm', 'bend_radius_mm')}
+            )
+        except ImportError:
+            import subprocess
+            root      = os.path.dirname(os.path.abspath(__file__))
+            venv_py   = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
+            worker    = os.path.join(root, 'exporters', 'step_worker.py')
+            result    = subprocess.run(
+                [venv_py, worker, json.dumps(dict(kw, export_type='pulley'))],
+                capture_output=True, cwd=root,
+            )
+            if result.returncode != 0:
+                return jsonify({'ok': False, 'error': result.stderr.decode()}), 400
+            step_bytes = result.stdout
+
+        step_bytes = _rename_step_product(step_bytes, fname[:-5])
+
+        # ── Upload to OnShape via translations API ────────────────────────────
+        path  = f'/api/v6/translations/d/{doc_id}/w/{ws_id}'
+        date  = datetime.now(_tz.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        nonce = _uid.uuid4().hex[:25]
+
+        # OnShape HMAC-SHA256: sign with empty content-type for multipart uploads
+        string_to_sign = '\n'.join(['post', nonce, date, '', path.lower(), '', ''])
+        sig = _b64.b64encode(
+            _hmac.new(sk.encode(), string_to_sign.encode(), _hs.sha256).digest()
+        ).decode()
+
+        headers = {
+            'Date':          date,
+            'On-Nonce':      nonce,
+            'Authorization': f'On {ak}:HmacSHA256:{sig}',
+            'Accept':        'application/json',
+        }
+
+        resp = _rq.post(
+            server + path,
+            files={'file': (fname, BytesIO(step_bytes), 'application/octet-stream')},
+            headers=headers,
+            timeout=30,
+        )
+
+        if resp.ok:
+            tid = resp.json().get('id', '')
+            return jsonify({'ok': True, 'translationId': tid, 'filename': fname})
+        else:
+            return jsonify({'ok': False,
+                            'error': f'OnShape {resp.status_code}: {resp.text[:300]}'}), 400
+
+    except KeyError as e:
+        return jsonify({'ok': False, 'error': f'Missing field: {e}'}), 400
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/help/<path:filename>')
@@ -664,6 +825,7 @@ def download_dxf():
         )
         dxf = _embed_dxf(dxf if isinstance(dxf, bytes) else dxf.encode(), request.args)
         _mirror_to_fusion(dxf, filename)
+        _mirror_to_solidworks(dxf, filename)
         return Response(
             dxf,
             mimetype='application/dxf',
@@ -1486,6 +1648,7 @@ def download_step():
         step_bytes = _rename_step_product(step_bytes, fname[:-5])
         step_bytes = _embed_step(step_bytes, request.args)
         _mirror_to_fusion(step_bytes, fname)
+        _mirror_to_solidworks(step_bytes, fname)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
@@ -1525,6 +1688,7 @@ def download_belt_step():
         )
         filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.step'
         _mirror_to_fusion(step_bytes, filename)
+        _mirror_to_solidworks(step_bytes, filename)
         return Response(
             step_bytes,
             mimetype='application/step',
@@ -1635,6 +1799,7 @@ def download_all_step():
         fname = _fname_stem + '.step'
         # All-parts STEP is always an assembly — don't overwrite individual part names.
         _mirror_to_fusion(step_bytes, fname)
+        _mirror_to_solidworks(step_bytes, fname)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as exc:
@@ -2067,6 +2232,7 @@ def download_flange_step():
         filename = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.step'
         step_bytes = _rename_step_product(step_bytes, filename[:-5])
         _mirror_to_fusion(step_bytes, filename)
+        _mirror_to_solidworks(step_bytes, filename)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:

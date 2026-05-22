@@ -57,6 +57,8 @@ c.close()
 *   **Navigation (FSE):** The main nav is stored as a `wp_navigation` post (ID 11) with Gutenberg block markup, not a classic menu. Edit its `post_content` like any other post.
 *   **Featured image on Home page:** Controlled via `_thumbnail_id` post meta on post 16. Was deleted to allow the animated SVG banner approach.
 *   **`mesg: ttyname failed`** warning on exec_command output is harmless — ignore it.
+*   **`wp_kses_post` strips `<style>` tags:** When calling `wp_update_post()` from PHP CLI (no logged-in user with `unfiltered_html`), WordPress sanitizes content and strips `<style>` blocks, leaving the CSS text visible on the page. Fix: wrap the update with `kses_remove_filters()` / `kses_init_filters()`. Always use a PHP script uploaded via SFTP rather than shell heredocs when content contains single quotes (e.g. font names like `'Times New Roman'`).
+*   **Prefer PHP scripts over `wp post update` for complex content:** Upload content to `/tmp/file.txt` and a PHP script to `/tmp/update.php`, then `php /tmp/update.php`. This sidesteps all shell quoting and kses issues in one pattern.
 
 ## Pulley Web App (Flask/CGI)
 *   **Path:** `/home/xootpro/public_html/cheapcadtools/tst_pulleys/`
@@ -96,7 +98,18 @@ c.close()
 *   **Contact (ID: 19):** 
     *   Contains Contact Form 7 shortcode.
     *   Custom CSS injected to style the submit button (large, centered, brand red `#761516`, with hover transitions) and input fields.
-*   **Navigation Menu (ID: 11):** Contains static, manual links to Home, About, and Contact. The animated logo (ID 62) is set as the official Site Logo and displays on the far left.
+*   **Privacy Policy (ID: 3, `/privacy-policy/`):** General CCT policy covering all products. Native Gutenberg blocks matching site style (white card on `#eaebed`, red `#761516` headings, Roboto). Linked from site footer.
+*   **Fusion 360 Privacy Policy (ID: 53, `/privacy-policy/fusion360-privacy-policy/`):** Detailed policy specific to the Fusion 360 add-in (no network connections, local prefs file only). Referenced from the general policy and the Autodesk App Store submission.
+*   **Navigation Menu (ID: 11):** Contains static, manual links. The animated logo (ID 62) is set as the official Site Logo and displays on the far left.
+
+## FSE Template Parts
+*   **Header (ID: 24, `post_name: header`):** Logo + right-aligned navigation. `wp_theme = blockbase`.
+*   **Footer (ID: 132, `post_name: footer`):** Dark `#1a1a1a` bar. Copyright left, Privacy Policy link right. `wp_theme = blockbase`.
+
+**Critical FSE gotchas:**
+*   `wp_template_part` posts **must** have the `wp_theme` taxonomy term set to the active theme slug (`blockbase`) or WordPress ignores them and falls back to the theme file. Set it with: `wp post term set <ID> wp_theme blockbase`
+*   After `wp_insert_post()` for a template part, always run the term-set command — `tax_input` in the insert array is not reliable from PHP CLI context.
+*   The theme default footer (`parts/footer.html`) renders `<!-- wp:pattern {"slug":"blockbase/footer-simple"} /-->` ("Proudly Powered by WordPress"). The custom footer template part overrides it once the taxonomy is set correctly.
 
 ## Contact Form Configuration
 *   **Form ID:** 18
@@ -104,6 +117,24 @@ c.close()
 *   **Sender:** `wordpress@cheapcadtools.com` (Used to bypass GreenGeeks strict anti-spoofing/SMTP filters).
 *   **Fields:** Name, Email, Subject, Message. The message field is mandatory (`[textarea* your-message]`), and the "(optional)" text has been removed.
 *   **Technical Note:** When updating CF7 settings via WP-CLI, the `_mail` metadata requires native PHP array serialization via `wp eval` to update safely. Standard bash string injection causes corrupt headers and `mail_failed` errors.
+
+## OnShape Application Extension
+
+*   **Panel URL:** `https://pulleywebapp.onrender.com/onshape` (served by Flask route `/onshape`)
+*   **Template:** `templates/onshape_panel.html` — thin launcher; two buttons: Open Online + Open Local
+*   **Receives from OnShape:** `?documentId=...&workspaceId=...&elementId=...` query params (displayed as a short badge; not used for API calls)
+*   **Architecture:** Thin panel only — opens the existing web app in a new browser tab. User designs the pulley there, downloads STEP/DXF, and imports via OnShape **File → Import**.
+
+### Dev Portal Registration (one-time)
+1. Go to https://dev-portal.onshape.com → **Applications** → **Create new application**
+2. **Application type:** Application Extension
+3. **Extension URL:** `https://pulleywebapp.onrender.com/onshape`
+4. **Context:** Document (so the extension appears in the right-side panel)
+5. No OAuth needed — the panel only opens external URLs.
+6. After saving, copy the **Client ID** — add it to `cheapcadtools.md` once registered.
+
+### Testing locally
+Open `http://localhost:5000/onshape` directly in a browser.
 
 ## Render.com (PulleyWebApp Service)
 *   **Service ID:** `srv-d7bve2a8qa3s738n68ig`
