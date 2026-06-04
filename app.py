@@ -3575,22 +3575,40 @@ def api_download_all_step_async():
                     if belt_kw:
                         worker_kw['belt_kw'] = belt_kw
 
-                    # Use Popen to monitor subprocess and update progress
+                    # Use Popen to monitor subprocess and parse real progress
                     proc = _subprocess.Popen(
                         [venv_py, worker, _json.dumps(worker_kw)],
-                        stdout=_subprocess.PIPE, stderr=_subprocess.PIPE, cwd=root,
+                        stdout=_subprocess.PIPE, stderr=_subprocess.PIPE, text=True, cwd=root,
                     )
 
-                    # Poll subprocess while updating progress
-                    progress_pct = 30
+                    # Read stderr for progress messages while subprocess runs
+                    stderr_lines = []
                     while proc.poll() is None:
-                        time.sleep(0.5)
-                        progress_pct = min(75, progress_pct + 2)  # Gradually increase to 75%
-                        update_progress(job.id, progress_pct)
+                        try:
+                            line = proc.stderr.readline()
+                            if line:
+                                stderr_lines.append(line)
+                                try:
+                                    msg = _json.loads(line.strip())
+                                    if 'progress' in msg:
+                                        pct = msg['progress']
+                                        # Map subprocess progress (25→90%) to our progress (30→80%)
+                                        mapped_pct = 30 + int((pct - 25) * (80 - 30) / (90 - 25))
+                                        update_progress(job.id, mapped_pct)
+                                except _json.JSONDecodeError:
+                                    pass  # Skip non-JSON stderr lines
+                        except:
+                            pass
+                        time.sleep(0.05)  # Small sleep to avoid busy-waiting
 
-                    stdout, stderr = proc.communicate()
+                    # Get final output
+                    stdout, remaining_stderr = proc.communicate()
+                    if remaining_stderr:
+                        stderr_lines.append(remaining_stderr)
+
                     if proc.returncode != 0:
-                        raise RuntimeError(f'STEP error: {stderr.decode()}')
+                        stderr_text = ''.join(stderr_lines)
+                        raise RuntimeError(f'STEP error: {stderr_text}')
                     step_bytes = stdout
 
                 update_progress(job.id, 80)  # Writing file

@@ -1321,12 +1321,14 @@ def generate_pulley_assembly_step(kw: dict) -> bytes:
         os.unlink(tmp.name)
 
 
-def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None) -> bytes:
+def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None, progress_callback=None) -> bytes:
     """Return one multipart STEP with all pulleys, flanges, and optionally the belt.
 
     When belt_kw is provided the belt uses its own belt_height_mm (no clearance added).
     In dual-pulley mode P2 is placed at center_dist_mm from P1 when a belt is
     included, or at od1+od2+20 mm otherwise.
+
+    progress_callback: optional callable(pct: int) called at 25%, 50%, 75%, 100%.
     """
     import cadquery as cq
     import tempfile, os
@@ -1351,6 +1353,8 @@ def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None) -
                 assy.add(bot, name=f'{prefix}BottomFlange', loc=loc)
 
     _add(kw1, 'P1_', 0.0)
+    if progress_callback:
+        progress_callback(25)
 
     if kw2:
         if belt_kw:
@@ -1370,6 +1374,8 @@ def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None) -
                                          - kw2.get('clearance_mm', 0.0)) / 2.0
             x_off = od1 + od2 + 20.0
         _add(kw2, 'P2_', x_off)
+        if progress_callback:
+            progress_callback(50)
 
     if belt_kw:
         belt = generate_belt_step(
@@ -1382,11 +1388,15 @@ def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None) -
             _return_cq     = True,
         )
         assy.add(belt, name='Belt')
+        if progress_callback:
+            progress_callback(75)
 
     tmp = tempfile.NamedTemporaryFile(suffix='.step', delete=False)
     tmp.close()
     try:
         assy.save(tmp.name)
+        if progress_callback:
+            progress_callback(90)
         with open(tmp.name, 'rb') as f:
             return f.read()
     finally:

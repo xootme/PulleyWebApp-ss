@@ -9,7 +9,7 @@ Usage:
 Pass export_type='flange' in the JSON to call generate_flange_step() instead
 of the default generate_pulley_step().
 
-Writes STEP bytes to stdout; errors to stderr.
+Writes STEP bytes to stdout; progress JSON lines to stderr; errors to stderr.
 """
 import sys
 import json
@@ -17,6 +17,11 @@ import os
 
 # Ensure project root is on sys.path when run as a subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def progress_callback(pct):
+    """Write progress JSON to stderr so parent process can parse it."""
+    sys.stderr.write(json.dumps({'progress': pct}) + '\n')
+    sys.stderr.flush()
 
 def main():
     params = json.loads(sys.argv[1])
@@ -29,7 +34,7 @@ def main():
         from exporters.step_exporter import generate_all_parts_step
         kw2      = params.pop('kw2', None)
         belt_kw  = params.pop('belt_kw', None)
-        step_bytes = generate_all_parts_step(params, kw2, belt_kw)
+        step_bytes = generate_all_parts_step(params, kw2, belt_kw, progress_callback=progress_callback)
     elif export_type == 'flange':
         from exporters.step_exporter import generate_flange_step
         step_bytes = generate_flange_step(
