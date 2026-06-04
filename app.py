@@ -22,7 +22,9 @@ except ImportError:
     _HAVE_PSUTIL = False
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file
-from exporters.job_queue import create_job, get_job, update_task, finish_job
+from exporters.job_queue import (
+    create_job, get_job, update_progress, finish_job, get_queue_status
+)
 
 # ── App version ───────────────────────────────────────────────────────────────
 APP_VERSION        = '1.0'
@@ -3442,11 +3444,23 @@ def api_admin_render_deploys():
         return jsonify({'error': str(e)}), 502
 
 
-# ── Async Download (Parallel Generation) ────────────────────────────────────
+# ── Async Download with Job Queue ───────────────────────────────────────────
 
 @app.route('/api/download-status/<job_id>')
 def api_download_status(job_id):
-    """Get status of an async download job."""
+    """Get status of a download job (queued, processing, done, or failed).
+
+    Returns:
+      {
+        "id": "a1b2c3d4",
+        "status": "queued" | "processing" | "done" | "failed",
+        "queue_position": 2 (if queued),
+        "progress": 0-100 (if processing),
+        "active_jobs": 1,
+        "output_file": "/download/a1b2c3d4.step" (if done),
+        "error": "..." (if failed)
+      }
+    """
     job = get_job(job_id)
     if not job:
         return jsonify({'error': 'Job not found'}), 404
@@ -3455,68 +3469,89 @@ def api_download_status(job_id):
 
 @app.route('/api/download/all-step-async', methods=['POST'])
 def api_download_all_step_async():
-    """Start async parallel generation of all STEP parts.
-    Returns job_id immediately; client polls /api/download-status/<job_id>.
+    """Start async STEP generation for all parts.
+    Returns immediately with job_id; client polls /api/download-status/{job_id}.
+
+    Request body: {params dict from form}
+    Response: {"job_id": "a1b2c3d4", "status_url": "/api/download-status/a1b2c3d4"}
     """
     try:
         params = request.get_json() or {}
-        job = create_job('all-step')
+        job = create_job('all-step', params)
 
-        # Add sub-tasks for each part
-        job.add_task('P1 STEP')
-        job.add_task('P2 STEP')
-        job.add_task('Belt STEP')
-        job.add_task('Spokes & Flanges')
-
-        job.status = 'queued'
-
-        # Queue async generation in background
-        def generate():
-            job.status = 'running'
+        def generate_async():
+            """Background worker: generate all STEP files."""
             try:
-                from concurrent.futures import ThreadPoolExecutor
+                import os
+                import tempfile
+                import zipfile
                 from exporters.step_exporter import generate_pulley_step
 
-                def gen_p1():
-                    update_task(job.id, 'P1 STEP', status='running')
-                    # Simulate: in real impl, call generate_pulley_step with progress callback
-                    time.sleep(1)
-                    update_task(job.id, 'P1 STEP', progress=100, status='done')
+                # Create temp dir for parts
+                tmpdir = tempfile.mkdtemp()
+                parts = {}
 
-                def gen_p2():
-                    update_task(job.id, 'P2 STEP', status='running')
-                    time.sleep(1)
-                    update_task(job.id, 'P2 STEP', progress=100, status='done')
+                # Generate each part, updating progress
+                part_names = ['P1', 'P2', 'Belt', 'Spokes & Flanges']
+                for i, part_name in enumerate(part_names):
+                    update_progress(job.id, int((i / len(part_names)) * 100))
 
-                def gen_belt():
-                    update_task(job.id, 'Belt STEP', status='running')
-                    time.sleep(1)
-                    update_task(job.id, 'Belt STEP', progress=100, status='done')
+                    if part_name == 'P1':
+                        parts['p1'] = generate_pulley_step(
+                            params, 'p1', tmpdir, job.id
+                        )
+                    elif part_name == 'P2':
+                        parts['p2'] = generate_pulley_step(
+                            params, 'p2', tmpdir, job.id
+                        )
+                    elif part_name == 'Belt':
+                        parts['belt'] = generate_pulley_step(
+                            params, 'belt', tmpdir, job.id
+                        )
+                    else:
+                        # Spokes & flanges (if applicable)
+                        if params.get('spokes_enabled'):
+                            parts['spokes'] = generate_pulley_step(
+                                params, 'spokes', tmpdir, job.id
+                            )
+                        if params.get('flange_top') or params.get('flange_bottom'):
+                            parts['flanges'] = generate_pulley_step(
+                                params, 'flanges', tmpdir, job.id
+                            )
 
-                def gen_spokes():
-                    update_task(job.id, 'Spokes & Flanges', status='running')
-                    time.sleep(1)
-                    update_task(job.id, 'Spokes & Flanges', progress=100, status='done')
+                    update_progress(job.id, int(((i + 1) / len(part_names)) * 100))
 
-                with ThreadPoolExecutor(max_workers=4) as executor:
-                    futures = [
-                        executor.submit(gen_p1),
-                        executor.submit(gen_p2),
-                        executor.submit(gen_belt),
-                        executor.submit(gen_spokes),
-                    ]
-                    for f in futures:
-                        f.result()
+                # Combine into ZIP
+                output_path = os.path.join('/tmp', f'{job.id}.step')
+                if len(parts) == 1:
+                    # Single file: just return the STEP
+                    output_path = list(parts.values())[0]
+                else:
+                    # Multiple files: ZIP them
+                    with zipfile.ZipFile(output_path.replace('.step', '.zip'), 'w') as zf:
+                        for name, path in parts.items():
+                            zf.write(path, arcname=f'{name}.step')
+                    output_path = output_path.replace('.step', '.zip')
 
-                job.output_file = f'/download/{job.id}.step'
-                finish_job(job.id, output_file=job.output_file)
+                finish_job(job.id, output_file=output_path)
+
             except Exception as e:
                 finish_job(job.id, error=str(e))
+            finally:
+                # Cleanup temp dir
+                import shutil
+                if 'tmpdir' in locals():
+                    shutil.rmtree(tmpdir, ignore_errors=True)
 
-        thread = threading.Thread(target=generate, daemon=True)
+        # Start worker thread
+        thread = threading.Thread(target=generate_async, daemon=True)
         thread.start()
 
-        return jsonify({'job_id': job.id})
+        return jsonify({
+            'job_id': job.id,
+            'status_url': f'/api/download-status/{job.id}',
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

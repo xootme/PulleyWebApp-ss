@@ -970,10 +970,37 @@
 
 <!-- ── Progress Modal ── -->
 <div id="progress-modal-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10001;display:none;align-items:center;justify-content:center;">
-  <div style="background:white;border-radius:8px;padding:24px;width:90%;max-width:500px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
-    <h3 style="margin:0 0 16px 0;color:#333;">Generating STEP files...</h3>
-    <div id="progress-modal-tasks" style="display:flex;flex-direction:column;gap:12px;"></div>
-    <div id="progress-modal-status" style="margin-top:16px;font-size:12px;color:#666;text-align:center;">Estimated time: 30-60 seconds for complex pulleys</div>
+  <div style="background:white;border-radius:8px;padding:24px;width:90%;max-width:500px;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-family:system-ui,sans-serif;">
+    <h3 style="margin:0 0 16px 0;color:#333;">Generating STEP Files</h3>
+
+    <!-- Queue status -->
+    <div id="progress-queue-status" style="margin-bottom:16px;padding:12px;background:#f0f0f0;border-radius:4px;font-size:13px;color:#666;text-align:center;display:none;">
+      <strong id="progress-queue-pos"></strong>
+      <div style="margin-top:4px;font-size:11px;">This may take 1–2 minutes for complex pulleys</div>
+    </div>
+
+    <!-- Processing status -->
+    <div id="progress-processing-status" style="margin-bottom:16px;display:none;">
+      <div style="font-size:12px;color:#666;margin-bottom:6px;"><strong>Processing</strong> • <span id="progress-active-count">1</span> job active</div>
+      <div style="background:#e8e8e8;height:20px;border-radius:4px;overflow:hidden;">
+        <div id="progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#761516,#a02020);transition:width 0.3s ease;display:flex;align-items:center;justify-content:center;">
+          <span id="progress-percent" style="color:white;font-size:10px;font-weight:bold;text-shadow:0 1px 2px rgba(0,0,0,0.3);"></span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#999;margin-top:8px;">
+        Generation time: <span id="progress-elapsed">0s</span>
+      </div>
+    </div>
+
+    <!-- Status message -->
+    <div id="progress-message" style="font-size:12px;color:#666;text-align:center;margin-bottom:8px;">
+      Initializing...
+    </div>
+
+    <!-- Cancel button -->
+    <div style="margin-top:16px;display:flex;justify-content:center;">
+      <button id="progress-cancel-btn" onclick="cancelDownload()" style="padding:8px 16px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:13px;color:#333;">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -3740,6 +3767,123 @@ function _updateHubMaxValues(n) {
 function _onBoreChangeHub(n) {
   _updateHubMaxValues(n);
   if (document.getElementById(`hub${n}-body`).classList.contains('open')) _validateHub(n);
+}
+
+// ── Async Download Progress Modal ────────────────────────────────────────────
+let _currentJobId = null;
+let _jobPollTimer = null;
+let _jobStartTime = null;
+
+function showProgressModal() {
+  document.getElementById('progress-modal-overlay').style.display = 'flex';
+}
+
+function hideProgressModal() {
+  document.getElementById('progress-modal-overlay').style.display = 'none';
+  if (_jobPollTimer) clearInterval(_jobPollTimer);
+  _currentJobId = null;
+}
+
+function cancelDownload() {
+  hideProgressModal();
+}
+
+function startAsyncDownload(type) {
+  /**
+   * Start an async download job (e.g., 'all-step').
+   * Shows progress modal and polls /api/download-status/{job_id} every 500ms.
+   */
+  const params = collectFormParams();
+  const endpoint = {
+    'all-step': '/api/download/all-step-async',
+    'all-dxf': '/api/download/all-dxf-async',
+    'all-svg': '/api/download/all-svg-async',
+  }[type];
+
+  if (!endpoint) {
+    showErrorModalWithRetry(`Unknown download type: ${type}`, () => startAsyncDownload(type));
+    return;
+  }
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  .then(r => {
+    if (!r.ok) throw new Error(`Server returned ${r.status}`);
+    return r.json();
+  })
+  .then(data => {
+    _currentJobId = data.job_id;
+    _jobStartTime = Date.now();
+    showProgressModal();
+    pollJobStatus();
+  })
+  .catch(err => {
+    showErrorModalWithRetry(
+      `Failed to start download: ${err.message}`,
+      () => startAsyncDownload(type)
+    );
+  });
+}
+
+function pollJobStatus() {
+  if (!_currentJobId) return;
+
+  fetch(`/api/download-status/${_currentJobId}`)
+    .then(r => r.json())
+    .then(job => {
+      updateProgressDisplay(job);
+
+      // If done or failed, stop polling and handle completion
+      if (job.status === 'done') {
+        hideProgressModal();
+        // Trigger download
+        window.location = job.output_file;
+      } else if (job.status === 'failed') {
+        hideProgressModal();
+        showErrorModalWithRetry(
+          `Generation failed: ${job.error}`,
+          () => startAsyncDownload('all-step') // retry
+        );
+      } else {
+        // Still waiting or processing, poll again in 500ms
+        _jobPollTimer = setTimeout(pollJobStatus, 500);
+      }
+    })
+    .catch(err => {
+      console.error('Poll error:', err);
+      _jobPollTimer = setTimeout(pollJobStatus, 1000);
+    });
+}
+
+function updateProgressDisplay(job) {
+  const queueStatus = document.getElementById('progress-queue-status');
+  const processingStatus = document.getElementById('progress-processing-status');
+  const message = document.getElementById('progress-message');
+  const elapsed = document.getElementById('progress-elapsed');
+
+  if (job.status === 'queued' && job.queue_position) {
+    // Show queue position
+    queueStatus.style.display = 'block';
+    processingStatus.style.display = 'none';
+    document.getElementById('progress-queue-pos').textContent =
+      `Position ${job.queue_position} in queue • ${job.active_jobs} job${job.active_jobs !== 1 ? 's' : ''} currently processing`;
+    message.textContent = 'Waiting for processing capacity...';
+  } else if (job.status === 'processing') {
+    // Show progress bar
+    queueStatus.style.display = 'none';
+    processingStatus.style.display = 'block';
+    document.getElementById('progress-bar').style.width = job.progress + '%';
+    document.getElementById('progress-percent').textContent = job.progress + '%';
+    document.getElementById('progress-active-count').textContent = job.active_jobs;
+    message.textContent = `Generating... ${job.progress}%`;
+
+    // Update elapsed time
+    const secs = Math.floor((Date.now() - _jobStartTime) / 1000);
+    elapsed.textContent = `${secs}s`;
+  }
 }
 </script>
 
