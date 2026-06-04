@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=20">
+  <link rel="stylesheet" href="/static/style.css?v=21">
 </head>
 <body>
 
@@ -427,6 +427,7 @@
           <input type="number" id="spokes1_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(1)" style="width:70px">
         </div>
         <div class="hub-info fb-2d" id="spokes1_count_info"></div>
+        <div class="fb-2d spoke-overlap-warn" id="spokes1_overlap_warn" style="display:none;"></div>
         <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           <label for="spokes1_height" style="margin:0;flex:1">Spoke Height (mm)</label>
           <input type="number" id="spokes1_height" value="0" min="0" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
@@ -836,6 +837,7 @@
           <input type="number" id="spokes2_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(2)" style="width:70px">
         </div>
         <div class="hub-info fb-2d" id="spokes2_count_info"></div>
+        <div class="fb-2d spoke-overlap-warn" id="spokes2_overlap_warn" style="display:none;"></div>
         <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           <label for="spokes2_height" style="margin:0;flex:1">Spoke Height (mm)</label>
           <input type="number" id="spokes2_height" value="0" min="0" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
@@ -944,6 +946,12 @@
       <label class="bug-label" id="bug-label-should" for="bug-should">What should you be seeing?</label>
       <textarea id="bug-should" class="bug-textarea" rows="3" placeholder="Describe the expected behaviour…"></textarea>
 
+      <label class="bug-label" for="bug-error-text">Error Message <span class="bug-optional">(auto-filled if reported from error dialog)</span></label>
+      <textarea id="bug-error-text" class="bug-textarea" rows="2" placeholder="Error details will appear here…" readonly style="background:#f5f5f5;color:#666;"></textarea>
+
+      <label class="bug-label" for="bug-user-comment">What were you doing when this happened?</label>
+      <textarea id="bug-user-comment" class="bug-textarea" rows="3" placeholder="Describe the steps that led to this…"></textarea>
+
       <label class="bug-label" for="bug-email">Email <span class="bug-optional">(optional — to be notified of progress)</span></label>
       <input type="email" id="bug-email" class="bug-input" placeholder="you@example.com">
 
@@ -956,6 +964,18 @@
     <div class="bug-footer">
       <button class="bug-btn bug-btn-cancel" onclick="cancelBugReport()">Cancel</button>
       <button class="bug-btn bug-btn-submit" onclick="submitBugReport()">Submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Error Modal ── -->
+<div id="error-modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:8px;padding:20px;width:90%;max-width:600px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+    <h3 style="margin:0 0 12px 0;color:#b91c1c;">Error</h3>
+    <textarea id="error-modal-text" style="width:100%;height:180px;padding:10px;border:1px solid #ddd;border-radius:4px;font-family:monospace;font-size:12px;color:#333;resize:vertical;" readonly></textarea>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="closeErrorModal()" style="padding:8px 16px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:14px;">Close</button>
+      <button onclick="copyErrorToBugReport()" style="padding:8px 16px;background:#761516;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:bold;">Report This Bug</button>
     </div>
   </div>
 </div>
@@ -980,6 +1000,8 @@ let previewTimer       = null;
 let ratioSnapTimer     = null;
 let beltCorrectionTimer = null;
 let _lastValidBeltTeeth = null;   // last belt_teeth value that returned a valid center dist
+// Last known non-overlapping spoke state per pulley (keys: width, filletTip, count, rimDepth)
+const _lastValidSpokes = {1: null, 2: null};
 let teethTimer1  = null;
 let teethTimer2  = null;
 let odTimer1     = null;
@@ -1526,6 +1548,10 @@ window.onload = async () => {
     }
   });
   updateBeltBtn();
+  // Initialise spoke overlap state. If current values already overlap (e.g. from
+  // saved settings), still save the state so the user can make changes — the
+  // warning will appear when they interact with the spokes panel.
+  [1, 2].forEach(function(n) { _saveSpokeState(n); });
 };
 
 // ── Dual toggle ───────────────────────────────────────────────────────────────
@@ -2549,6 +2575,8 @@ function closeBugReport() {
 function _clearBugFields() {
   document.getElementById('bug-seeing').value = '';
   document.getElementById('bug-should').value = '';
+  document.getElementById('bug-error-text').value = '';
+  document.getElementById('bug-user-comment').value = '';
   document.getElementById('bug-email').value  = '';
   _bugDraft = null;
 }
@@ -2564,11 +2592,32 @@ document.getElementById('bug-report-overlay').addEventListener('click', function
   if (e.target === this) closeBugReport();
 });
 
+// ── Error Modal Functions ────────────────────────────────────────────────────────
+
+function showErrorModal(errorMessage) {
+  document.getElementById('error-modal-text').value = errorMessage;
+  document.getElementById('error-modal-overlay').style.display = 'flex';
+}
+
+function closeErrorModal() {
+  document.getElementById('error-modal-overlay').style.display = 'none';
+}
+
+function copyErrorToBugReport() {
+  const errorText = document.getElementById('error-modal-text').value;
+  document.getElementById('bug-error-text').value = errorText;
+  document.getElementById('bug-user-comment').focus();
+  closeErrorModal();
+  openBugReport();
+}
+
 async function submitBugReport() {
-  const seeing     = document.getElementById('bug-seeing').value.trim();
-  const should_see = document.getElementById('bug-should').value.trim();
-  const email      = document.getElementById('bug-email').value.trim();
-  const statusEl   = document.getElementById('bug-status');
+  const seeing      = document.getElementById('bug-seeing').value.trim();
+  const should_see  = document.getElementById('bug-should').value.trim();
+  const errorMsg    = document.getElementById('bug-error-text').value.trim();
+  const userComment = document.getElementById('bug-user-comment').value.trim();
+  const email       = document.getElementById('bug-email').value.trim();
+  const statusEl    = document.getElementById('bug-status');
 
   if (!seeing && !should_see) {
     statusEl.textContent = 'Please fill in at least one description field.';
@@ -2594,7 +2643,7 @@ async function submitBugReport() {
     const resp = await fetch('/api/report-bug', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ seeing, should_see, email, state, report_type: isFeature ? 'feature' : 'bug' }),
+      body: JSON.stringify({ seeing, should_see, email, error_message: errorMsg, user_comment: userComment, state, report_type: isFeature ? 'feature' : 'bug' }),
     });
     const data = await resp.json();
     if (resp.ok && data.ok && data.warning) {
@@ -2732,8 +2781,24 @@ async function downloadWithProgress(url, defaultFilename) {
   try {
     const response = await fetch(url);
     if (!response.ok) {
+      const ct      = response.headers.get('Content-Type') || '';
       const errText = await response.text();
-      throw new Error(errText || `Server Error: ${response.status}`);
+      // Cloudflare/proxy error pages return HTML — don't dump raw markup at the user.
+      const isHtml  = ct.includes('text/html') || errText.trimStart().startsWith('<');
+      if (isHtml) {
+        const renderUrl = url.replace(/^https?:\/\/cheapcadtools\.com/, 'https://pulleywebapp.onrender.com');
+        const retry = confirm(
+          `Server error ${response.status} — the server may be busy or the request timed out.\n\n` +
+          `This can happen with complex pulleys (dual drive, spokes, flanges).\n\n` +
+          `Click OK to retry the download directly from the generation server,\n` +
+          `or Cancel to close.`
+        );
+        if (retry) {
+          return downloadWithProgress(renderUrl, defaultFilename);
+        }
+        return;
+      }
+      throw new Error(errText || `Server error ${response.status}`);
     }
 
     let filename = defaultFilename;
@@ -2756,7 +2821,7 @@ async function downloadWithProgress(url, defaultFilename) {
     window.URL.revokeObjectURL(objUrl);
     document.body.removeChild(a);
   } catch (e) {
-    alert("Download failed: " + e.message);
+    showErrorModal("Download failed: " + e.message);
   } finally {
     overlay.style.display = 'none';
   }
@@ -3229,6 +3294,74 @@ function _syncSpokeHubLock(n) {
   }
 }
 
+// ── Spoke overlap check ───────────────────────────────────────────────────────
+// Checks the tip (outer) circle only:
+//   (width + 2×fillet_tip) × count > π × (OD − 2×rim_depth)
+//
+// Hub-level overlap is intentionally NOT checked here. When base fillets are
+// large enough, adjacent fillets merge and fill the hub gap — the spoke voids
+// simply don't reach the hub circle. The server's /api/validate-spoke-fillets
+// handles all fillet geometry correctly in that case (line-line fillets).
+// Only the outer (tip) circle is a hard geometric limit for the spoke voids.
+function _spokeOverlapCheck(n) {
+  const odEl     = document.getElementById(n === 2 ? 'p2_od' : 'od');
+  const od       = odEl ? parseFloat(odEl.value) || 0 : 0;
+  const rimDepth = parseFloat(document.getElementById(`spokes${n}_rim_depth`).value)  || 0;
+  const width    = parseFloat(document.getElementById(`spokes${n}_width`).value)      || 0;
+  const tip      = parseFloat(document.getElementById(`spokes${n}_fillet_tip`).value) || 0;
+  const count    = parseInt(document.getElementById(`spokes${n}_count`).value)        || 0;
+
+  const tipDia  = od - 2 * rimDepth;
+  const tipCirc = Math.PI * tipDia;
+  const total   = (width + 2 * tip) * count;
+
+  if (tipDia > 0 && total > tipCirc) {
+    return {
+      overlapping: true, total, circumference: tipCirc,
+      msg: `⚠ Spokes overlap at tip circle (Ø${tipDia.toFixed(1)} mm): ` +
+           `total ${total.toFixed(1)} mm > circumference ${tipCirc.toFixed(1)} mm — ` +
+           `reduce spoke width, tip fillet, rim depth, or count`,
+    };
+  }
+  return { overlapping: false };
+}
+
+// Save the current spoke state as the last known-good state for pulley n.
+function _saveSpokeState(n) {
+  _lastValidSpokes[n] = {
+    width:      document.getElementById(`spokes${n}_width`).value,
+    fillet_tip: document.getElementById(`spokes${n}_fillet_tip`).value,
+    count:      document.getElementById(`spokes${n}_count`).value,
+    rim_depth:  document.getElementById(`spokes${n}_rim_depth`).value,
+  };
+}
+
+// Show the overlap warning and — if a previous valid state exists — revert the
+// single field that caused the overlap (the one whose value differs from prev).
+function _revertSpokeOverlap(n, check) {
+  const prev = _lastValidSpokes[n];
+  if (prev) {
+    // Find the field that changed and revert only that one
+    const fields = ['width', 'fillet_tip', 'count', 'rim_depth'];
+    for (const f of fields) {
+      const el = document.getElementById(`spokes${n}_${f}`);
+      if (el && el.value !== prev[f]) {
+        el.value = prev[f];
+        break;   // only one field changes per user interaction
+      }
+    }
+  }
+  // Always show the warning (even if prev was null — lets user know they need to fix it)
+  const warnEl = document.getElementById(`spokes${n}_overlap_warn`);
+  if (warnEl) {
+    warnEl.textContent = check.msg || `⚠ Spokes overlap at ${check.label}`;
+    warnEl.style.display = 'block';
+    warnEl.classList.remove('flash');
+    void warnEl.offsetWidth;
+    warnEl.classList.add('flash');
+  }
+}
+
 function onSpokesChange(n) {
   _updateSpokeMaxCount(n);
   const spokesOn  = document.getElementById(`spokes${n}_enabled`).checked;
@@ -3251,8 +3384,23 @@ function onSpokesChange(n) {
       : '⚠ Bore ≥ spoke Hub OD — spokes ignored in preview';
   }
 
-  _syncSpokeHubLock(n);
+  // ── Overlap check ─────────────────────────────────────────────────────────
+  if (spokesOn) {
+    const check = _spokeOverlapCheck(n);
+    if (check.overlapping) {
+      _revertSpokeOverlap(n, check);
+      _syncSpokeHubLock(n);
+      schedulePreview();
+      saveSettings();
+      return;   // don't clear the warning or save state
+    }
+    // Valid — save state and clear warning
+    _saveSpokeState(n);
+    const overlapWarn = document.getElementById(`spokes${n}_overlap_warn`);
+    if (overlapWarn) { overlapWarn.style.display = 'none'; overlapWarn.classList.remove('flash'); }
+  }
 
+  _syncSpokeHubLock(n);
   schedulePreview();
   saveSettings();
 }
@@ -3389,22 +3537,23 @@ function downloadFlangeAssembly(n) {
                        `${fp.family}${fp.pitch}-${fp.teeth}T-Assembly.stl`);
 }
 
-function onFilletChange(n, changed) {
-  // Validate that tip and base fillet tangent points don't cross on the spoke wall.
-  // If they do, correct the value that was just changed.
-  const prefix = n === 2 ? 'p2_' : '';
+// Shared fillet re-validation used by both onFilletChange and onSpokesChange.
+// Fetches /api/validate-spoke-fillets and applies corrected values, then calls
+// onSpokesChange(n) — but with _spokeFilletsValidating=true to prevent a loop.
+function _revalidateSpokeFilletsAsync(n, changed) {
   const params = new URLSearchParams({
-    family:           document.getElementById('family').value,
-    pitch:            document.getElementById('pitch').value,
-    teeth:            document.getElementById(n === 2 ? 'p2_teeth' : 'teeth').value,
-    spokes_hub_od:    document.getElementById(`spokes${n}_hub_od`).value,
-    spokes_rim_depth: document.getElementById(`spokes${n}_rim_depth`).value,
-    spokes_width:     document.getElementById(`spokes${n}_width`).value,
-    spokes_count:     document.getElementById(`spokes${n}_count`).value,
+    family:             document.getElementById('family').value,
+    pitch:              document.getElementById('pitch').value,
+    teeth:              document.getElementById(n === 2 ? 'p2_teeth' : 'teeth').value,
+    spokes_hub_od:      document.getElementById(`spokes${n}_hub_od`).value,
+    spokes_rim_depth:   document.getElementById(`spokes${n}_rim_depth`).value,
+    spokes_width:       document.getElementById(`spokes${n}_width`).value,
+    spokes_count:       document.getElementById(`spokes${n}_count`).value,
     spokes_fillet_tip:  document.getElementById(`spokes${n}_fillet_tip`).value,
     spokes_fillet_base: document.getElementById(`spokes${n}_fillet_base`).value,
     changed,
   });
+  _spokeFilletsValidating = true;
   fetch('/api/validate-spoke-fillets?' + params)
     .then(r => r.json())
     .then(data => {
@@ -3412,9 +3561,14 @@ function onFilletChange(n, changed) {
         document.getElementById(`spokes${n}_fillet_tip`).value  = data.tip;
         document.getElementById(`spokes${n}_fillet_base`).value = data.base;
       }
+      _spokeFilletsValidating = false;
       onSpokesChange(n);
     })
-    .catch(() => onSpokesChange(n));
+    .catch(() => { _spokeFilletsValidating = false; onSpokesChange(n); });
+}
+
+function onFilletChange(n, changed) {
+  _revalidateSpokeFilletsAsync(n, changed);
 }
 
 function _triggerDownload(url) {

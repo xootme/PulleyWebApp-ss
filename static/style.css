@@ -629,6 +629,24 @@ body:not(.feature-build) .fb-3d { display: none !important; }
   padding: 4px 8px;
   margin-top: 6px;
 }
+@keyframes cct-spoke-flash {
+  0%   { opacity: 0;   background: #fecaca; }
+  30%  { opacity: 1;   background: #fca5a5; }
+  60%  { opacity: 0.7; background: #fecaca; }
+  100% { opacity: 1;   background: #fee2e2; }
+}
+.spoke-overlap-warn {
+  font-size: 11px;
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  padding: 5px 8px;
+  margin-top: 4px;
+}
+.spoke-overlap-warn.flash {
+  animation: cct-spoke-flash 0.45s ease-out forwards;
+}
 
 /* Loading Overlay Spinner */
 #loading-overlay {

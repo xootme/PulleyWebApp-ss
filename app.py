@@ -2422,11 +2422,13 @@ def api_report_bug():
     """Save a bug report to logs/bug_reports.log and email a notification."""
     try:
         data = request.get_json(force=True) or {}
-        seeing      = str(data.get('seeing',      '')).strip()
-        should_see  = str(data.get('should_see',  '')).strip()
-        email       = str(data.get('email',       '')).strip()
-        state       = data.get('state', {})          # dict of current app params
-        report_type = str(data.get('report_type', 'bug')).strip()
+        seeing       = str(data.get('seeing',        '')).strip()
+        should_see   = str(data.get('should_see',    '')).strip()
+        error_msg    = str(data.get('error_message', '')).strip()
+        user_comment = str(data.get('user_comment',  '')).strip()
+        email        = str(data.get('email',         '')).strip()
+        state        = data.get('state', {})          # dict of current app params
+        report_type  = str(data.get('report_type', 'bug')).strip()
 
         # Desktop app: no GitHub PAT configured locally — forward to production server
         _forward_failed = False
@@ -2461,6 +2463,12 @@ def api_report_bug():
             f'{"="*60}\n'
             f'{label_seeing}:\n  {seeing or "(not provided)"}\n\n'
             f'{label_should}:\n  {should_see or "(not provided)"}\n\n'
+        )
+        if error_msg:
+            entry += f'Error message:\n  {error_msg}\n\n'
+        if user_comment:
+            entry += f'User comment:\n  {user_comment}\n\n'
+        entry += (
             f'Contact email:\n  {email or "(not provided)"}\n\n'
             f'App state:\n{json.dumps(state, indent=2)}\n'
         )
