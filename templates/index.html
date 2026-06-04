@@ -975,7 +975,8 @@
     <textarea id="error-modal-text" style="width:100%;height:180px;padding:10px;border:1px solid #ddd;border-radius:4px;font-family:monospace;font-size:12px;color:#333;resize:vertical;" readonly></textarea>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
       <button onclick="closeErrorModal()" style="padding:8px 16px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:14px;">Close</button>
-      <button onclick="copyErrorToBugReport()" style="padding:8px 16px;background:#761516;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:bold;">Report This Bug</button>
+      <button id="error-modal-btn-retry" onclick="this.onclick()" style="padding:8px 16px;background:#761516;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:bold;display:none;">Retry Download</button>
+      <button id="error-modal-btn-report" onclick="copyErrorToBugReport()" style="padding:8px 16px;background:#761516;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:bold;">Report This Bug</button>
     </div>
   </div>
 </div>
@@ -2597,6 +2598,21 @@ document.getElementById('bug-report-overlay').addEventListener('click', function
 function showErrorModal(errorMessage) {
   const overlay = document.getElementById('error-modal-overlay');
   document.getElementById('error-modal-text').value = errorMessage;
+  document.getElementById('error-modal-btn-retry').style.display = 'none';
+  document.getElementById('error-modal-btn-report').style.display = 'inline-block';
+  document.getElementById('error-modal-btn-retry').onclick = null;
+  overlay.style.display = 'flex';
+}
+
+function showErrorModalWithRetry(errorMessage, retryCallback) {
+  const overlay = document.getElementById('error-modal-overlay');
+  document.getElementById('error-modal-text').value = errorMessage;
+  document.getElementById('error-modal-btn-report').style.display = 'none';
+  document.getElementById('error-modal-btn-retry').style.display = 'inline-block';
+  document.getElementById('error-modal-btn-retry').onclick = () => {
+    closeErrorModal();
+    retryCallback();
+  };
   overlay.style.display = 'flex';
 }
 
@@ -2788,15 +2804,12 @@ async function downloadWithProgress(url, defaultFilename) {
       const isHtml  = ct.includes('text/html') || errText.trimStart().startsWith('<');
       if (isHtml) {
         const renderUrl = url.replace(/^https?:\/\/cheapcadtools\.com/, 'https://pulleywebapp.onrender.com');
-        const retry = confirm(
+        showErrorModalWithRetry(
           `Server error ${response.status} — the server may be busy or the request timed out.\n\n` +
           `This can happen with complex pulleys (dual drive, spokes, flanges).\n\n` +
-          `Click OK to retry the download directly from the generation server,\n` +
-          `or Cancel to close.`
+          `Retrying will download directly from the generation server.`,
+          () => downloadWithProgress(renderUrl, defaultFilename)
         );
-        if (retry) {
-          return downloadWithProgress(renderUrl, defaultFilename);
-        }
         return;
       }
       throw new Error(errText || `Server error ${response.status}`);
