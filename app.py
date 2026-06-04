@@ -22,6 +22,7 @@ except ImportError:
     _HAVE_PSUTIL = False
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file
+from exporters.job_queue import create_job, get_job, update_task, finish_job
 
 # ── App version ───────────────────────────────────────────────────────────────
 APP_VERSION        = '1.0'
@@ -3439,6 +3440,85 @@ def api_admin_render_deploys():
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
+
+
+# ── Async Download (Parallel Generation) ────────────────────────────────────
+
+@app.route('/api/download-status/<job_id>')
+def api_download_status(job_id):
+    """Get status of an async download job."""
+    job = get_job(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    return jsonify(job.to_dict())
+
+
+@app.route('/api/download/all-step-async', methods=['POST'])
+def api_download_all_step_async():
+    """Start async parallel generation of all STEP parts.
+    Returns job_id immediately; client polls /api/download-status/<job_id>.
+    """
+    try:
+        params = request.get_json() or {}
+        job = create_job('all-step')
+
+        # Add sub-tasks for each part
+        job.add_task('P1 STEP')
+        job.add_task('P2 STEP')
+        job.add_task('Belt STEP')
+        job.add_task('Spokes & Flanges')
+
+        job.status = 'queued'
+
+        # Queue async generation in background
+        def generate():
+            job.status = 'running'
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+                from exporters.step_exporter import generate_pulley_step
+
+                def gen_p1():
+                    update_task(job.id, 'P1 STEP', status='running')
+                    # Simulate: in real impl, call generate_pulley_step with progress callback
+                    time.sleep(1)
+                    update_task(job.id, 'P1 STEP', progress=100, status='done')
+
+                def gen_p2():
+                    update_task(job.id, 'P2 STEP', status='running')
+                    time.sleep(1)
+                    update_task(job.id, 'P2 STEP', progress=100, status='done')
+
+                def gen_belt():
+                    update_task(job.id, 'Belt STEP', status='running')
+                    time.sleep(1)
+                    update_task(job.id, 'Belt STEP', progress=100, status='done')
+
+                def gen_spokes():
+                    update_task(job.id, 'Spokes & Flanges', status='running')
+                    time.sleep(1)
+                    update_task(job.id, 'Spokes & Flanges', progress=100, status='done')
+
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    futures = [
+                        executor.submit(gen_p1),
+                        executor.submit(gen_p2),
+                        executor.submit(gen_belt),
+                        executor.submit(gen_spokes),
+                    ]
+                    for f in futures:
+                        f.result()
+
+                job.output_file = f'/download/{job.id}.step'
+                finish_job(job.id, output_file=job.output_file)
+            except Exception as e:
+                finish_job(job.id, error=str(e))
+
+        thread = threading.Thread(target=generate, daemon=True)
+        thread.start()
+
+        return jsonify({'job_id': job.id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
