@@ -969,7 +969,7 @@
 </div>
 
 <!-- ── Error Modal ── -->
-<div id="error-modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;">
+<div id="error-modal-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:8px;padding:20px;width:90%;max-width:600px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
     <h3 style="margin:0 0 12px 0;color:#b91c1c;">Error</h3>
     <textarea id="error-modal-text" style="width:100%;height:180px;padding:10px;border:1px solid #ddd;border-radius:4px;font-family:monospace;font-size:12px;color:#333;resize:vertical;" readonly></textarea>
@@ -2595,8 +2595,9 @@ document.getElementById('bug-report-overlay').addEventListener('click', function
 // ── Error Modal Functions ────────────────────────────────────────────────────────
 
 function showErrorModal(errorMessage) {
+  const overlay = document.getElementById('error-modal-overlay');
   document.getElementById('error-modal-text').value = errorMessage;
-  document.getElementById('error-modal-overlay').style.display = 'flex';
+  overlay.style.display = 'flex';
 }
 
 function closeErrorModal() {
