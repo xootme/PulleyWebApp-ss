@@ -23,7 +23,7 @@ except ImportError:
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file
 from exporters.job_queue import (
-    create_job, get_job, update_progress, finish_job, get_queue_status
+    create_job, get_job, start_job, update_progress, finish_job, get_queue_status
 )
 
 # ── App version ───────────────────────────────────────────────────────────────
@@ -3492,6 +3492,7 @@ def api_download_all_step_async():
 
         def generate_async():
             """Background worker: generate all STEP assembly."""
+            start_job(job.id)  # Move from queued to processing
             try:
                 import json as _json
                 import subprocess
