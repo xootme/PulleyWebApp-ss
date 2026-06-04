@@ -3562,8 +3562,10 @@ def api_download_all_step_async():
                 try:
                     from exporters.step_exporter import generate_all_parts_step
                     step_bytes = generate_all_parts_step(kw1, kw2, belt_kw)
+                    update_progress(job.id, 75)  # Generated
                 except ImportError:
                     # Fall back to subprocess (Python 3.12 venv)
+                    import subprocess as _subprocess
                     root    = os.path.dirname(os.path.abspath(__file__))
                     venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
                     worker  = os.path.join(root, 'exporters', 'step_worker.py')
@@ -3572,13 +3574,24 @@ def api_download_all_step_async():
                         worker_kw['kw2'] = kw2
                     if belt_kw:
                         worker_kw['belt_kw'] = belt_kw
-                    result = subprocess.run(
+
+                    # Use Popen to monitor subprocess and update progress
+                    proc = _subprocess.Popen(
                         [venv_py, worker, _json.dumps(worker_kw)],
-                        capture_output=True, cwd=root,
+                        stdout=_subprocess.PIPE, stderr=_subprocess.PIPE, cwd=root,
                     )
-                    if result.returncode != 0:
-                        raise RuntimeError(f'STEP error: {result.stderr.decode()}')
-                    step_bytes = result.stdout
+
+                    # Poll subprocess while updating progress
+                    progress_pct = 30
+                    while proc.poll() is None:
+                        time.sleep(0.5)
+                        progress_pct = min(75, progress_pct + 2)  # Gradually increase to 75%
+                        update_progress(job.id, progress_pct)
+
+                    stdout, stderr = proc.communicate()
+                    if proc.returncode != 0:
+                        raise RuntimeError(f'STEP error: {stderr.decode()}')
+                    step_bytes = stdout
 
                 update_progress(job.id, 80)  # Writing file
                 _t1 = kw1['num_teeth']
