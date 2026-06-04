@@ -3446,6 +3446,16 @@ def api_admin_render_deploys():
 
 # ── Async Download with Job Queue ───────────────────────────────────────────
 
+@app.route('/download/<job_id>.step')
+def download_async_step(job_id):
+    """Serve generated STEP file from async download job."""
+    file_path = os.path.join(_LOG_DIR, f'{job_id}.step')
+    if not os.path.exists(file_path):
+        return 'File not found', 404
+    return send_file(file_path, mimetype='application/step',
+                     as_attachment=True, download_name=f'{job_id}.step')
+
+
 @app.route('/api/download-status/<job_id>')
 def api_download_status(job_id):
     """Get status of a download job (queued, processing, done, or failed).
@@ -3469,79 +3479,119 @@ def api_download_status(job_id):
 
 @app.route('/api/download/all-step-async', methods=['POST'])
 def api_download_all_step_async():
-    """Start async STEP generation for all parts.
+    """Start async STEP generation for all parts (P1, P2, belt).
     Returns immediately with job_id; client polls /api/download-status/{job_id}.
 
-    Request body: {params dict from form}
+    Request body: URL query params as JSON
     Response: {"job_id": "a1b2c3d4", "status_url": "/api/download-status/a1b2c3d4"}
     """
     try:
-        params = request.get_json() or {}
-        job = create_job('all-step', params)
+        # Extract params from request JSON (convert from form params)
+        query_params = request.get_json() or {}
+        job = create_job('all-step', query_params)
 
         def generate_async():
-            """Background worker: generate all STEP files."""
+            """Background worker: generate all STEP assembly."""
             try:
-                import os
-                import tempfile
-                import zipfile
-                from exporters.step_exporter import generate_pulley_step
+                import json as _json
+                import subprocess
+                import sys
 
-                # Create temp dir for parts
-                tmpdir = tempfile.mkdtemp()
-                parts = {}
+                # Build keyword dicts same as sync route (download_all_step)
+                def _build_kw(pfx):
+                    family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+                        _parse_stl_params(query_params, '2' if pfx == 'p2_' else '1')
+                    hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(query_params, pfx)
+                    sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
+                        _parse_spoke_params(query_params, pfx)
+                    eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+                    _fl_en = query_params.get(f'{pfx}flange_enabled') == '1'
+                    fp = _parse_flange_params(query_params, pfx) if _fl_en else {}
+                    return dict(
+                        family=family, pitch=pitch, num_teeth=num_teeth,
+                        bore_mm=bore_mm, belt_height_mm=belt_height,
+                        clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+                        hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+                        screw_dia_mm=sd, screw_count=sc,
+                        captured_nut=cn, flat_depth_mm=fd,
+                        keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                        spoke_count=sp_c if sp_en else 0,
+                        spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                        rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+                        spoke_height_mm=sp_h,
+                        flange_enabled       = _fl_en,
+                        flange_3dprint       = fp.get('flange_3dprint', True),
+                        flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
+                        flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
+                        flange_height_mm     = fp.get('flange_height_mm', 1.5),
+                        flange_top_separate  = fp.get('top_separate', True),
+                        nubs_enabled         = fp.get('nubs_enabled', False),
+                        nub_count            = fp.get('nub_count', 4),
+                        nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
+                        nub_height_mm        = fp.get('nub_height_mm', 2.0),
+                        nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
+                        plate_height_mm      = fp.get('plate_height_mm', 1.0),
+                        bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
+                    )
 
-                # Generate each part, updating progress
-                part_names = ['P1', 'P2', 'Belt', 'Spokes & Flanges']
-                for i, part_name in enumerate(part_names):
-                    update_progress(job.id, int((i / len(part_names)) * 100))
+                update_progress(job.id, 10)  # Parsing
+                dual = query_params.get('dual') == 'true'
+                kw1 = _build_kw('')
+                kw2 = _build_kw('p2_') if dual else None
 
-                    if part_name == 'P1':
-                        parts['p1'] = generate_pulley_step(
-                            params, 'p1', tmpdir, job.id
-                        )
-                    elif part_name == 'P2':
-                        parts['p2'] = generate_pulley_step(
-                            params, 'p2', tmpdir, job.id
-                        )
-                    elif part_name == 'Belt':
-                        parts['belt'] = generate_pulley_step(
-                            params, 'belt', tmpdir, job.id
-                        )
-                    else:
-                        # Spokes & flanges (if applicable)
-                        if params.get('spokes_enabled'):
-                            parts['spokes'] = generate_pulley_step(
-                                params, 'spokes', tmpdir, job.id
-                            )
-                        if params.get('flange_top') or params.get('flange_bottom'):
-                            parts['flanges'] = generate_pulley_step(
-                                params, 'flanges', tmpdir, job.id
-                            )
+                update_progress(job.id, 20)  # Building params
+                belt_kw = None
+                if dual:
+                    key   = _resolve_key(kw1['family'], kw1['pitch'])
+                    spec  = PULLEY_SPECS.get(key, {}) if key else {}
+                    pitch_mm   = spec.get('pitch', 5.0)
+                    _default_c = (kw1['num_teeth'] + kw2['num_teeth']) * pitch_mm / (2.0 * math.pi)
+                    center_dist = float(query_params.get('center_distance', _default_c))
+                    raw_belt_h  = max(1.0, float(query_params.get('belt_height', 10.0)))
+                    belt_kw = dict(
+                        family         = kw1['family'],
+                        pitch          = kw1['pitch'],
+                        num_teeth_left = kw1['num_teeth'],
+                        num_teeth_right= kw2['num_teeth'],
+                        center_dist_mm = center_dist,
+                        belt_height_mm = raw_belt_h,
+                    )
 
-                    update_progress(job.id, int(((i + 1) / len(part_names)) * 100))
+                update_progress(job.id, 30)  # Generating STEP
+                try:
+                    from exporters.step_exporter import generate_all_parts_step
+                    step_bytes = generate_all_parts_step(kw1, kw2, belt_kw)
+                except ImportError:
+                    # Fall back to subprocess (Python 3.12 venv)
+                    root    = os.path.dirname(os.path.abspath(__file__))
+                    venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
+                    worker  = os.path.join(root, 'exporters', 'step_worker.py')
+                    worker_kw = dict(kw1, export_type='all')
+                    if kw2:
+                        worker_kw['kw2'] = kw2
+                    if belt_kw:
+                        worker_kw['belt_kw'] = belt_kw
+                    result = subprocess.run(
+                        [venv_py, worker, _json.dumps(worker_kw)],
+                        capture_output=True, cwd=root,
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError(f'STEP error: {result.stderr.decode()}')
+                    step_bytes = result.stdout
 
-                # Combine into ZIP
-                output_path = os.path.join('/tmp', f'{job.id}.step')
-                if len(parts) == 1:
-                    # Single file: just return the STEP
-                    output_path = list(parts.values())[0]
-                else:
-                    # Multiple files: ZIP them
-                    with zipfile.ZipFile(output_path.replace('.step', '.zip'), 'w') as zf:
-                        for name, path in parts.items():
-                            zf.write(path, arcname=f'{name}.step')
-                    output_path = output_path.replace('.step', '.zip')
+                update_progress(job.id, 80)  # Writing file
+                _t1 = kw1['num_teeth']
+                _fname = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all.step'
+                         if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all.step')
+                output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
+                with open(output_path, 'wb') as f:
+                    f.write(step_bytes)
 
-                finish_job(job.id, output_file=output_path)
+                update_progress(job.id, 100)
+                finish_job(job.id, output_file=f'/download/{job.id}.step')
 
             except Exception as e:
                 finish_job(job.id, error=str(e))
-            finally:
-                # Cleanup temp dir
-                import shutil
-                if 'tmpdir' in locals():
-                    shutil.rmtree(tmpdir, ignore_errors=True)
 
         # Start worker thread
         thread = threading.Thread(target=generate_async, daemon=True)

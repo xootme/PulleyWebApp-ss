@@ -2908,36 +2908,8 @@ function downloadSTEP(n) {
 }
 
 function downloadAllSTEP() {
-  const params = buildParams();
-  params.belt_height = document.getElementById('belt_height').value;
-  const dual = document.getElementById('dual_enable').checked;
-  if (dual) params.dual = 'true';
-  // P1 flanges
-  const addFlangeParams = (n, pfx) => {
-    const fn = n.toString();
-    if (document.getElementById(`flange${fn}_enabled`).checked) {
-      params[`${pfx}flange_enabled`]      = '1';
-      params[`${pfx}flange_3dprint`]      = document.getElementById(`flange${fn}_3dprint`).checked ? '1' : '0';
-      params[`${pfx}flange_angle`]        = document.getElementById(`flange${fn}_angle`).value;
-      params[`${pfx}flange_rim_radius`]   = document.getElementById(`flange${fn}_rim_radius`).value;
-      params[`${pfx}flange_height`]       = document.getElementById(`flange${fn}_height`).value;
-      params[`${pfx}flange_plate_height`] = document.getElementById(`flange${fn}_plate_height`).value;
-      params[`${pfx}flange_bend_radius`]  = document.getElementById(`flange${fn}_bend_radius`).value;
-      params[`${pfx}flange_top_separate`] = document.getElementById(`flange${fn}_top_separate`).checked ? '1' : '0';
-      params[`${pfx}flange_nubs_enabled`] = document.getElementById(`flange${fn}_nubs_enabled`).checked ? '1' : '0';
-      params[`${pfx}flange_nub_count`]    = document.getElementById(`flange${fn}_nub_count`).value;
-      params[`${pfx}flange_nub_dia`]      = document.getElementById(`flange${fn}_nub_dia`).value;
-      params[`${pfx}flange_nub_height`]   = document.getElementById(`flange${fn}_nub_height`).value;
-      params[`${pfx}flange_nub_allowance`] = document.getElementById(`flange${fn}_nub_allowance`).value;
-    }
-  };
-  addFlangeParams(1, '');
-  if (dual) addFlangeParams(2, 'p2_');
-  const t1 = document.getElementById('teeth').value;
-  const fname = dual
-    ? `All-${t1}T+${document.getElementById('p2_teeth').value}T.step`
-    : `All-${t1}T.step`;
-  downloadWithProgress(_dlUrl('/download/all-step?' + new URLSearchParams(params)), fname);
+  // Use async download with job queue to avoid Cloudflare timeout
+  startAsyncDownload('all-step');
 }
 
 function downloadSTL(n) {
@@ -3793,7 +3765,49 @@ function startAsyncDownload(type) {
    * Start an async download job (e.g., 'all-step').
    * Shows progress modal and polls /api/download-status/{job_id} every 500ms.
    */
-  const params = collectFormParams();
+  const params = buildParams();
+  // Add special params for all-part downloads
+  params.belt_height = document.getElementById('belt_height').value;
+  params.dual = document.getElementById('dual_enable').checked ? 'true' : '';
+
+  // Add spoke params if enabled (P1 and/or P2)
+  const addSpokeParams = (n, pfx) => {
+    const sp_en = document.getElementById(`spokes${n}_enabled`).checked;
+    if (sp_en) {
+      params[`${pfx}spokes_enabled`] = '1';
+      params[`${pfx}spokes_hub_od`] = document.getElementById(`spokes${n}_hub_od`).value;
+      params[`${pfx}spokes_rim_depth`] = document.getElementById(`spokes${n}_rim_depth`).value;
+      params[`${pfx}spokes_width`] = document.getElementById(`spokes${n}_width`).value;
+      params[`${pfx}spokes_fillet_tip`] = document.getElementById(`spokes${n}_fillet_tip`).value;
+      params[`${pfx}spokes_fillet_base`] = document.getElementById(`spokes${n}_fillet_base`).value;
+      params[`${pfx}spokes_count`] = document.getElementById(`spokes${n}_count`).value;
+      params[`${pfx}spokes_height`] = document.getElementById(`spokes${n}_height`).value;
+    }
+  };
+  addSpokeParams(1, '');
+  addSpokeParams(2, 'p2_');
+
+  // Add flange params if enabled
+  const addFlangeParams = (n, pfx, fn) => {
+    const fl_en = document.getElementById(`flange${fn}_enabled`)?.checked;
+    if (!fl_en) return;
+    params[`${pfx}flange_enabled`] = '1';
+    params[`${pfx}flange_3dprint`] = document.getElementById(`flange${fn}_3dprint`)?.checked ? '1' : '0';
+    params[`${pfx}flange_angle_deg`] = document.getElementById(`flange${fn}_angle_deg`)?.value || 15;
+    params[`${pfx}flange_rim_radius_mm`] = document.getElementById(`flange${fn}_rim_radius`)?.value || 3;
+    params[`${pfx}flange_height_mm`] = document.getElementById(`flange${fn}_height`)?.value || 1.5;
+    params[`${pfx}flange_top_separate`] = document.getElementById(`flange${fn}_top_separate`)?.checked ? '1' : '0';
+    params[`${pfx}nubs_enabled`] = document.getElementById(`flange${fn}_nubs`)?.checked ? '1' : '0';
+    params[`${pfx}nub_count`] = document.getElementById(`flange${fn}_nub_count`)?.value || 4;
+    params[`${pfx}nub_dia_mm`] = document.getElementById(`flange${fn}_nub_dia`)?.value || 3;
+    params[`${pfx}nub_height_mm`] = document.getElementById(`flange${fn}_nub_height`)?.value || 2;
+    params[`${pfx}nub_allowance_mm`] = document.getElementById(`flange${fn}_nub_allowance`)?.value || 0.2;
+    params[`${pfx}plate_height_mm`] = document.getElementById(`flange${fn}_plate_height`)?.value || 1;
+    params[`${pfx}bend_radius_mm`] = document.getElementById(`flange${fn}_bend_radius`)?.value || 0;
+  };
+  addFlangeParams(1, '', 1);
+  addFlangeParams(2, 'p2_', 2);
+
   const endpoint = {
     'all-step': '/api/download/all-step-async',
     'all-dxf': '/api/download/all-dxf-async',
