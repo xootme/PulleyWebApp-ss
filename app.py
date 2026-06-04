@@ -3559,10 +3559,15 @@ def api_download_all_step_async():
                     )
 
                 update_progress(job.id, 30)  # Generating STEP
+
+                def _progress_callback(pct):
+                    """Map subprocess progress (25-90%) to UI progress (30-80%)."""
+                    mapped_pct = 30 + int((pct - 25) * (80 - 30) / (90 - 25))
+                    update_progress(job.id, mapped_pct)
+
                 try:
                     from exporters.step_exporter import generate_all_parts_step
-                    step_bytes = generate_all_parts_step(kw1, kw2, belt_kw)
-                    update_progress(job.id, 75)  # Generated
+                    step_bytes = generate_all_parts_step(kw1, kw2, belt_kw, progress_callback=_progress_callback)
                 except ImportError:
                     # Fall back to subprocess (Python 3.12 venv)
                     import subprocess as _subprocess
