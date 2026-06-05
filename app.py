@@ -29,6 +29,21 @@ from exporters.job_queue import (
 )
 from functools import wraps
 
+def _get_machine_id():
+    """Get or generate machine_id from request headers/IP."""
+    # Try to get from custom header (for addin/CLI)
+    mid = request.headers.get('X-Machine-ID')
+    if mid:
+        return mid
+
+    # Generate from IP + User-Agent hash
+    import hashlib
+    ip = request.remote_addr or '0.0.0.0'
+    ua = request.headers.get('User-Agent', 'unknown')
+    machine_id = hashlib.sha256(f'{ip}:{ua}'.encode()).hexdigest()[:16]
+    return machine_id
+
+
 def require_active_session(f):
     """Decorator: Check if user has active session before allowing expensive operations."""
     @wraps(f)
@@ -63,6 +78,19 @@ def require_active_session(f):
                 'position': status.get('position'),
                 'estimated_wait': status.get('estimated_wait_sec'),
             }), 403
+
+        # Check trial download limit
+        mid = _get_machine_id()
+        fmt = request.args.get('fmt', 'step')
+        allowed, count, limit = register_trial_download(mid, fmt)
+
+        if not allowed:
+            return jsonify({
+                'error': f"Maximum {limit} weekly downloads reached. You have used {count} this week. Limit resets Sunday.",
+                'code': 'DOWNLOAD_LIMIT_EXCEEDED',
+                'count': count,
+                'limit': limit
+            }), 429
 
         # Update heartbeat
         heartbeat(session_id)
