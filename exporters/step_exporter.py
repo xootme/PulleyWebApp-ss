@@ -1335,24 +1335,37 @@ def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None, p
 
     assy = cq.Assembly()
 
-    def _add(kw, prefix, x_off=0.0):
+    def _build_pulley_name(kw):
+        """Build a descriptive name like 'Timing_Pulley_STD_8M_22T'."""
+        family = kw.get('family', 'Unknown')
+        pitch = kw.get('pitch', '5')
+        teeth = kw.get('num_teeth', '20')
+        return f"Timing_Pulley_{family}_{pitch}_{teeth}T"
+
+    def _add(kw, is_p2=False, x_off=0.0):
         loc = cq.Location(cq.Vector(x_off, 0, 0))
         pulley_kw = {k: v for k, v in kw.items() if k not in _PULLEY_STEP_EXTRA}
         pulley = generate_pulley_step(**pulley_kw, _return_cq=True)
-        assy.add(pulley, name=f'{prefix}Pulley', loc=loc)
+
+        # Build assembly name
+        pulley_name = _build_pulley_name(kw)
+        if is_p2:
+            pulley_name = f"P2_{pulley_name}"
+
+        assy.add(pulley, name=pulley_name, loc=loc)
 
         if kw.get('flange_enabled', False):
             fl = _flange_kw_from_pulley_kw(kw)
             if kw.get('flange_3dprint', True) and kw.get('flange_top_separate', True):
                 top = generate_flange_step(**fl, which='top', _return_cq=True)
-                assy.add(top, name=f'{prefix}TopFlange', loc=loc)
+                assy.add(top, name=f"{pulley_name}_Top_Flange", loc=loc)
             elif not kw.get('flange_3dprint', True):
                 top = generate_flange_step(**fl, which='top', _return_cq=True)
                 bot = generate_flange_step(**fl, which='bottom', _return_cq=True)
-                assy.add(top, name=f'{prefix}TopFlange', loc=loc)
-                assy.add(bot, name=f'{prefix}BottomFlange', loc=loc)
+                assy.add(top, name=f"{pulley_name}_Top_Flange", loc=loc)
+                assy.add(bot, name=f"{pulley_name}_Bottom_Flange", loc=loc)
 
-    _add(kw1, 'P1_', 0.0)
+    _add(kw1, is_p2=False, x_off=0.0)
     if progress_callback:
         progress_callback(25)
 
@@ -1373,7 +1386,7 @@ def generate_all_parts_step(kw1: dict, kw2: dict = None, belt_kw: dict = None, p
                                      pld2 + kw2.get('print_extra_mm', 0.0)
                                          - kw2.get('clearance_mm', 0.0)) / 2.0
             x_off = od1 + od2 + 20.0
-        _add(kw2, 'P2_', x_off)
+        _add(kw2, is_p2=True, x_off=x_off)
         if progress_callback:
             progress_callback(50)
 
