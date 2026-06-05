@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deploy Report — 7b29ad5 — 2026-06-05 09:29</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1e293b;
+         margin: 0; padding: 24px; background: #f8fafc; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+           padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  h2 { font-size: 14px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .06em; color: #64748b; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: #64748b; border-bottom: 1px solid #e2e8f0;
+        padding: 4px 8px; }
+  td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  .num  { text-align: right; font-family: ui-monospace, monospace; font-size: 12px; }
+  .muted { color: #94a3b8; font-style: italic; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px;
+            font-size:12px; font-weight:600; }
+  .body-text { color:#475569; margin: 8px 0 0; white-space: pre-wrap; }
+  .meta { color:#64748b; font-size:13px; margin-top:4px; }
+  code { font-family: ui-monospace, monospace; background:#f1f5f9;
+          padding:1px 5px; border-radius:3px; font-size:12px; }
+  .header-row { display:flex; justify-content:space-between; align-items:flex-start; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header-row">
+    <div>
+      <h1>Deploy Report</h1>
+      <p class="meta">Generated 2026-06-05 09:29 &nbsp;·&nbsp; Commit <code>7b29ad5</code> &nbsp;·&nbsp; 2026-06-05 09:29:09 -0700</p>
+    </div>
+    <div>
+      <span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5">⚠ REGRESSIONS</span>
+    </div>
+  </div>
+  <hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0">
+  <h2>Commit</h2>
+  <p style="margin:0;font-size:15px;font-weight:600">Add RDP curve simplification to STEP export pipeline</p>
+  <p class="body-text">Implements Ramer-Douglas-Peucker algorithm to reduce spline point density:
+- Reduces 60+ fit points per tooth down to ~14 (77% reduction)
+- Applies to both pulley and belt geometry
+- Maintains 0.02mm accuracy (well below 0.05mm manufacturing spec)
+- No user-facing changes; optimization is transparent to Flask API
+- STEP files now 70-80% smaller, cadquery processing ~30% faster
+
+Tested: All 1170 unit tests passing
+Performance: Reduces Render timeout risk significantly
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com></p>
+</div>
+
+<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:10px 16px;margin-bottom:16px;color:#dc2626;font-weight:600;">⚠ One or more benchmarks regressed &gt;50% — investigate before shipping.</div>
+
+<div class="card">
+  <h2>Changed Files —  1 file changed, 69 insertions(+)</h2>
+  <table>
+    <tr><th>File</th></tr>
+    <tr><td class="muted">No file diff available</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Benchmarks &nbsp;<span style="font-size:12px;font-weight:400;color:#64748b">Comparing <code>429fb47</code> vs <code>80eeb0a</code></span></h2>
+  <table>
+    <tr>
+      <th>Test</th>
+      <th style="text-align:right">Prev (ms)</th>
+      <th style="text-align:right">Current (ms)</th>
+      <th style="text-align:right">Delta</th>
+      <th style="text-align:center">Status</th>
+    </tr>
+    <tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N2</td><td class="num">50.2</td><td class="num">44.8</td><td class="num" style="color:#16a34a;font-weight:600">-10.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N4</td><td class="num">93.8</td><td class="num">94.1</td><td class="num" style="color:#16a34a;font-weight:600">+0.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N8</td><td class="num">159.5</td><td class="num">157.8</td><td class="num" style="color:#16a34a;font-weight:600">-1.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/flange_top/N2</td><td class="num">21.8</td><td class="num">15.8</td><td class="num" style="color:#0369a1;font-weight:600">-27.3%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/flange_top/N4</td><td class="num">35.4</td><td class="num">25.7</td><td class="num" style="color:#0369a1;font-weight:600">-27.3%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/flange_top/N8</td><td class="num">57.2</td><td class="num">43.5</td><td class="num" style="color:#0369a1;font-weight:600">-24.0%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_preview/N2</td><td class="num">121.5</td><td class="num">140.9</td><td class="num" style="color:#16a34a;font-weight:600">+15.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#fffbeb"><td class="mono">conc/heavy_preview/N4</td><td class="num">191.7</td><td class="num">231.3</td><td class="num" style="color:#b45309;font-weight:600">+20.7%</td><td style="color:#b45309;text-align:center">⚠</td></tr>
+<tr style="background:#fffbeb"><td class="mono">conc/heavy_preview/N8</td><td class="num">352.6</td><td class="num">423.2</td><td class="num" style="color:#b45309;font-weight:600">+20.0%</td><td style="color:#b45309;text-align:center">⚠</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_stl/N2</td><td class="num">229.5</td><td class="num">228.5</td><td class="num" style="color:#16a34a;font-weight:600">-0.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_stl/N4</td><td class="num">423.3</td><td class="num">362.5</td><td class="num" style="color:#16a34a;font-weight:600">-14.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_stl/N8</td><td class="num">790.8</td><td class="num">709.8</td><td class="num" style="color:#16a34a;font-weight:600">-10.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/preview_bare/N2</td><td class="num">52.9</td><td class="num">39.2</td><td class="num" style="color:#0369a1;font-weight:600">-25.9%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_bare/N4</td><td class="num">77.4</td><td class="num">62.5</td><td class="num" style="color:#16a34a;font-weight:600">-19.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_bare/N8</td><td class="num">129.9</td><td class="num">114.3</td><td class="num" style="color:#16a34a;font-weight:600">-12.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_spokes/N2</td><td class="num">38.1</td><td class="num">38.3</td><td class="num" style="color:#16a34a;font-weight:600">+0.5%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_spokes/N4</td><td class="num">67.9</td><td class="num">58.6</td><td class="num" style="color:#16a34a;font-weight:600">-13.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#fffbeb"><td class="mono">conc/preview_spokes/N8</td><td class="num">127.5</td><td class="num">155.2</td><td class="num" style="color:#b45309;font-weight:600">+21.8%</td><td style="color:#b45309;text-align:center">⚠</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/stl_bare/N2</td><td class="num">71.3</td><td class="num">71.8</td><td class="num" style="color:#16a34a;font-weight:600">+0.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/stl_bare/N4</td><td class="num">129.8</td><td class="num">129.7</td><td class="num" style="color:#16a34a;font-weight:600">-0.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/stl_bare/N8</td><td class="num">247.5</td><td class="num">225.2</td><td class="num" style="color:#16a34a;font-weight:600">-9.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/stl_spokes/N2</td><td class="num">66.8</td><td class="num">68.4</td><td class="num" style="color:#16a34a;font-weight:600">+2.5%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/stl_spokes/N4</td><td class="num">125.4</td><td class="num">116.6</td><td class="num" style="color:#16a34a;font-weight:600">-7.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/stl_spokes/N8</td><td class="num">242.3</td><td class="num">222.4</td><td class="num" style="color:#16a34a;font-weight:600">-8.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/svg_bare/N2</td><td class="num">22.8</td><td class="num">14.7</td><td class="num" style="color:#0369a1;font-weight:600">-35.5%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_bare/N4</td><td class="num">25.9</td><td class="num">22.4</td><td class="num" style="color:#16a34a;font-weight:600">-13.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_bare/N8</td><td class="num">47.1</td><td class="num">46.8</td><td class="num" style="color:#16a34a;font-weight:600">-0.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_spokes/N2</td><td class="num">15.6</td><td class="num">17.0</td><td class="num" style="color:#16a34a;font-weight:600">+8.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/svg_spokes/N4</td><td class="num">30.3</td><td class="num">23.8</td><td class="num" style="color:#0369a1;font-weight:600">-21.5%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_spokes/N8</td><td class="num">43.6</td><td class="num">43.8</td><td class="num" style="color:#16a34a;font-weight:600">+0.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_dxf_medium</td><td class="num">16.3</td><td class="num">12.7</td><td class="num" style="color:#0369a1;font-weight:600">-22.0%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_medium_with_spokes</td><td class="num">16.7</td><td class="num">13.6</td><td class="num" style="color:#16a34a;font-weight:600">-18.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_dxf_small</td><td class="num">9.7</td><td class="num">7.4</td><td class="num" style="color:#0369a1;font-weight:600">-23.9%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#fef2f2"><td class="mono">test_flange_3dprint_bottom</td><td class="num">2.2</td><td class="num">8.7</td><td class="num" style="color:#dc2626;font-weight:600">+295.4%</td><td style="color:#dc2626;text-align:center">✗</td></tr>
+<tr style="background:#fef2f2"><td class="mono">test_flange_3dprint_top</td><td class="num">1.5</td><td class="num">2.2</td><td class="num" style="color:#dc2626;font-weight:600">+51.9%</td><td style="color:#dc2626;text-align:center">✗</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_with_spokes</td><td class="num">1.5</td><td class="num">1.4</td><td class="num" style="color:#16a34a;font-weight:600">-6.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#fef2f2"><td class="mono">test_flange_metal_bottom</td><td class="num">8.5</td><td class="num">20.3</td><td class="num" style="color:#dc2626;font-weight:600">+137.1%</td><td style="color:#dc2626;text-align:center">✗</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_metal_top</td><td class="num">9.7</td><td class="num">8.2</td><td class="num" style="color:#16a34a;font-weight:600">-14.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_preview_medium</td><td class="num">27.4</td><td class="num">20.3</td><td class="num" style="color:#0369a1;font-weight:600">-25.9%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_preview_medium_with_spokes</td><td class="num">192.4</td><td class="num">146.1</td><td class="num" style="color:#0369a1;font-weight:600">-24.1%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_small</td><td class="num">14.2</td><td class="num">11.7</td><td class="num" style="color:#16a34a;font-weight:600">-17.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_large</td><td class="num">69.5</td><td class="num">68.3</td><td class="num" style="color:#16a34a;font-weight:600">-1.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium</td><td class="num">34.6</td><td class="num">34.5</td><td class="num" style="color:#16a34a;font-weight:600">-0.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_stl_medium_hub_and_spokes</td><td class="num">390.5</td><td class="num">302.5</td><td class="num" style="color:#0369a1;font-weight:600">-22.5%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_hub</td><td class="num">104.1</td><td class="num">101.9</td><td class="num" style="color:#16a34a;font-weight:600">-2.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_stl_medium_with_spokes</td><td class="num">262.6</td><td class="num">182.8</td><td class="num" style="color:#0369a1;font-weight:600">-30.4%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_small</td><td class="num">23.6</td><td class="num">24.3</td><td class="num" style="color:#16a34a;font-weight:600">+2.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium</td><td class="num">1.8</td><td class="num">1.5</td><td class="num" style="color:#16a34a;font-weight:600">-15.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium_with_spokes</td><td class="num">1.9</td><td class="num">1.6</td><td class="num" style="color:#16a34a;font-weight:600">-16.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_small</td><td class="num">0.9</td><td class="num">0.8</td><td class="num" style="color:#16a34a;font-weight:600">-15.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+
+  </table>
+  <p style="margin:10px 0 0;font-size:12px;color:#94a3b8">
+    ⬆ improved &gt;20% &nbsp;|&nbsp; ⚠ slow &gt;20% &nbsp;|&nbsp; ✗ regression &gt;50% &nbsp;|&nbsp; + new test
+  </p>
+</div>
+
+<div class="card">
+  <h2>Recent Commits</h2>
+  <table>
+    <tr><th>Hash</th><th>Subject</th></tr>
+    <tr style="font-weight:700"><td class="mono">7b29ad5</td><td>Add RDP curve simplification to STEP export pipeline</td></tr>
+<tr><td class="mono">c861eb5</td><td>Reduce subprocess timeout from 5min to 60sec</td></tr>
+<tr><td class="mono">5e46873</td><td>Add subprocess diagnostics logging</td></tr>
+<tr><td class="mono">388cb60</td><td>Add admin endpoint to monitor job queue</td></tr>
+<tr><td class="mono">7dac009</td><td>Fix subprocess hanging issue on Render</td></tr>
+<tr><td class="mono">820266b</td><td>Improve STEP assembly part naming in FreeCAD</td></tr>
+<tr><td class="mono">2272f4a</td><td>Fix: pass progress_callback to direct import path</td></tr>
+<tr><td class="mono">7b48f28</td><td>Add real progress reporting for STEP generation</td></tr>
+<tr><td class="mono">d308c94</td><td>Add progress feedback during STEP generation</td></tr>
+<tr><td class="mono">4ca3b74</td><td>Fix async job state transitions</td></tr>
+
+  </table>
+</div>
+
+</body>
+</html>
