@@ -3622,7 +3622,7 @@ def api_download_all_step_async():
                     # Use timeout to avoid hanging if subprocess stalls
                     stderr_lines = []
                     start_time = time.time()
-                    timeout_sec = 300  # 5 minute timeout per job
+                    timeout_sec = 60  # 60 second timeout — Cloudflare/Render max is ~30s
 
                     try:
                         stdout, remaining_stderr = proc.communicate(timeout=timeout_sec)
