@@ -20,6 +20,18 @@ def client():
         yield c
 
 
+# Clear queue state before tests
+@pytest.fixture(scope='session', autouse=True)
+def clear_queue_state():
+    """Clear all queue and session state before running tests."""
+    import requests
+    try:
+        requests.post('http://localhost:5001/api/test/reset', timeout=5)
+    except:
+        pass  # Server may not be running for unit tests
+    yield
+
+
 # ---------------------------------------------------------------------------
 # Test matrix
 # ---------------------------------------------------------------------------

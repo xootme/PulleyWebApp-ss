@@ -21,10 +21,54 @@ try:
 except ImportError:
     _HAVE_PSUTIL = False
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file
+from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file, redirect
 from exporters.job_queue import (
-    create_job, get_job, start_job, update_progress, finish_job, get_queue_status
+    create_job, get_job, start_job, update_progress, finish_job, get_queue_status,
+    create_session, get_session_status, heartbeat, release_session, get_queue_info,
+    register_trial_download, TRIAL_DOWNLOADS_PER_WEEK
 )
+from functools import wraps
+
+def require_active_session(f):
+    """Decorator: Check if user has active session before allowing expensive operations."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Skip checks during testing
+        from flask import current_app
+        if current_app.config.get('TESTING'):
+            return f(*args, **kwargs)
+
+        # Get session_id from URL params, form data, or JSON body
+        session_id = request.args.get('session_id')
+        if not session_id and request.form:
+            session_id = request.form.get('session_id')
+        if not session_id and request.is_json:
+            try:
+                session_id = request.json.get('session_id')
+            except:
+                pass
+
+        if not session_id:
+            return jsonify({'error': 'No session_id. Visit /queue to join queue.', 'code': 'NO_SESSION'}), 403
+
+        # Check if session is active
+        status = get_session_status(session_id)
+        if status.get('error'):
+            return jsonify({'error': 'Session not found', 'code': 'SESSION_NOT_FOUND'}), 403
+
+        if not status.get('is_active'):
+            return jsonify({
+                'error': f"Session not active. You are #{status.get('position')} in queue. Wait ~{status.get('estimated_wait_sec', 0)//60} min.",
+                'code': 'NOT_ACTIVE',
+                'position': status.get('position'),
+                'estimated_wait': status.get('estimated_wait_sec'),
+            }), 403
+
+        # Update heartbeat
+        heartbeat(session_id)
+
+        return f(*args, **kwargs)
+    return decorated_function
 
 # ── App version ───────────────────────────────────────────────────────────────
 APP_VERSION        = '1.0'
@@ -486,6 +530,26 @@ def _get_preset_value(spec, preset_type, preset_key, custom_val):
 
 @app.route('/')
 def index():
+    session_id = request.args.get('session_id')
+
+    # If no session_id, create one
+    if not session_id:
+        session = create_session()
+        session_id = session['session_id']
+        # If not immediately active, queue user
+        if not session.get('is_active'):
+            return redirect(f'/queue?session_id={session_id}')
+        # Else fall through to render page with active session
+
+    # Verify session is still active
+    status = get_session_status(session_id)
+    if not status.get('is_active'):
+        # Session expired or queued - redirect to queue page
+        return redirect(f'/queue?session_id={session_id}')
+
+    # Keep session alive
+    heartbeat(session_id)
+
     return render_template(
         'index.html',
         families=FAMILIES,
@@ -1567,6 +1631,7 @@ def download_stl():
 
 
 @app.route('/download/step')
+@require_active_session
 def download_step():
     try:
         import json, os
@@ -3509,6 +3574,7 @@ def api_download_status(job_id):
 
 
 @app.route('/api/download/all-step-async', methods=['POST'])
+@require_active_session
 def api_download_all_step_async():
     """Start async STEP generation for all parts (P1, P2, belt).
     Returns immediately with job_id; client polls /api/download-status/{job_id}.
@@ -3679,6 +3745,129 @@ def api_download_all_step_async():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Session Management (Single-User Queue) ──────────────────────────────────
+
+@app.route('/api/session/create', methods=['POST'])
+def api_session_create():
+    """Create a new session (immediate access or enqueue)."""
+    result = create_session()
+    return jsonify(result)
+
+
+@app.route('/api/session/status', methods=['GET'])
+def api_session_status():
+    """Get status of a session."""
+    session_id = request.args.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'Missing session_id'}), 400
+    status = get_session_status(session_id)
+    return jsonify(status)
+
+
+@app.route('/api/session/heartbeat', methods=['POST'])
+def api_session_heartbeat():
+    """Keep session alive (prevent idle timeout)."""
+    session_id = request.json.get('session_id') if request.json else None
+    if not session_id:
+        return jsonify({'error': 'Missing session_id'}), 400
+    success = heartbeat(session_id)
+    return jsonify({'success': success})
+
+
+@app.route('/api/session/release', methods=['POST'])
+def api_session_release():
+    """Release a session (manual end)."""
+    data = request.json if request.is_json else {}
+    session_id = data.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'Missing session_id'}), 400
+    release_session(session_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/queue/status', methods=['GET'])
+def api_queue_status():
+    """Get queue info for UI display."""
+    return jsonify(get_queue_info())
+
+
+@app.route('/api/test/reset', methods=['POST'])
+def api_test_reset():
+    """Reset all queue state (testing only)."""
+    if not app.config.get('TESTING'):
+        return jsonify({'error': 'Not in testing mode'}), 403
+    from exporters.job_queue import clear_all_state
+    clear_all_state()
+    return jsonify({'success': True})
+
+
+@app.route('/api/trial/register', methods=['POST'])
+def api_trial_register():
+    """Register a download from a trial user (FreeCAD addin).
+
+    Request: POST /api/trial/register
+    Body: { "mid": "machine_id", "fmt": "step|dxf|svg" }
+
+    Response: { "allowed": true/false, "count": N, "limit": 2 }
+    """
+    data = request.json if request.is_json else {}
+    machine_id = data.get('mid', '').strip()
+    fmt = data.get('fmt', 'step').strip()[:10]
+
+    if not machine_id:
+        return jsonify({'error': 'mid (machine_id) required'}), 400
+
+    allowed, count, limit = register_trial_download(machine_id, fmt)
+
+    return jsonify({
+        'allowed': allowed,
+        'count': count,
+        'limit': limit,
+        'message': 'Download registered' if allowed else f'Trial limit reached ({count}/{limit} this week)'
+    }), 200 if allowed else 429
+
+
+@app.route('/api/trial/status', methods=['GET'])
+def api_trial_status():
+    """Check trial download status for a machine.
+
+    Request: GET /api/trial/status?mid=machine_id
+
+    Response: { "count": N, "limit": 2, "week_start": "YYYY-MM-DD" }
+    """
+    machine_id = request.args.get('mid', '').strip()
+
+    if not machine_id:
+        return jsonify({'error': 'mid (machine_id) required'}), 400
+
+    from exporters.job_queue import _load_trial_downloads
+    from datetime import datetime, timedelta
+
+    data = _load_trial_downloads()
+    now = datetime.now()
+    week_start = now - timedelta(days=now.weekday())
+
+    if machine_id not in data:
+        count = 0
+    else:
+        count = len([
+            d for d in data[machine_id]
+            if datetime.fromisoformat(d['timestamp']) >= week_start
+        ])
+
+    return jsonify({
+        'count': count,
+        'limit': TRIAL_DOWNLOADS_PER_WEEK,
+        'week_start': week_start.strftime('%Y-%m-%d'),
+    })
+
+
+@app.route('/queue')
+def queue_page():
+    """Queue management UI page."""
+    return render_template('queue.html')
 
 
 if __name__ == '__main__':

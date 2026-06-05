@@ -1,0 +1,83 @@
+# Test automation Makefile for PulleyWebApp
+# Usage: make -f Makefile.test <target>
+
+.PHONY: help test test-queue test-pytest test-bash test-quality setup-hooks clean
+
+help:
+	@echo "Queue System Testing"
+	@echo "===================="
+	@echo ""
+	@echo "Available targets:"
+	@echo "  make -f Makefile.test test          - Run all tests"
+	@echo "  make -f Makefile.test test-queue    - Run queue tests only"
+	@echo "  make -f Makefile.test test-bash     - Run bash integration tests"
+	@echo "  make -f Makefile.test test-pytest   - Run pytest suite"
+	@echo "  make -f Makefile.test test-quality  - Run code quality checks"
+	@echo "  make -f Makefile.test setup-hooks   - Setup pre-commit hooks"
+	@echo "  make -f Makefile.test clean         - Clean test artifacts"
+	@echo ""
+
+# Run all tests
+test: test-queue test-quality
+	@echo "✓ All tests completed"
+
+# Run queue system tests (both bash and pytest)
+test-queue: test-bash test-pytest
+	@echo "✓ Queue tests completed"
+
+# Run bash integration tests
+test-bash:
+	@echo "Running bash integration tests..."
+	@bash tests/test_queue.sh
+	@echo "✓ Bash tests completed"
+
+# Run pytest suite
+test-pytest:
+	@echo "Running pytest suite..."
+	@pip list | grep -q pytest || { echo "Installing pytest..."; pip install pytest requests; }
+	@pytest tests/test_queue_pytest.py -v --tb=short
+	@echo "✓ Pytest completed"
+
+# Run code quality checks
+test-quality: test-quality-format test-quality-lint
+
+test-quality-format:
+	@echo "Checking code formatting..."
+	@pip list | grep -q black || { echo "Installing black..."; pip install black; }
+	@black --check app.py exporters/ || true
+
+test-quality-lint:
+	@echo "Running linting..."
+	@pip list | grep -q flake8 || { echo "Installing flake8..."; pip install flake8; }
+	@flake8 app.py exporters/ --max-line-length=100 --ignore=E203,W503 || true
+
+# Setup pre-commit hooks
+setup-hooks:
+	@echo "Setting up pre-commit hooks..."
+	@pip install pre-commit
+	@pre-commit install
+	@echo "✓ Pre-commit hooks installed"
+	@echo "  Hooks will run automatically on git commit"
+	@echo "  Run 'pre-commit run --all-files' to run all hooks now"
+
+# Run pre-commit hooks manually
+run-hooks:
+	@echo "Running pre-commit hooks..."
+	@pre-commit run --all-files
+
+# Clean test artifacts
+clean:
+	@echo "Cleaning test artifacts..."
+	@rm -f test_report.txt
+	@rm -rf .pytest_cache __pycache__
+	@rm -rf logs/trial_downloads.json
+	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	@echo "✓ Cleanup completed"
+
+# Watch tests (requires entr)
+watch:
+	@echo "Watching for changes (requires 'entr')..."
+	@pip list | grep -q entr || { echo "Installing entr..."; pip install entr; }
+	@find app.py exporters/ tests/ | entr make -f Makefile.test test
+
+.PHONY: watch

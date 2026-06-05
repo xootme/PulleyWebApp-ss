@@ -22,6 +22,15 @@
       <span class="header-title">Timing Pulley Generator</span>
       <span class="header-version">Ver. {{ app_version }}</span>
     </div>
+    <div id="session-timer-box" style="display: none; margin-left: auto; background: #dc3545; border-radius: 6px; padding: 8px 16px; min-width: 140px;">
+      <div style="text-align: center; font-size: 11px; color: white; margin-bottom: 4px; font-weight: 500;">
+        <span id="queue-waiting-msg" style="display: none;">⏳ Users waiting:</span>
+        <span id="queue-count" style="color: white; font-weight: bold;">0</span>
+      </div>
+      <div style="font-size: 28px; font-weight: bold; font-family: 'Courier New', monospace; color: white; text-align: center; line-height: 1;">
+        <span id="session-timer">5:00</span>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -2820,8 +2829,16 @@ async function executeImport() {
 function _dlUrl(url) {
   // Append a timestamp so every download click is a unique URL — prevents Edge
   // (and any other browser) from serving a stale cached file for 127.0.0.1.
-  const sep = url.includes('?') ? '&' : '?';
-  return url + sep + '_ts=' + Date.now();
+  // Also append session_id if present in current URL (for queue system).
+  let finalUrl = url;
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session_id');
+  if (sessionId) {
+    const sep = finalUrl.includes('?') ? '&' : '?';
+    finalUrl += sep + 'session_id=' + encodeURIComponent(sessionId);
+  }
+  const sep = finalUrl.includes('?') ? '&' : '?';
+  return finalUrl + sep + '_ts=' + Date.now();
 }
 
 async function downloadWithProgress(url, defaultFilename) {
@@ -3899,6 +3916,131 @@ function updateProgressDisplay(job) {
     elapsed.textContent = `${secs}s`;
   }
 }
+
+// ── Idle Detection (1 min inactivity logout if queue > 0) ──────────────────────
+(function() {
+  const IDLE_TIMEOUT_MS = 60000; // 1 minute
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session_id');
+  if (!sessionId) return; // No session to check
+
+  let idleTimer = null;
+  let lastActivityTime = Date.now();
+  let sessionStartTime = Date.now();
+  let remainingSessionTime = 300000; // 5 minutes in ms
+  let timerInterval = null;
+
+  function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function updateSessionTimer() {
+    // Calculate remaining time based on elapsed time since session started
+    const elapsedMs = Date.now() - sessionStartTime;
+    remainingSessionTime = Math.max(0, 300000 - elapsedMs); // 5 min = 300000 ms
+    document.getElementById('session-timer').textContent = formatTime(remainingSessionTime);
+  }
+
+  async function checkQueueStatus() {
+    try {
+      const response = await fetch(`/api/queue/status?session_id=${sessionId}`);
+      if (!response.ok) return;
+      const data = await response.json();
+
+      const timerBox = document.getElementById('session-timer-box');
+      const queueCount = document.getElementById('queue-count');
+      const queueMsg = document.getElementById('queue-waiting-msg');
+
+      if (data.queue_length > 0) {
+        // Show timer if there's a queue
+        timerBox.style.display = 'block';
+        queueCount.textContent = data.queue_length;
+        queueMsg.style.display = 'inline';
+
+        // Start local timer if not already running
+        if (!timerInterval) {
+          updateSessionTimer(); // Initial update
+          timerInterval = setInterval(updateSessionTimer, 1000);
+        }
+
+        // Reset idle timer since there's a queue
+        resetIdleTimer();
+      } else {
+        // Hide timer if queue is empty
+        timerBox.style.display = 'none';
+        queueMsg.style.display = 'none';
+      }
+    } catch (e) {
+      console.error('Queue status check failed:', e);
+    }
+  }
+
+  function resetIdleTimer() {
+    lastActivityTime = Date.now();
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(checkIdleAndLogout, IDLE_TIMEOUT_MS);
+  }
+
+  async function checkIdleAndLogout() {
+    try {
+      const response = await fetch(`/api/queue/status?session_id=${sessionId}`);
+      if (!response.ok) return;
+      const data = await response.json();
+
+      // Only auto-logout if there are people waiting in queue
+      if (data.queue_length > 0) {
+        window.location.href = '/queue?session_id=' + sessionId;
+      } else {
+        // Reset timer if queue is empty
+        resetIdleTimer();
+      }
+    } catch (e) {
+      console.error('Idle check failed:', e);
+      resetIdleTimer(); // Reset on error
+    }
+  }
+
+  // Release session immediately when user navigates away
+  window.addEventListener('beforeunload', () => {
+    // Clear timer interval
+    if (timerInterval) clearInterval(timerInterval);
+    // Send sync beacon to release session (use sendBeacon for reliability)
+    try {
+      navigator.sendBeacon('/api/session/release',
+        JSON.stringify({ session_id: sessionId }),
+        { type: 'application/json' }
+      );
+    } catch (e) {
+      console.error('Failed to release session on unload:', e);
+    }
+  });
+
+  // Track user activity
+  document.addEventListener('mousemove', resetIdleTimer, true);
+  document.addEventListener('mousedown', resetIdleTimer, true);
+  document.addEventListener('keydown', resetIdleTimer, true);
+  document.addEventListener('scroll', resetIdleTimer, true);
+  document.addEventListener('touchstart', resetIdleTimer, true);
+
+  // Poll queue status every 2 seconds
+  checkQueueStatus();
+  const queueCheckInterval = setInterval(checkQueueStatus, 2000);
+
+  // Send heartbeat every 5 seconds to keep session alive
+  setInterval(() => {
+    fetch('/api/session/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId })
+    }).catch(e => console.error('Heartbeat failed:', e));
+  }, 5000);
+
+  // Start the idle timer
+  resetIdleTimer();
+})();
 </script>
 
 </body>
