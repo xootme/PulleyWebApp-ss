@@ -3599,9 +3599,10 @@ def api_download_all_step_async():
                 try:
                     from exporters.step_exporter import generate_all_parts_step
                     step_bytes = generate_all_parts_step(kw1, kw2, belt_kw, progress_callback=_progress_callback)
-                except ImportError:
+                except ImportError as _import_err:
                     # Fall back to subprocess (Python 3.12 venv)
                     import subprocess as _subprocess
+                    print(f"[STEP] Direct import failed ({_import_err}), using subprocess", flush=True)
                     root    = os.path.dirname(os.path.abspath(__file__))
                     venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
                     worker  = os.path.join(root, 'exporters', 'step_worker.py')
@@ -3645,9 +3646,12 @@ def api_download_all_step_async():
                         stderr_text = ''.join(stderr_lines) + (remaining_stderr or '')
                         raise RuntimeError(f'STEP generation timeout (>5min) — subprocess killed. Output: {stderr_text[-500:]}')
 
+                    print(f"[STEP] Subprocess finished: returncode={proc.returncode}, stdout_len={len(stdout) if stdout else 0}, stderr_lines={len(stderr_lines)}", flush=True)
                     if proc.returncode != 0:
                         stderr_text = ''.join(stderr_lines)
-                        raise RuntimeError(f'STEP error (exit {proc.returncode}): {stderr_text[-1000:]}')
+                        error_msg = f'STEP error (exit {proc.returncode}): {stderr_text[-1000:]}'
+                        print(f"[STEP] {error_msg}", flush=True)
+                        raise RuntimeError(error_msg)
                     step_bytes = stdout
 
                 update_progress(job.id, 80)  # Writing file
