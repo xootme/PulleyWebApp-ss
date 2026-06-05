@@ -3456,6 +3456,37 @@ def download_async_step(job_id):
                      as_attachment=True, download_name=f'{job_id}.step')
 
 
+@app.route('/api/admin/jobs')
+def api_admin_jobs():
+    """Admin endpoint: view all active and queued jobs for debugging."""
+    from exporters.job_queue import _JOBS, _QUEUE, _ACTIVE
+
+    jobs_list = []
+    for job_id in sorted(_JOBS.keys()):
+        job = _JOBS.get(job_id)
+        if job:
+            jobs_list.append({
+                'id': job.id,
+                'status': job.status,
+                'type': job.type,
+                'progress': job.progress,
+                'created': job.created.isoformat() if job.created else None,
+                'started': job.started.isoformat() if job.started else None,
+                'finished': job.finished.isoformat() if job.finished else None,
+                'error': job.error,
+                'queue_position': _QUEUE.index(job.id) + 1 if job.id in _QUEUE else None,
+                'is_active': job.id in _ACTIVE,
+            })
+
+    return jsonify({
+        'jobs': jobs_list,
+        'queue_length': len(_QUEUE),
+        'active_count': len(_ACTIVE),
+        'max_concurrent': 2,
+        'timestamp': datetime.now().isoformat(),
+    })
+
+
 @app.route('/api/download-status/<job_id>')
 def api_download_status(job_id):
     """Get status of a download job (queued, processing, done, or failed).
