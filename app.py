@@ -566,14 +566,14 @@ def index():
         session_id = session['session_id']
         # If not immediately active, queue user
         if not session.get('is_active'):
-            return redirect(f'/queue?session_id={session_id}')
+            return redirect(f'/tools/pulleys/queue?session_id={session_id}')
         # Else fall through to render page with active session
 
     # Verify session is still active
     status = get_session_status(session_id)
     if not status.get('is_active'):
         # Session expired or queued - redirect to queue page
-        return redirect(f'/queue?session_id={session_id}')
+        return redirect(f'/tools/pulleys/queue?session_id={session_id}')
 
     # Keep session alive
     heartbeat(session_id)

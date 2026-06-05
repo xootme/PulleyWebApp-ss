@@ -249,7 +249,7 @@
 
                     if (data.is_active) {
                         // Immediate access - redirect to home
-                        window.location.href = '/?session_id=' + currentSessionId;
+                        window.location.href = '/tools/pulleys/?session_id=' + currentSessionId;
                     } else {
                         // Queued - start polling
                         startAutoRefresh();
@@ -302,7 +302,7 @@
                     sessionStorage.setItem('pulley_session_id', currentSessionId);
                     playNotificationSound();
                     setTimeout(() => {
-                        window.location.href = '/?session_id=' + currentSessionId;
+                        window.location.href = '/tools/pulleys/?session_id=' + currentSessionId;
                     }, 500);
                     return;
                 }

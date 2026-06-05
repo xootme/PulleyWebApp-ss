@@ -3992,7 +3992,7 @@ function updateProgressDisplay(job) {
 
       // Only auto-logout if there are people waiting in queue
       if (data.queue_length > 0) {
-        window.location.href = '/queue?session_id=' + sessionId;
+        window.location.href = '/tools/pulleys/queue?session_id=' + sessionId;
       } else {
         // Reset timer if queue is empty
         resetIdleTimer();
