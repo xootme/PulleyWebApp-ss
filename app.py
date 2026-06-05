@@ -3587,33 +3587,36 @@ def api_download_all_step_async():
                     )
 
                     # Read stderr for progress messages while subprocess runs
+                    # Use timeout to avoid hanging if subprocess stalls
                     stderr_lines = []
-                    while proc.poll() is None:
-                        try:
-                            line = proc.stderr.readline()
-                            if line:
-                                stderr_lines.append(line)
-                                try:
-                                    msg = _json.loads(line.strip())
-                                    if 'progress' in msg:
-                                        pct = msg['progress']
-                                        # Map subprocess progress (25→90%) to our progress (30→80%)
-                                        mapped_pct = 30 + int((pct - 25) * (80 - 30) / (90 - 25))
-                                        update_progress(job.id, mapped_pct)
-                                except _json.JSONDecodeError:
-                                    pass  # Skip non-JSON stderr lines
-                        except:
-                            pass
-                        time.sleep(0.05)  # Small sleep to avoid busy-waiting
+                    start_time = time.time()
+                    timeout_sec = 300  # 5 minute timeout per job
 
-                    # Get final output
-                    stdout, remaining_stderr = proc.communicate()
-                    if remaining_stderr:
-                        stderr_lines.append(remaining_stderr)
+                    try:
+                        stdout, remaining_stderr = proc.communicate(timeout=timeout_sec)
+                        if remaining_stderr:
+                            stderr_lines.append(remaining_stderr)
+                            # Parse any progress messages from final stderr
+                            for line in remaining_stderr.split('\n'):
+                                if line.strip():
+                                    stderr_lines.append(line)
+                                    try:
+                                        msg = _json.loads(line.strip())
+                                        if 'progress' in msg:
+                                            pct = msg['progress']
+                                            mapped_pct = 30 + int((pct - 25) * (80 - 30) / (90 - 25))
+                                            update_progress(job.id, mapped_pct)
+                                    except _json.JSONDecodeError:
+                                        pass
+                    except _subprocess.TimeoutExpired:
+                        proc.kill()
+                        stdout, remaining_stderr = proc.communicate()
+                        stderr_text = ''.join(stderr_lines) + (remaining_stderr or '')
+                        raise RuntimeError(f'STEP generation timeout (>5min) — subprocess killed. Output: {stderr_text[-500:]}')
 
                     if proc.returncode != 0:
                         stderr_text = ''.join(stderr_lines)
-                        raise RuntimeError(f'STEP error: {stderr_text}')
+                        raise RuntimeError(f'STEP error (exit {proc.returncode}): {stderr_text[-1000:]}')
                     step_bytes = stdout
 
                 update_progress(job.id, 80)  # Writing file
