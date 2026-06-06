@@ -182,15 +182,11 @@ def generate_3dprint_flange_stl(
     r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
                                                 r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
 
-    # If nubs are enabled, the inner radius must extend inward to accommodate them
-    # but never into the spoke void (must stay at or beyond r_spoke_outer)
-    if nubs_enabled:
-        r_pin = max(0.1, (nub_dia_mm - nub_allowance_mm) / 2.0)
-        r_nub = _nub_circle_radius(R_OD, tooth_ht, nub_dia_mm)
-        r_nub_inner = r_nub - r_pin
-        r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
-        # Extend inward for nubs, but don't go past the spoke rim boundary
-        r_inner = min(r_inner, max(r_nub_inner, r_spoke_outer))
+    # When spokes enabled, flange ID must equal spoke OD (r_spoke_outer)
+    # Nubs are cut at this boundary and don't extend inward
+    r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
+    if spokes_enabled and r_spoke_outer > 0.0:
+        r_inner = r_spoke_outer
 
     rim_radius_mm    = max(0.5, rim_radius_mm)
     flange_height_mm = max(0.1, flange_height_mm)
@@ -223,9 +219,9 @@ def generate_3dprint_flange_stl(
                 try:
                     top_mesh = trimesh.boolean.union([top_mesh] + nub_cyls, engine='manifold')
                     clip_h = nub_pin_h + 2.0
-                    # Clip nubs at the flange's inner edge to prevent extending inward
-                    if r_inner > 0.0:
-                        clip = trimesh.creation.cylinder(radius=r_inner, height=clip_h, sections=64)
+                    # Clip nubs at flange ID (spoke OD boundary) - nubs don't extend inward from here
+                    if r_spoke_outer > 0.0:
+                        clip = trimesh.creation.cylinder(radius=r_spoke_outer, height=clip_h, sections=64)
                         clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                         top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
                     # Clip at spoke inner rim (hub boss surface) only if nubs extend into spoke hub
@@ -635,16 +631,12 @@ def build_flange_meshes(
                                              r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
             r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
                                                         r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
-            # If nubs are enabled, the inner radius must extend inward to accommodate them
-            # but never into the spoke void (must stay at or beyond r_spoke_outer)
-            if fp.get('nubs_enabled'):
-                nub_dia_mm = fp['nub_dia_mm']
-                r_pin = max(0.1, (nub_dia_mm - fp['nub_allowance_mm']) / 2.0)
-                r_nub = _nub_circle_radius(R_OD, tooth_ht, nub_dia_mm)
-                r_nub_inner = r_nub - r_pin
-                r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
-                # Extend inward for nubs, but don't go past the spoke rim boundary
-                r_inner = min(r_inner, max(r_nub_inner, r_spoke_outer))
+            # When spokes enabled, flange ID must equal spoke OD (r_spoke_outer)
+            # Nubs are cut at this boundary and don't extend inward
+            if spokes_enabled:
+                r_spoke_outer = (R_OD - rim_depth_mm) if rim_depth_mm > 0.0 else 0.0
+                if r_spoke_outer > 0.0:
+                    r_inner = r_spoke_outer
             f_h = max(0.1, fp['flange_height_mm'])
             prof     = profile_3dprint(r_inner,     R_OD, rim_r, angle, f_h)
             prof_bot = profile_3dprint(r_inner_bot, R_OD, rim_r, angle, f_h)
@@ -681,10 +673,10 @@ def build_flange_meshes(
                     try:
                         top = trimesh.boolean.union([top] + nub_cyls, engine='manifold')
                         clip_h = nub_pin_h + 2.0
-                        # Clip nubs at the flange's inner edge to prevent extending inward
-                        if r_inner > 0.0:
+                        # Clip nubs at flange ID (spoke OD boundary) - nubs don't extend inward from here
+                        if r_spoke_outer > 0.0:
                             clip_cyl = trimesh.creation.cylinder(
-                                radius=r_inner, height=clip_h, sections=64)
+                                radius=r_spoke_outer, height=clip_h, sections=64)
                             clip_cyl.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                             top = trimesh.boolean.difference(
                                 [top, clip_cyl], engine='manifold')
