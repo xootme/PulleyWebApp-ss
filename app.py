@@ -84,11 +84,11 @@ def require_active_session(f):
             }), 403
 
         # Check trial download limit
-        mid = _get_machine_id()
-        fmt = request.args.get('fmt', 'step')
-        allowed, count, limit = register_trial_download(mid, fmt)
+        allowed = not status.get('limit_exceeded', False)
 
         if not allowed:
+            count = status.get('download_count', 0)
+            limit = status.get('download_limit', 0)
             return jsonify({
                 'error': f"Maximum {limit} weekly downloads reached. You have used {count} this week. Limit resets Sunday.",
                 'code': 'DOWNLOAD_LIMIT_EXCEEDED',
