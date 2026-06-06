@@ -1212,12 +1212,10 @@ def generate_flange_step(
     R_OD = getOuterDiameter(num_teeth, spec['pitch'], pld + print_extra_mm - clearance_mm) / 2.0
     tooth_ht = spec['tooth_ht']
 
-    # Calculate actual tooth geometry from outline (same as spoke calculation)
-    # This gives the REAL tooth root radius, not the theoretical OD
-    from exporters.svg_exporter import get_outline
-    _segs = get_outline(family, pitch, num_teeth, bore_mm, clearance_mm, print_extra_mm)
-    _wrapped = [(x, y) for x, y, in _segs]  # 2D points
-    _R_tr = min(math.hypot(x, y) for x, y in _wrapped) if _wrapped else R_OD
+    # Calculate actual tooth root radius from tooth profile
+    from geometry.pulley_geometry import belt_profile
+    prof = belt_profile(family, pitch, num_teeth, bore_mm, clearance_mm, print_extra_mm)
+    _R_tr = min(r for r, z in prof) if prof else R_OD
 
     if flange_3dprint:
         # Flange ID must be at the rim boundary (spoke outer edge) when spokes enabled
