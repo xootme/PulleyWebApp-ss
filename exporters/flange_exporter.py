@@ -182,6 +182,14 @@ def generate_3dprint_flange_stl(
     r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
                                                 r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
 
+    # If nubs are enabled and this is the top flange, the inner radius must extend
+    # inward to accommodate nub attachment. Adjust r_inner to the inner edge of nubs.
+    if nubs_enabled and which in ('top', 'both'):
+        r_pin = max(0.1, (nub_dia_mm - nub_allowance_mm) / 2.0)
+        r_nub = _nub_circle_radius(R_OD, tooth_ht, nub_dia_mm)
+        r_nub_inner = r_nub - r_pin
+        r_inner = min(r_inner, r_nub_inner)
+
     rim_radius_mm    = max(0.5, rim_radius_mm)
     flange_height_mm = max(0.1, flange_height_mm)
     angle_deg        = max(8.0, min(25.0, flange_angle_deg))
