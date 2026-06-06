@@ -835,6 +835,8 @@ def generate_pulley_step(
         pocket_depth = (belt_height_mm - spk_h) / 2.0
         _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
         _R_rim_s = max(_R_tr - rim_depth_mm, _R_hub_s + 1.0)
+        import sys
+        print(f"DEBUG PULLEY SPOKE: _R_tr={_R_tr:.3f}, rim_depth={rim_depth_mm}, _R_rim_s={_R_rim_s:.3f}, num_teeth={num_teeth}", file=sys.stderr)
 
     # ── 1. Belt solid ─────────────────────────────────────────────────────────
     # clean=False: CadQuery Issue #192 — cutThruAll / booleans on B-spline tooth
