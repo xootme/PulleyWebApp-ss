@@ -212,7 +212,8 @@ def generate_3dprint_flange_stl(
             nub_pin_h = max(0.1, nub_h - nub_allowance_mm)
             r_nub   = _nub_circle_radius(R_OD, tooth_ht, nub_dia_mm)
             r_spoke_inner = spoke_hub_od_mm / 2.0 if (spokes_enabled and spoke_hub_od_mm > 0.0) else 0.0
-            r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
+            # Use rim boundary (R_OD - tooth_ht - rim_depth), not R_OD - rim_depth
+            r_spoke_outer = ((R_OD - tooth_ht) - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
             nub_cyls = []
             for x, y in _nub_xy(nub_count, r_nub):
                 cyl = trimesh.creation.cylinder(radius=r_pin, height=nub_pin_h, sections=16)
@@ -665,7 +666,8 @@ def build_flange_meshes(
                 r_spoke_inner = (spoke_hub_od_mm / 2.0
                                  if (spokes_enabled and spoke_hub_od_mm > 0.0)
                                  else 0.0)
-                r_spoke_outer = (R_OD - rim_depth_mm
+                # Use rim boundary (R_OD - tooth_ht - rim_depth), matching flange ID
+                r_spoke_outer = ((R_OD - tooth_ht) - rim_depth_mm
                                  if (spokes_enabled and rim_depth_mm > 0.0)
                                  else 0.0)
                 nub_cyls = []
