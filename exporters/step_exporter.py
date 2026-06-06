@@ -1214,11 +1214,14 @@ def generate_flange_step(
         r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                          r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
         # If nubs are enabled, extend inner radius inward to accommodate them
+        # but never into the spoke void (must stay at or beyond r_spoke_outer)
         if nubs_enabled and which == 'top':
             r_pin = max(0.1, (nub_dia_mm - nub_allowance_mm) / 2.0)
             r_nub = _nub_circle_r_step(R_OD, tooth_ht, nub_dia_mm)
             r_nub_inner = r_nub - r_pin
-            r_inner = min(r_inner, r_nub_inner)
+            r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
+            # Extend inward for nubs, but don't go past the spoke rim boundary
+            r_inner = min(r_inner, max(r_nub_inner, r_spoke_outer))
         _angle = max(8.0, min(25.0, flange_angle_deg))
         _rim_r = max(0.5, rim_radius_mm)
         _f_h   = max(0.1, flange_height_mm)

@@ -183,11 +183,14 @@ def generate_3dprint_flange_stl(
                                                 r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
 
     # If nubs are enabled, the inner radius must extend inward to accommodate them
+    # but never into the spoke void (must stay at or beyond r_spoke_outer)
     if nubs_enabled:
         r_pin = max(0.1, (nub_dia_mm - nub_allowance_mm) / 2.0)
         r_nub = _nub_circle_radius(R_OD, tooth_ht, nub_dia_mm)
         r_nub_inner = r_nub - r_pin
-        r_inner = min(r_inner, r_nub_inner)
+        r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
+        # Extend inward for nubs, but don't go past the spoke rim boundary
+        r_inner = min(r_inner, max(r_nub_inner, r_spoke_outer))
 
     rim_radius_mm    = max(0.5, rim_radius_mm)
     flange_height_mm = max(0.1, flange_height_mm)
@@ -629,12 +632,15 @@ def build_flange_meshes(
             r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
                                                         r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
             # If nubs are enabled, the inner radius must extend inward to accommodate them
+            # but never into the spoke void (must stay at or beyond r_spoke_outer)
             if fp.get('nubs_enabled'):
                 nub_dia_mm = fp['nub_dia_mm']
                 r_pin = max(0.1, (nub_dia_mm - fp['nub_allowance_mm']) / 2.0)
                 r_nub = _nub_circle_radius(R_OD, tooth_ht, nub_dia_mm)
                 r_nub_inner = r_nub - r_pin
-                r_inner = min(r_inner, r_nub_inner)
+                r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
+                # Extend inward for nubs, but don't go past the spoke rim boundary
+                r_inner = min(r_inner, max(r_nub_inner, r_spoke_outer))
             f_h = max(0.1, fp['flange_height_mm'])
             prof     = profile_3dprint(r_inner,     R_OD, rim_r, angle, f_h)
             prof_bot = profile_3dprint(r_inner_bot, R_OD, rim_r, angle, f_h)
