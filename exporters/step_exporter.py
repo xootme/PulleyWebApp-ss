@@ -1194,6 +1194,7 @@ def generate_flange_step(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    tooth_root_radius: float = None,
     _return_cq: bool = False,
 ) -> bytes:
     """Return STEP bytes of a single flange (top 3D-print, or metal top/bottom).
@@ -1212,10 +1213,12 @@ def generate_flange_step(
     R_OD = getOuterDiameter(num_teeth, spec['pitch'], pld + print_extra_mm - clearance_mm) / 2.0
     tooth_ht = spec['tooth_ht']
 
-    # The actual tooth root radius is less than R_OD by approximately the tooth height
-    # The pulley's outline calculation gives _R_tr which represents the effective outer radius
-    # at the belt line. For HTD/timing belts, this is approximately R_OD - tooth_ht
-    _R_tr = R_OD - tooth_ht
+    # Use actual tooth root radius if provided (from pulley), otherwise calculate it
+    if tooth_root_radius is not None:
+        _R_tr = tooth_root_radius
+    else:
+        # Approximate: tooth root radius is R_OD minus tooth height
+        _R_tr = R_OD - tooth_ht
 
     if flange_3dprint:
         # Flange ID must be at the rim boundary (spoke outer edge) when spokes enabled
