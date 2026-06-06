@@ -1000,16 +1000,20 @@ def generate_pulley_step(
         _key_b  = _profile_key(family, pitch)
         _spec_b = PULLEY_SPECS[_key_b]
         _pld_b  = _spec_b.get('pitch_line_diff', _spec_b.get('pitchLineDiff', 0.0))
+        _tooth_ht_b = _spec_b['tooth_ht']
         _R_OD_b = getOuterDiameter(num_teeth, _spec_b['pitch'],
                                    _pld_b + print_extra_mm - clearance_mm) / 2.0
+        _R_tr_b = _R_OD_b - _tooth_ht_b  # Actual tooth root radius
         _has_spokes_b = spoke_count > 0
+        # Use _R_tr_b (rim boundary) for spokes case; flange must stop at spoke void edge
+        _r_tooth_ref_b = _R_tr_b if _has_spokes_b else _R_OD_b
         _r_inner_b = flange_inner_r_3dprint_bottom(
             bore_mm, _has_spokes_b, spoke_hub_od_mm,
-            r_tooth_OD=_R_OD_b, rim_depth_mm=rim_depth_mm)
+            r_tooth_OD=_r_tooth_ref_b, rim_depth_mm=rim_depth_mm)
         _angle_b = max(8.0, min(25.0, flange_angle_deg))
         _rim_r_b = max(0.5, flange_rim_radius_mm)
         _f_h_b   = max(0.1, flange_height_mm)
-        _prof_b  = profile_3dprint(_r_inner_b, _R_OD_b, _rim_r_b, _angle_b, _f_h_b)
+        _prof_b  = profile_3dprint(_r_inner_b, _r_tooth_ref_b, _rim_r_b, _angle_b, _f_h_b)
         _bot_prof_b = [(_r, -_z) for _r, _z in _prof_b]
         _bot_flange_mesh = _revolve_rz_profile(_bot_prof_b)
         result = result.union(_bot_flange_mesh, clean=False)
@@ -1118,9 +1122,12 @@ def generate_pulley_step(
         _key  = _profile_key(family, pitch)
         _spec = PULLEY_SPECS[_key]
         _pld  = _spec.get('pitch_line_diff', _spec.get('pitchLineDiff', 0.0))
+        _tooth_ht_2 = _spec['tooth_ht']
         _R_OD = getOuterDiameter(num_teeth, _spec['pitch'],
                                  _pld + print_extra_mm - clearance_mm) / 2.0
+        _R_tr_2 = _R_OD - _tooth_ht_2  # Actual tooth root radius
         _has_spokes = spoke_count > 0
+        _r_tooth_ref = _R_tr_2 if _has_spokes else _R_OD
         _angle   = max(8.0, min(25.0, flange_angle_deg))
         _rim_r   = max(0.5, flange_rim_radius_mm)
         _f_h     = max(0.1, flange_height_mm)
@@ -1129,8 +1136,8 @@ def generate_pulley_step(
         if not flange_top_separate:
             _r_inner_top = flange_inner_r_3dprint(
                 bore_mm, hub_od_mm, _has_spokes, spoke_hub_od_mm,
-                r_tooth_OD=_R_OD, rim_depth_mm=rim_depth_mm)
-            _top_prof = profile_3dprint(_r_inner_top, _R_OD, _rim_r, _angle, _f_h)
+                r_tooth_OD=_r_tooth_ref, rim_depth_mm=rim_depth_mm)
+            _top_prof = profile_3dprint(_r_inner_top, _r_tooth_ref, _rim_r, _angle, _f_h)
             _top_flange = _revolve_rz_profile(_top_prof)
             _top_flange = _top_flange.translate((0.0, 0.0, belt_height_mm))
             result = result.union(_top_flange, clean=False)
