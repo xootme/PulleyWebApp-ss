@@ -1212,12 +1212,10 @@ def generate_flange_step(
     R_OD = getOuterDiameter(num_teeth, spec['pitch'], pld + print_extra_mm - clearance_mm) / 2.0
     tooth_ht = spec['tooth_ht']
 
-    # Calculate actual tooth root radius from tooth profile (same as pulley does)
-    container = generate_profile_groove(family, key, num_teeth, clearance_mm, print_extra_mm, 0.0)
-    groove_prims = container.primitives[1:-1]
-    groove_pts = _build_groove_points(groove_prims, family)
-    # Get the minimum radius from the groove profile
-    _R_tr = min((math.hypot(x, y) for x, y in groove_pts), default=R_OD)
+    # The actual tooth root radius is less than R_OD by approximately the tooth height
+    # The pulley's outline calculation gives _R_tr which represents the effective outer radius
+    # at the belt line. For HTD/timing belts, this is approximately R_OD - tooth_ht
+    _R_tr = R_OD - tooth_ht
 
     if flange_3dprint:
         # Flange ID must be at the rim boundary (spoke outer edge) when spokes enabled
