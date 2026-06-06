@@ -30,7 +30,11 @@ from exporters.job_queue import (
 from functools import wraps
 
 def _get_machine_id():
-    """Get or generate machine_id from request headers/IP."""
+    """Get machine_id from request context, header, or generate from IP+UA."""
+    # Try to get from request context (set by session decorator)
+    if hasattr(request, 'machine_id') and request.machine_id:
+        return request.machine_id
+
     # Try to get from custom header (for addin/CLI)
     mid = request.headers.get('X-Machine-ID')
     if mid:
@@ -91,6 +95,12 @@ def require_active_session(f):
                 'count': count,
                 'limit': limit
             }), 429
+
+        # Get machine_id from session if registered
+        from exporters.job_queue import _SESSIONS, _LOCK
+        with _LOCK:
+            if session_id in _SESSIONS:
+                request.machine_id = _SESSIONS[session_id].get('machine_id')
 
         # Update heartbeat
         heartbeat(session_id)
@@ -3890,6 +3900,32 @@ def api_trial_status():
         'limit': TRIAL_DOWNLOADS_PER_WEEK,
         'week_start': week_start.strftime('%Y-%m-%d'),
     })
+
+
+@app.route('/api/session/register-machine', methods=['POST'])
+def api_session_register_machine():
+    """Register machine_id with session for addin/CLI access."""
+    from exporters.job_queue import _SESSIONS, _LOCK
+
+    data = request.json if request.is_json else {}
+    session_id = data.get('session_id')
+    machine_id = data.get('machine_id')
+
+    if not session_id or not machine_id:
+        return jsonify({'error': 'Missing session_id or machine_id'}), 400
+
+    # Store machine_id in session
+    with _LOCK:
+        if session_id not in _SESSIONS:
+            return jsonify({'error': 'Session not found', 'code': 'SESSION_NOT_FOUND'}), 403
+
+        _SESSIONS[session_id]['machine_id'] = machine_id
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'machine_id': machine_id
+    }), 200
 
 
 @app.route('/queue')
