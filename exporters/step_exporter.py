@@ -1241,6 +1241,7 @@ def generate_flange_step(
                            .translate((0.0, 0.0, -nub_pin_h)))
                     flange = flange.union(pin, clean=False)
                 # Clip nubs at flange ID (spoke OD boundary) - nubs don't extend inward from here
+                r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
                 if r_spoke_outer > 0.0:
                     clip_h = nub_pin_h + 2.0
                     clip = (cq.Workplane('XY')
