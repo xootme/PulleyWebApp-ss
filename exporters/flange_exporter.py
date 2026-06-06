@@ -221,6 +221,11 @@ def generate_3dprint_flange_stl(
                 try:
                     top_mesh = trimesh.boolean.union([top_mesh] + nub_cyls, engine='manifold')
                     clip_h = nub_pin_h + 2.0
+                    # Clip nubs at the flange's inner edge (ensure they don't extend past it)
+                    if r_inner > 0.0:
+                        clip = trimesh.creation.cylinder(radius=r_inner, height=clip_h, sections=64)
+                        clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
+                        top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
                     # Clip nubs only if they actually extend into the spoke void boundaries
                     if r_spoke_inner > 0.0 and (r_nub - r_pin) <= r_spoke_inner:
                         clip = trimesh.creation.cylinder(radius=r_spoke_inner, height=clip_h, sections=64)
@@ -675,6 +680,13 @@ def build_flange_meshes(
                     try:
                         top = trimesh.boolean.union([top] + nub_cyls, engine='manifold')
                         clip_h = nub_pin_h + 2.0
+                        # Clip nubs at the flange's inner edge (ensure they don't extend past it)
+                        if r_inner > 0.0:
+                            clip_cyl = trimesh.creation.cylinder(
+                                radius=r_inner, height=clip_h, sections=64)
+                            clip_cyl.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
+                            top = trimesh.boolean.difference(
+                                [top, clip_cyl], engine='manifold')
                         # Clip at spoke inner rim (hub boss surface)
                         if r_spoke_inner > 0.0 and (r_nub - r_pin) < r_spoke_inner:
                             clip_cyl = trimesh.creation.cylinder(
