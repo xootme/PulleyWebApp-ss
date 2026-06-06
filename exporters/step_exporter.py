@@ -1223,7 +1223,9 @@ def generate_flange_step(
     if flange_3dprint:
         # Flange ID must be at the rim boundary (spoke outer edge) when spokes enabled
         if spokes_enabled and rim_depth_mm > 0.0:
-            r_inner = _R_tr - rim_depth_mm
+            # Direct formula: flange inner radius = R_OD - tooth_ht - rim_depth
+            # (the geometry adds tooth_ht somewhere, so compensate by subtracting it explicitly)
+            r_inner = R_OD - tooth_ht - rim_depth_mm
         else:
             r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                              r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
