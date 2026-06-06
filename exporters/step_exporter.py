@@ -1245,6 +1245,14 @@ def generate_flange_step(
                            .extrude(nub_pin_h, clean=False)
                            .translate((0.0, 0.0, -nub_pin_h)))
                     flange = flange.union(pin, clean=False)
+                # Clip nubs at the flange's inner edge
+                if r_inner > 0.0:
+                    clip_h = nub_pin_h + 2.0
+                    clip = (cq.Workplane('XY')
+                            .circle(r_inner)
+                            .extrude(clip_h, clean=False)
+                            .translate((0.0, 0.0, -nub_pin_h)))
+                    flange = flange.cut(clip, clean=False)
             flange = flange.translate((0.0, 0.0, belt_height_mm))
         else:
             bot_prof = [(r, -z) for r, z in prof]
