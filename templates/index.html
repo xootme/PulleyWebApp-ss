@@ -3921,7 +3921,16 @@ function updateProgressDisplay(job) {
 (function() {
   const IDLE_TIMEOUT_MS = 60000; // 1 minute
   const params = new URLSearchParams(window.location.search);
-  const sessionId = params.get('session_id');
+  let sessionId = params.get('session_id');
+
+  // If session_id not in URL but template provided one, update URL and use it
+  if (!sessionId && '{{ session_id }}') {
+    sessionId = '{{ session_id }}';
+    // Update browser history so session_id persists in downloads
+    const newUrl = window.location.pathname + '?session_id=' + encodeURIComponent(sessionId);
+    window.history.replaceState({}, '', newUrl);
+  }
+
   if (!sessionId) return; // No session to check
 
   let idleTimer = null;

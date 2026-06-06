@@ -590,6 +590,7 @@ def index():
 
     return render_template(
         'index.html',
+        session_id=session_id,
         families=FAMILIES,
         clearance_presets=CLEARANCE_PRESETS,
         backlash_presets=BACKLASH_PRESETS,
@@ -3926,6 +3927,179 @@ def api_session_register_machine():
         'session_id': session_id,
         'machine_id': machine_id
     }), 200
+
+
+@app.route('/api/download/step', methods=['POST'])
+def api_download_step():
+    """API endpoint for addins to download STEP files.
+
+    Request JSON: {machine_id, params_dict}
+    Returns: STEP file or error
+    """
+    data = request.json if request.is_json else {}
+    machine_id = data.get('machine_id')
+    params_dict = data.get('params', {})
+
+    if not machine_id:
+        return jsonify({'error': 'Missing machine_id'}), 400
+
+    # Check trial download limit
+    allowed, count, limit = register_trial_download(machine_id, 'step')
+    if not allowed:
+        return jsonify({
+            'error': f'Download limit reached: {count}/{limit} per week',
+            'code': 'DOWNLOAD_LIMIT_EXCEEDED'
+        }), 429
+
+    try:
+        # Build request-like object with the params
+        import io
+        from werkzeug.datastructures import ImmutableMultiDict
+
+        args_dict = {k: str(v) for k, v in params_dict.items()}
+        request.environ['QUERY_STRING'] = '&'.join(f'{k}={v}' for k, v in args_dict.items())
+
+        # Call the existing STEP generation logic
+        pulley = params_dict.get('pulley', '1')
+        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(params_dict, pulley)
+        pfx = 'p2_' if pulley == '2' else ''
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(params_dict, pfx)
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = _parse_spoke_params(params_dict, pfx)
+
+        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+
+        _fl_enabled = params_dict.get(f'{pfx}flange_enabled') == '1'
+        fp = _parse_flange_params(params_dict, pfx) if _fl_enabled else {}
+
+        kw = dict(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, belt_height_mm=belt_height,
+            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+            hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+            screw_dia_mm=sd, screw_count=sc,
+            captured_nut=cn, flat_depth_mm=fd,
+            keyway_width_mm=kw_w, keyway_height_mm=kw_h,
+            spokes_enabled=sp_en, spokes_hub_od_mm=sp_hub,
+            spokes_rim_depth_mm=sp_rim, spokes_width_mm=sp_w,
+            spokes_fillet_tip_mm=sp_ft, spokes_fillet_base_mm=sp_fb,
+            spokes_count=sp_c, spokes_height_mm=sp_h, spokes_split=sp_split,
+            flange=fp if fp else None
+        )
+
+        step_data = step_exporter.export_step(**kw)
+        step_data = _embed_step(step_data, params_dict)
+
+        fname = f'{family}-{pitch}-{num_teeth}T.step'
+        return Response(step_data, mimetype='application/octet-stream',
+                       headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/download/dxf', methods=['POST'])
+def api_download_dxf():
+    """API endpoint for addins to download DXF files."""
+    data = request.json if request.is_json else {}
+    machine_id = data.get('machine_id')
+    params_dict = data.get('params', {})
+
+    if not machine_id:
+        return jsonify({'error': 'Missing machine_id'}), 400
+
+    # Check trial download limit
+    allowed, count, limit = register_trial_download(machine_id, 'dxf')
+    if not allowed:
+        return jsonify({
+            'error': f'Download limit reached: {count}/{limit} per week',
+            'code': 'DOWNLOAD_LIMIT_EXCEEDED'
+        }), 429
+
+    try:
+        pulley = params_dict.get('pulley', '1')
+        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(params_dict, pulley)
+        pfx = 'p2_' if pulley == '2' else ''
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(params_dict, pfx)
+
+        dxf_data = dxf_exporter.export_dxf(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, hub_od_mm=hub_od, hub_height_mm=hub_h,
+            screw_dia_mm=sd, screw_count=sc, captured_nut=cn,
+            flat_depth_mm=fd, keyway_width_mm=kw_w, keyway_height_mm=kw_h,
+            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex
+        )
+        dxf_data = _embed_dxf(dxf_data, params_dict)
+
+        fname = f'{family}-{pitch}-{num_teeth}T.dxf'
+        return Response(dxf_data, mimetype='application/octet-stream',
+                       headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/download/stl', methods=['POST'])
+def api_download_stl():
+    """API endpoint for addins to download STL files."""
+    data = request.json if request.is_json else {}
+    machine_id = data.get('machine_id')
+    params_dict = data.get('params', {})
+
+    if not machine_id:
+        return jsonify({'error': 'Missing machine_id'}), 400
+
+    # Check trial download limit
+    allowed, count, limit = register_trial_download(machine_id, 'stl')
+    if not allowed:
+        return jsonify({
+            'error': f'Download limit reached: {count}/{limit} per week',
+            'code': 'DOWNLOAD_LIMIT_EXCEEDED'
+        }), 429
+
+    try:
+        pulley = params_dict.get('pulley', '1')
+        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(params_dict, pulley)
+        pfx = 'p2_' if pulley == '2' else ''
+        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(params_dict, pfx)
+        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = _parse_spoke_params(params_dict, pfx)
+
+        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+
+        stl_data = step_exporter.export_stl(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, belt_height_mm=belt_height,
+            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+            hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+            screw_dia_mm=sd, screw_count=sc, captured_nut=cn, flat_depth_mm=fd,
+            keyway_width_mm=kw_w, keyway_height_mm=kw_h,
+            spokes_enabled=sp_en, spokes_hub_od_mm=sp_hub,
+            spokes_rim_depth_mm=sp_rim, spokes_width_mm=sp_w,
+            spokes_fillet_tip_mm=sp_ft, spokes_fillet_base_mm=sp_fb,
+            spokes_count=sp_c, spokes_height_mm=sp_h, spokes_split=sp_split
+        )
+        stl_data = _embed_stl(stl_data, params_dict)
+
+        fname = f'{family}-{pitch}-{num_teeth}T.stl'
+        return Response(stl_data, mimetype='model/stl',
+                       headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/queue')
