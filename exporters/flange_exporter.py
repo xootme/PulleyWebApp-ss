@@ -213,11 +213,13 @@ def generate_3dprint_flange_stl(
                 try:
                     top_mesh = trimesh.boolean.union([top_mesh] + nub_cyls, engine='manifold')
                     clip_h = nub_pin_h + 2.0
-                    if r_spoke_inner > 0.0 and (r_nub - r_pin) < r_spoke_inner:
+                    # Always clip nubs against spoke void when spokes are enabled
+                    # (regardless of nub radial position)
+                    if r_spoke_inner > 0.0:
                         clip = trimesh.creation.cylinder(radius=r_spoke_inner, height=clip_h, sections=64)
                         clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                         top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
-                    if r_spoke_outer > 0.0 and (r_nub - r_pin) < r_spoke_outer:
+                    if r_spoke_outer > 0.0:
                         clip = trimesh.creation.cylinder(radius=r_spoke_outer, height=clip_h, sections=64)
                         clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                         top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
