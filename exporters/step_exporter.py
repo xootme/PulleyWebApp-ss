@@ -1229,13 +1229,14 @@ def generate_flange_step(
                                              r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
         import sys
         rim_boundary = _R_tr - rim_depth_mm if rim_depth_mm > 0.0 else 0.0
-        print(f"DEBUG STEP 3DPRINT: R_OD={R_OD:.2f}, _R_tr={_R_tr:.2f}, rim_depth={rim_depth_mm}, rim_boundary={rim_boundary:.2f}, r_inner={r_inner:.2f}, spokes={spokes_enabled}", file=sys.stderr)
         _angle = max(8.0, min(25.0, flange_angle_deg))
         _rim_r = max(0.5, rim_radius_mm)
         _f_h   = max(0.1, flange_height_mm)
         # For spokes, profile transition should be at rim boundary (_R_tr), not tooth OD (R_OD)
         prof_r_tooth = _R_tr if spokes_enabled else R_OD
+        print(f"DEBUG STEP 3DPRINT: spokes={spokes_enabled}, R_OD={R_OD:.2f}, _R_tr={_R_tr:.2f}, rim_depth={rim_depth_mm}, prof_r_tooth={prof_r_tooth:.2f}, r_inner={r_inner:.2f}", file=sys.stderr)
         prof   = profile_3dprint(r_inner, prof_r_tooth, _rim_r, _angle, _f_h)
+        print(f"DEBUG PROFILE: {prof}", file=sys.stderr)
 
         if which == 'top':
             flange = _revolve_rz_profile(prof)
