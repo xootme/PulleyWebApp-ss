@@ -220,15 +220,12 @@ def generate_3dprint_flange_stl(
                 try:
                     top_mesh = trimesh.boolean.union([top_mesh] + nub_cyls, engine='manifold')
                     clip_h = nub_pin_h + 2.0
-                    # Clip nubs only if they actually extend into the spoke void boundaries
+                    # Clip at spoke inner rim (hub boss surface) only if nubs extend into spoke hub
                     if r_spoke_inner > 0.0 and (r_nub - r_pin) <= r_spoke_inner:
                         clip = trimesh.creation.cylinder(radius=r_spoke_inner, height=clip_h, sections=64)
                         clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                         top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
-                    if r_spoke_outer > 0.0 and (r_nub - r_pin) < r_spoke_outer:
-                        clip = trimesh.creation.cylinder(radius=r_spoke_outer, height=clip_h, sections=64)
-                        clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
-                        top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
+                    # DON'T clip at spoke outer rim — the flange now extends there for nubs
                 except Exception:
                     pass  # fall back to flange without nubs
 
@@ -674,20 +671,14 @@ def build_flange_meshes(
                     try:
                         top = trimesh.boolean.union([top] + nub_cyls, engine='manifold')
                         clip_h = nub_pin_h + 2.0
-                        # Clip at spoke inner rim (hub boss surface)
+                        # Clip at spoke inner rim (hub boss surface) only if nubs extend into spoke hub
                         if r_spoke_inner > 0.0 and (r_nub - r_pin) < r_spoke_inner:
                             clip_cyl = trimesh.creation.cylinder(
                                 radius=r_spoke_inner, height=clip_h, sections=64)
                             clip_cyl.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                             top = trimesh.boolean.difference(
                                 [top, clip_cyl], engine='manifold')
-                        # Clip at spoke outer rim (where spokes meet rim ring)
-                        if r_spoke_outer > 0.0 and (r_nub - r_pin) < r_spoke_outer:
-                            clip_cyl = trimesh.creation.cylinder(
-                                radius=r_spoke_outer, height=clip_h, sections=64)
-                            clip_cyl.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
-                            top = trimesh.boolean.difference(
-                                [top, clip_cyl], engine='manifold')
+                        # DON'T clip at spoke outer rim — the flange now extends there for nubs
                     except Exception:
                         pass  # fall back to flange without nubs
 
