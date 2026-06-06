@@ -93,3 +93,23 @@ Nubs are cylindrical pegs extending from the underside of the top flange into ma
 - **Nub Height** — Defines the socket depth cut into the pulley body. The physical nub on the flange is shorter by the Socket Fit Allowance height component, leaving a small gap at the base of the socket when fully seated. Minimum: 1 mm. Maximum: 1/3 of belt height.
 - **Nub Diameter** — Diameter of each nub and its matching socket.
 - **Socket Fit Allowance** — A single value subtracted from both the nub diameter and nub height (but not from the socket dimensions), so the printed nub slides into the socket with clearance.
+
+### ⚠️ Nubs and Spokes: Height Constraint
+
+When **spokes are enabled**, the nub height must be **at least equal to the spoke height** to fully connect the flange to the spoke structure.
+
+**Why:** 
+- Spokes extend upward from the hub by *Spoke Height* mm
+- The flange sits on top of the hub at height = *Hub Height*
+- Nubs extend downward from the flange
+- For nubs to reach and grip the spokes, they must traverse the spoke height
+
+**Example (from bug report):**
+- Hub height: 10 mm
+- Spoke height: 6 mm (spokes reach to 10+6=16 mm from ground)
+- Flange nub height: 2 mm (nubs only go from 10 mm down to 8 mm)
+- **Result:** Gap between nubs (8 mm) and spokes (16 mm) → nubs don't connect ❌
+
+**Solution:** Set **Nub Height ≥ Spoke Height** when both are enabled.
+
+For the example above: increase Nub Height from 2 mm to **at least 6 mm** to fully engage the spokes.
