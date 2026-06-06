@@ -1211,13 +1211,12 @@ def generate_flange_step(
     tooth_ht = spec['tooth_ht']
 
     if flange_3dprint:
-        r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
-                                         r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
-        # When spokes enabled, flange ID must equal spoke OD (r_spoke_outer)
-        # Nubs are cut at this boundary and don't extend inward
-        r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
-        if spokes_enabled and r_spoke_outer > 0.0:
-            r_inner = r_spoke_outer
+        # Flange ID must be at the rim boundary (spoke outer edge) when spokes enabled
+        if spokes_enabled and rim_depth_mm > 0.0:
+            r_inner = R_OD - rim_depth_mm
+        else:
+            r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
+                                             r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
         _angle = max(8.0, min(25.0, flange_angle_deg))
         _rim_r = max(0.5, rim_radius_mm)
         _f_h   = max(0.1, flange_height_mm)

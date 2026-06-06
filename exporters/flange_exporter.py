@@ -177,16 +177,15 @@ def generate_3dprint_flange_stl(
     onto the bottom face of the top flange.
     """
     R_OD, _R_gb, tooth_ht = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
-    r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
-                                     r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
     r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
                                                 r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
 
-    # When spokes enabled, flange ID must equal spoke OD (r_spoke_outer)
-    # Nubs are cut at this boundary and don't extend inward
-    r_spoke_outer = (R_OD - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
-    if spokes_enabled and r_spoke_outer > 0.0:
-        r_inner = r_spoke_outer
+    # Flange ID must be at the rim boundary (spoke outer edge) when spokes enabled
+    if spokes_enabled and rim_depth_mm > 0.0:
+        r_inner = R_OD - rim_depth_mm
+    else:
+        r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
+                                         r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
 
     rim_radius_mm    = max(0.5, rim_radius_mm)
     flange_height_mm = max(0.1, flange_height_mm)
@@ -627,16 +626,14 @@ def build_flange_meshes(
         meshes = []
 
         if fp['flange_3dprint']:
-            r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
-                                             r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
             r_inner_bot = flange_inner_r_3dprint_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
                                                         r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
-            # When spokes enabled, flange ID must equal spoke OD (r_spoke_outer)
-            # Nubs are cut at this boundary and don't extend inward
-            if spokes_enabled:
-                r_spoke_outer = (R_OD - rim_depth_mm) if rim_depth_mm > 0.0 else 0.0
-                if r_spoke_outer > 0.0:
-                    r_inner = r_spoke_outer
+            # Flange ID must be at the rim boundary (spoke outer edge)
+            if spokes_enabled and rim_depth_mm > 0.0:
+                r_inner = R_OD - rim_depth_mm
+            else:
+                r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
+                                                 r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
             f_h = max(0.1, fp['flange_height_mm'])
             prof     = profile_3dprint(r_inner,     R_OD, rim_r, angle, f_h)
             prof_bot = profile_3dprint(r_inner_bot, R_OD, rim_r, angle, f_h)
