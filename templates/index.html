@@ -3836,6 +3836,13 @@ function startAsyncDownload(type) {
     return;
   }
 
+  // Add session_id to request body (for session validation)
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionId = urlParams.get('session_id');
+  if (sessionId) {
+    params.session_id = sessionId;
+  }
+
   fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
