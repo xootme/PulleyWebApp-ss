@@ -214,8 +214,7 @@ def profile_3dprint(
     # Ensure the lip has at least 0.1 mm of vertical wall
     flange_height_mm = max(flange_height_mm, z_angled + 0.1)
 
-    # Clamp: inner must be inside r_tooth_OD
-    r_inner = min(r_inner, r_tooth_OD - 0.5)
+    # Clamp: inner must be inside r_tooth_OD and positive
     r_inner = max(r_inner, 0.5)
 
     return [
