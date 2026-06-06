@@ -1227,8 +1227,8 @@ def generate_flange_step(
             r_inner = flange_inner_r_3dprint(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                              r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
         import sys
-        rim_boundary = R_OD - rim_depth_mm if rim_depth_mm > 0.0 else 0.0
-        print(f"DEBUG STEP 3DPRINT: R_OD={R_OD:.2f}, rim_depth={rim_depth_mm}, rim_boundary={rim_boundary:.2f}, r_inner={r_inner:.2f}, spokes={spokes_enabled}", file=sys.stderr)
+        rim_boundary = _R_tr - rim_depth_mm if rim_depth_mm > 0.0 else 0.0
+        print(f"DEBUG STEP 3DPRINT: R_OD={R_OD:.2f}, _R_tr={_R_tr:.2f}, rim_depth={rim_depth_mm}, rim_boundary={rim_boundary:.2f}, r_inner={r_inner:.2f}, spokes={spokes_enabled}, groove_pts_count={len(groove_pts)}", file=sys.stderr)
         _angle = max(8.0, min(25.0, flange_angle_deg))
         _rim_r = max(0.5, rim_radius_mm)
         _f_h   = max(0.1, flange_height_mm)
