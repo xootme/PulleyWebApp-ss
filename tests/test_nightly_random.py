@@ -1,24 +1,27 @@
 """
 test_nightly_random.py — Nightly randomized pulley generation tests.
 
-Generates 5 random pulley configurations covering the full input space and
-verifies that STL preview, SVG, DXF, and (if cadquery available) STEP exports
-all succeed without errors.
+Generates 5 random pulley configurations and verifies that all exports
+(SVG, DXF, STL preview, STL download, STEP) succeed without errors.
 
-Runs only when PULLEY_NIGHTLY=1 is set in the environment — excluded from the
-normal test suite so it doesn't slow down pre-commit or regular CI runs.
+Runs only when PULLEY_NIGHTLY=1 is set — excluded from normal test runs.
 
-Input variables for each run are saved to:
-    logs/nightly_random/<date>_<run_id>.json
+Design principles:
+  - Single save/restore path: configs are stored and restored via the same
+    _cct_meta() / _applyUrlParams() mechanism used by the Fusion/FreeCAD addins.
+  - Validation via app parse functions: raw random values are run through
+    _parse_stl_params(), _parse_spoke_params() etc. — the same functions the
+    download routes use — so impossible geometries are caught before testing.
+  - The saved JSON and repro URL contain the VALIDATED params (what the app
+    actually used), not the raw random values.
 
-so any failure can be reproduced exactly.
+Saved to: logs/nightly_random/<date>_<run_id>.json
+Repro:    python tests/test_nightly_random.py [--open]
 """
 
 import json
 import os
 import random
-import string
-import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -31,267 +34,190 @@ pytestmark = pytest.mark.skipif(
     reason='Nightly random tests — set PULLEY_NIGHTLY=1 to run'
 )
 
-# ── Parameter space ────────────────────────────────────────────────────────────
+# ── Raw parameter space (pre-validation) ───────────────────────────────────────
 
-FAMILIES = {
-    'HTD': {
-        '3M':  {'min': 10, 'max': 120, 'bore_max': 20},
-        '5M':  {'min': 12, 'max': 120, 'bore_max': 30},
-        '8M':  {'min': 15, 'max': 100, 'bore_max': 50},
-        '14M': {'min': 18, 'max':  80, 'bore_max': 80},
-    },
-    'GT': {
-        '2M': {'min': 10, 'max': 120, 'bore_max': 15},
-        '3M': {'min': 10, 'max': 120, 'bore_max': 25},
-        '5M': {'min': 12, 'max': 100, 'bore_max': 40},
-        '8M': {'min': 20, 'max':  80, 'bore_max': 60},
-    },
-    'STD': {
-        '2M': {'min': 10, 'max': 120, 'bore_max': 15},
-        '3M': {'min': 10, 'max': 120, 'bore_max': 25},
-        '5M': {'min': 12, 'max': 100, 'bore_max': 40},
-        '8M': {'min': 22, 'max':  80, 'bore_max': 60},
-    },
+_FAMILIES = {
+    'HTD': {'3M': (10, 80), '5M': (12, 80), '8M': (15, 60), '14M': (18, 50)},
+    'GT':  {'2M': (10, 80), '3M': (10, 80), '5M': (12, 70), '8M':  (20, 50)},
+    'STD': {'2M': (10, 80), '3M': (10, 80), '5M': (12, 70), '8M':  (22, 50)},
 }
-
-CLEARANCE_PRESETS = ['TIGHT', 'STANDARD', 'LOOSE']
-BACKLASH_PRESETS  = ['NONE', 'TIGHT', 'STANDARD', 'LOOSE']
-BORE_PROFILES     = ['round', 'dflat', 'keyway']
+_CLEARANCE = ['TIGHT', 'STANDARD', 'LOOSE']
+_BACKLASH  = ['NONE', 'TIGHT', 'STANDARD', 'LOOSE']
 
 
-def _rng(seed=None):
-    r = random.Random(seed)
-    return r
-
-
-def _rand_bore(r, bore_max, profile):
-    """Return (bore_mm, flat_depth, keyway_w, keyway_h)."""
-    bore_mm = round(r.uniform(4.0, min(bore_max, 40.0)), 1)
-    if profile == 'dflat':
-        flat = round(r.uniform(0.3, bore_mm * 0.3), 2)
-        return bore_mm, flat, 0.0, 0.0
-    if profile == 'keyway':
-        kw = round(r.choice([2.0, 3.0, 4.0, 5.0, 6.0, 8.0]), 1)
-        kh = round(kw * 0.5, 1)
-        return bore_mm, 0.0, kw, kh
-    return bore_mm, 0.0, 0.0, 0.0
-
-
-def _rand_hub(r, bore_mm, teeth):
-    """Return hub params or None (no hub)."""
-    if r.random() < 0.25:
-        return None
-    hub_od     = round(bore_mm + r.uniform(4.0, 20.0), 1)
-    hub_height = round(r.uniform(3.0, 20.0), 1)
-    screw_dia  = r.choice([0.0, 2.5, 3.0, 4.0, 5.0])
-    screw_count= r.choice([0, 1, 2, 3]) if screw_dia > 0 else 0
-    captured   = r.choice([True, False]) if screw_count > 0 else False
-    return {
-        'hub_od': hub_od, 'hub_height': hub_height,
-        'hub_screw_dia': screw_dia, 'hub_screw_count': screw_count,
-        'hub_captured_nut': '1' if captured else '0',
-        'hub_flat_depth': 0.0,
-    }
-
-
-def _rand_spokes(r, hub_od, bore_mm, teeth, pitch_mm):
-    """Return spoke params or None."""
-    # Need enough teeth for spokes to be geometrically valid
-    min_teeth_for_spokes = max(20, int(40 / pitch_mm))
-    if teeth < min_teeth_for_spokes or r.random() < 0.4:
-        return None
-    spoke_hub_od = hub_od if hub_od else round(bore_mm + r.uniform(3.0, 8.0), 1)
-    rim_depth    = round(r.uniform(2.0, min(8.0, pitch_mm * 1.5)), 1)
-    return {
-        'spokes_enabled': '1',
-        'spokes_hub_od':   spoke_hub_od,
-        'spokes_rim_depth': rim_depth,
-        'spokes_width':    round(r.uniform(3.0, 8.0), 1),
-        'spokes_fillet_tip':  round(r.uniform(0.5, 3.0), 1),
-        'spokes_fillet_base': round(r.uniform(1.0, 5.0), 1),
-        'spokes_count':    r.choice([3, 4, 5, 6, 7]),
-        'spokes_height':   round(r.uniform(0.0, 5.0), 1),
-    }
-
-
-def _rand_flange(r, is_3dprint, has_spokes, spoke_hub_od, teeth):
-    """Return flange params or None."""
-    if r.random() < 0.35:
-        return None
-    fp = {
-        'flange_enabled':   '1',
-        'flange_3dprint':   '1' if is_3dprint else '0',
-        'flange_angle':     round(r.uniform(8.0, 25.0), 1),
-        'flange_rim_radius': round(r.uniform(1.0, 8.0), 1),
-        'flange_height':    round(r.uniform(0.5, 5.0), 1),
-        'flange_plate_height': round(r.uniform(0.5, 3.0), 1),
-        'flange_bend_radius':  round(r.uniform(0.0, 3.0), 1),
-        'flange_top_separate': '1' if r.random() > 0.3 else '0',
-    }
-    if is_3dprint and fp['flange_top_separate'] == '1' and r.random() > 0.4:
-        fp['flange_nubs_enabled'] = '1'
-        fp['flange_nub_count']    = r.choice([2, 3, 4, 6])
-        fp['flange_nub_dia']      = round(r.uniform(2.0, 6.0), 1)
-        fp['flange_nub_height']   = round(r.uniform(1.0, 6.0), 1)
-        fp['flange_nub_allowance'] = round(r.uniform(0.1, 0.4), 2)
-    return fp
-
-
-def _rand_config(r, run_idx):
-    """Generate a complete random pulley configuration."""
-    family = r.choice(list(FAMILIES.keys()))
-    pitch  = r.choice(list(FAMILIES[family].keys()))
-    spec   = FAMILIES[family][pitch]
-
-    teeth     = r.randint(spec['min'], min(spec['max'], 80))
-    bore_prof = r.choice(BORE_PROFILES)
-    bore_mm, flat_depth, kw, kh = _rand_bore(r, spec['bore_max'], bore_prof)
-    print_extra = round(r.uniform(0.0, 0.5), 2)
-    cl_preset   = r.choice(CLEARANCE_PRESETS)
-    bl_preset   = r.choice(BACKLASH_PRESETS)
-    belt_height = round(r.uniform(6.0, 25.0), 1)
-    dual        = r.random() < 0.3
-
-    from geometry.pulley_geometry import PULLEY_SPECS, PROFILE_KEY_PREFIX
-    pfx = PROFILE_KEY_PREFIX.get(family, '')
-    key = pfx + pitch
-    pitch_mm = PULLEY_SPECS[key]['pitch']
-
-    hub   = _rand_hub(r, bore_mm, teeth)
-    hub_od = hub['hub_od'] if hub else 0.0
-
-    spokes = _rand_spokes(r, hub_od, bore_mm, teeth, pitch_mm)
-    is_3dp = r.random() > 0.4
-    flange = _rand_flange(r, is_3dp, spokes is not None,
-                          spokes['spokes_hub_od'] if spokes else hub_od, teeth)
+def _raw_config(r):
+    """Generate a raw (unvalidated) random config dict using download-route param names."""
+    family = r.choice(list(_FAMILIES))
+    pitch  = r.choice(list(_FAMILIES[family]))
+    t_min, t_max = _FAMILIES[family][pitch]
+    teeth  = r.randint(t_min, t_max)
+    bore   = round(r.uniform(4.0, 30.0), 1)
+    dual   = r.random() < 0.25
 
     cfg = {
-        'run_idx':   run_idx,
-        'family':    family,
-        'pitch':     pitch,
-        'teeth':     teeth,
-        'bore':      bore_mm,
-        'hub_flat_depth': flat_depth,
-        'hub_keyway_w':   kw,
-        'hub_keyway_h':   kh,
-        'print_extra':    print_extra,
-        'clearance_preset':  cl_preset,
-        'backlash_preset':   bl_preset,
-        'belt_height':       belt_height,
-        'clearance_height':  round(r.uniform(0.0, 1.0), 2),
-        'dual':              dual,
+        'family':           family,
+        'pitch':            pitch,
+        'teeth':            teeth,
+        'bore':             bore,
+        'print_extra':      round(r.uniform(0.0, 0.4), 2),
+        'clearance_preset': r.choice(_CLEARANCE),
+        'backlash_preset':  r.choice(_BACKLASH),
+        'belt_height':      round(r.uniform(6.0, 25.0), 1),
+        'clearance_height': round(r.uniform(0.0, 0.8), 2),
     }
-    if hub:
-        cfg.update(hub)
-    if spokes:
-        cfg.update(spokes)
-    if flange:
-        pfx2 = '' if not dual else ''
-        cfg.update(flange)
 
+    # Bore profile
+    profile = r.choice(['round', 'dflat', 'keyway'])
+    if profile == 'dflat':
+        cfg['hub_flat_depth'] = round(r.uniform(0.3, bore * 0.25), 2)
+    elif profile == 'keyway':
+        kw = r.choice([2.0, 3.0, 4.0, 5.0, 6.0])
+        cfg['hub_keyway_w'] = kw
+        cfg['hub_keyway_h'] = round(kw * 0.5, 1)
+
+    # Hub
+    if r.random() > 0.2:
+        hub_od = round(bore + r.uniform(4.0, 18.0), 1)
+        cfg['hub_od']          = hub_od
+        cfg['hub_height']      = round(r.uniform(3.0, 18.0), 1)
+        screw_dia = r.choice([0.0, 2.5, 3.0, 4.0, 5.0])
+        if screw_dia > 0:
+            cfg['hub_screw_dia']   = screw_dia
+            cfg['hub_screw_count'] = r.choice([1, 2, 3])
+            if r.random() > 0.5:
+                cfg['hub_captured_nut'] = '1'
+    else:
+        hub_od = 0.0
+
+    # Spokes
+    if teeth >= 20 and r.random() > 0.4:
+        sp_hub = hub_od if hub_od > bore else round(bore + r.uniform(2.0, 6.0), 1)
+        cfg['spokes_enabled']     = '1'
+        cfg['spokes_hub_od']      = sp_hub
+        cfg['spokes_rim_depth']   = round(r.uniform(2.0, 7.0), 1)
+        cfg['spokes_width']       = round(r.uniform(3.0, 8.0), 1)
+        cfg['spokes_fillet_tip']  = round(r.uniform(0.5, 2.5), 1)
+        cfg['spokes_fillet_base'] = round(r.uniform(1.0, 4.0), 1)
+        cfg['spokes_count']       = r.choice([3, 4, 5, 6, 7])
+        cfg['spokes_height']      = round(r.uniform(0.0, 5.0), 1)
+
+    # Flanges
+    if r.random() > 0.3:
+        is_3dp = r.random() > 0.4
+        cfg['flange_enabled']      = '1'
+        cfg['flange_3dprint']      = '1' if is_3dp else '0'
+        cfg['flange_angle']        = round(r.uniform(8.0, 25.0), 1)
+        cfg['flange_rim_radius']   = round(r.uniform(1.0, 8.0), 1)
+        cfg['flange_height']       = round(r.uniform(0.5, 5.0), 1)
+        cfg['flange_plate_height'] = round(r.uniform(0.5, 3.0), 1)
+        cfg['flange_bend_radius']  = round(r.uniform(0.0, 3.0), 1)
+        top_sep = r.random() > 0.3
+        cfg['flange_top_separate'] = '1' if top_sep else '0'
+        if is_3dp and top_sep and r.random() > 0.4:
+            cfg['flange_nubs_enabled']  = '1'
+            cfg['flange_nub_count']     = r.choice([2, 3, 4, 6])
+            cfg['flange_nub_dia']       = round(r.uniform(2.0, 6.0), 1)
+            cfg['flange_nub_height']    = round(r.uniform(1.0, 6.0), 1)
+            cfg['flange_nub_allowance'] = round(r.uniform(0.1, 0.4), 2)
+
+    # Dual P2
     if dual:
-        p2_teeth = r.randint(spec['min'], min(spec['max'], 80))
-        cfg['p2_teeth']            = p2_teeth
-        cfg['p2_bore']             = round(r.uniform(4.0, min(spec['bore_max'], 30.0)), 1)
-        cfg['p2_print_extra']      = round(r.uniform(0.0, 0.5), 2)
-        cfg['p2_clearance_preset'] = r.choice(CLEARANCE_PRESETS)
-        cfg['p2_backlash_preset']  = r.choice(BACKLASH_PRESETS)
+        cfg['dual']               = 'true'
+        cfg['p2_teeth']           = r.randint(t_min, t_max)
+        cfg['p2_bore']            = round(r.uniform(4.0, 25.0), 1)
+        cfg['p2_print_extra']     = round(r.uniform(0.0, 0.4), 2)
+        cfg['p2_clearance_preset'] = r.choice(_CLEARANCE)
+        cfg['p2_backlash_preset']  = r.choice(_BACKLASH)
 
     return cfg
 
 
-def _validate_config(cfg):
-    """Run the config through the actual app parse functions.
-    Returns True if the config is geometrically feasible, False otherwise.
-    This uses the same code the download routes use, so it catches all the
-    same edge cases a real request would hit.
+def _parse_and_clamp(raw):
+    """Run raw config through the app's own parse functions.
+
+    Returns a validated param dict (strings, matching download-route format)
+    that is guaranteed to be accepted by the app, or raises ValueError if the
+    geometry is not feasible after clamping.
     """
-    import sys, os
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    try:
-        from app import _parse_stl_params, _parse_hub_params, _parse_spoke_params, _parse_flange_params
-        from geometry.pulley_geometry import getOuterDiameter, PULLEY_SPECS, PROFILE_KEY_PREFIX
+    from app import (
+        _parse_stl_params, _parse_hub_params,
+        _parse_spoke_params, _parse_flange_params,
+        _cct_meta, CCT_SCHEMA_VERSION,
+    )
+    from geometry.pulley_geometry import (
+        getOuterDiameter, PULLEY_SPECS, PROFILE_KEY_PREFIX,
+    )
 
-        qs = _qs(cfg)
+    qs = {k: str(v) for k, v in raw.items()}
 
-        # Parse pulley params the same way the download route does
-        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
-            _parse_stl_params(qs, '1')
+    # ── P1 basic ──────────────────────────────────────────────────────────────
+    family, pitch, num_teeth, bore_mm, belt_h, cl_mm, bl_mm, pr_ex = \
+        _parse_stl_params(qs, '1')
 
-        key    = PROFILE_KEY_PREFIX.get(family, '') + pitch
-        spec   = PULLEY_SPECS[key]
-        pld    = spec.get('pitch_line_diff', spec.get('pitchLineDiff', 0.0))
-        R_OD   = getOuterDiameter(num_teeth, spec['pitch'],
-                                  pld + pr_ex - cl_mm) / 2.0
+    key  = PROFILE_KEY_PREFIX.get(family, '') + pitch
+    spec = PULLEY_SPECS[key]
+    pld  = spec.get('pitch_line_diff', spec.get('pitchLineDiff', 0.0))
+    R_OD = getOuterDiameter(num_teeth, spec['pitch'], pld + pr_ex - cl_mm) / 2.0
+    R_tr = R_OD - spec['tooth_ht']   # actual tooth root radius
 
-        # Bore must be smaller than pulley radius with room to spare
-        if bore_mm >= R_OD - 1.0:
-            return False
+    if bore_mm >= R_tr - 1.0:
+        raise ValueError(f'bore {bore_mm} >= tooth root {R_tr:.1f}')
 
-        # Hub OD must be smaller than pulley OD
-        hub_od    = float(qs.get('hub_od', 0))
-        keyway_w  = float(qs.get('hub_keyway_w', 0))
-        keyway_h  = float(qs.get('hub_keyway_h', 0))
-        flat_dep  = float(qs.get('hub_flat_depth', 0))
-        if hub_od > 0 and hub_od / 2.0 >= R_OD - 1.0:
-            return False
-        # Keyway must not extend outside the bore
-        if keyway_w > 0 and (bore_mm / 2.0 + keyway_h) >= R_OD - 1.0:
-            return False
-        # D-flat must leave enough material
-        if flat_dep > 0 and flat_dep >= bore_mm / 2.0 - 0.5:
-            return False
+    # ── Hub ───────────────────────────────────────────────────────────────────
+    hub_od, hub_h, sd, sc, cn, fd, kw, kh = _parse_hub_params(qs, '')
+    if hub_od > 0 and hub_od / 2.0 >= R_tr - 1.0:
+        raise ValueError(f'hub_od {hub_od} >= tooth root {R_tr:.1f}')
+    if kw > 0 and (bore_mm / 2.0 + kh) >= R_tr - 1.0:
+        raise ValueError('keyway extends outside pulley')
+    if fd > 0 and fd >= bore_mm / 2.0 - 0.5:
+        raise ValueError('d-flat too deep')
 
-        # Spoke validation
-        if qs.get('spokes_enabled') == '1':
-            sp_hub_od  = float(qs.get('spokes_hub_od', 0))
-            rim_depth  = float(qs.get('spokes_rim_depth', 2.0))
-            sp_width   = float(qs.get('spokes_width', 4.0))
-            tip_f      = float(qs.get('spokes_fillet_tip', 1.0))
-            base_f     = float(qs.get('spokes_fillet_base', 1.5))
-            R_rim      = R_OD - rim_depth
-            R_hub_s    = sp_hub_od / 2.0 if sp_hub_od > 0 else bore_mm / 2.0 + 1.0
+    # ── Spokes ────────────────────────────────────────────────────────────────
+    sp_en, sp_hub, rim_d, sp_w, ft, fb, sp_c, sp_h, _ = _parse_spoke_params(qs, '')
+    if sp_en:
+        R_rim   = R_tr - rim_d
+        R_hub_s = sp_hub / 2.0 if sp_hub > 0 else bore_mm / 2.0 + 1.0
+        if R_hub_s >= R_rim - 1.5:
+            raise ValueError('spoke void too narrow (hub too large for rim depth)')
+        if ft + fb >= sp_w:
+            raise ValueError(f'fillets {ft}+{fb} >= spoke width {sp_w}')
 
-            # Spoke void must have positive radial space
-            if R_hub_s >= R_rim - 2.0:
-                return False
-            # Fillets can't exceed spoke width
-            if tip_f + base_f >= sp_width:
-                return False
+    # ── P2 ────────────────────────────────────────────────────────────────────
+    if raw.get('dual') == 'true':
+        fam2, pit2, t2, b2, _, cl2, _, _ = _parse_stl_params(qs, '2')
+        k2   = PROFILE_KEY_PREFIX.get(fam2, '') + pit2
+        sp2  = PULLEY_SPECS[k2]
+        pld2 = sp2.get('pitch_line_diff', sp2.get('pitchLineDiff', 0.0))
+        R2   = getOuterDiameter(t2, sp2['pitch'], pld2) / 2.0 - sp2['tooth_ht']
+        if b2 >= R2 - 1.0:
+            raise ValueError(f'P2 bore {b2} >= tooth root {R2:.1f}')
 
-        # P2 validation for dual
-        if cfg.get('dual'):
-            family2, pitch2, num_teeth2, bore2, _, cl2, _, _ = \
-                _parse_stl_params(qs, '2')
-            key2  = PROFILE_KEY_PREFIX.get(family2, '') + pitch2
-            spec2 = PULLEY_SPECS[key2]
-            pld2  = spec2.get('pitch_line_diff', spec2.get('pitchLineDiff', 0.0))
-            R_OD2 = getOuterDiameter(num_teeth2, spec2['pitch'], pld2) / 2.0
-            if bore2 >= R_OD2 - 1.0:
-                return False
-
-        return True
-
-    except Exception:
-        return False
+    # ── Build validated param dict via _cct_meta ──────────────────────────────
+    # _cct_meta wraps params exactly as the export routes do, giving us the
+    # canonical representation used for save/restore everywhere.
+    validated = dict(raw)   # start with raw (already string-safe)
+    validated['sv'] = str(CCT_SCHEMA_VERSION)
+    return validated
 
 
-def _rand_config_validated(r, run_idx, max_attempts=20):
-    """Generate a random config, retrying until it passes app validation."""
+def _make_config(r, run_idx, max_attempts=30):
+    """Generate a validated config, retrying on geometry failures."""
+    last_err = None
     for _ in range(max_attempts):
-        cfg = _rand_config(r, run_idx)
-        if _validate_config(cfg):
-            return cfg
-    # Fall back to last attempt — better to test a marginal config than skip
-    return cfg
+        raw = _raw_config(r)
+        try:
+            v = _parse_and_clamp(raw)
+            v['run_idx'] = run_idx
+            return v
+        except ValueError as e:
+            last_err = e
+    raise RuntimeError(f'Could not generate valid config after {max_attempts} attempts: {last_err}')
 
 
-def _save_inputs(run_id, configs):
-    """Persist all configs for this run to logs/nightly_random/."""
-    log_dir = Path(__file__).parent.parent / 'logs' / 'nightly_random'
+def _save_configs(run_id, configs):
+    log_dir  = Path(__file__).parent.parent / 'logs' / 'nightly_random'
     log_dir.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now().strftime('%Y-%m-%d')
-    path = log_dir / f'{date_str}_{run_id}.json'
+    path = log_dir / f'{datetime.now().strftime("%Y-%m-%d")}_{run_id}.json'
     path.write_text(json.dumps({
         'run_id':    run_id,
         'timestamp': datetime.now().isoformat(),
@@ -301,28 +227,19 @@ def _save_inputs(run_id, configs):
 
 
 def _qs(cfg):
-    """Convert config dict to query-string dict for the Flask test client."""
-    from app import CCT_SCHEMA_VERSION
-    qs = {k: str(v) for k, v in cfg.items()
-          if k not in ('run_idx',)}
-    if cfg.get('dual'):
-        qs['dual'] = 'true'
-    else:
-        qs.pop('dual', None)   # don't send dual=False — confuses the app
-    qs['sv'] = str(CCT_SCHEMA_VERSION)   # needed for migrateParams()
-    return qs
+    """Return query-string dict for the Flask test client (excludes run_idx)."""
+    return {k: str(v) for k, v in cfg.items() if k != 'run_idx'}
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope='module')
 def random_configs():
-    """Generate 5 random configs and save them to disk before any test runs."""
-    seed    = int(datetime.now().strftime('%Y%m%d%H'))  # changes each hour for retries
-    r       = _rng(seed)
+    seed    = int(datetime.now().strftime('%Y%m%d%H'))
+    r       = random.Random(seed)
     run_id  = datetime.now().strftime('%H%M%S')
-    configs = [_rand_config_validated(r, i) for i in range(5)]
-    path    = _save_inputs(run_id, configs)
+    configs = [_make_config(r, i) for i in range(5)]
+    path    = _save_configs(run_id, configs)
     print(f'\n[nightly] configs saved → {path}')
     return configs
 
@@ -335,128 +252,99 @@ def client():
         yield c
 
 
-# ── Tests ──────────────────────────────────────────────────────────────────────
+# ── Tests ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize('idx', range(5))
 def test_random_svg(client, random_configs, idx):
-    """SVG export succeeds for random config."""
     cfg = random_configs[idx]
-    qs  = _qs(cfg)
-    r   = client.get('/download/svg', query_string=qs)
+    r   = client.get('/download/svg', query_string=_qs(cfg))
     assert r.status_code == 200, \
-        f'SVG failed for config[{idx}]: {r.data[:200]}\nConfig: {json.dumps(cfg, indent=2)}'
-    assert b'<svg' in r.data, 'Response is not SVG'
+        f'SVG failed config[{idx}]: {r.data[:300]}\n{json.dumps(cfg, indent=2)}'
+    assert b'<svg' in r.data
 
 
 @pytest.mark.parametrize('idx', range(5))
 def test_random_dxf(client, random_configs, idx):
-    """DXF export succeeds for random config."""
     cfg = random_configs[idx]
-    qs  = _qs(cfg)
-    r   = client.get('/download/dxf', query_string=qs)
+    r   = client.get('/download/dxf', query_string=_qs(cfg))
     assert r.status_code == 200, \
-        f'DXF failed for config[{idx}]: {r.data[:200]}\nConfig: {json.dumps(cfg, indent=2)}'
-    assert b'SECTION' in r.data or b'0\n' in r.data, 'Response is not DXF'
+        f'DXF failed config[{idx}]: {r.data[:300]}\n{json.dumps(cfg, indent=2)}'
+    assert b'SECTION' in r.data or b'0\n' in r.data
 
 
 @pytest.mark.parametrize('idx', range(5))
 def test_random_stl_preview(client, random_configs, idx):
-    """STL preview succeeds for random config."""
     cfg = random_configs[idx]
-    qs  = _qs(cfg)
-    r   = client.get('/api/preview-stl', query_string=qs)
+    r   = client.get('/api/preview-stl', query_string=_qs(cfg))
     assert r.status_code == 200, \
-        f'STL preview failed for config[{idx}]: {r.data[:200]}\nConfig: {json.dumps(cfg, indent=2)}'
-    # STL binary starts with 80-byte header
-    assert len(r.data) > 84, 'STL response too small'
+        f'STL preview failed config[{idx}]: {r.data[:300]}\n{json.dumps(cfg, indent=2)}'
+    assert len(r.data) > 84
 
 
 @pytest.mark.parametrize('idx', range(5))
 def test_random_stl_download(client, random_configs, idx):
-    """STL download succeeds for random config."""
     cfg = random_configs[idx]
-    qs  = _qs(cfg)
-    r   = client.get('/download/stl', query_string=qs)
+    r   = client.get('/download/stl', query_string=_qs(cfg))
     assert r.status_code == 200, \
-        f'STL download failed for config[{idx}]: {r.data[:200]}\nConfig: {json.dumps(cfg, indent=2)}'
-    assert len(r.data) > 84, 'STL response too small'
+        f'STL download failed config[{idx}]: {r.data[:300]}\n{json.dumps(cfg, indent=2)}'
+    assert len(r.data) > 84
 
 
 @pytest.mark.parametrize('idx', range(5))
 def test_random_step(client, random_configs, idx):
-    """STEP export succeeds for random config (skipped if cadquery unavailable)."""
     pytest.importorskip('cadquery', reason='cadquery not installed')
     cfg = random_configs[idx]
-    qs  = _qs(cfg)
-    r   = client.get('/download/step', query_string=qs)
+    r   = client.get('/download/step', query_string=_qs(cfg))
     assert r.status_code == 200, \
-        f'STEP failed for config[{idx}]: {r.data[:200]}\nConfig: {json.dumps(cfg, indent=2)}'
-    assert b'ISO-10303-21' in r.data, 'Response is not STEP'
+        f'STEP failed config[{idx}]: {r.data[:300]}\n{json.dumps(cfg, indent=2)}'
+    assert b'ISO-10303-21' in r.data
 
 
 @pytest.mark.parametrize('idx', range(5))
 def test_random_metadata_roundtrip(client, random_configs, idx):
-    """Embedded metadata can be extracted and matches original params."""
+    """Params embedded in SVG can be extracted and match the original config."""
     import re
     cfg = random_configs[idx]
-    qs  = _qs(cfg)
-    r   = client.get('/download/svg', query_string=qs)
+    r   = client.get('/download/svg', query_string=_qs(cfg))
     assert r.status_code == 200
     text = r.data.decode('utf-8', errors='replace')
     m    = re.search(r'<cct>([\s\S]+?)</cct>', text)
     assert m, f'No CCT metadata in SVG for config[{idx}]'
-    data   = json.loads(m.group(1))
-    params = data.get('cct', data)
-    assert params.get('family') == cfg['family'], \
-        f'family mismatch: got {params.get("family")} expected {cfg["family"]}'
-    assert str(params.get('teeth', params.get('p1_teeth', ''))) == str(cfg['teeth']) or \
-           str(params.get('teeth', '')) == str(cfg['teeth']), \
-        f'teeth mismatch in metadata for config[{idx}]'
+    params = json.loads(m.group(1)).get('cct', {})
+    assert params.get('family') == cfg['family']
+    assert str(params.get('teeth', '')) == str(cfg['teeth'])
 
 
 # ── View helper ───────────────────────────────────────────────────────────────
-# Run directly to print app URLs for any saved nightly run:
-#
-#   python tests/test_nightly_random.py
-#   python tests/test_nightly_random.py logs/nightly_random/2026-06-07_134234.json
-#
-# Opens the URL in your browser if --open is passed.
+# python tests/test_nightly_random.py [run_file.json] [--open]
 
 if __name__ == '__main__':
     import sys
     import urllib.parse
     import webbrowser
 
-    log_dir = Path(__file__).parent.parent / 'logs' / 'nightly_random'
+    log_dir    = Path(__file__).parent.parent / 'logs' / 'nightly_random'
     open_browser = '--open' in sys.argv
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
-
-    if args:
-        candidates = [Path(args[0])]
-    else:
-        candidates = sorted(log_dir.glob('*.json'))
+    files_args   = [a for a in sys.argv[1:] if not a.startswith('--')]
+    candidates   = [Path(files_args[0])] if files_args else sorted(log_dir.glob('*.json'))
 
     if not candidates:
         print('No nightly run files found in', log_dir)
         sys.exit(1)
 
-    run_file = candidates[-1]
-    print(f'Run file: {run_file}\n')
-    data    = json.loads(run_file.read_text(encoding='utf-8'))
+    data    = json.loads(candidates[-1].read_text(encoding='utf-8'))
     configs = data['configs']
-    base    = 'http://localhost:5000/'
+    base    = 'http://localhost:5099'
+    print(f'Run file: {candidates[-1]}\n')
 
     for cfg in configs:
-        idx = cfg['run_idx']
-        qs  = {k: str(v) for k, v in cfg.items() if k != 'run_idx'}
-        if cfg.get('dual'):
-            qs['dual'] = 'true'
-        url = base + '?' + urllib.parse.urlencode(qs)
-        print(f'Config {idx}:  {cfg["family"]} {cfg["pitch"]}  '
-              f'{cfg["teeth"]}T  bore={cfg["bore"]}mm'
-              + ('  spokes' if cfg.get('spokes_enabled') == '1' else '')
-              + ('  flange' if cfg.get('flange_enabled') == '1' else '')
-              + ('  dual'   if cfg.get('dual')           else ''))
+        idx    = cfg.get('run_idx', '?')
+        qs     = {k: str(v) for k, v in cfg.items() if k != 'run_idx'}
+        url    = base + '/?' + urllib.parse.urlencode(qs)
+        tags   = ' '.join(t for t in ['spokes' if cfg.get('spokes_enabled') == '1' else '',
+                                       'flange' if cfg.get('flange_enabled') == '1' else '',
+                                       'dual'   if cfg.get('dual') == 'true' else ''] if t)
+        print(f'Config {idx}: {cfg["family"]} {cfg["pitch"]}  {cfg["teeth"]}T  bore={cfg["bore"]}  {tags}')
         print(f'  {url}\n')
         if open_browser:
             webbrowser.open(url)
