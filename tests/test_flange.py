@@ -160,21 +160,23 @@ class TestBuildFlangeMeshesMetal:
 # ===========================================================================
 
 class TestFlangeInnerRadiusSpokes:
-    """When spokes are enabled, the flange inner edge must sit at
-    R_tooth_OD - rim_depth (the inner face of the rim ring).
-    It must NOT extend all the way to spoke_hub_od / 2.
+    """When spokes are enabled, the flange inner edge must sit at the actual
+    rim boundary = (R_tooth_OD - tooth_ht) - rim_depth.
+    R_tooth_OD is the theoretical OD; the actual tooth-root radius is
+    R_tooth_OD - tooth_ht, and the rim boundary sits rim_depth inside that.
+    The flange must NOT extend all the way to spoke_hub_od / 2.
     """
 
     def _r_inner_from_mesh(self, mesh):
         """Approximate the flange inner radius from the mesh bounding cylinder."""
         verts = mesh.vertices
-        # Radial distances of all vertices from Z-axis
         radii = np.sqrt(verts[:, 0] ** 2 + verts[:, 1] ** 2)
         return float(radii.min())
 
     def test_3dprint_inner_radius_equals_R_OD_minus_rim(self):
-        R_OD, _, _ = _pulley_radii(FAMILY, PITCH, TEETH)
-        expected_r_inner = R_OD - RIM_DEPTH
+        R_OD, _, tooth_ht = _pulley_radii(FAMILY, PITCH, TEETH)
+        # Actual rim boundary uses the tooth-root radius, not the theoretical OD
+        expected_r_inner = (R_OD - tooth_ht) - RIM_DEPTH
 
         top, bot = build_flange_meshes(
             _fp_3dprint(),
@@ -183,19 +185,19 @@ class TestFlangeInnerRadiusSpokes:
             spoke_hub_od_mm=SPOKE_HUB_OD,
             rim_depth_mm=RIM_DEPTH,
         )
-        # Evaluate the bottom flange (not offset), easier to measure
         verts = bot.vertices
         radii = np.sqrt(verts[:, 0] ** 2 + verts[:, 1] ** 2)
         r_min = float(radii.min())
 
-        # Inner radius should be close to expected (within 1 mm of R_OD - rim_depth)
         assert abs(r_min - expected_r_inner) < 1.5, (
             f'3D-print flange inner r={r_min:.3f}, expected ≈{expected_r_inner:.3f} '
-            f'(R_OD={R_OD:.3f}, rim_depth={RIM_DEPTH})'
+            f'(R_OD={R_OD:.3f}, tooth_ht={tooth_ht:.3f}, rim_depth={RIM_DEPTH})'
         )
 
     def test_3dprint_inner_radius_not_at_hub_boss(self):
-        """The old (buggy) inner radius was spoke_hub_od / 2. Verify it's larger now."""
+        """The old (buggy) inner radius was spoke_hub_od / 2. Verify it's at rim boundary."""
+        R_OD, _, tooth_ht = _pulley_radii(FAMILY, PITCH, TEETH)
+        expected_r_inner = (R_OD - tooth_ht) - RIM_DEPTH
         _, bot = build_flange_meshes(
             _fp_3dprint(),
             FAMILY, PITCH, TEETH, BORE_MM, BELT_H,
@@ -206,11 +208,15 @@ class TestFlangeInnerRadiusSpokes:
         verts  = bot.vertices
         radii  = np.sqrt(verts[:, 0] ** 2 + verts[:, 1] ** 2)
         r_min  = float(radii.min())
-        r_hub  = SPOKE_HUB_OD / 2.0   # old (wrong) inner radius
+        r_hub  = SPOKE_HUB_OD / 2.0
 
-        # The real inner radius must be significantly larger than the hub boss radius
-        assert r_min > r_hub + 2.0, (
-            f'Flange inner r={r_min:.3f} ≤ hub boss r={r_hub:.3f} — inner rim rule not applied'
+        # Inner radius must be at the rim boundary, not at the hub boss
+        assert abs(r_min - expected_r_inner) < 1.5, (
+            f'Flange inner r={r_min:.3f}, expected rim boundary {expected_r_inner:.3f} '
+            f'(hub boss={r_hub:.3f})'
+        )
+        assert r_min > r_hub, (
+            f'Flange inner r={r_min:.3f} should be outside hub boss r={r_hub:.3f}'
         )
 
     def test_metal_top_inner_radius_equals_R_OD_minus_rim(self):
