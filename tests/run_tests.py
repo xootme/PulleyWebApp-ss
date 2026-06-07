@@ -51,6 +51,7 @@ PYTEST_GROUPS = {
     'test_flange':          'Flange Export',
     'test_benchmarks':      'Benchmarks',
     'test_repro':           'Regression',
+    'test_nightly_random':  'Nightly Random',
 }
 QUEUE_FILE = 'test_queue_pytest'
 
@@ -668,12 +669,14 @@ def start_flask(port):
 
 def collect_pytest_tests():
     """Return list of (test_name, group, node_id) for all non-queue test files."""
+    env = {**os.environ}
+    # Pass nightly flag through so pytest --collect-only sees the skip markers correctly
     result = subprocess.run(
         [str(VENV_PY), '-m', 'pytest', 'tests/', '--collect-only',
          '--ignore=tests/run_tests.py',
          f'--ignore=tests/{QUEUE_FILE}.py',
          '--ignore=tests/_dash_plugin.py'],
-        cwd=str(ROOT), capture_output=True, text=True
+        cwd=str(ROOT), capture_output=True, text=True, env=env
     )
     tests = []
     for line in (result.stdout + result.stderr).splitlines():
@@ -723,6 +726,7 @@ def run_pytest(pytest_tests, dash_port):
             _group_start(group)
 
     # PYTHONPATH includes tests/ so pytest can import _dash_plugin by stem name
+    # PULLEY_NIGHTLY is forwarded so the skip marker in test_nightly_random.py works
     env = {**os.environ,
            'PYTHONPATH': str(ROOT / 'tests') + os.pathsep + os.environ.get('PYTHONPATH', '')}
     plugin_args = _plugin_args(plugin_path)
