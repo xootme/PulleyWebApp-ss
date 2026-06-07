@@ -17,6 +17,7 @@ _QUEUE = []  # [job_id, job_id, ...] waiting to process
 _ACTIVE = set()  # {job_id, ...} currently processing
 _MAX_CONCURRENT = 1
 _LOCK = threading.Lock()
+_SESSION_SEQ = 0   # monotonic counter for queue ordering (avoids same-timestamp ties)
 _JOB_CLEANUP_INTERVAL = 60
 _SESSION_CLEANUP_INTERVAL = 10
 
@@ -246,8 +247,11 @@ def create_session():
                 return {'session_id': session_id, 'user_id': user_id,
                         'is_active': True, 'position': 0, 'estimated_wait_sec': 0}
             else:
+                global _SESSION_SEQ
+                _SESSION_SEQ += 1
                 sessions[session_id] = {
-                    'user_id': user_id, 'created_at': now, 'last_heartbeat': now}
+                    'user_id': user_id, 'created_at': now,
+                    'last_heartbeat': now, 'seq': _SESSION_SEQ}
                 position = _queue_position(session_id, sessions)
                 elapsed  = now - active['started_at']
                 remaining_active = max(0, SESSION_TIMEOUT_SEC - elapsed)
@@ -332,10 +336,15 @@ def get_queue_info():
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _queue_position(session_id, sessions):
-    """1-based position of session_id among waiting sessions (oldest = 1)."""
+    """1-based position of session_id among waiting sessions (oldest = 1).
+    Uses seq (insertion order counter) if available, falls back to created_at.
+    """
     sess = sessions[session_id]
-    return sum(1 for s in sessions.values()
-               if s['created_at'] < sess['created_at']) + 1
+    my_key = sess.get('seq', sess['created_at'])
+    return sum(
+        1 for s in sessions.values()
+        if s.get('seq', s['created_at']) < my_key
+    ) + 1
 
 
 def _promote_next(active, sessions, now):
