@@ -238,17 +238,18 @@ tr.done-hdr td { color: #2ecc71; border-top-color: #1a3a2a; background: #090e0b;
 tr.todo-hdr td { color: #888;    border-top-color: #222;    background: #0f0f13; }
 tr.grp-row td  { background: #111116; color: #aaa; font-size: 12px; font-weight: 700;
                   letter-spacing: .04em; text-transform: uppercase; padding: 7px 12px 4px; }
-tr.row-passed { background: #091409; color: #d0ecd0; }
-tr.row-failed { background: #1c0a0a; color: #f0c0c0; }
-tr.row-running{ background: #090d14; color: #b0d0f0; animation: pulse 1.4s ease-in-out infinite; }
+tr.row-passed { background: #091409; }
+tr.row-failed { background: #1c0a0a; }
+tr.row-running{ background: #090d14; animation: pulse 1.4s ease-in-out infinite; }
 tr.row-skipped { opacity: 0.5; }
-tr.row-pending { opacity: 0.6; color: #aaa; }
+tr.row-pending { opacity: 0.6; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
-td.icon { width: 26px; font-size: 14px; text-align: center; color: #888; }
+td.icon { width: 26px; font-size: 14px; text-align: center; color: #666; }
 td.icon.ok  { color: #2ecc71; } td.icon.err { color: #e74c3c; }
 td.icon.run { color: #3498db; }
-td.grp  { width: 200px; color: #bbb; font-size: 12px; font-weight: 500; }
-td.dur  { width: 72px; color: #eee; text-align: right; font-size: 13px; font-weight: 700; }
+td.name { color: #e8e8ee; font-size: 13px; }
+td.grp  { width: 200px; color: #7ec8e3; font-size: 12px; font-weight: 600; }
+td.dur  { width: 72px; color: #f0f0f0; text-align: right; font-size: 13px; font-weight: 700; }
 .grp-timer  { float: right; font-size: 12px; font-family: monospace; color: #888; }
 .grp-timer.live { color: #5dade2; font-weight: 600; }
 .grp-timer.warn { color: #f1c40f; font-weight: 600; }
@@ -370,7 +371,7 @@ function makeRow(t) {
   }
   return `<tr id="${rowId(t.name)}" class="row-${t.status}">
     <td class="icon ${ic}">${ICON[t.status]||'?'}</td>
-    <td>${pretty(t.name)}${slow}${raw}${repro}${err}</td>
+    <td class="name">${pretty(t.name)}${slow}${raw}${repro}${err}</td>
     <td class="grp">${esc(t.group)}</td>
     <td class="dur">${dur}</td>
   </tr>`;
