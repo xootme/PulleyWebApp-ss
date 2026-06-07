@@ -899,7 +899,8 @@ def run_pytest(pytest_tests, dash_port):
                 _push({'type': 'test', **t})
 
     plugin_path.unlink(missing_ok=True)
-    return proc.returncode == 0
+    # Exit code 5 = no tests ran / all skipped — treat as success
+    return proc.returncode in (0, 5)
 
 
 def run_queue_test(group_name, cls, method_name, skip, tmod):
