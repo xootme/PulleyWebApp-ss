@@ -266,6 +266,12 @@ td.dur  { width: 72px; color: #f0f0f0; text-align: right; font-size: 13px; font-
 .error-box  { font-size: 11px; color: #e74c3c; margin-top: 4px; font-family: monospace;
               white-space: pre-wrap; max-height: 100px; overflow-y: auto;
               background: #1a0808; padding: 5px 8px; border-radius: 3px; }
+.current-test { font-size: 13px; font-family: monospace; padding: 8px 14px;
+                border-radius: 6px; margin-bottom: 12px; min-height: 36px;
+                background: #0d1520; border-left: 4px solid #3498db; color: #b0d0f0; }
+.current-test.cur-pass { background: #0a1a0e; border-left-color: #2ecc71; color: #a0d4a0; }
+.current-test.cur-fail { background: #1c0a0a; border-left-color: #e74c3c; color: #e0a0a0; }
+.current-test.cur-run  { background: #0d1520; border-left-color: #3498db; color: #b0d0f0; }
 .repro-btn  { font-size: 10px; font-weight: 600; padding: 2px 8px; margin-left: 8px;
               background: #1a3a5a; color: #3498db; border: 1px solid #1e4a70;
               border-radius: 3px; cursor: pointer; text-decoration: none;
@@ -294,6 +300,8 @@ td.dur  { width: 72px; color: #f0f0f0; text-align: right; font-size: 13px; font-
   <div class="stat"><div class="stat-num"      id="n-pend">0</div><div class="stat-lbl">Pending</div></div>
   <div class="stat"><div class="stat-num"      id="n-tot">0</div><div class="stat-lbl">Total</div></div>
 </div>
+
+<div class="current-test" id="current-test"></div>
 
 <table>
   <colgroup>
@@ -486,11 +494,15 @@ function rebuildTable() {
     section(done,    '✓ Finished',                           'done') +
     section(pending, `○ Upcoming — ${pending.length} tests`, 'todo', true);
 
-  // Auto-scroll: keep the most recently finished test in view
-  const lastDone = done[done.length - 1];
-  if (lastDone) {
-    const el = document.getElementById(rowId(lastDone.name));
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Update current-test status line
+  const active = running[0] || done[done.length - 1];
+  const el = document.getElementById('current-test');
+  if (active) {
+    const icon = active.status === 'running' ? '⏳' : (active.status === 'passed' ? '✓' : '✗');
+    el.textContent = `${icon}  ${pretty(active.name)}   [${active.group}]`;
+    el.className   = 'current-test ' + (active.status === 'failed' ? 'cur-fail' : active.status === 'running' ? 'cur-run' : 'cur-pass');
+  } else {
+    el.textContent = '';
   }
 }
 
@@ -563,7 +575,8 @@ function connect() {
 // ── Boot ───────────────────────────────────────────────────────────────────────
 fetch('/state').then(r=>r.json()).then(applyState).catch(()=>{});
 connect();
-timerID = setInterval(()=>{ updateTimers(); rebuildTable(); }, 1000);
+// Only update timers every second — rebuildTable() is called by SSE events only
+timerID = setInterval(()=>{ updateTimers(); }, 1000);
 </script>
 </body>
 </html>"""
