@@ -200,49 +200,20 @@ def _parse_and_clamp(raw):
     return validated
 
 
-def _stl_ok(cfg):
-    """Return True if the STL exporter succeeds for this config.
-    Calls the exporter directly (no HTTP) to avoid conflicts with the
-    test client fixture. Rejects configs with degenerate geometry.
+def _make_config(r, run_idx, max_attempts=30):
+    """Generate a validated config using app parse functions.
+    Retries on parameter validation failures only — geometry edge cases
+    are caught by the tests themselves and logged for investigation.
     """
-    try:
-        from app import _parse_stl_params, _parse_hub_params, _parse_spoke_params
-        from exporters.step_exporter import generate_pulley_stl_preview
-        qs = _qs(cfg)
-        family, pitch, num_teeth, bore_mm, belt_h, cl_mm, bl_mm, pr_ex = \
-            _parse_stl_params(qs, '1')
-        hub_od, hub_h, sd, sc, cn, fd, kw, kh = _parse_hub_params(qs, '')
-        sp_en, sp_hub, rim_d, sp_w, ft, fb, sp_c, sp_h, _ = _parse_spoke_params(qs, '')
-        result = generate_pulley_stl_preview(
-            family=family, pitch=pitch, num_teeth=num_teeth,
-            bore_mm=bore_mm, belt_height_mm=belt_h,
-            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
-            hub_od_mm=hub_od, hub_height_mm=hub_h,
-            flat_depth_mm=fd, keyway_w_mm=kw, keyway_h_mm=kh,
-            spoke_count=sp_c if sp_en else 0,
-            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-            rim_depth_mm=rim_d, fillet_tip_mm=ft, fillet_base_mm=fb,
-            spoke_height_mm=sp_h,
-        )
-        return isinstance(result, bytes) and len(result) > 84
-    except Exception:
-        return False
-
-
-def _make_config(r, run_idx, max_attempts=50):
-    """Generate a validated config, retrying on geometry failures."""
     last_err = None
     for _ in range(max_attempts):
         raw = _raw_config(r)
         try:
             v = _parse_and_clamp(raw)
+            v['run_idx'] = run_idx
+            return v
         except ValueError as e:
             last_err = e
-            continue
-        v['run_idx'] = run_idx
-        if _stl_ok(v):
-            return v
-        last_err = 'STL generation failed (geometry error)'
     raise RuntimeError(
         f'Could not generate valid config after {max_attempts} attempts: {last_err}'
     )
