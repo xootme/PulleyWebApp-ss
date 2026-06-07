@@ -1,4 +1,9 @@
-"""Job queue for async STEP/DXF generation with single-user session queueing."""
+"""Job queue for async STEP/DXF generation with single-user session queueing.
+
+Session state is persisted to a shared JSON file on disk so all gunicorn
+workers see the same state. A threading lock protects in-process reads/writes;
+a file lock (fcntl on Linux, msvcrt on Windows) prevents cross-process races.
+"""
 import json
 import uuid
 import time
@@ -10,39 +15,97 @@ from pathlib import Path
 _JOBS = {}  # {job_id: Job}
 _QUEUE = []  # [job_id, job_id, ...] waiting to process
 _ACTIVE = set()  # {job_id, ...} currently processing
-_MAX_CONCURRENT = 1  # SINGLE USER at a time (5 min limit, 1 min idle logout)
+_MAX_CONCURRENT = 1
 _LOCK = threading.Lock()
 _JOB_CLEANUP_INTERVAL = 60
-_SESSION_CLEANUP_INTERVAL = 10  # Check for stale sessions every 10 seconds
+_SESSION_CLEANUP_INTERVAL = 10
 
-# Session management (single-user access)
 _LOG_DIR = os.environ.get('PULLEY_LOG_DIR',
                           os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs'))
-_SESSIONS = {}  # {session_id: {'user_id': str, 'started_at': time, 'last_heartbeat': time}}
-_ACTIVE_SESSION = None  # {session_id, user_id, started_at, last_heartbeat}
-SESSION_TIMEOUT_SEC = 5 * 60  # 5 minutes
-IDLE_TIMEOUT_SEC = 60  # 1 minute idle logout
 
-# Trial download tracking (FreeCAD addin)
+SESSION_TIMEOUT_SEC = 5 * 60   # 5 minutes hard cap
+IDLE_TIMEOUT_SEC    = 60        # 1 minute idle (active session only)
+
+# Shared session state file — written by every worker, read by every worker
+_SESSION_FILE = os.path.join(_LOG_DIR, 'sessions.json')
+
+# Trial download tracking
 _TRIAL_DOWNLOADS_FILE = os.path.join(_LOG_DIR, 'trial_downloads.json')
 _TRIAL_LOCK = threading.Lock()
 TRIAL_DOWNLOADS_PER_WEEK = 2
-TRIAL_RETENTION_DAYS = 7  # Keep old entries for this long before cleanup
+TRIAL_RETENTION_DAYS = 7
 
+
+# ── File-backed shared state ───────────────────────────────────────────────────
+
+def _file_lock(fh, exclusive=True):
+    """Cross-platform advisory file lock."""
+    try:
+        import fcntl
+        op = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        fcntl.flock(fh, op)
+    except ImportError:
+        import msvcrt
+        if exclusive:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+
+
+def _file_unlock(fh):
+    try:
+        import fcntl
+        fcntl.flock(fh, fcntl.LOCK_UN)
+    except ImportError:
+        import msvcrt
+        try:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        except Exception:
+            pass
+
+
+def _load_state():
+    """Load session state from disk. Returns (active_session, sessions_dict)."""
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    if not os.path.exists(_SESSION_FILE):
+        return None, {}
+    try:
+        with open(_SESSION_FILE, 'r') as f:
+            _file_lock(f, exclusive=False)
+            try:
+                data = json.load(f)
+            finally:
+                _file_unlock(f)
+        return data.get('active'), data.get('sessions', {})
+    except Exception:
+        return None, {}
+
+
+def _save_state(active_session, sessions):
+    """Persist session state to disk atomically."""
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    tmp = _SESSION_FILE + '.tmp'
+    with open(tmp, 'w') as f:
+        _file_lock(f, exclusive=True)
+        try:
+            json.dump({'active': active_session, 'sessions': sessions}, f)
+        finally:
+            _file_unlock(f)
+    os.replace(tmp, _SESSION_FILE)
+
+
+# ── Job classes (in-memory only — single request lifecycle) ───────────────────
 
 class Job:
-    """Represents a download job (STEP, DXF, etc)."""
     def __init__(self, job_type='all-step', params=None):
         self.id = str(uuid.uuid4())[:8]
         self.type = job_type
-        self.status = 'queued'  # queued, waiting, processing, done, failed
+        self.status = 'queued'
         self.created = datetime.now()
-        self.started = None  # when processing started
-        self.finished = None  # when finished
-        self.progress = 0  # 0-100, overall progress
+        self.started = None
+        self.finished = None
+        self.progress = 0
         self.output_file = None
         self.error = None
-        self.params = params  # user's request params
+        self.params = params
 
     def to_dict(self):
         with _LOCK:
@@ -52,25 +115,18 @@ class Job:
                     queue_position = _QUEUE.index(self.id) + 1
                 except ValueError:
                     pass
-
             active_count = len(_ACTIVE)
-
         return {
-            'id': self.id,
-            'type': self.type,
-            'status': self.status,
+            'id': self.id, 'type': self.type, 'status': self.status,
             'created': self.created.isoformat(),
             'started': self.started.isoformat() if self.started else None,
-            'progress': self.progress,
-            'queue_position': queue_position,
-            'active_jobs': active_count,
-            'output_file': self.output_file,
+            'progress': self.progress, 'queue_position': queue_position,
+            'active_jobs': active_count, 'output_file': self.output_file,
             'error': self.error,
         }
 
 
 def create_job(job_type='all-step', params=None):
-    """Create a new job and enqueue it."""
     job = Job(job_type, params)
     with _LOCK:
         _JOBS[job.id] = job
@@ -79,23 +135,17 @@ def create_job(job_type='all-step', params=None):
 
 
 def get_job(job_id):
-    """Get job by ID."""
     with _LOCK:
         return _JOBS.get(job_id)
 
 
 def get_queue_status():
-    """Get current queue and active jobs."""
     with _LOCK:
-        return {
-            'queue': _QUEUE.copy(),
-            'active': list(_ACTIVE),
-            'max_concurrent': _MAX_CONCURRENT,
-        }
+        return {'queue': _QUEUE.copy(), 'active': list(_ACTIVE),
+                'max_concurrent': _MAX_CONCURRENT}
 
 
 def start_job(job_id):
-    """Move job from queue to active processing."""
     with _LOCK:
         if job_id not in _QUEUE:
             return False
@@ -109,7 +159,6 @@ def start_job(job_id):
 
 
 def finish_job(job_id, output_file=None, error=None):
-    """Mark job as done and process next queued job."""
     with _LOCK:
         job = _JOBS.get(job_id)
         if job:
@@ -119,13 +168,10 @@ def finish_job(job_id, output_file=None, error=None):
             job.error = error
         if job_id in _ACTIVE:
             _ACTIVE.remove(job_id)
-
-    # Process next job in queue
     process_next()
 
 
 def update_progress(job_id, progress):
-    """Update a job's progress (0-100)."""
     with _LOCK:
         job = _JOBS.get(job_id)
         if job:
@@ -133,160 +179,177 @@ def update_progress(job_id, progress):
 
 
 def process_next():
-    """Start next queued job if capacity available."""
     with _LOCK:
         if len(_ACTIVE) >= _MAX_CONCURRENT or not _QUEUE:
             return
         next_job_id = _QUEUE[0]
-
     start_job(next_job_id)
 
 
-# ── Session Management (Single-User Access) ────────────────────────────────
+# ── Session management (shared via disk) ──────────────────────────────────────
 
 def create_session():
-    """Create a new session (immediate or queued)."""
-    global _ACTIVE_SESSION
-    user_id = str(uuid.uuid4())[:8]
+    """Create a new session (immediate or queued). Returns status dict."""
+    user_id    = str(uuid.uuid4())[:8]
     session_id = str(uuid.uuid4())
-    now = time.time()
+    now        = time.time()
 
     with _LOCK:
-        _cleanup_expired_session()
+        active, sessions = _load_state()
+        active, sessions = _expire_active(active, sessions, now)
 
-        if _ACTIVE_SESSION is None:
-            # Grant immediate access
-            _ACTIVE_SESSION = {
-                'session_id': session_id,
-                'user_id': user_id,
-                'started_at': now,
+        if active is None:
+            active = {
+                'session_id':    session_id,
+                'user_id':       user_id,
+                'started_at':    now,
                 'last_heartbeat': now,
             }
-            return {
-                'session_id': session_id,
-                'user_id': user_id,
-                'is_active': True,
-                'position': 0,
-                'estimated_wait_sec': 0,
-            }
+            _save_state(active, sessions)
+            return {'session_id': session_id, 'user_id': user_id,
+                    'is_active': True, 'position': 0, 'estimated_wait_sec': 0}
         else:
-            # Add to queue
-            _SESSIONS[session_id] = {
-                'user_id': user_id,
-                'created_at': now,
-                'last_heartbeat': now,
-            }
-            position = len(_SESSIONS)
-            # Calculate wait based on remaining active session time + 1 min idle buffer
-            elapsed = now - _ACTIVE_SESSION['started_at']
+            sessions[session_id] = {
+                'user_id': user_id, 'created_at': now, 'last_heartbeat': now}
+            position = _queue_position(session_id, sessions)
+            elapsed  = now - active['started_at']
             remaining_active = max(0, SESSION_TIMEOUT_SEC - elapsed)
-            estimated_wait = remaining_active + (position - 1) * (SESSION_TIMEOUT_SEC + 60)
-            return {
-                'session_id': session_id,
-                'user_id': user_id,
-                'is_active': False,
-                'position': position,
-                'estimated_wait_sec': estimated_wait,
-            }
+            estimated_wait   = remaining_active + (position - 1) * (SESSION_TIMEOUT_SEC + 60)
+            _save_state(active, sessions)
+            return {'session_id': session_id, 'user_id': user_id,
+                    'is_active': False, 'position': position,
+                    'estimated_wait_sec': estimated_wait}
 
 
-def _cleanup_expired_session():
-    """Check if active session expired; clear if so and promote next from queue."""
-    global _ACTIVE_SESSION
-    if not _ACTIVE_SESSION:
-        return
-
+def heartbeat(session_id):
+    """Update last_heartbeat for active or queued session."""
     now = time.time()
-    elapsed = now - _ACTIVE_SESSION['started_at']
-    idle = now - _ACTIVE_SESSION.get('last_heartbeat', _ACTIVE_SESSION['started_at'])
+    with _LOCK:
+        active, sessions = _load_state()
+        changed = False
+        if active and active['session_id'] == session_id:
+            active['last_heartbeat'] = now
+            changed = True
+        elif session_id in sessions:
+            sessions[session_id]['last_heartbeat'] = now
+            changed = True
+        if changed:
+            _save_state(active, sessions)
+        return changed
 
-    expired = False
 
-    # Idle timeout: 1 min
-    if idle > IDLE_TIMEOUT_SEC:
-        _ACTIVE_SESSION = None
-        expired = True
+def get_session_status(session_id):
+    """Return status dict for a session."""
+    now = time.time()
+    with _LOCK:
+        active, sessions = _load_state()
+        active, sessions = _expire_active(active, sessions, now)
 
-    # Session timeout: 5 min
-    elif elapsed > SESSION_TIMEOUT_SEC:
-        _ACTIVE_SESSION = None
-        expired = True
+        if active and active['session_id'] == session_id:
+            remaining = max(0, SESSION_TIMEOUT_SEC - (now - active['started_at']))
+            _save_state(active, sessions)
+            return {'is_active': True, 'position': 0,
+                    'remaining_sec': remaining, 'queue_length': len(sessions)}
 
-    # If expired, promote next from queue
-    if expired and _SESSIONS:
-        # Find oldest queued session (first created)
-        oldest_id = min(_SESSIONS.keys(), key=lambda s: _SESSIONS[s]['created_at'])
-        oldest = _SESSIONS[oldest_id]
-        del _SESSIONS[oldest_id]
+        if session_id in sessions:
+            position = _queue_position(session_id, sessions)
+            if active:
+                remaining_active = max(0, SESSION_TIMEOUT_SEC - (now - active['started_at']))
+            else:
+                remaining_active = 0
+            estimated_wait = remaining_active + (position - 1) * (SESSION_TIMEOUT_SEC + 60)
+            _save_state(active, sessions)
+            return {'is_active': False, 'position': position,
+                    'estimated_wait_sec': estimated_wait,
+                    'queue_length': len(sessions)}
 
-        _ACTIVE_SESSION = {
-            'session_id': oldest_id,
-            'user_id': oldest['user_id'],
-            'started_at': now,
-            'last_heartbeat': now,
-        }
+        return {'error': 'Session not found'}
+
+
+def release_session(session_id):
+    """Release active or queued session and promote next."""
+    now = time.time()
+    with _LOCK:
+        active, sessions = _load_state()
+        if active and active['session_id'] == session_id:
+            active = None
+        sessions.pop(session_id, None)
+        active = _promote_next(active, sessions, now)
+        _save_state(active, sessions)
+    return True
+
+
+def get_queue_info():
+    """Return active user and queue length for display."""
+    with _LOCK:
+        active, sessions = _load_state()
+    active_user  = active['user_id'][:4] if active else 'none'
+    queue_length = len(sessions)
+    return {'active_user': active_user, 'queue_length': queue_length}
+
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _queue_position(session_id, sessions):
+    """1-based position of session_id among waiting sessions (oldest = 1)."""
+    sess = sessions[session_id]
+    return sum(1 for s in sessions.values()
+               if s['created_at'] < sess['created_at']) + 1
+
+
+def _promote_next(active, sessions, now):
+    """Promote the oldest waiting session to active. Returns updated active."""
+    if active is not None or not sessions:
+        return active
+    oldest_id = min(sessions, key=lambda s: sessions[s]['created_at'])
+    oldest    = sessions.pop(oldest_id)
+    return {'session_id': oldest_id, 'user_id': oldest['user_id'],
+            'started_at': now, 'last_heartbeat': now}
+
+
+def _expire_active(active, sessions, now):
+    """Expire active session if idle or timed out; promote next if so."""
+    if active is None:
+        return active, sessions
+    elapsed = now - active['started_at']
+    idle    = now - active.get('last_heartbeat', active['started_at'])
+    if idle > IDLE_TIMEOUT_SEC or elapsed > SESSION_TIMEOUT_SEC:
+        active = _promote_next(None, sessions, now)
+    return active, sessions
 
 
 def _cleanup_stale_queued_sessions():
-    """Remove queued sessions whose browser has genuinely disconnected.
-
-    Waiting sessions are NOT subject to idle or session timeouts — only the
-    active session expires. We only remove a waiting session if its heartbeat
-    has been absent for 10 minutes (browser closed / network lost).
-    """
-    global _SESSIONS
+    """Drop waiting sessions whose browser has been gone for >30 seconds."""
     now = time.time()
-    stale_timeout = 30  # 30 seconds — browser closed / network lost
-    to_remove = [
-        sid for sid, sess in _SESSIONS.items()
-        if (now - sess.get('last_heartbeat', sess['created_at'])) > stale_timeout
-    ]
-    for sid in to_remove:
-        del _SESSIONS[sid]
+    active, sessions = _load_state()
+    stale = [sid for sid, s in sessions.items()
+             if (now - s.get('last_heartbeat', s['created_at'])) > 30]
+    if stale:
+        for sid in stale:
+            del sessions[sid]
+        _save_state(active, sessions)
 
 
-# ── Trial Download Tracking (FreeCAD addin) ────────────────────────────────
+# ── Trial download tracking (unchanged) ───────────────────────────────────────
 
 def register_trial_download(machine_id, fmt='step'):
-    """Register a download from a trial user (FreeCAD addin).
-
-    Returns: (allowed, count_this_week, limit)
-    - allowed: True if within weekly limit
-    - count_this_week: current download count for this week
-    - limit: TRIAL_DOWNLOADS_PER_WEEK
-    """
     with _TRIAL_LOCK:
-        # Load existing data
         data = _load_trial_downloads()
-        now = datetime.now()
-        week_start = now - timedelta(days=now.weekday())  # Monday of this week
-
-        # Get or create entry for this machine
+        now  = datetime.now()
+        week_start = now - timedelta(days=now.weekday())
         if machine_id not in data:
             data[machine_id] = []
-
-        # Count downloads this week
-        this_week = [
-            d for d in data[machine_id]
-            if datetime.fromisoformat(d['timestamp']) >= week_start
-        ]
-
+        this_week = [d for d in data[machine_id]
+                     if datetime.fromisoformat(d['timestamp']) >= week_start]
         count_this_week = len(this_week)
         allowed = count_this_week < TRIAL_DOWNLOADS_PER_WEEK
-
-        # Register this download if allowed
         if allowed:
-            data[machine_id].append({
-                'timestamp': now.isoformat(),
-                'format': fmt,
-            })
+            data[machine_id].append({'timestamp': now.isoformat(), 'format': fmt})
             _save_trial_downloads(data)
-
         return allowed, count_this_week, TRIAL_DOWNLOADS_PER_WEEK
 
 
 def _load_trial_downloads():
-    """Load trial downloads data from file."""
     if not os.path.exists(_TRIAL_DOWNLOADS_FILE):
         return {}
     try:
@@ -297,178 +360,69 @@ def _load_trial_downloads():
 
 
 def _save_trial_downloads(data):
-    """Save trial downloads data to file."""
     os.makedirs(_LOG_DIR, exist_ok=True)
     with open(_TRIAL_DOWNLOADS_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
 
 def _cleanup_old_trial_downloads():
-    """Remove trial download entries older than TRIAL_RETENTION_DAYS."""
     with _TRIAL_LOCK:
-        data = _load_trial_downloads()
+        data   = _load_trial_downloads()
         cutoff = datetime.now() - timedelta(days=TRIAL_RETENTION_DAYS)
-
-        for machine_id in list(data.keys()):
-            # Keep only recent entries
-            data[machine_id] = [
-                d for d in data[machine_id]
-                if datetime.fromisoformat(d['timestamp']) >= cutoff
-            ]
-            # Remove machine_id if no entries left
-            if not data[machine_id]:
-                del data[machine_id]
-
+        for mid in list(data.keys()):
+            data[mid] = [d for d in data[mid]
+                         if datetime.fromisoformat(d['timestamp']) >= cutoff]
+            if not data[mid]:
+                del data[mid]
         if data:
             _save_trial_downloads(data)
 
 
-def heartbeat(session_id):
-    """Update session last-heartbeat (keep alive)."""
-    with _LOCK:
-        if _ACTIVE_SESSION and _ACTIVE_SESSION['session_id'] == session_id:
-            _ACTIVE_SESSION['last_heartbeat'] = time.time()
-            return True
-        # Also update for queued sessions
-        if session_id in _SESSIONS:
-            _SESSIONS[session_id]['last_heartbeat'] = time.time()
-            return True
-        return False
-
-
-def get_session_status(session_id):
-    """Get status of a session."""
-    with _LOCK:
-        _cleanup_expired_session()
-
-        if _ACTIVE_SESSION and _ACTIVE_SESSION['session_id'] == session_id:
-            now = time.time()
-            elapsed = now - _ACTIVE_SESSION['started_at']
-            remaining = max(0, SESSION_TIMEOUT_SEC - elapsed)
-            return {
-                'is_active': True,
-                'position': 0,
-                'remaining_sec': remaining,
-                'queue_length': len(_SESSIONS),
-            }
-
-        # Check if in queue
-        if session_id in _SESSIONS:
-            now = time.time()
-            position = len([s for s in _SESSIONS if _SESSIONS[s]['created_at'] < _SESSIONS[session_id]['created_at']]) + 1
-
-            # Calculate wait based on remaining active session time + others ahead
-            if _ACTIVE_SESSION:
-                elapsed = now - _ACTIVE_SESSION['started_at']
-                remaining_active = max(0, SESSION_TIMEOUT_SEC - elapsed)
-            else:
-                remaining_active = 0
-
-            estimated_wait = remaining_active + (position - 1) * (SESSION_TIMEOUT_SEC + 60)
-            return {
-                'is_active': False,
-                'position': position,
-                'estimated_wait_sec': estimated_wait,
-                'queue_length': len(_SESSIONS),
-            }
-
-        return {'error': 'Session not found'}
-
-
-def release_session(session_id):
-    """Manually release a session and promote next from queue."""
-    global _ACTIVE_SESSION
-    with _LOCK:
-        # If releasing active session, clear it
-        if _ACTIVE_SESSION and _ACTIVE_SESSION['session_id'] == session_id:
-            _ACTIVE_SESSION = None
-
-        # Remove from queue if there
-        _SESSIONS.pop(session_id, None)
-
-        # Promote next queued session to active
-        if _SESSIONS:
-            oldest_id = min(_SESSIONS.keys(), key=lambda s: _SESSIONS[s]['created_at'])
-            oldest = _SESSIONS[oldest_id]
-            del _SESSIONS[oldest_id]
-
-            now = time.time()
-            _ACTIVE_SESSION = {
-                'session_id': oldest_id,
-                'user_id': oldest['user_id'],
-                'started_at': now,
-                'last_heartbeat': now,
-            }
-
-    return True
-
-
-def get_queue_info():
-    """Get queue length and active user info."""
-    with _LOCK:
-        active_user = _ACTIVE_SESSION['user_id'][:4] if _ACTIVE_SESSION else 'none'
-        queue_length = len(_SESSIONS)
-    return {'active_user': active_user, 'queue_length': queue_length}
-
+# ── Background threads ─────────────────────────────────────────────────────────
 
 def start_queue_processor():
-    """Background thread that processes the queue."""
     def worker():
         while True:
             time.sleep(1)
             process_next()
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def start_cleanup_thread():
-    """Background thread to cleanup old jobs, stale sessions, and trial downloads."""
     def cleanup():
-        job_cleanup_counter = 0
+        job_cleanup_counter   = 0
         trial_cleanup_counter = 0
         while True:
             time.sleep(_SESSION_CLEANUP_INTERVAL)
             with _LOCK:
-                # Clean up stale queued sessions every 10 seconds (disconnected browsers)
                 _cleanup_stale_queued_sessions()
 
-                # Clean up old jobs every 60 seconds
                 job_cleanup_counter += 1
                 if job_cleanup_counter >= (_JOB_CLEANUP_INTERVAL // _SESSION_CLEANUP_INTERVAL):
                     job_cleanup_counter = 0
                     now = datetime.now()
-                    expired = [
-                        jid for jid, job in _JOBS.items()
-                        if (now - job.created) > timedelta(minutes=30)
-                    ]
+                    expired = [jid for jid, job in _JOBS.items()
+                               if (now - job.created) > timedelta(minutes=30)]
                     for jid in expired:
-                        if jid in _JOBS:
-                            del _JOBS[jid]
-                        if jid in _QUEUE:
-                            _QUEUE.remove(jid)
-                        if jid in _ACTIVE:
-                            _ACTIVE.discard(jid)
+                        _JOBS.pop(jid, None)
+                        if jid in _QUEUE: _QUEUE.remove(jid)
+                        _ACTIVE.discard(jid)
 
-                # Clean up old trial downloads every 24 hours (but check every 10 sec)
                 trial_cleanup_counter += 1
-                if trial_cleanup_counter >= (86400 // _SESSION_CLEANUP_INTERVAL):  # 24 hours
+                if trial_cleanup_counter >= (86400 // _SESSION_CLEANUP_INTERVAL):
                     trial_cleanup_counter = 0
                     _cleanup_old_trial_downloads()
 
-    thread = threading.Thread(target=cleanup, daemon=True)
-    thread.start()
+    threading.Thread(target=cleanup, daemon=True).start()
 
 
 def clear_all_state():
-    """Clear all sessions and jobs for testing."""
-    global _SESSIONS, _ACTIVE_SESSION, _JOBS, _QUEUE, _ACTIVE
+    global _JOBS, _QUEUE, _ACTIVE
     with _LOCK:
-        _SESSIONS.clear()
-        _ACTIVE_SESSION = None
         _JOBS.clear()
         _QUEUE.clear()
         _ACTIVE.clear()
+        _save_state(None, {})
 
 
 # Start background threads on module import
