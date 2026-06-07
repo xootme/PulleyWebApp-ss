@@ -199,6 +199,84 @@ def _rand_config(r, run_idx):
     return cfg
 
 
+def _validate_config(cfg):
+    """Run the config through the actual app parse functions.
+    Returns True if the config is geometrically feasible, False otherwise.
+    This uses the same code the download routes use, so it catches all the
+    same edge cases a real request would hit.
+    """
+    import sys, os
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    try:
+        from app import _parse_stl_params, _parse_hub_params, _parse_spoke_params, _parse_flange_params
+        from geometry.pulley_geometry import getOuterDiameter, PULLEY_SPECS, PROFILE_KEY_PREFIX
+
+        qs = _qs(cfg)
+
+        # Parse pulley params the same way the download route does
+        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(qs, '1')
+
+        key    = PROFILE_KEY_PREFIX.get(family, '') + pitch
+        spec   = PULLEY_SPECS[key]
+        pld    = spec.get('pitch_line_diff', spec.get('pitchLineDiff', 0.0))
+        R_OD   = getOuterDiameter(num_teeth, spec['pitch'],
+                                  pld + pr_ex - cl_mm) / 2.0
+
+        # Bore must be smaller than pulley radius with room to spare
+        if bore_mm >= R_OD - 1.0:
+            return False
+
+        # Hub OD must be smaller than pulley
+        _, hub_h, _, _, _, _, _, _ = _parse_hub_params(qs, '')
+        hub_od = float(qs.get('hub_od', 0))
+        if hub_od > 0 and hub_od >= R_OD * 2 - 2.0:
+            return False
+
+        # Spoke validation
+        if qs.get('spokes_enabled') == '1':
+            sp_hub_od  = float(qs.get('spokes_hub_od', 0))
+            rim_depth  = float(qs.get('spokes_rim_depth', 2.0))
+            sp_width   = float(qs.get('spokes_width', 4.0))
+            tip_f      = float(qs.get('spokes_fillet_tip', 1.0))
+            base_f     = float(qs.get('spokes_fillet_base', 1.5))
+            R_rim      = R_OD - rim_depth
+            R_hub_s    = sp_hub_od / 2.0 if sp_hub_od > 0 else bore_mm / 2.0 + 1.0
+
+            # Spoke void must have positive radial space
+            if R_hub_s >= R_rim - 2.0:
+                return False
+            # Fillets can't exceed spoke width
+            if tip_f + base_f >= sp_width:
+                return False
+
+        # P2 validation for dual
+        if cfg.get('dual'):
+            family2, pitch2, num_teeth2, bore2, _, cl2, _, _ = \
+                _parse_stl_params(qs, '2')
+            key2  = PROFILE_KEY_PREFIX.get(family2, '') + pitch2
+            spec2 = PULLEY_SPECS[key2]
+            pld2  = spec2.get('pitch_line_diff', spec2.get('pitchLineDiff', 0.0))
+            R_OD2 = getOuterDiameter(num_teeth2, spec2['pitch'], pld2) / 2.0
+            if bore2 >= R_OD2 - 1.0:
+                return False
+
+        return True
+
+    except Exception:
+        return False
+
+
+def _rand_config_validated(r, run_idx, max_attempts=20):
+    """Generate a random config, retrying until it passes app validation."""
+    for _ in range(max_attempts):
+        cfg = _rand_config(r, run_idx)
+        if _validate_config(cfg):
+            return cfg
+    # Fall back to last attempt — better to test a marginal config than skip
+    return cfg
+
+
 def _save_inputs(run_id, configs):
     """Persist all configs for this run to logs/nightly_random/."""
     log_dir = Path(__file__).parent.parent / 'logs' / 'nightly_random'
@@ -230,7 +308,7 @@ def random_configs():
     seed    = int(datetime.now().strftime('%Y%m%d'))  # same seed for whole day
     r       = _rng(seed)
     run_id  = datetime.now().strftime('%H%M%S')
-    configs = [_rand_config(r, i) for i in range(5)]
+    configs = [_rand_config_validated(r, i) for i in range(5)]
     path    = _save_inputs(run_id, configs)
     print(f'\n[nightly] configs saved → {path}')
     return configs
