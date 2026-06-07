@@ -227,10 +227,16 @@ h1   { font-size: 22px; color: #f1f5f9; margin-bottom: 4px; }
 .stat-num { font-size: 32px; font-weight: 700; }
 .stat-lbl { font-size: 11px; color: #888; }
 .ok  { color: #2ecc71; } .err { color: #e74c3c; } .skip { color: #888; } .run { color: #3498db; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 8px 12px; color: #666; font-weight: 600;
-     border-bottom: 1px solid #222; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-td { padding: 7px 12px; border-bottom: 1px solid #16161c; vertical-align: top; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+col.c-icon { width: 32px; }
+col.c-name { width: auto; }
+col.c-grp  { width: 200px; }
+col.c-dur  { width: 80px; }
+th { text-align: left; padding: 8px 12px; color: #aaa; font-weight: 700;
+     border-bottom: 2px solid #333; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+th:last-child { text-align: right; }
+td { padding: 7px 12px; border-bottom: 1px solid #1a1a20; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.name { white-space: normal; }
 tr.sec-hdr td { font-size: 13px; font-weight: 700; padding: 14px 12px 7px;
                 border-top: 2px solid #2a2a30; }
 tr.run-hdr  td { color: #3498db; border-top-color: #1a3a5a; background: #090d14; }
@@ -290,11 +296,17 @@ td.dur  { width: 72px; color: #f0f0f0; text-align: right; font-size: 13px; font-
 </div>
 
 <table>
+  <colgroup>
+    <col class="c-icon">
+    <col class="c-name">
+    <col class="c-grp">
+    <col class="c-dur">
+  </colgroup>
   <thead><tr>
-    <th style="width:26px"></th>
+    <th></th>
     <th>Test</th>
-    <th style="width:200px">Group</th>
-    <th style="width:72px;text-align:right">Time</th>
+    <th>Group</th>
+    <th style="text-align:right">Time</th>
   </tr></thead>
   <tbody id="tbody"></tbody>
 </table>
