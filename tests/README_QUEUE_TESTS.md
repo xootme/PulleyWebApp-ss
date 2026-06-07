@@ -1,174 +1,159 @@
-# Queue System Test Suite
+# PulleyWebApp — Test Suite
 
-Comprehensive test harness for PulleyWebApp queue functionality.
+## Quick start
 
-## Prerequisites
-- Flask running on http://localhost:5001
-- Python 3.x with `requests` library (for pytest)
+```powershell
+# Full suite with live dashboard
+.venv312\Scripts\python.exe tests\run_tests.py
 
-## Test Scripts
+# Skip slow timeout tests (~3 min each)
+.venv312\Scripts\python.exe tests\run_tests.py --skip-slow
 
-### 1. Bash Test Harness (test_queue.sh)
-Quick integration tests for the queue system.
+# Single test by name fragment
+.venv312\Scripts\python.exe tests\run_tests.py --test test_burst_join
 
-```bash
-bash tests/test_queue.sh
+# One group
+.venv312\Scripts\python.exe tests\run_tests.py --group "Queue System"
+
+# Multiple groups
+.venv312\Scripts\python.exe tests\run_tests.py --group Stress --group "Flange Geometry"
 ```
 
-**Tests Covered:**
-1. ✅ Create first session → is_active: true
-2. ✅ Create second session → position: 1, is_active: false  
-3. ✅ Create third session → position: 2, is_active: false
-4. ✅ Queue status reports correct length
-5. ✅ Queued session status correct
-6. ✅ Release active session → next promoted
-7. ✅ Session positions update correctly
-8. ✅ Trial download - 1st allowed (HTTP 200)
-9. ✅ Trial download - 2nd allowed (HTTP 200)
-10. ✅ Trial download - 3rd blocked (HTTP 429)
-11. ✅ Trial status check
-12. ✅ Preview STL accessible without session
-13. ✅ Heartbeat keeps session alive
-14. ✅ Release all sessions
-15. ✅ Queue empty after all released
+The dashboard opens automatically at `http://localhost:5098/` and streams results in real time as each test completes.
 
-### 2. Pytest Test Suite (test_queue_pytest.py)
-Unit and integration tests with pytest.
+---
 
-```bash
-pip install pytest requests
-pytest tests/test_queue_pytest.py -v
+## Dashboard
+
+| Element | Description |
+|---|---|
+| **⏳ Running** | Current test (animated pulse) |
+| **✓ Finished** | Passed / failed / skipped with durations |
+| **○ Upcoming** | All pending tests grouped by test group |
+| **Group timer** | `~Xs left` while running; `Xs` actual when done |
+| **Overall countdown** | Estimated time remaining (based on last run) |
+| **● live** | SSE connection indicator — updates without page refresh |
+
+Group timings are saved to `localStorage` after each run and used as countdown estimates on the next run.
+
+---
+
+## CLI options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--flask-port N` | 5099 | Port for the test Flask instance |
+| `--dash-port N` | 5098 | Port for the dashboard SSE server |
+| `--skip-slow` | off | Skip tests that take >30s (timeout/persistence) |
+| `--no-browser` | off | Don't open browser automatically |
+| `--exit-when-done` | off | Exit immediately after tests complete (for CI) |
+| `--test NAME` | all | Run tests whose name contains NAME (repeatable) |
+| `--group GROUP` | all | Run tests in groups matching GROUP (repeatable) |
+
+---
+
+## Test groups
+
+| Group | File | Tests | Notes |
+|---|---|---|---|
+| API Endpoints | `test_api.py` | ~30 | Requires Flask test client |
+| Exporters | `test_exporters.py` | ~5 | STL/DXF/SVG generation |
+| Belt Geometry | `test_belt.py` | ~2 | Belt length/OD math |
+| Input Validation | `test_invalid_inputs.py` | ~55 | Bad parameter handling |
+| Priority Logic | `test_priority.py` | ~14 | Clearance/backlash presets |
+| Spoke Geometry | `test_spokes.py` | ~59 | Spoke profile math |
+| 3D Generation | `test_3d.py` | ~33 | STL mesh generation |
+| Flange Geometry | `test_flange_geometry.py` | ~34 | Flange inner-radius rules |
+| Flange Export | `test_flange.py` | ~39 | Flange STL/mesh export |
+| Benchmarks | `test_benchmarks.py` | ~20 | Performance regression |
+| Regression | `test_repro.py` | ~53 | Bug reproduction cases |
+| Queue System — Functional | `test_queue_pytest.py` | ~10 | Session create/promote/release |
+| Queue System — Timeouts | `test_queue_pytest.py` | ~3 | Idle/stale expiry (slow) |
+| Queue System — Stress | `test_queue_pytest.py` | ~7 | Burst join, race, heartbeat storm |
+| Trial Downloads | `test_queue_pytest.py` | ~3 | Weekly download limits |
+
+---
+
+## How it works
+
+```
+run_tests.py
+  │
+  ├── Starts ThreadingHTTPServer on --dash-port
+  │     GET /          → dashboard HTML (SSE client)
+  │     GET /state     → full state JSON
+  │     GET /events    → SSE stream
+  │     POST /result   → receives per-test results from pytest plugin
+  │
+  ├── Starts Flask on --flask-port (PULLEY_TESTING=1, no reloader)
+  │
+  ├── Discovers tests via pytest --collect-only
+  │
+  ├── Runs non-queue tests in ONE pytest subprocess
+  │     └── _dash_plugin.py hooks pytest_runtest_logreport
+  │           → POSTs each result to /result instantly
+  │
+  └── Runs queue tests inline
+        └── Needs live Flask; uses /api/test/reset before/after each test
 ```
 
-**Test Classes:**
+Results stream to the dashboard in real time via SSE — no polling, no page refresh.
 
-#### TestSessionManagement
-- `test_create_first_session_is_active`: First session is active immediately
-- `test_create_second_session_is_queued`: Second session queued at position 1
-- `test_session_position_increments`: Each session gets incrementing position
+---
 
-#### TestSessionPromotion
-- `test_promotion_on_release`: Releasing active promotes next queued
-- `test_positions_update_after_promotion`: Queue positions update correctly
+## Session state (queue system)
 
-#### TestQueueStatus
-- `test_queue_length_reported`: Queue reports correct length
-- `test_wait_time_calculated`: Wait time estimated from active session time
+Session state is stored in `logs/sessions.json` so all gunicorn workers share it. Active session expires after:
 
-#### TestTrialDownloads
-- `test_first_download_allowed`: 1st download allowed
-- `test_second_download_allowed`: 2nd download allowed
-- `test_third_download_blocked`: 3rd download blocked (429)
-- `test_trial_status_check`: Status endpoint reports correct counts
+- **5 minutes** hard cap
+- **1 minute** idle (no heartbeat) — only when there are waiting users
 
-#### TestHeartbeat
-- `test_heartbeat_keeps_session_alive`: Heartbeat updates successfully
-- `test_heartbeat_invalid_session`: Invalid session heartbeat fails
+Waiting sessions are dropped after **30 seconds** without a heartbeat (browser closed). The queue page uses `sendBeacon` + `visibilitychange` to keep heartbeats alive even in background tabs.
 
-#### TestIntegration
-- `test_complete_queue_workflow`: Full workflow: create→queue→promote→release
+Queue positions use a monotonic sequence counter (`seq`) rather than timestamps to avoid tie-breaking issues under burst load.
 
-## Manual Testing
+---
 
-### Test Session Creation and Queueing
-```bash
-# Create first session (should be active)
-curl -X POST http://localhost:5001/api/session/create | jq .
+## Nightly scheduled run
 
-# Create second session (should be queued)
-curl -X POST http://localhost:5001/api/session/create | jq .
+A Windows Task Scheduler task runs at 2:00 AM daily:
 
-# Create third session (should be second in queue)
-curl -X POST http://localhost:5001/api/session/create | jq .
+```
+Task name : PulleyWebApp Nightly Tests
+Script    : tests\run_nightly.bat
+Log       : %LOCALAPPDATA%\Temp\pulley_test_run.log
 ```
 
-### Test Session Promotion
-```bash
-# Release active session
-curl -X POST http://localhost:5001/api/session/release \
-  -H "Content-Type: application/json" \
-  -d '{"session_id":"<session_id>"}'
-
-# Check next session is promoted
-curl "http://localhost:5001/api/session/status?session_id=<session_id>" | jq .
+To run manually:
+```powershell
+schtasks /run /tn "PulleyWebApp Nightly Tests"
 ```
 
-### Test Trial Downloads
-```bash
-# Register first download
-curl -X POST http://localhost:5001/api/trial/register \
-  -H "Content-Type: application/json" \
-  -d '{"mid":"test-machine-001","fmt":"step"}' | jq .
-
-# Register second download
-curl -X POST http://localhost:5001/api/trial/register \
-  -H "Content-Type: application/json" \
-  -d '{"mid":"test-machine-001","fmt":"dxf"}' | jq .
-
-# Try third download (should be blocked)
-curl -X POST http://localhost:5001/api/trial/register \
-  -H "Content-Type: application/json" \
-  -d '{"mid":"test-machine-001","fmt":"svg"}' | jq .
-
-# Check trial status
-curl "http://localhost:5001/api/trial/status?mid=test-machine-001" | jq .
+To remove:
+```powershell
+schtasks /delete /tn "PulleyWebApp Nightly Tests" /f
 ```
 
-## Test Data Files
+---
 
-Trial download data is stored in:
-- **File:** `logs/trial_downloads.json`
-- **Format:** JSON with machine_id as key, array of download records
-- **Cleanup:** Automatic daily cleanup removes entries older than 7 days
+## Trial download data
 
-Example structure:
-```json
-{
-  "test-machine-001": [
-    {"timestamp": "2026-06-05T12:00:00", "format": "step"},
-    {"timestamp": "2026-06-05T13:00:00", "format": "dxf"}
-  ]
-}
-```
+Stored in `logs/trial_downloads.json` (Render persistent disk at `/var/data`).
 
-## Expected Results
+- Limit: **2 downloads per week** per `machine_id`
+- Resets: Monday each week
+- Cleanup: entries older than 7 days removed automatically
 
-| Test | Expected | Status |
-|------|----------|--------|
-| Create 1st session | is_active: true | ✅ |
-| Create 2nd session | position: 1 | ✅ |
-| Create 3rd session | position: 2 | ✅ |
-| Release → promote | Next becomes active | ✅ |
-| 1st trial download | HTTP 200 | ✅ |
-| 2nd trial download | HTTP 200 | ✅ |
-| 3rd trial download | HTTP 429 | ✅ |
-| Trial cleanup | 7-day retention | ✅ |
-| Heartbeat | success: true | ✅ |
-
-## CI/CD Integration
-
-Run before deployment:
-```bash
-# Install dependencies
-pip install pytest requests
-
-# Run full test suite
-pytest tests/test_queue_pytest.py -v --tb=short
-
-# Or quick integration test
-bash tests/test_queue.sh
-```
+---
 
 ## Troubleshooting
 
-**Tests timeout?**
-- Ensure Flask is running: `curl http://localhost:5001`
-- Check for any exceptions in Flask logs
+**Dashboard not loading** — check port 5098 is free: `netstat -an | findstr 5098`
 
-**Trial downloads not working?**
-- Check `logs/trial_downloads.json` exists and is writable
-- Verify no JSON syntax errors in file
+**Flask failed to start** — check port 5099 is free; look for an existing process: `Get-Process python*`
 
-**Session promotion failing?**
-- Check `release_session()` is properly promoting next user
-- Verify no stale sessions blocking queue
+**Tests connecting to wrong port** — the plugin hardcodes the dash port at write time; restarting `run_tests.py` regenerates it
+
+**All tests skipped** — your `--test` / `--group` filter matched only queue tests that were already skipped; check the filter spelling
+
+**`test_burst_join_10_sessions` fails** — race condition in `create_session`; the monotonic `seq` counter should prevent this; re-run with `--test test_burst_join` to confirm
