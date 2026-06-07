@@ -92,6 +92,37 @@ def _save_state(active_session, sessions):
     os.replace(tmp, _SESSION_FILE)
 
 
+def _load_and_lock():
+    """Open the session file with an exclusive lock held open.
+    Returns (fh, active, sessions). Caller must call _save_and_unlock(fh, ...).
+    This keeps the lock held across the read-modify-write so no other process
+    can interleave between the load and the save.
+    """
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    # Open for read+write, create if missing
+    fh = open(_SESSION_FILE, 'a+')   # 'a+' creates if missing, allows read
+    fh.seek(0)
+    _file_lock(fh, exclusive=True)
+    try:
+        content = fh.read()
+        data = json.loads(content) if content.strip() else {}
+    except Exception:
+        data = {}
+    return fh, data.get('active'), data.get('sessions', {})
+
+
+def _save_and_unlock(fh, active_session, sessions):
+    """Write state and release the exclusive lock."""
+    try:
+        fh.seek(0)
+        fh.truncate()
+        json.dump({'active': active_session, 'sessions': sessions}, fh)
+        fh.flush()
+    finally:
+        _file_unlock(fh)
+        fh.close()
+
+
 # ── Job classes (in-memory only — single request lifecycle) ───────────────────
 
 class Job:
@@ -189,36 +220,46 @@ def process_next():
 # ── Session management (shared via disk) ──────────────────────────────────────
 
 def create_session():
-    """Create a new session (immediate or queued). Returns status dict."""
+    """Create a new session (immediate or queued). Returns status dict.
+
+    Uses a held file lock across the entire read-modify-write so concurrent
+    requests from multiple gunicorn workers cannot race and assign duplicate
+    queue positions.
+    """
     user_id    = str(uuid.uuid4())[:8]
     session_id = str(uuid.uuid4())
     now        = time.time()
 
     with _LOCK:
-        active, sessions = _load_state()
-        active, sessions = _expire_active(active, sessions, now)
+        fh, active, sessions = _load_and_lock()
+        try:
+            active, sessions = _expire_active(active, sessions, now)
 
-        if active is None:
-            active = {
-                'session_id':    session_id,
-                'user_id':       user_id,
-                'started_at':    now,
-                'last_heartbeat': now,
-            }
-            _save_state(active, sessions)
-            return {'session_id': session_id, 'user_id': user_id,
-                    'is_active': True, 'position': 0, 'estimated_wait_sec': 0}
-        else:
-            sessions[session_id] = {
-                'user_id': user_id, 'created_at': now, 'last_heartbeat': now}
-            position = _queue_position(session_id, sessions)
-            elapsed  = now - active['started_at']
-            remaining_active = max(0, SESSION_TIMEOUT_SEC - elapsed)
-            estimated_wait   = remaining_active + (position - 1) * (SESSION_TIMEOUT_SEC + 60)
-            _save_state(active, sessions)
-            return {'session_id': session_id, 'user_id': user_id,
-                    'is_active': False, 'position': position,
-                    'estimated_wait_sec': estimated_wait}
+            if active is None:
+                active = {
+                    'session_id':     session_id,
+                    'user_id':        user_id,
+                    'started_at':     now,
+                    'last_heartbeat': now,
+                }
+                _save_and_unlock(fh, active, sessions)
+                return {'session_id': session_id, 'user_id': user_id,
+                        'is_active': True, 'position': 0, 'estimated_wait_sec': 0}
+            else:
+                sessions[session_id] = {
+                    'user_id': user_id, 'created_at': now, 'last_heartbeat': now}
+                position = _queue_position(session_id, sessions)
+                elapsed  = now - active['started_at']
+                remaining_active = max(0, SESSION_TIMEOUT_SEC - elapsed)
+                estimated_wait   = remaining_active + (position - 1) * (SESSION_TIMEOUT_SEC + 60)
+                _save_and_unlock(fh, active, sessions)
+                return {'session_id': session_id, 'user_id': user_id,
+                        'is_active': False, 'position': position,
+                        'estimated_wait_sec': estimated_wait}
+        except Exception:
+            _file_unlock(fh)
+            fh.close()
+            raise
 
 
 def heartbeat(session_id):
