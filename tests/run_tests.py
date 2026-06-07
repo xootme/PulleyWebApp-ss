@@ -763,6 +763,26 @@ def collect_pytest_tests():
     return tests
 
 
+def _pre_generate_nightly_configs():
+    """Generate nightly random configs in run_tests.py process (not in pytest).
+    Saves to logs/nightly_random/ so the pytest fixture just loads the file.
+    """
+    import random as _random
+    sys.path.insert(0, str(ROOT))
+    # Import config generation from the test module
+    from tests.test_nightly_random import _make_config, _save_configs
+    seed   = int(datetime.now().strftime('%Y%m%d%H'))
+    r      = _random.Random(seed)
+    run_id = datetime.now().strftime('%H%M%S')
+    print(f'Nightly   : generating 5 random configs (seed={seed})…')
+    try:
+        configs = [_make_config(r, i) for i in range(5)]
+        path    = _save_configs(run_id, configs)
+        print(f'Nightly   : configs saved → {path}')
+    except Exception as e:
+        print(f'Nightly   : config generation failed: {e}')
+
+
 def load_random_configs():
     """Load the most recent nightly random config file into _state['random_configs'].
     Called after discovery so the dashboard can build repro URLs for each test.
@@ -956,6 +976,11 @@ def main():
         _finish()
         sys.exit(1)
     print(f'Flask     : ready at {base_url}')
+
+    # Pre-generate nightly random configs BEFORE pytest starts
+    # (avoids importing app inside pytest process which causes thread conflicts)
+    if os.environ.get('PULLEY_NIGHTLY') == '1':
+        _pre_generate_nightly_configs()
 
     # Discover all tests and register only the filtered ones as pending
     sys.path.insert(0, str(ROOT))
