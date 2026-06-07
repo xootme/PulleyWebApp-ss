@@ -200,18 +200,42 @@ def _parse_and_clamp(raw):
     return validated
 
 
-def _make_config(r, run_idx, max_attempts=30):
-    """Generate a validated config, retrying on geometry failures."""
+def _stl_preview_ok(cfg):
+    """Return True if the STL preview endpoint succeeds for this config.
+    Used to filter out configs that pass parameter validation but fail
+    geometry generation (TopologyException, degenerate meshes etc.).
+    """
+    from app import app as flask_app
+    flask_app.config['TESTING'] = True
+    with flask_app.test_client() as c:
+        r = c.get('/api/preview-stl', query_string=_qs(cfg))
+        return r.status_code == 200 and len(r.data) > 84
+
+
+def _make_config(r, run_idx, max_attempts=50):
+    """Generate a validated config, retrying on geometry failures.
+
+    First pass: parameter validation via app parse functions.
+    Second pass: STL preview check — rejects any config that causes a
+    TopologyException or other geometry error in the actual generator.
+    This ensures the saved config is genuinely reproducible.
+    """
     last_err = None
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
         raw = _raw_config(r)
         try:
             v = _parse_and_clamp(raw)
-            v['run_idx'] = run_idx
-            return v
         except ValueError as e:
             last_err = e
-    raise RuntimeError(f'Could not generate valid config after {max_attempts} attempts: {last_err}')
+            continue
+        # Quick generation check — rejects degenerate geometry before saving
+        v['run_idx'] = run_idx
+        if _stl_preview_ok(v):
+            return v
+        last_err = 'STL preview failed (geometry error)'
+    raise RuntimeError(
+        f'Could not generate valid config after {max_attempts} attempts: {last_err}'
+    )
 
 
 def _save_configs(run_id, configs):
