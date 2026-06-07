@@ -570,7 +570,17 @@ def _get_preset_value(spec, preset_type, preset_key, custom_val):
 def index():
     # In testing mode, skip queue entirely for repro/dev convenience
     if os.environ.get('PULLEY_TESTING'):
-        return render_template('index.html', session_id='testing')
+        return render_template(
+            'index.html',
+            session_id='testing',
+            families=FAMILIES,
+            clearance_presets=CLEARANCE_PRESETS,
+            backlash_presets=BACKLASH_PRESETS,
+            belt_families=sorted(BELT_FAMILIES),
+            app_version=APP_VERSION,
+            build_time=BUILD_TIME,
+            cct_schema_version=CCT_SCHEMA_VERSION,
+        )
 
     session_id = request.args.get('session_id')
 
