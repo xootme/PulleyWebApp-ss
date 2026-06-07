@@ -637,6 +637,7 @@ def generate_pulley_stl(
 
     outer_poly = ShapelyPolygon(outline)
     outer_poly = shapely_orient(outer_poly, sign=1.0)
+    outer_poly = outer_poly.buffer(0)   # clean near-coincident tooth vertices
 
     if spoke_count > 0 and spoke_width_mm > 0.0:
         from exporters.png_exporter import _spoke_void_polygons
@@ -1757,6 +1758,8 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
     outline = _rot2d(outline, phase)
     outer_poly = ShapelyPolygon(outline)
     outer_poly = shapely_orient(outer_poly, sign=1.0)
+    # Clean near-coincident vertices in tooth profile before boolean ops
+    outer_poly = outer_poly.buffer(0)
     belt_cross = outer_poly.difference(bore_2d) if bore_2d is not None else outer_poly
     belt_cross = _largest_poly(belt_cross)
 
