@@ -25,7 +25,7 @@ from flask import Flask, render_template, request, Response, jsonify, send_from_
 from exporters.job_queue import (
     create_job, get_job, start_job, update_progress, finish_job, get_queue_status,
     create_session, get_session_status, heartbeat, release_session, get_queue_info,
-    register_trial_download, TRIAL_DOWNLOADS_PER_WEEK
+    register_trial_download, TRIAL_DOWNLOADS_PER_WEEK, clear_all_state
 )
 from functools import wraps
 
@@ -3834,10 +3834,9 @@ def api_queue_status():
 
 @app.route('/api/test/reset', methods=['POST'])
 def api_test_reset():
-    """Reset all queue state (testing only)."""
-    if not app.config.get('TESTING'):
+    """Reset all queue and session state. Enabled when PULLEY_TESTING=1 env var is set."""
+    if not os.environ.get('PULLEY_TESTING'):
         return jsonify({'error': 'Not in testing mode'}), 403
-    from exporters.job_queue import clear_all_state
     clear_all_state()
     return jsonify({'success': True})
 

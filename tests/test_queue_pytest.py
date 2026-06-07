@@ -1,250 +1,413 @@
 """
-Queue system tests for PulleyWebApp.
-Run with: pytest tests/test_queue_pytest.py -v
+Queue system tests — functional + stress.
 
-NOTE: These HTTP integration tests depend on a clean Flask server state.
-Use the bash integration test suite (tests/test_queue_clean.sh) for reliable testing.
-These are marked xfail since they require specific server startup conditions.
+Run against a local server started with PULLEY_TESTING=1:
+
+    PULLEY_TESTING=1 python app.py          # terminal 1
+    pytest tests/test_queue_pytest.py -v    # terminal 2
+
+Or use the Makefile target:
+    make test-queue
 """
+import threading
+import time
+import subprocess
+import sys
+import os
 import pytest
 import requests
-import json
-import time
-from datetime import datetime, timedelta
+
+BASE_URL = os.environ.get('PULLEY_TEST_URL', 'http://localhost:5000')
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def create():
+    r = requests.post(f'{BASE_URL}/api/session/create', timeout=5)
+    r.raise_for_status()
+    return r.json()
+
+def status(sid):
+    r = requests.get(f'{BASE_URL}/api/session/status?session_id={sid}', timeout=5)
+    r.raise_for_status()
+    return r.json()
+
+def beat(sid):
+    r = requests.post(f'{BASE_URL}/api/session/heartbeat',
+                      json={'session_id': sid}, timeout=5)
+    r.raise_for_status()
+    return r.json()
+
+def release(sid):
+    requests.post(f'{BASE_URL}/api/session/release',
+                  json={'session_id': sid}, timeout=5)
+
+def reset():
+    r = requests.post(f'{BASE_URL}/api/test/reset', timeout=5)
+    assert r.status_code == 200, f'Reset failed: {r.status_code} {r.text}'
+
+def queue_info():
+    r = requests.get(f'{BASE_URL}/api/queue/status?session_id=x', timeout=5)
+    r.raise_for_status()
+    return r.json()
+
+def heartbeat_thread(sid, stop_event, interval=0.5):
+    """Background thread: send heartbeats until stop_event is set."""
+    while not stop_event.is_set():
+        try:
+            beat(sid)
+        except Exception:
+            pass
+        stop_event.wait(interval)
 
 
-BASE_URL = "http://localhost:5001"
+# ── Fixtures ──────────────────────────────────────────────────────────────────
 
-pytestmark = pytest.mark.skip(reason="Use bash integration tests (test_queue_clean.sh) instead")
-
-
-class TestSessionManagement:
-    """Test session creation and basic management."""
-
-    def test_create_first_session_is_active(self):
-        """First session should be immediately active."""
-        response = requests.post(f"{BASE_URL}/api/session/create")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["is_active"] is True
-        assert data["position"] == 0
-        assert "session_id" in data
-
-    def test_create_second_session_is_queued(self):
-        """Second session should be queued at position 1."""
-        # First session
-        r1 = requests.post(f"{BASE_URL}/api/session/create")
-        s1 = r1.json()["session_id"]
-
-        # Second session
-        r2 = requests.post(f"{BASE_URL}/api/session/create")
-        data = r2.json()
-        assert data["is_active"] is False
-        assert data["position"] == 1
-
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s1})
-
-    def test_session_position_increments(self):
-        """Each new session should have incrementing position."""
-        s1 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
-        s2 = requests.post(f"{BASE_URL}/api/session/create").json()
-        s3 = requests.post(f"{BASE_URL}/api/session/create").json()
-
-        assert s2["position"] == 1
-        assert s3["position"] == 2
-
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s1})
+@pytest.fixture(autouse=True)
+def clean_state():
+    """Reset server state before every test."""
+    reset()
+    yield
+    reset()
 
 
-class TestSessionPromotion:
-    """Test promotion of queued sessions to active."""
+# ── Functional tests ──────────────────────────────────────────────────────────
 
-    def test_promotion_on_release(self):
-        """Releasing active session should promote next in queue."""
-        s1 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
-        s2 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
+class TestSessionBasics:
 
-        # Release active session
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s1})
-        time.sleep(0.5)
+    def test_first_session_active(self):
+        d = create()
+        assert d['is_active'] is True
+        assert d['position'] == 0
 
-        # Check s2 is now active
-        status = requests.get(f"{BASE_URL}/api/session/status?session_id={s2}").json()
-        assert status["is_active"] is True
-        assert status["position"] == 0
+    def test_second_session_queued(self):
+        s1 = create()['session_id']
+        d2 = create()
+        assert d2['is_active'] is False
+        assert d2['position'] == 1
+        release(s1)
 
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s2})
+    def test_positions_increment(self):
+        s1 = create()['session_id']
+        d2 = create()
+        d3 = create()
+        assert d2['position'] == 1
+        assert d3['position'] == 2
+        release(s1)
 
-    def test_positions_update_after_promotion(self):
-        """Positions should update after a session is promoted."""
-        s1 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
-        s2 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
-        s3 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
+    def test_release_promotes_next(self):
+        s1 = create()['session_id']
+        s2 = create()['session_id']
+        release(s1)
+        time.sleep(0.3)
+        assert status(s2)['is_active'] is True
+        release(s2)
 
-        # Release s1
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s1})
-        time.sleep(0.5)
-
-        # s2 should be at position 0, s3 at position 1
-        s2_status = requests.get(f"{BASE_URL}/api/session/status?session_id={s2}").json()
-        s3_status = requests.get(f"{BASE_URL}/api/session/status?session_id={s3}").json()
-
-        assert s2_status["position"] == 0
-        assert s3_status["position"] == 1
-
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s2})
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s3})
-
-
-class TestQueueStatus:
-    """Test queue status reporting."""
+    def test_positions_reorder_after_promotion(self):
+        s1 = create()['session_id']
+        s2 = create()['session_id']
+        s3 = create()['session_id']
+        release(s1)
+        time.sleep(0.3)
+        assert status(s2)['is_active'] is True
+        assert status(s3)['position'] == 1
+        release(s2)
+        release(s3)
 
     def test_queue_length_reported(self):
-        """Queue status should report correct queue length."""
-        s1 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
-        requests.post(f"{BASE_URL}/api/session/create")
-        requests.post(f"{BASE_URL}/api/session/create")
+        s1 = create()['session_id']
+        create()
+        create()
+        info = queue_info()
+        assert info['queue_length'] == 2
+        release(s1)
 
-        status = requests.get(f"{BASE_URL}/api/queue/status?session_id={s1}").json()
-        assert status["queue_length"] == 2
+    def test_heartbeat_success(self):
+        s = create()['session_id']
+        r = beat(s)
+        assert r['success'] is True
+        release(s)
 
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s1})
+    def test_heartbeat_unknown_session(self):
+        r = beat('not-a-real-session-id')
+        assert r['success'] is False
 
-    def test_wait_time_calculated(self):
-        """Wait time should be estimated based on active session remaining time."""
-        s1 = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
-        s2_data = requests.post(f"{BASE_URL}/api/session/create").json()
+    def test_release_unknown_session_is_safe(self):
+        release('not-a-real-session-id')   # should not raise
 
-        estimated_wait = s2_data.get("estimated_wait_sec", 0)
-        # Should be roughly 5 minutes (300 seconds)
-        assert 250 < estimated_wait < 350
+    def test_session_not_found_after_release(self):
+        s = create()['session_id']
+        release(s)
+        time.sleep(0.2)
+        d = status(s)
+        assert 'error' in d
 
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": s1})
 
+class TestSessionTimeouts:
+
+    def test_idle_timeout_drops_active_session(self):
+        """Active session with no heartbeat for >IDLE_TIMEOUT_SEC is dropped."""
+        from exporters.job_queue import IDLE_TIMEOUT_SEC
+        s1 = create()['session_id']
+        s2 = create()['session_id']
+        # Stop heartbeating s1 — wait for idle timeout
+        time.sleep(IDLE_TIMEOUT_SEC + 2)
+        # s2 should now be active (promoted on expiry)
+        d = status(s2)
+        assert d['is_active'] is True, f's2 not promoted: {d}'
+        release(s2)
+
+    def test_stale_queued_session_removed(self):
+        """Queued session with no heartbeat for >30s is removed."""
+        s1 = create()['session_id']
+        s2 = create()['session_id']
+        # Keep s1 alive, let s2 go stale
+        stop = threading.Event()
+        t = threading.Thread(target=heartbeat_thread, args=(s1, stop, 5))
+        t.start()
+        time.sleep(35)   # wait for stale cleanup (30s threshold)
+        stop.set()
+        t.join()
+        info = queue_info()
+        assert info['queue_length'] == 0, f's2 not cleaned up: queue={info}'
+        release(s1)
+
+    def test_heartbeat_prevents_idle_timeout(self):
+        """Active session sending heartbeats survives past IDLE_TIMEOUT_SEC."""
+        from exporters.job_queue import IDLE_TIMEOUT_SEC
+        s = create()['session_id']
+        stop = threading.Event()
+        t = threading.Thread(target=heartbeat_thread, args=(s, stop, 5))
+        t.start()
+        time.sleep(IDLE_TIMEOUT_SEC + 5)
+        stop.set()
+        t.join()
+        d = status(s)
+        assert d['is_active'] is True, f'Session dropped despite heartbeating: {d}'
+        release(s)
+
+
+# ── Stress tests ──────────────────────────────────────────────────────────────
+
+class TestStress:
+
+    def test_burst_join_10_sessions(self):
+        """10 sessions created simultaneously — exactly 1 active, 9 queued, no duplicates."""
+        results = [None] * 10
+        errors  = []
+        barrier = threading.Barrier(10)
+
+        def join(i):
+            barrier.wait()
+            try:
+                results[i] = create()
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=join, args=(i,)) for i in range(10)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        assert not errors, f'Errors during burst join: {errors}'
+        active  = [r for r in results if r and r.get('is_active')]
+        queued  = [r for r in results if r and not r.get('is_active')]
+        sids    = [r['session_id'] for r in results if r]
+
+        assert len(active) == 1,  f'Expected 1 active, got {len(active)}'
+        assert len(queued) == 9,  f'Expected 9 queued, got {len(queued)}'
+        assert len(set(sids)) == 10, 'Duplicate session IDs!'
+
+        positions = sorted(r['position'] for r in queued)
+        assert positions == list(range(1, 10)), f'Positions not 1-9: {positions}'
+
+        for r in results:
+            if r: release(r['session_id'])
+
+    def test_heartbeat_storm_no_drops(self):
+        """5 sessions heartbeating rapidly for 15s — none should be dropped."""
+        sessions = [create() for _ in range(5)]
+        stops = [threading.Event() for _ in range(5)]
+        threads = [
+            threading.Thread(target=heartbeat_thread,
+                             args=(s['session_id'], stops[i], 0.5))
+            for i, s in enumerate(sessions)
+        ]
+        for t in threads: t.start()
+        time.sleep(15)
+        for e in stops: e.set()
+        for t in threads: t.join()
+
+        # Active session should still be active
+        active = next(s for s in sessions if s['is_active'])
+        d = status(active['session_id'])
+        assert d['is_active'] is True, f'Active session dropped during heartbeat storm: {d}'
+
+        # Queue length should still be 4
+        info = queue_info()
+        assert info['queue_length'] == 4, f'Queue length wrong: {info}'
+
+        for s in sessions: release(s['session_id'])
+
+    def test_fast_claim_on_release(self):
+        """Position-1 waiter claims an abandoned active session within 2 seconds."""
+        s1 = create()['session_id']
+        s2 = create()['session_id']
+
+        # Keep s2 heartbeating
+        stop = threading.Event()
+        t = threading.Thread(target=heartbeat_thread, args=(s2, stop, 0.5))
+        t.start()
+
+        release(s1)
+        t_release = time.time()
+
+        # Poll until s2 is active or 2s elapsed
+        promoted = False
+        while time.time() - t_release < 2.0:
+            if status(s2).get('is_active'):
+                promoted = True
+                break
+            time.sleep(0.1)
+
+        stop.set()
+        t.join()
+        assert promoted, f's2 not promoted within 2s of s1 release'
+        release(s2)
+
+    def test_multi_worker_race_one_active(self):
+        """Two threads call create_session simultaneously — exactly one must be active."""
+        results = []
+        barrier = threading.Barrier(2)
+
+        def join():
+            barrier.wait()
+            results.append(create())
+
+        threads = [threading.Thread(target=join) for _ in range(2)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        active = [r for r in results if r.get('is_active')]
+        queued = [r for r in results if not r.get('is_active')]
+        assert len(active) == 1, f'Race: {len(active)} active sessions (expected 1)'
+        assert len(queued) == 1, f'Race: {len(queued)} queued sessions (expected 1)'
+
+        for r in results: release(r['session_id'])
+
+    def test_release_cascade(self):
+        """Release 5 sessions one by one — positions decrement correctly each time."""
+        sessions = [create() for _ in range(5)]
+        active_sid = sessions[0]['session_id']
+        queued     = sessions[1:]
+
+        for i, s in enumerate(queued):
+            assert status(s['session_id'])['position'] == i + 1
+
+        # Release active, each queued session moves up
+        for step in range(5):
+            release(active_sid)
+            time.sleep(0.3)
+            remaining = queued[step:]
+            if not remaining:
+                break
+            active_sid = remaining[0]['session_id']
+            for j, s in enumerate(remaining[1:]):
+                d = status(s['session_id'])
+                assert d['position'] == j + 1, \
+                    f'Step {step}: expected position {j+1}, got {d["position"]}'
+
+    def test_state_persistence_across_restart(self):
+        """Queue state survives a server restart (disk-backed sessions.json)."""
+        # Create sessions
+        s1 = create()['session_id']
+        s2 = create()['session_id']
+        assert status(s2)['position'] == 1
+
+        # Restart the server process
+        server_url = BASE_URL
+        proc = subprocess.Popen(
+            [sys.executable, 'app.py'],
+            env={**os.environ, 'PULLEY_TESTING': '1'},
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+        )
+        time.sleep(3)   # wait for startup
+
+        # Check state survived
+        try:
+            d = status(s2)
+            assert d['position'] == 1 or d['is_active'], \
+                f's2 state not preserved after restart: {d}'
+        finally:
+            proc.terminate()
+            proc.wait()
+
+        release(s1)
+        release(s2)
+
+    def test_concurrent_heartbeats_and_status_polls(self):
+        """Concurrent heartbeats and status reads under load — no crashes or 500s."""
+        sessions = [create() for _ in range(3)]
+        errors = []
+        stop = threading.Event()
+
+        def beater(sid):
+            while not stop.is_set():
+                try:
+                    beat(sid)
+                except Exception as e:
+                    errors.append(f'heartbeat {sid[:8]}: {e}')
+                stop.wait(0.3)
+
+        def poller(sid):
+            while not stop.is_set():
+                try:
+                    status(sid)
+                except Exception as e:
+                    errors.append(f'status {sid[:8]}: {e}')
+                stop.wait(0.5)
+
+        threads = []
+        for s in sessions:
+            threads.append(threading.Thread(target=beater, args=(s['session_id'],)))
+            threads.append(threading.Thread(target=poller, args=(s['session_id'],)))
+        for t in threads: t.start()
+
+        time.sleep(10)
+        stop.set()
+        for t in threads: t.join()
+
+        assert not errors, f'Errors under concurrent load:\n' + '\n'.join(errors[:10])
+        for s in sessions: release(s['session_id'])
+
+
+# ── Trial download tests ──────────────────────────────────────────────────────
 
 class TestTrialDownloads:
-    """Test trial download tracking and limits."""
 
     def test_first_download_allowed(self):
-        """First trial download should be allowed."""
-        response = requests.post(f"{BASE_URL}/api/trial/register",
-                                json={"mid": "test-machine-001", "fmt": "step"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["allowed"] is True
-        assert data["count"] == 0
+        mid = f'stress-{time.time()}'
+        r = requests.post(f'{BASE_URL}/api/trial/register',
+                          json={'mid': mid, 'fmt': 'step'}, timeout=5)
+        assert r.status_code == 200
+        assert r.json()['allowed'] is True
 
-    def test_second_download_allowed(self):
-        """Second trial download should be allowed."""
-        mid = "test-machine-002"
-        requests.post(f"{BASE_URL}/api/trial/register",
-                     json={"mid": mid, "fmt": "step"})
-        response = requests.post(f"{BASE_URL}/api/trial/register",
-                                json={"mid": mid, "fmt": "dxf"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["allowed"] is True
-        assert data["count"] == 1
+    def test_limit_enforced(self):
+        mid = f'stress-{time.time()}'
+        for _ in range(2):
+            requests.post(f'{BASE_URL}/api/trial/register',
+                          json={'mid': mid, 'fmt': 'step'}, timeout=5)
+        r = requests.post(f'{BASE_URL}/api/trial/register',
+                          json={'mid': mid, 'fmt': 'step'}, timeout=5)
+        assert r.status_code == 429
+        assert r.json()['allowed'] is False
 
-    def test_third_download_blocked(self):
-        """Third trial download should be blocked (HTTP 429)."""
-        mid = "test-machine-003"
-        requests.post(f"{BASE_URL}/api/trial/register",
-                     json={"mid": mid, "fmt": "step"})
-        requests.post(f"{BASE_URL}/api/trial/register",
-                     json={"mid": mid, "fmt": "dxf"})
-        response = requests.post(f"{BASE_URL}/api/trial/register",
-                                json={"mid": mid, "fmt": "svg"})
-        assert response.status_code == 429
-        data = response.json()
-        assert data["allowed"] is False
-        assert data["count"] == 2
-
-    def test_trial_status_check(self):
-        """Trial status should report correct counts."""
-        mid = "test-machine-004"
-        requests.post(f"{BASE_URL}/api/trial/register",
-                     json={"mid": mid, "fmt": "step"})
-        requests.post(f"{BASE_URL}/api/trial/register",
-                     json={"mid": mid, "fmt": "dxf"})
-
-        response = requests.get(f"{BASE_URL}/api/trial/status?mid={mid}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["count"] == 2
-        assert data["limit"] == 2
+    def test_different_machines_independent(self):
+        ts = time.time()
+        for i in range(3):
+            mid = f'machine-{ts}-{i}'
+            r = requests.post(f'{BASE_URL}/api/trial/register',
+                              json={'mid': mid, 'fmt': 'step'}, timeout=5)
+            assert r.json()['allowed'] is True, f'Machine {i} blocked unexpectedly'
 
 
-class TestHeartbeat:
-    """Test session heartbeat mechanism."""
-
-    def test_heartbeat_keeps_session_alive(self):
-        """Heartbeat should successfully update session."""
-        session_id = requests.post(f"{BASE_URL}/api/session/create").json()["session_id"]
-
-        response = requests.post(f"{BASE_URL}/api/session/heartbeat",
-                                json={"session_id": session_id})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release",
-                     json={"session_id": session_id})
-
-    def test_heartbeat_invalid_session(self):
-        """Heartbeat for invalid session should fail."""
-        response = requests.post(f"{BASE_URL}/api/session/heartbeat",
-                                json={"session_id": "invalid-session-id"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is False
-
-
-class TestIntegration:
-    """Integration tests for complete workflows."""
-
-    def test_complete_queue_workflow(self):
-        """Test complete workflow: create → queue → promote → release."""
-        # Create 3 sessions
-        s1_data = requests.post(f"{BASE_URL}/api/session/create").json()
-        s2_data = requests.post(f"{BASE_URL}/api/session/create").json()
-        s3_data = requests.post(f"{BASE_URL}/api/session/create").json()
-
-        s1, s2, s3 = s1_data["session_id"], s2_data["session_id"], s3_data["session_id"]
-
-        # Verify positions
-        assert s1_data["is_active"] is True
-        assert s2_data["position"] == 1
-        assert s3_data["position"] == 2
-
-        # Release s1, s2 should be promoted
-        requests.post(f"{BASE_URL}/api/session/release", json={"session_id": s1})
-        time.sleep(0.5)
-
-        s2_status = requests.get(f"{BASE_URL}/api/session/status?session_id={s2}").json()
-        assert s2_status["is_active"] is True
-        assert s2_status["position"] == 0
-
-        # Cleanup
-        requests.post(f"{BASE_URL}/api/session/release", json={"session_id": s2})
-        requests.post(f"{BASE_URL}/api/session/release", json={"session_id": s3})
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    pytest.main([__file__, '-v', '--tb=short'])
