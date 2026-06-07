@@ -349,10 +349,10 @@ function reproUrl(name) {
   const cfg = randomConfigs[idx];
   if (!cfg) return null;
   const params = Object.entries(cfg)
-    .filter(([k]) => k !== 'run_idx')
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v === true ? 'true' : v === false ? 'false' : v)}`)
+    .filter(([k, v]) => k !== 'run_idx' && !(k === 'dual' && !v))
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v === true ? 'true' : v)}`)
     .join('&');
-  return `${flaskUrl}/?${params}`;
+  return `${flaskUrl}/?${params}&sv=1`;
 }
 
 function makeRow(t) {

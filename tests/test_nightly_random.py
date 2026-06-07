@@ -227,10 +227,18 @@ def _validate_config(cfg):
         if bore_mm >= R_OD - 1.0:
             return False
 
-        # Hub OD must be smaller than pulley
-        _, hub_h, _, _, _, _, _, _ = _parse_hub_params(qs, '')
-        hub_od = float(qs.get('hub_od', 0))
-        if hub_od > 0 and hub_od >= R_OD * 2 - 2.0:
+        # Hub OD must be smaller than pulley OD
+        hub_od    = float(qs.get('hub_od', 0))
+        keyway_w  = float(qs.get('hub_keyway_w', 0))
+        keyway_h  = float(qs.get('hub_keyway_h', 0))
+        flat_dep  = float(qs.get('hub_flat_depth', 0))
+        if hub_od > 0 and hub_od / 2.0 >= R_OD - 1.0:
+            return False
+        # Keyway must not extend outside the bore
+        if keyway_w > 0 and (bore_mm / 2.0 + keyway_h) >= R_OD - 1.0:
+            return False
+        # D-flat must leave enough material
+        if flat_dep > 0 and flat_dep >= bore_mm / 2.0 - 0.5:
             return False
 
         # Spoke validation
@@ -293,10 +301,14 @@ def _save_inputs(run_id, configs):
 
 def _qs(cfg):
     """Convert config dict to query-string dict for the Flask test client."""
+    from app import CCT_SCHEMA_VERSION
     qs = {k: str(v) for k, v in cfg.items()
           if k not in ('run_idx',)}
     if cfg.get('dual'):
         qs['dual'] = 'true'
+    else:
+        qs.pop('dual', None)   # don't send dual=False — confuses the app
+    qs['sv'] = str(CCT_SCHEMA_VERSION)   # needed for migrateParams()
     return qs
 
 
