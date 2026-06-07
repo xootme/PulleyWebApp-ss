@@ -66,11 +66,12 @@ SLOW_TESTS = {
 
 _lock = threading.Lock()
 _state = {
-    'server':        'starting',
-    'started':       datetime.now().isoformat(),
-    'finished':      None,
-    'tests':         [],
-    'group_timings': {},
+    'server':         'starting',
+    'started':        datetime.now().isoformat(),
+    'finished':       None,
+    'tests':          [],
+    'group_timings':  {},
+    'random_configs': [],   # [{run_idx, family, pitch, ...}] set when nightly runs
 }
 _subscribers  = []   # SSE client queues
 _group_starts = {}   # {group: float timestamp}
@@ -184,11 +185,12 @@ def _group_end(group):
 
 def _reset_state():
     with _lock:
-        _state['server']        = 'starting'
-        _state['started']       = datetime.now().isoformat()
-        _state['finished']      = None
-        _state['tests']         = []
-        _state['group_timings'] = {}
+        _state['server']         = 'starting'
+        _state['started']        = datetime.now().isoformat()
+        _state['finished']       = None
+        _state['tests']          = []
+        _state['group_timings']  = {}
+        _state['random_configs'] = []
         _group_starts.clear()
     _push({'type': 'clear', 'started': _state['started']})
 
@@ -253,6 +255,11 @@ td.dur  { width: 72px; color: #ccc; text-align: right; font-size: 12px; font-wei
 .error-box  { font-size: 11px; color: #e74c3c; margin-top: 4px; font-family: monospace;
               white-space: pre-wrap; max-height: 100px; overflow-y: auto;
               background: #1a0808; padding: 5px 8px; border-radius: 3px; }
+.repro-btn  { font-size: 10px; font-weight: 600; padding: 2px 8px; margin-left: 8px;
+              background: #1a3a5a; color: #3498db; border: 1px solid #1e4a70;
+              border-radius: 3px; cursor: pointer; text-decoration: none;
+              vertical-align: middle; display: inline-block; }
+.repro-btn:hover { background: #1e4a70; }
 </style>
 </head>
 <body>
@@ -289,13 +296,14 @@ td.dur  { width: 72px; color: #ccc; text-align: right; font-size: 12px; font-wei
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
-let tests      = [];
-let started    = null;
-let finished   = null;
-let timerID    = null;
-let grpStarts  = {};   // {group → Date}
-let grpActual  = {};   // {group → seconds}  (this run)
-let grpHistory = {};   // {group → seconds}  (last run, from localStorage)
+let tests         = [];
+let started       = null;
+let finished      = null;
+let timerID       = null;
+let grpStarts     = {};   // {group → Date}
+let grpActual     = {};   // {group → seconds}  (this run)
+let grpHistory    = {};   // {group → seconds}  (last run, from localStorage)
+let randomConfigs = [];   // [{run_idx, family, pitch, ...}] for nightly tests
 
 const HIST_KEY  = 'cctp_grp_timings';
 const DUR_KEY   = 'cctp_last_duration';
@@ -329,15 +337,35 @@ function pretty(name) {
 
 function rowId(name) { return 'r-' + name.replace(/\W/g,'-'); }
 
+function reproUrl(name) {
+  // Extract config index from e.g. "test_random_stl_preview[2]"
+  const m = name.match(/\[(\d+)\]$/);
+  if (!m) return null;
+  const idx = parseInt(m[1]);
+  const cfg = randomConfigs[idx];
+  if (!cfg) return null;
+  const params = Object.entries(cfg)
+    .filter(([k]) => k !== 'run_idx')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v === true ? 'true' : v === false ? 'false' : v)}`)
+    .join('&');
+  return `http://localhost:5000/?${params}`;
+}
+
 function makeRow(t) {
   const dur  = t.duration != null ? t.duration + 's' : (t.status==='running' ? '…' : '');
   const err  = t.error ? `<div class="error-box">${esc(t.error)}</div>` : '';
   const slow = t.slow  ? '<span class="slow-badge">slow</span>' : '';
   const raw  = `<span class="raw-name">${esc(t.name)}</span>`;
   const ic   = ICON_CLS[t.status] || '';
+  // Repro button for nightly random tests
+  let repro = '';
+  if (t.group === 'Nightly Random') {
+    const url = reproUrl(t.name);
+    if (url) repro = `<a class="repro-btn" href="${url}" target="_blank">▶ View in App</a>`;
+  }
   return `<tr id="${rowId(t.name)}" class="row-${t.status}">
     <td class="icon ${ic}">${ICON[t.status]||'?'}</td>
-    <td>${pretty(t.name)}${slow}${raw}${err}</td>
+    <td>${pretty(t.name)}${slow}${raw}${repro}${err}</td>
     <td class="grp">${esc(t.group)}</td>
     <td class="dur">${dur}</td>
   </tr>`;
@@ -453,9 +481,10 @@ function setServer(s) {
 
 // ── Apply full state snapshot ──────────────────────────────────────────────────
 function applyState(state) {
-  tests    = state.tests    || [];
-  started  = state.started;
-  finished = state.finished;
+  tests         = state.tests    || [];
+  started       = state.started;
+  finished      = state.finished;
+  randomConfigs = state.random_configs || [];
   if (state.group_timings) Object.assign(grpActual, state.group_timings);
   loadHistory();
   setServer(state.server || 'starting');
@@ -473,8 +502,11 @@ function connect() {
   };
   es.onmessage = ev => {
     const d = JSON.parse(ev.data);
-    if (d.type === 'clear') {
-      tests=[];started=d.started;finished=null;grpStarts={};grpActual={};
+    if (d.type === 'random_configs') {
+      randomConfigs = d.configs || [];
+      rebuildTable();
+    } else if (d.type === 'clear') {
+      tests=[];started=d.started;finished=null;grpStarts={};grpActual={};randomConfigs=[];
       loadHistory();
       document.getElementById('summary').textContent='';
       document.getElementById('summary').className='';
@@ -692,6 +724,26 @@ def collect_pytest_tests():
     return tests
 
 
+def load_random_configs():
+    """Load the most recent nightly random config file into _state['random_configs'].
+    Called after discovery so the dashboard can build repro URLs for each test.
+    """
+    if os.environ.get('PULLEY_NIGHTLY') != '1':
+        return
+    log_dir = ROOT / 'logs' / 'nightly_random'
+    files   = sorted(log_dir.glob('*.json')) if log_dir.exists() else []
+    if not files:
+        return
+    try:
+        data    = json.loads(files[-1].read_text(encoding='utf-8'))
+        configs = data.get('configs', [])
+        with _lock:
+            _state['random_configs'] = configs
+        _push({'type': 'random_configs', 'configs': configs})
+    except Exception:
+        pass
+
+
 def collect_queue_tests(tmod, skip_slow):
     """Return list of (group, cls, method, skip) for queue tests."""
     groups = [
@@ -852,6 +904,9 @@ def main():
     if args.tests or args.groups:
         active = sum(1 for _, _, _, skip in queue_plan if not skip) + len(pytest_tests)
         print(f'Filter    : running {active} matching test(s)')
+
+    # Load nightly random configs into state (noop unless PULLEY_NIGHTLY=1)
+    load_random_configs()
 
     # Push state_ready → open browsers re-fetch /state to see pending list
     _push({'type': 'state_ready', 'started': _state['started']})
