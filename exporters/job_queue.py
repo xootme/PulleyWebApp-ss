@@ -236,7 +236,7 @@ def _cleanup_stale_queued_sessions():
     """
     global _SESSIONS
     now = time.time()
-    stale_timeout = 10 * 60  # 10 minutes — browser genuinely gone
+    stale_timeout = 30  # 30 seconds — browser closed / network lost
     to_remove = [
         sid for sid, sess in _SESSIONS.items()
         if (now - sess.get('last_heartbeat', sess['created_at'])) > stale_timeout

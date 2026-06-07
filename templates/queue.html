@@ -268,16 +268,26 @@
             }
         }
 
+        function sendHeartbeat() {
+            if (!currentSessionId) return;
+            // sendBeacon works even in backgrounded/throttled tabs and on page unload
+            navigator.sendBeacon('/api/session/heartbeat',
+                new Blob([JSON.stringify({ session_id: currentSessionId })],
+                         { type: 'application/json' }));
+        }
+
+        // Send heartbeat immediately when tab goes hidden (before throttling kicks in)
+        // and again when it comes back visible
+        document.addEventListener('visibilitychange', () => {
+            if (currentSessionId) sendHeartbeat();
+        });
+
         async function updateStatus() {
             if (!currentSessionId) return;
 
             try {
-                // Keep session alive
-                await fetch('/api/session/heartbeat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: currentSessionId })
-                });
+                // Keep session alive — use sendBeacon so it works in background tabs
+                sendHeartbeat();
 
                 const response = await fetch(`/api/session/status?session_id=${currentSessionId}`);
                 const data = await response.json();
@@ -370,11 +380,17 @@
             }
         }
 
+        // Dedicated heartbeat interval — fires every 10s regardless of tab state
+        // sendBeacon is not throttled by the browser even in background tabs
+        let heartbeatInterval = null;
+
         function startAutoRefresh() {
             stopAutoRefresh();
             // Start at 10s; position 1 will self-adjust to 2s after first poll
             currentPollInterval = 10000;
             autoRefreshInterval = setInterval(updateStatus, currentPollInterval);
+            // Separate heartbeat every 10s via sendBeacon (survives background throttling)
+            heartbeatInterval = setInterval(sendHeartbeat, 10000);
             // Do one immediate update
             updateStatus();
         }
@@ -383,6 +399,10 @@
             if (autoRefreshInterval) {
                 clearInterval(autoRefreshInterval);
                 autoRefreshInterval = null;
+            }
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
             }
         }
 
