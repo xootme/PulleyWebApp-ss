@@ -200,39 +200,49 @@ def _parse_and_clamp(raw):
     return validated
 
 
-def _stl_preview_ok(cfg):
-    """Return True if the STL preview endpoint succeeds for this config.
-    Used to filter out configs that pass parameter validation but fail
-    geometry generation (TopologyException, degenerate meshes etc.).
+def _stl_ok(cfg):
+    """Return True if the STL exporter succeeds for this config.
+    Calls the exporter directly (no HTTP) to avoid conflicts with the
+    test client fixture. Rejects configs with degenerate geometry.
     """
-    from app import app as flask_app
-    flask_app.config['TESTING'] = True
-    with flask_app.test_client() as c:
-        r = c.get('/api/preview-stl', query_string=_qs(cfg))
-        return r.status_code == 200 and len(r.data) > 84
+    try:
+        from app import _parse_stl_params, _parse_hub_params, _parse_spoke_params
+        from exporters.step_exporter import generate_pulley_stl_preview
+        qs = _qs(cfg)
+        family, pitch, num_teeth, bore_mm, belt_h, cl_mm, bl_mm, pr_ex = \
+            _parse_stl_params(qs, '1')
+        hub_od, hub_h, sd, sc, cn, fd, kw, kh = _parse_hub_params(qs, '')
+        sp_en, sp_hub, rim_d, sp_w, ft, fb, sp_c, sp_h, _ = _parse_spoke_params(qs, '')
+        result = generate_pulley_stl_preview(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, belt_height_mm=belt_h,
+            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+            hub_od_mm=hub_od, hub_height_mm=hub_h,
+            flat_depth_mm=fd, keyway_w_mm=kw, keyway_h_mm=kh,
+            spoke_count=sp_c if sp_en else 0,
+            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+            rim_depth_mm=rim_d, fillet_tip_mm=ft, fillet_base_mm=fb,
+            spoke_height_mm=sp_h,
+        )
+        return isinstance(result, bytes) and len(result) > 84
+    except Exception:
+        return False
 
 
 def _make_config(r, run_idx, max_attempts=50):
-    """Generate a validated config, retrying on geometry failures.
-
-    First pass: parameter validation via app parse functions.
-    Second pass: STL preview check — rejects any config that causes a
-    TopologyException or other geometry error in the actual generator.
-    This ensures the saved config is genuinely reproducible.
-    """
+    """Generate a validated config, retrying on geometry failures."""
     last_err = None
-    for attempt in range(max_attempts):
+    for _ in range(max_attempts):
         raw = _raw_config(r)
         try:
             v = _parse_and_clamp(raw)
         except ValueError as e:
             last_err = e
             continue
-        # Quick generation check — rejects degenerate geometry before saving
         v['run_idx'] = run_idx
-        if _stl_preview_ok(v):
+        if _stl_ok(v):
             return v
-        last_err = 'STL preview failed (geometry error)'
+        last_err = 'STL generation failed (geometry error)'
     raise RuntimeError(
         f'Could not generate valid config after {max_attempts} attempts: {last_err}'
     )
