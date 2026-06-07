@@ -481,10 +481,12 @@ function rebuildTable() {
     return html;
   }
 
+  // Newest finished tests at top so latest result is always visible
+  const doneDesc = done.slice().reverse();
   document.getElementById('tbody').innerHTML =
-    section(running, '⏳ Running',                           'run') +
-    section(done,    '✓ Finished',                           'done') +
-    section(pending, `○ Upcoming — ${pending.length} tests`, 'todo', true);
+    section(running,  '⏳ Running',                           'run') +
+    section(doneDesc, '✓ Finished',                           'done') +
+    section(pending,  `○ Upcoming — ${pending.length} tests`, 'todo', true);
 }
 
 // ── Server badge ───────────────────────────────────────────────────────────────
