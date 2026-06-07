@@ -568,6 +568,10 @@ def _get_preset_value(spec, preset_type, preset_key, custom_val):
 
 @app.route('/')
 def index():
+    # In testing mode, skip queue entirely for repro/dev convenience
+    if os.environ.get('PULLEY_TESTING'):
+        return render_template('index.html', session_id='testing')
+
     session_id = request.args.get('session_id')
 
     # If no session_id, create one
@@ -4108,4 +4112,10 @@ def queue_page():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    import argparse as _ap
+    _p = _ap.ArgumentParser()
+    _p.add_argument('--port', type=int, default=5000)
+    _p.add_argument('--no-debug', action='store_true')
+    _args, _ = _p.parse_known_args()
+    _debug = not _args.no_debug and not os.environ.get('PULLEY_TESTING')
+    app.run(debug=_debug, host='0.0.0.0', port=_args.port)

@@ -317,7 +317,7 @@ def _qs(cfg):
 @pytest.fixture(scope='module')
 def random_configs():
     """Generate 5 random configs and save them to disk before any test runs."""
-    seed    = int(datetime.now().strftime('%Y%m%d'))  # same seed for whole day
+    seed    = int(datetime.now().strftime('%Y%m%d%H'))  # changes each hour for retries
     r       = _rng(seed)
     run_id  = datetime.now().strftime('%H%M%S')
     configs = [_rand_config_validated(r, i) for i in range(5)]
