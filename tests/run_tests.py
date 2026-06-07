@@ -72,6 +72,7 @@ _state = {
     'tests':          [],
     'group_timings':  {},
     'random_configs': [],   # [{run_idx, family, pitch, ...}] set when nightly runs
+    'flask_url':      'http://localhost:5000',
 }
 _subscribers  = []   # SSE client queues
 _group_starts = {}   # {group: float timestamp}
@@ -183,7 +184,7 @@ def _group_end(group):
         _push({'type': 'group_end', 'group': group, 'duration': dur})
 
 
-def _reset_state():
+def _reset_state(flask_url=None):
     with _lock:
         _state['server']         = 'starting'
         _state['started']        = datetime.now().isoformat()
@@ -191,6 +192,8 @@ def _reset_state():
         _state['tests']          = []
         _state['group_timings']  = {}
         _state['random_configs'] = []
+        if flask_url:
+            _state['flask_url']  = flask_url
         _group_starts.clear()
     _push({'type': 'clear', 'started': _state['started']})
 
@@ -304,6 +307,7 @@ let grpStarts     = {};   // {group → Date}
 let grpActual     = {};   // {group → seconds}  (this run)
 let grpHistory    = {};   // {group → seconds}  (last run, from localStorage)
 let randomConfigs = [];   // [{run_idx, family, pitch, ...}] for nightly tests
+let flaskUrl      = 'http://localhost:5000';
 
 const HIST_KEY  = 'cctp_grp_timings';
 const DUR_KEY   = 'cctp_last_duration';
@@ -348,7 +352,7 @@ function reproUrl(name) {
     .filter(([k]) => k !== 'run_idx')
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v === true ? 'true' : v === false ? 'false' : v)}`)
     .join('&');
-  return `http://localhost:5000/?${params}`;
+  return `${flaskUrl}/?${params}`;
 }
 
 function makeRow(t) {
@@ -485,6 +489,7 @@ function applyState(state) {
   started       = state.started;
   finished      = state.finished;
   randomConfigs = state.random_configs || [];
+  if (state.flask_url) flaskUrl = state.flask_url;
   if (state.group_timings) Object.assign(grpActual, state.group_timings);
   loadHistory();
   setServer(state.server || 'starting');
@@ -869,7 +874,7 @@ def main():
                     metavar='GROUP', help='Run tests in groups matching GROUP (repeatable)')
     args = ap.parse_args()
 
-    _reset_state()
+    _reset_state(flask_url=f'http://localhost:{args.flask_port}')
     start_dash_server(args.dash_port)
     dash_url = f'http://localhost:{args.dash_port}/'
     print(f'Dashboard : {dash_url}')
