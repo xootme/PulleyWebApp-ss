@@ -321,3 +321,51 @@ def test_random_metadata_roundtrip(client, random_configs, idx):
     assert str(params.get('teeth', params.get('p1_teeth', ''))) == str(cfg['teeth']) or \
            str(params.get('teeth', '')) == str(cfg['teeth']), \
         f'teeth mismatch in metadata for config[{idx}]'
+
+
+# ── View helper ───────────────────────────────────────────────────────────────
+# Run directly to print app URLs for any saved nightly run:
+#
+#   python tests/test_nightly_random.py
+#   python tests/test_nightly_random.py logs/nightly_random/2026-06-07_134234.json
+#
+# Opens the URL in your browser if --open is passed.
+
+if __name__ == '__main__':
+    import sys
+    import urllib.parse
+    import webbrowser
+
+    log_dir = Path(__file__).parent.parent / 'logs' / 'nightly_random'
+    open_browser = '--open' in sys.argv
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+
+    if args:
+        candidates = [Path(args[0])]
+    else:
+        candidates = sorted(log_dir.glob('*.json'))
+
+    if not candidates:
+        print('No nightly run files found in', log_dir)
+        sys.exit(1)
+
+    run_file = candidates[-1]
+    print(f'Run file: {run_file}\n')
+    data    = json.loads(run_file.read_text(encoding='utf-8'))
+    configs = data['configs']
+    base    = 'http://localhost:5000/'
+
+    for cfg in configs:
+        idx = cfg['run_idx']
+        qs  = {k: str(v) for k, v in cfg.items() if k != 'run_idx'}
+        if cfg.get('dual'):
+            qs['dual'] = 'true'
+        url = base + '?' + urllib.parse.urlencode(qs)
+        print(f'Config {idx}:  {cfg["family"]} {cfg["pitch"]}  '
+              f'{cfg["teeth"]}T  bore={cfg["bore"]}mm'
+              + ('  spokes' if cfg.get('spokes_enabled') == '1' else '')
+              + ('  flange' if cfg.get('flange_enabled') == '1' else '')
+              + ('  dual'   if cfg.get('dual')           else ''))
+        print(f'  {url}\n')
+        if open_browser:
+            webbrowser.open(url)
