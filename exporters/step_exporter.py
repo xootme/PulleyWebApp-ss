@@ -652,8 +652,10 @@ def generate_pulley_stl(
             hub_cyl.apply_translation([0, 0, belt_height_mm / 2.0])
 
             # 2. Rim Mesh (Full Height)
-            rim_circle = ShapelyPoint(0, 0).buffer(_R_rim_s, resolution=64)
-            rim_poly = outer_poly.difference(rim_circle)
+            # buffer(0) on both operands cleans up near-coincident edges that
+            # cause TopologyException in Shapely's GEOS difference operation
+            rim_circle = ShapelyPoint(0, 0).buffer(_R_rim_s, resolution=64).buffer(0)
+            rim_poly = outer_poly.buffer(0).difference(rim_circle)
             rim_poly = shapely_orient(_largest_poly(rim_poly), sign=1.0)
             rim_mesh = trimesh.creation.extrude_polygon(rim_poly, belt_height_mm)
             rim_mesh.fix_normals()
@@ -1779,8 +1781,8 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
             hub_cyl.fix_normals()
 
             # 2. Rim Mesh (Full Height, minus bore)
-            rim_circle = ShapelyPoint(0, 0).buffer(_R_rim_s, resolution=64)
-            rim_poly = outer_poly.difference(rim_circle)
+            rim_circle = ShapelyPoint(0, 0).buffer(_R_rim_s, resolution=64).buffer(0)
+            rim_poly = outer_poly.buffer(0).difference(rim_circle)
             rim_poly = rim_poly.difference(bore_2d) if bore_2d is not None else rim_poly
             rim_poly = shapely_orient(_largest_poly(rim_poly), sign=1.0)
             rim_mesh = trimesh.creation.extrude_polygon(rim_poly, belt_height_mm)
