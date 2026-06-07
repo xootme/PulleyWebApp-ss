@@ -872,9 +872,11 @@ def main():
                     metavar='NAME',  help='Run tests whose name contains NAME (repeatable)')
     ap.add_argument('--group', dest='groups', action='append', default=[],
                     metavar='GROUP', help='Run tests in groups matching GROUP (repeatable)')
+    ap.add_argument('--app-url', default='http://localhost:5000',
+                    help='Base URL shown in repro buttons (default: http://localhost:5000)')
     args = ap.parse_args()
 
-    _reset_state(flask_url=f'http://localhost:{args.flask_port}')
+    _reset_state(flask_url=args.app_url)
     start_dash_server(args.dash_port)
     dash_url = f'http://localhost:{args.dash_port}/'
     print(f'Dashboard : {dash_url}')
