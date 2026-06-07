@@ -742,11 +742,17 @@ def collect_pytest_tests():
     """Return list of (test_name, group, node_id) for all non-queue test files."""
     env = {**os.environ}
     # Pass nightly flag through so pytest --collect-only sees the skip markers correctly
+    ignore_args = [
+        '--ignore=tests/run_tests.py',
+        f'--ignore=tests/{QUEUE_FILE}.py',
+        '--ignore=tests/_dash_plugin.py',
+    ]
+    # Exclude nightly random tests unless explicitly running them
+    if os.environ.get('PULLEY_NIGHTLY') != '1':
+        ignore_args.append('--ignore=tests/test_nightly_random.py')
+
     result = subprocess.run(
-        [str(VENV_PY), '-m', 'pytest', 'tests/', '--collect-only',
-         '--ignore=tests/run_tests.py',
-         f'--ignore=tests/{QUEUE_FILE}.py',
-         '--ignore=tests/_dash_plugin.py'],
+        [str(VENV_PY), '-m', 'pytest', 'tests/', '--collect-only', *ignore_args],
         cwd=str(ROOT), capture_output=True, text=True, env=env
     )
     tests = []
@@ -849,15 +855,20 @@ def run_pytest(pytest_tests, dash_port):
     plugin_args = _plugin_args(plugin_path)
 
     # Use Popen + stdout streaming so we can parse results line-by-line
+    run_ignore = [
+        '--ignore=tests/run_tests.py',
+        f'--ignore=tests/{QUEUE_FILE}.py',
+        '--ignore=tests/_dash_plugin.py',
+    ]
+    if os.environ.get('PULLEY_NIGHTLY') != '1':
+        run_ignore.append('--ignore=tests/test_nightly_random.py')
+
     proc = subprocess.Popen(
         [str(VENV_PY), '-m', 'pytest', 'tests/',
-         '--ignore=tests/run_tests.py',
-         f'--ignore=tests/{QUEUE_FILE}.py',
-         '--ignore=tests/_dash_plugin.py',
+         *run_ignore,
          *plugin_args,
-         '--tb=no',   # errors come via plugin; suppress inline tracebacks
-         '-v',        # verbose: prints one line per test as it finishes
-         '--no-header', '--color=no'],
+         '--tb=no',
+         '-v', '--no-header', '--color=no'],
         cwd=str(ROOT), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
