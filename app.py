@@ -568,11 +568,12 @@ def _get_preset_value(spec, preset_type, preset_key, custom_val):
 
 @app.route('/')
 def index():
-    # In testing mode, skip queue entirely for repro/dev convenience
+    # In testing mode, skip queue entirely — pass empty session_id so the JS
+    # doesn't replace the URL (which would wipe the repro query params)
     if os.environ.get('PULLEY_TESTING'):
         return render_template(
             'index.html',
-            session_id='testing',
+            session_id='',
             families=FAMILIES,
             clearance_presets=CLEARANCE_PRESETS,
             backlash_presets=BACKLASH_PRESETS,
