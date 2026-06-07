@@ -872,11 +872,9 @@ def main():
                     metavar='NAME',  help='Run tests whose name contains NAME (repeatable)')
     ap.add_argument('--group', dest='groups', action='append', default=[],
                     metavar='GROUP', help='Run tests in groups matching GROUP (repeatable)')
-    ap.add_argument('--app-url', default='http://localhost:5000',
-                    help='Base URL shown in repro buttons (default: http://localhost:5000)')
     args = ap.parse_args()
 
-    _reset_state(flask_url=args.app_url)
+    _reset_state(flask_url=f'http://localhost:{args.flask_port}')
     start_dash_server(args.dash_port)
     dash_url = f'http://localhost:{args.dash_port}/'
     print(f'Dashboard : {dash_url}')
@@ -943,8 +941,6 @@ def main():
         _group_end(cur_group)
 
     _finish()
-    proc.terminate()
-    proc.wait()
 
     with _lock:
         p = sum(1 for t in _state['tests'] if t['status'] == 'passed')
@@ -953,14 +949,21 @@ def main():
     print(f'Results   : {p} passed  {f} failed  {s} skipped')
 
     if args.exit_when_done:
+        proc.terminate()
+        proc.wait()
         sys.exit(1 if any_failed else 0)
 
-    print(f'Dashboard stays open at {dash_url} — Ctrl+C to quit')
+    # Keep Flask alive so repro buttons in dashboard remain clickable
+    print(f'Dashboard : {dash_url}')
+    print(f'App       : {args.app_url}  (repro buttons use this — Ctrl+C to quit)')
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         pass
+
+    proc.terminate()
+    proc.wait()
     sys.exit(1 if any_failed else 0)
 
 
