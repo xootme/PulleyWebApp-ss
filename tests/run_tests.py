@@ -365,7 +365,7 @@ function makeRow(t) {
   let repro = '';
   if (t.group === 'Nightly Random') {
     const url = reproUrl(t.name);
-    if (url) repro = `<a class="repro-btn" href="${url}" target="_blank">▶ View in App</a>`;
+    if (url) repro = `<a class="repro-btn" href="${url}" target="pulley-repro">▶ View in App</a>`;
   }
   return `<tr id="${rowId(t.name)}" class="row-${t.status}">
     <td class="icon ${ic}">${ICON[t.status]||'?'}</td>
