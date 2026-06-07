@@ -175,10 +175,11 @@ def _rand_config(r, run_idx):
         'hub_keyway_w':   kw,
         'hub_keyway_h':   kh,
         'print_extra':    print_extra,
-        'clearance_preset': cl_preset,
-        'backlash_preset':  bl_preset,
-        'belt_height': belt_height,
-        'dual':        dual,
+        'clearance_preset':  cl_preset,
+        'backlash_preset':   bl_preset,
+        'belt_height':       belt_height,
+        'clearance_height':  round(r.uniform(0.0, 1.0), 2),
+        'dual':              dual,
     }
     if hub:
         cfg.update(hub)
