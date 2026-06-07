@@ -830,27 +830,29 @@ def run_pytest(pytest_tests, dash_port):
         text=True, bufsize=1,
     )
 
-    # Parse pytest verbose output: "tests/test_foo.py::Class::test_name PASSED"
-    # Update dashboard immediately when each line arrives — no waiting for plugin
+    # Parse pytest verbose output line-by-line in a background thread
+    # so the main thread (SSE server) is never blocked.
+    # Format: "tests/test_foo.py::ClassName::test_name PASSED"
     import re as _re
     _STATUS_RE = _re.compile(
-        r'^(tests/[^\s]+)::([^\s]+)\s+(PASSED|FAILED|SKIPPED|ERROR)\s*$'
+        r'^tests/[^\s]+::(.+?)\s+(PASSED|FAILED|SKIPPED|ERROR)\s*$'
     )
 
-    for line in proc.stdout:
-        line = line.rstrip()
-        m = _STATUS_RE.match(line)
-        if not m:
-            continue
-        node_parts = m.group(2)   # e.g. "TestClass::test_name" or "test_name"
-        raw_status = m.group(3).lower()
-        status = 'failed' if raw_status in ('failed', 'error') else raw_status
+    def _read_stdout():
+        for line in proc.stdout:
+            m = _STATUS_RE.match(line.rstrip())
+            if not m:
+                continue
+            node_parts = m.group(1)
+            raw_status = m.group(2).lower()
+            status = 'failed' if raw_status in ('failed', 'error') else raw_status
+            _update_test_fuzzy(node_parts, status=status,
+                               started=datetime.now().isoformat())
 
-        # Update dashboard — fuzzy match handles Class::method vs method
-        _update_test_fuzzy(node_parts, status=status,
-                           started=datetime.now().isoformat())
-
+    stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+    stdout_thread.start()
     proc.wait()
+    stdout_thread.join(timeout=10)
 
     for group in seen_groups:
         _group_end(group)
