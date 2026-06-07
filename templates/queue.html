@@ -175,6 +175,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         let currentSessionId = urlParams.get('session_id') || sessionStorage.getItem('pulley_session_id');
         let autoRefreshInterval;
+        let currentPollInterval = 10000;
 
         function formatTime(seconds) {
             const mins = Math.floor(seconds / 60);
@@ -318,6 +319,14 @@
                     document.getElementById('queue-length').textContent = queueData.queue_length;
                 }
 
+                // Position 1 polls at 2s (fast claim); everyone else polls at 10s
+                const desiredInterval = (data.position === 1) ? 2000 : 10000;
+                if (currentPollInterval !== desiredInterval) {
+                    currentPollInterval = desiredInterval;
+                    stopAutoRefresh();
+                    autoRefreshInterval = setInterval(updateStatus, desiredInterval);
+                }
+
             } catch (e) {
                 console.error('Update failed:', e);
             }
@@ -363,8 +372,9 @@
 
         function startAutoRefresh() {
             stopAutoRefresh();
-            // Poll every 2 seconds for instant feedback when ahead user leaves
-            autoRefreshInterval = setInterval(updateStatus, 2000);
+            // Start at 10s; position 1 will self-adjust to 2s after first poll
+            currentPollInterval = 10000;
+            autoRefreshInterval = setInterval(updateStatus, currentPollInterval);
             // Do one immediate update
             updateStatus();
         }

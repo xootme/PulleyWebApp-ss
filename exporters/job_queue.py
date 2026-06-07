@@ -228,11 +228,15 @@ def _cleanup_expired_session():
 
 
 def _cleanup_stale_queued_sessions():
-    """Remove queued sessions that haven't sent heartbeat (disconnected browsers)."""
+    """Remove queued sessions whose browser has genuinely disconnected.
+
+    Waiting sessions are NOT subject to idle or session timeouts — only the
+    active session expires. We only remove a waiting session if its heartbeat
+    has been absent for 10 minutes (browser closed / network lost).
+    """
     global _SESSIONS
     now = time.time()
-    # Remove sessions that haven't been accessed/created in last 30 seconds
-    stale_timeout = 30
+    stale_timeout = 10 * 60  # 10 minutes — browser genuinely gone
     to_remove = [
         sid for sid, sess in _SESSIONS.items()
         if (now - sess.get('last_heartbeat', sess['created_at'])) > stale_timeout
