@@ -481,12 +481,17 @@ function rebuildTable() {
     return html;
   }
 
-  // Newest finished tests at top so latest result is always visible
-  const doneDesc = done.slice().reverse();
   document.getElementById('tbody').innerHTML =
-    section(running,  '⏳ Running',                           'run') +
-    section(doneDesc, '✓ Finished',                           'done') +
-    section(pending,  `○ Upcoming — ${pending.length} tests`, 'todo', true);
+    section(running, '⏳ Running',                           'run') +
+    section(done,    '✓ Finished',                           'done') +
+    section(pending, `○ Upcoming — ${pending.length} tests`, 'todo', true);
+
+  // Auto-scroll: keep the most recently finished test in view
+  const lastDone = done[done.length - 1];
+  if (lastDone) {
+    const el = document.getElementById(rowId(lastDone.name));
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 }
 
 // ── Server badge ───────────────────────────────────────────────────────────────
