@@ -236,25 +236,26 @@ tr.sec-hdr td { font-size: 13px; font-weight: 700; padding: 14px 12px 7px;
 tr.run-hdr  td { color: #3498db; border-top-color: #1a3a5a; background: #090d14; }
 tr.done-hdr td { color: #2ecc71; border-top-color: #1a3a2a; background: #090e0b; }
 tr.todo-hdr td { color: #888;    border-top-color: #222;    background: #0f0f13; }
-tr.grp-row td  { background: #111116; color: #777; font-size: 11px; font-weight: 600;
-                  letter-spacing: .05em; text-transform: uppercase; padding: 5px 12px 3px; }
-tr.row-passed { background: #091409; }
-tr.row-failed { background: #140909; }
-tr.row-running{ background: #090d14; animation: pulse 1.4s ease-in-out infinite; }
-tr.row-skipped, tr.row-pending { opacity: 0.45; }
+tr.grp-row td  { background: #111116; color: #aaa; font-size: 12px; font-weight: 700;
+                  letter-spacing: .04em; text-transform: uppercase; padding: 7px 12px 4px; }
+tr.row-passed { background: #091409; color: #d0ecd0; }
+tr.row-failed { background: #1c0a0a; color: #f0c0c0; }
+tr.row-running{ background: #090d14; color: #b0d0f0; animation: pulse 1.4s ease-in-out infinite; }
+tr.row-skipped { opacity: 0.5; }
+tr.row-pending { opacity: 0.6; color: #aaa; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
-td.icon { width: 26px; font-size: 14px; text-align: center; color: #666; }
+td.icon { width: 26px; font-size: 14px; text-align: center; color: #888; }
 td.icon.ok  { color: #2ecc71; } td.icon.err { color: #e74c3c; }
 td.icon.run { color: #3498db; }
-td.grp  { width: 200px; color: #999; font-size: 11px; }
-td.dur  { width: 72px; color: #ccc; text-align: right; font-size: 12px; font-weight: 600; }
-.grp-timer  { float: right; font-size: 11px; font-family: monospace; color: #555; }
-.grp-timer.live { color: #3498db; }
-.grp-timer.warn { color: #f1c40f; }
-.grp-timer.done { color: #444; }
-.slow-badge { font-size: 10px; background: #222; color: #666;
+td.grp  { width: 200px; color: #bbb; font-size: 12px; font-weight: 500; }
+td.dur  { width: 72px; color: #eee; text-align: right; font-size: 13px; font-weight: 700; }
+.grp-timer  { float: right; font-size: 12px; font-family: monospace; color: #888; }
+.grp-timer.live { color: #5dade2; font-weight: 600; }
+.grp-timer.warn { color: #f1c40f; font-weight: 600; }
+.grp-timer.done { color: #666; }
+.slow-badge { font-size: 10px; background: #2a2a10; color: #aaa;
               border-radius: 3px; padding: 1px 5px; margin-left: 6px; }
-.raw-name   { font-size: 10px; color: #333; margin-left: 6px; font-family: monospace; }
+.raw-name   { font-size: 11px; color: #666; margin-left: 8px; font-family: monospace; }
 .error-box  { font-size: 11px; color: #e74c3c; margin-top: 4px; font-family: monospace;
               white-space: pre-wrap; max-height: 100px; overflow-y: auto;
               background: #1a0808; padding: 5px 8px; border-radius: 3px; }
@@ -769,44 +770,77 @@ def collect_queue_tests(tmod, skip_slow):
 # ── Test runners ───────────────────────────────────────────────────────────────
 
 def run_pytest(pytest_tests, dash_port):
-    """Run all non-queue tests in one pytest process; results stream via /result."""
+    """Run all non-queue tests in one pytest process.
+
+    Results stream to the dashboard two ways:
+    1. Live stdout parsing — pytest -v prints PASSED/FAILED/SKIPPED immediately
+       as each test finishes, giving instant per-test visibility.
+    2. Plugin POSTs — provides error details for failures via /result.
+    """
     if not pytest_tests:
         return True
 
     plugin_path = _write_plugin(dash_port)
 
-    # Emit group_start for every group before pytest begins
+    # Build name → (group) lookup for stdout parsing
+    name_to_group = {n: g for n, g, _ in pytest_tests}
+
     seen_groups = []
     for _, group, _ in pytest_tests:
         if group not in seen_groups:
             seen_groups.append(group)
             _group_start(group)
 
-    # PYTHONPATH includes tests/ so pytest can import _dash_plugin by stem name
-    # PULLEY_NIGHTLY is forwarded so the skip marker in test_nightly_random.py works
     env = {**os.environ,
            'PYTHONPATH': str(ROOT / 'tests') + os.pathsep + os.environ.get('PYTHONPATH', '')}
     plugin_args = _plugin_args(plugin_path)
-    proc = subprocess.run(
+
+    # Use Popen + stdout streaming so we can parse results line-by-line
+    proc = subprocess.Popen(
         [str(VENV_PY), '-m', 'pytest', 'tests/',
          '--ignore=tests/run_tests.py',
          f'--ignore=tests/{QUEUE_FILE}.py',
          '--ignore=tests/_dash_plugin.py',
          *plugin_args,
-         '--tb=short', '-q', '--no-header'],
-        cwd=str(ROOT), env=env, capture_output=True, text=True
+         '--tb=no',   # errors come via plugin; suppress inline tracebacks
+         '-v',        # verbose: prints one line per test as it finishes
+         '--no-header', '--color=no'],
+        cwd=str(ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
     )
 
-    # Close all groups
+    # Parse pytest verbose output: "tests/test_foo.py::Class::test_name PASSED"
+    # Update dashboard immediately when each line arrives — no waiting for plugin
+    import re as _re
+    _STATUS_RE = _re.compile(
+        r'^(tests/[^\s]+)::([^\s]+)\s+(PASSED|FAILED|SKIPPED|ERROR)\s*$'
+    )
+
+    for line in proc.stdout:
+        line = line.rstrip()
+        m = _STATUS_RE.match(line)
+        if not m:
+            continue
+        node_parts = m.group(2)   # e.g. "TestClass::test_name" or "test_name"
+        raw_status = m.group(3).lower()
+        status = 'failed' if raw_status in ('failed', 'error') else raw_status
+
+        # Update dashboard — fuzzy match handles Class::method vs method
+        _update_test_fuzzy(node_parts, status=status,
+                           started=datetime.now().isoformat())
+
+    proc.wait()
+
     for group in seen_groups:
         _group_end(group)
 
-    # Mark any tests still pending as failed (collection error)
+    # Any still-pending tests were not collected (likely import errors)
     with _lock:
         for t in _state['tests']:
             if t['status'] == 'pending' and t['group'] in seen_groups:
                 t['status'] = 'failed'
-                t['error']  = 'Not reported by pytest'
+                t['error']  = 'Not collected by pytest (possible import error)'
                 _push({'type': 'test', **t})
 
     plugin_path.unlink(missing_ok=True)
