@@ -3606,6 +3606,55 @@ def api_admin_jobs():
     })
 
 
+@app.route('/api/admin/queue')
+def api_admin_queue():
+    """Admin endpoint: full session-queue snapshot for the admin dashboard."""
+    from exporters.job_queue import _load_state, SESSION_TIMEOUT_SEC, IDLE_TIMEOUT_SEC, _LOCK
+    now = time.time()
+    with _LOCK:
+        active, sessions = _load_state()
+
+    active_out = None
+    if active:
+        elapsed = now - active['started_at']
+        idle    = now - active.get('last_heartbeat', active['started_at'])
+        active_out = {
+            'user_id':        active['user_id'],
+            'session_id':     active['session_id'][:8],
+            'started_at':     active['started_at'],
+            'last_heartbeat': active.get('last_heartbeat', active['started_at']),
+            'elapsed_sec':    round(elapsed),
+            'idle_sec':       round(idle),
+            'remaining_sec':  max(0, round(SESSION_TIMEOUT_SEC - elapsed)),
+        }
+
+    queue_out = []
+    for sid, s in sorted(sessions.items(), key=lambda x: x[1].get('seq', x[1]['created_at'])):
+        pos = sum(
+            1 for v in sessions.values()
+            if v.get('seq', v['created_at']) < s.get('seq', s['created_at'])
+        ) + 1
+        remaining_active = max(0, SESSION_TIMEOUT_SEC - (now - active['started_at'])) if active else 0
+        wait = remaining_active + (pos - 1) * (SESSION_TIMEOUT_SEC + 60)
+        queue_out.append({
+            'position':       pos,
+            'user_id':        s['user_id'],
+            'session_id':     sid[:8],
+            'created_at':     s['created_at'],
+            'last_heartbeat': s.get('last_heartbeat', s['created_at']),
+            'wait_sec':       round(wait),
+        })
+
+    return jsonify({
+        'active':           active_out,
+        'queue':            queue_out,
+        'queue_length':     len(sessions),
+        'timeout_sec':      SESSION_TIMEOUT_SEC,
+        'idle_timeout_sec': IDLE_TIMEOUT_SEC,
+        'timestamp':        datetime.now().isoformat(),
+    })
+
+
 @app.route('/api/download-status/<job_id>')
 def api_download_status(job_id):
     """Get status of a download job (queued, processing, done, or failed).

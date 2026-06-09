@@ -85,7 +85,70 @@ The web app reads these back via a file-picker import button. The Fusion addin r
 
 ---
 
-## 3. Subscription & Licensing
+## 3. Server Queue System
+
+STEP export is memory-intensive. Concurrent requests caused memory exhaustion and server crashes on the free/starter Render tier. The queue system serialises access: **only one user may run a STEP export at a time**; everyone else waits in a fair FIFO queue.
+
+### Components
+
+| File | Role |
+|------|------|
+| `exporters/job_queue.py` | In-memory session + queue state, disk-persisted to `logs/session.json` and `logs/queue.json`. Background cleanup thread (10 s interval). |
+| `app.py` | `@require_session` decorator guards `/download/step`. Session API routes below. |
+| `templates/queue.html` | Queue status UI — join, position counter, countdown, release button. Auto-refreshes every 5 s. |
+
+### Session API routes
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/session/create` | POST | Join queue or start session immediately |
+| `/api/session/status` | GET | Poll for active/waiting/position/ETA |
+| `/api/session/heartbeat` | POST | Keep session alive |
+| `/api/session/release` | POST | End session, promote next in queue |
+| `/api/queue/status` | GET | Queue snapshot (active user, length) |
+| `/queue` | GET | Queue management page |
+
+### Timeout rules
+
+| Event | Timeout |
+|-------|---------|
+| Base session | 5 min from session start |
+| STEP grace | +1 min if STEP export started (6 min total) |
+| Idle | 1 min without heartbeat → auto-release → back of queue |
+
+### User flow
+
+```
+User → GET /queue → click "Join Queue"
+    │
+    ├─ No active session: session created, redirect /?session_id=XXX
+    │
+    └─ Session active: user enqueued, sees position + ETA countdown
+
+Active user (home page):
+    Session ID in URL → @require_session checks access before STEP export
+    Browser heartbeat every 5 s
+    On download: user clicks "End Session" or idle timeout fires
+
+Session expires / released:
+    _promote_next() moves first queue entry to active
+    On next /api/session/status poll, promoted user sees is_active: true
+```
+
+### Configuration
+
+All timeouts in `exporters/job_queue.py`:
+```python
+SESSION_TIMEOUT_SEC = 5 * 60  # 5 min base
+STEP_GRACE_SEC      = 60      # +1 min for STEP
+IDLE_TIMEOUT_SEC    = 60      # 1 min idle logout
+```
+
+> **Limitation:** in-memory + disk state works on a single Render instance. Multi-instance deployments would need Redis for shared session storage.
+
+---
+
+## 4. Subscription & Licensing
 
 ### Common backbone (all platforms)
 
@@ -214,7 +277,7 @@ No platform identity API needed — email is the identity anchor.
 
 ---
 
-## 4. The Desktop App
+## 5. The Desktop App
 
 The desktop app is the same Flask app, packaged:
 
@@ -236,7 +299,7 @@ The desktop app and web app are separate release artifacts. A git push updates t
 
 ---
 
-## 5. CAD Plugin Pattern
+## 6. CAD Plugin Pattern
 
 CCT CAD plugins are **thin bridges** — they do not duplicate the web app UI. The web app is the UI. The plugin's only jobs are:
 
@@ -290,7 +353,7 @@ The panel is registered as an Application Extension in the OnShape Dev Portal:
 
 ---
 
-## 6. Building a New CCT Tool
+## 7. Building a New CCT Tool
 
 ### Step 1 — New Flask repo
 
@@ -339,7 +402,7 @@ Copy `Fusion Addins/PulleyWebApp/`, update:
 
 ---
 
-## 7. Conventions
+## 8. Conventions
 
 ### URLs and routing
 - Tool live URL: `cheapcadtools.com/tools/<slug>`
@@ -379,7 +442,7 @@ See `web_provisioning.md` for the full checklist. Short version:
 
 ---
 
-## 8. Infrastructure Contacts & Credentials
+## 9. Infrastructure Contacts & Credentials
 
 | Service | Account | Notes |
 |---------|---------|-------|

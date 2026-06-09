@@ -278,6 +278,7 @@
     <button onclick="switchTab('downloads',this)">Downloads</button>
     <button onclick="switchTab('subscribers',this)">Subscribers</button>
     <button onclick="switchTab('sales',this)">Sales</button>
+    <button onclick="switchTab('queue',this)">Queue</button>
   </nav>
 
   <main>
@@ -380,6 +381,21 @@
         </table>
       </div>
     </div>
+
+    <!-- Queue Monitor tab -->
+    <div id="tab-queue" class="tab-panel">
+      <div class="card">
+        <h2>Active Session <span id="queue-refresh-badge" style="color:var(--muted);font-size:0.82em;font-weight:400;margin-left:8px;"></span></h2>
+        <div class="stat-grid" id="queue-active-stats"><span class="empty">No active session</span></div>
+      </div>
+      <div class="card">
+        <h2>Waiting Queue <span id="queue-length-badge" style="color:var(--muted);font-size:0.82em;font-weight:400;"></span></h2>
+        <table>
+          <thead><tr><th>#</th><th>User</th><th>Session</th><th>Joined</th><th>Idle</th><th>Est. Wait</th></tr></thead>
+          <tbody id="queue-table"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -435,6 +451,7 @@ function doLogout() {
   sessionStorage.removeItem('cct_user');
   sessionStorage.removeItem('cct_token');
   clearInterval(refreshTimer);
+  stopQueueMonitor();
   document.getElementById('inp-token').value = '';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display          = 'none';
@@ -490,6 +507,7 @@ function switchTab(name, btn) {
   if (name === 'downloads')   loadDownloads();
   if (name === 'subscribers') loadSubscribers();
   if (name === 'sales')       loadSales();
+  if (name === 'queue')       startQueueMonitor(); else stopQueueMonitor();
 }
 
 // ── Load all ──────────────────────────────────────────────────────────────────
@@ -991,6 +1009,77 @@ async function loadSales() {
       </tr>`;
     }).join('');
   } catch(e) { console.warn('Sales load error', e); }
+}
+
+// ── Queue Monitor ─────────────────────────────────────────────────────────────
+let _queueTimer = null;
+
+function startQueueMonitor() {
+  loadQueue();
+  _queueTimer = setInterval(loadQueue, 5000);
+}
+
+function stopQueueMonitor() {
+  clearInterval(_queueTimer);
+  _queueTimer = null;
+}
+
+async function loadQueue() {
+  try {
+    const r = await apiFetch('/api/admin/queue');
+    if (!r.ok) return;
+    renderQueue(await r.json());
+  } catch(e) { console.warn('Queue load error', e); }
+}
+
+function renderQueue(d) {
+  const now = Date.now() / 1000;
+  document.getElementById('queue-refresh-badge').textContent =
+    'as of ' + new Date().toLocaleTimeString();
+
+  // ── Active session ──
+  const statsEl = document.getElementById('queue-active-stats');
+  if (!d.active) {
+    statsEl.innerHTML = '<span class="empty">No active session</span>';
+  } else {
+    const a = d.active;
+    const remColor = a.remaining_sec < 60 ? 'crimson' : a.remaining_sec < 120 ? 'yellow' : 'green';
+    const idleColor = a.idle_sec > 45 ? 'yellow' : '';
+    statsEl.innerHTML = `
+      <div class="stat"><div class="val">${a.user_id}</div><div class="lbl">User</div></div>
+      <div class="stat"><div class="val" style="font-size:1.3em;font-family:monospace">${a.session_id}…</div><div class="lbl">Session ID</div></div>
+      <div class="stat"><div class="val">${fmtSec(a.elapsed_sec)}</div><div class="lbl">Elapsed</div></div>
+      <div class="stat"><div class="val ${idleColor}">${fmtSec(a.idle_sec)}</div><div class="lbl">Idle</div></div>
+      <div class="stat"><div class="val ${remColor}">${fmtSec(a.remaining_sec)}</div><div class="lbl">Remaining</div></div>
+    `;
+  }
+
+  // ── Waiting queue ──
+  const badge = document.getElementById('queue-length-badge');
+  badge.textContent = d.queue_length ? `(${d.queue_length})` : '';
+  const tbody = document.getElementById('queue-table');
+  if (!d.queue || d.queue.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Queue is empty</td></tr>';
+  } else {
+    tbody.innerHTML = d.queue.map(s => {
+      const joined = new Date(s.created_at * 1000).toLocaleTimeString();
+      const idleSec = Math.round(now - s.last_heartbeat);
+      const idleColor = idleSec > 25 ? 'color:var(--yellow)' : '';
+      return `<tr>
+        <td>${s.position}</td>
+        <td>${s.user_id}</td>
+        <td style="font-family:monospace;font-size:0.82em">${s.session_id}…</td>
+        <td>${joined}</td>
+        <td style="${idleColor}">${fmtSec(idleSec)}</td>
+        <td>${fmtSec(s.wait_sec)}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function fmtSec(s) {
+  if (s < 60) return s + 's';
+  return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
 }
 
 // ── Auto-login from sessionStorage ───────────────────────────────────────────

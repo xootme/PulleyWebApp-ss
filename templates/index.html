@@ -955,12 +955,6 @@
       <label class="bug-label" id="bug-label-should" for="bug-should">What should you be seeing?</label>
       <textarea id="bug-should" class="bug-textarea" rows="3" placeholder="Describe the expected behaviour…"></textarea>
 
-      <label class="bug-label" for="bug-error-text">Error Message <span class="bug-optional">(auto-filled if reported from error dialog)</span></label>
-      <textarea id="bug-error-text" class="bug-textarea" rows="2" placeholder="Error details will appear here…"></textarea>
-
-      <label class="bug-label" for="bug-user-comment">What were you doing when this happened?</label>
-      <textarea id="bug-user-comment" class="bug-textarea" rows="3" placeholder="Describe the steps that led to this…"></textarea>
-
       <label class="bug-label" for="bug-email">Email <span class="bug-optional">(optional — to be notified of progress)</span></label>
       <input type="email" id="bug-email" class="bug-input" placeholder="you@example.com">
 
@@ -2621,8 +2615,6 @@ function closeBugReport() {
 function _clearBugFields() {
   document.getElementById('bug-seeing').value = '';
   document.getElementById('bug-should').value = '';
-  document.getElementById('bug-error-text').value = '';
-  document.getElementById('bug-user-comment').value = '';
   document.getElementById('bug-email').value  = '';
   _bugDraft = null;
 }
@@ -2667,17 +2659,17 @@ function closeErrorModal() {
 
 function copyErrorToBugReport() {
   const errorText = document.getElementById('error-modal-text').value;
-  document.getElementById('bug-error-text').value = errorText;
-  document.getElementById('bug-user-comment').focus();
   closeErrorModal();
   openBugReport();
+  const seeingEl = document.getElementById('bug-seeing');
+  seeingEl.value = errorText ? '[Error]\n' + errorText + '\n\n' : '';
+  seeingEl.focus();
+  seeingEl.setSelectionRange(seeingEl.value.length, seeingEl.value.length);
 }
 
 async function submitBugReport() {
   const seeing      = document.getElementById('bug-seeing').value.trim();
   const should_see  = document.getElementById('bug-should').value.trim();
-  const errorMsg    = document.getElementById('bug-error-text').value.trim();
-  const userComment = document.getElementById('bug-user-comment').value.trim();
   const email       = document.getElementById('bug-email').value.trim();
   const statusEl    = document.getElementById('bug-status');
 
@@ -2705,7 +2697,7 @@ async function submitBugReport() {
     const resp = await fetch('/api/report-bug', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ seeing, should_see, email, error_message: errorMsg, user_comment: userComment, state, report_type: isFeature ? 'feature' : 'bug' }),
+      body: JSON.stringify({ seeing, should_see, email, state, report_type: isFeature ? 'feature' : 'bug' }),
     });
     const data = await resp.json();
     if (resp.ok && data.ok && data.warning) {

@@ -19,34 +19,39 @@ import requests
 
 BASE_URL = os.environ.get('PULLEY_TEST_URL', 'http://localhost:5000')
 
+def _base():
+    """Return current BASE_URL (allows run_tests.py to patch it after import)."""
+    import tests.test_queue_pytest as _self
+    return _self.BASE_URL
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def create():
-    r = requests.post(f'{BASE_URL}/api/session/create', timeout=5)
+    r = requests.post(f'{_base()}/api/session/create', timeout=5)
     r.raise_for_status()
     return r.json()
 
 def status(sid):
-    r = requests.get(f'{BASE_URL}/api/session/status?session_id={sid}', timeout=5)
+    r = requests.get(f'{_base()}/api/session/status?session_id={sid}', timeout=5)
     r.raise_for_status()
     return r.json()
 
 def beat(sid):
-    r = requests.post(f'{BASE_URL}/api/session/heartbeat',
+    r = requests.post(f'{_base()}/api/session/heartbeat',
                       json={'session_id': sid}, timeout=5)
     r.raise_for_status()
     return r.json()
 
 def release(sid):
-    requests.post(f'{BASE_URL}/api/session/release',
+    requests.post(f'{_base()}/api/session/release',
                   json={'session_id': sid}, timeout=5)
 
 def reset():
-    r = requests.post(f'{BASE_URL}/api/test/reset', timeout=5)
+    r = requests.post(f'{_base()}/api/test/reset', timeout=5)
     assert r.status_code == 200, f'Reset failed: {r.status_code} {r.text}'
 
 def queue_info():
-    r = requests.get(f'{BASE_URL}/api/queue/status?session_id=x', timeout=5)
+    r = requests.get(f'{_base()}/api/queue/status?session_id=x', timeout=5)
     r.raise_for_status()
     return r.json()
 
@@ -149,9 +154,17 @@ class TestSessionTimeouts:
         from exporters.job_queue import IDLE_TIMEOUT_SEC
         s1 = create()['session_id']
         s2 = create()['session_id']
-        # Stop heartbeating s1 — wait for idle timeout
-        time.sleep(IDLE_TIMEOUT_SEC + 2)
-        # s2 should now be active (promoted on expiry)
+        # Heartbeat s2 so it isn't evicted by stale-queue cleanup (30s threshold)
+        # while we wait for s1's idle timeout to fire.
+        stop = threading.Event()
+        t = threading.Thread(target=heartbeat_thread, args=(s2, stop, 10))
+        t.start()
+        try:
+            time.sleep(IDLE_TIMEOUT_SEC + 2)
+        finally:
+            stop.set()
+            t.join()
+        # s2 should now be active (promoted on s1 expiry)
         d = status(s2)
         assert d['is_active'] is True, f's2 not promoted: {d}'
         release(s2)
@@ -323,7 +336,7 @@ class TestStress:
         assert status(s2)['position'] == 1
 
         # Restart the server process
-        server_url = BASE_URL
+        server_url = _base()
         proc = subprocess.Popen(
             [sys.executable, 'app.py'],
             env={**os.environ, 'PULLEY_TESTING': '1'},
@@ -385,7 +398,7 @@ class TestTrialDownloads:
 
     def test_first_download_allowed(self):
         mid = f'stress-{time.time()}'
-        r = requests.post(f'{BASE_URL}/api/trial/register',
+        r = requests.post(f'{_base()}/api/trial/register',
                           json={'mid': mid, 'fmt': 'step'}, timeout=5)
         assert r.status_code == 200
         assert r.json()['allowed'] is True
@@ -393,9 +406,9 @@ class TestTrialDownloads:
     def test_limit_enforced(self):
         mid = f'stress-{time.time()}'
         for _ in range(2):
-            requests.post(f'{BASE_URL}/api/trial/register',
+            requests.post(f'{_base()}/api/trial/register',
                           json={'mid': mid, 'fmt': 'step'}, timeout=5)
-        r = requests.post(f'{BASE_URL}/api/trial/register',
+        r = requests.post(f'{_base()}/api/trial/register',
                           json={'mid': mid, 'fmt': 'step'}, timeout=5)
         assert r.status_code == 429
         assert r.json()['allowed'] is False
@@ -404,7 +417,7 @@ class TestTrialDownloads:
         ts = time.time()
         for i in range(3):
             mid = f'machine-{ts}-{i}'
-            r = requests.post(f'{BASE_URL}/api/trial/register',
+            r = requests.post(f'{_base()}/api/trial/register',
                               json={'mid': mid, 'fmt': 'step'}, timeout=5)
             assert r.json()['allowed'] is True, f'Machine {i} blocked unexpectedly'
 

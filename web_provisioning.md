@@ -86,19 +86,32 @@ If so, update the metadata schema in both places and bump the version number.
 
 ### Step 4 — Run full test harness, benchmarks, and concurrency tests
 
-**Requires the local dev server to be running** (`python app.py`) for the concurrency test.
-
-#### 4a — Full test suite (run first, before benchmarks)
+#### 4a — Full test suite with live dashboard (run first, before benchmarks)
 
 ```bash
-.venv312/Scripts/python -m pytest tests/ -v
+.venv312/Scripts/python tests/run_tests.py
+```
+
+This starts Flask automatically on port 5099, launches a live dashboard at
+`http://localhost:5098`, opens it in the browser, runs all tests (pytest groups +
+queue system tests), and keeps the app running so repro links stay clickable.
+
+To run headless and exit automatically (e.g. in a script):
+```bash
+.venv312/Scripts/python tests/run_tests.py --exit-when-done
+```
+
+To run a single group or test by name:
+```bash
+.venv312/Scripts/python tests/run_tests.py --group "Queue System"
+.venv312/Scripts/python tests/run_tests.py --test test_burst_join
 ```
 
 All tests must pass before proceeding. A failing test is a hard stop — do not benchmark
 or push code that breaks the suite.
 
 **Checklist:**
-- [ ] `pytest tests/` exited 0 (all tests passed)
+- [ ] `run_tests.py` exited 0 (all tests passed — dashboard shows ✓ All passed)
 - [ ] No new test failures vs the previous run
 
 #### 4b — Performance benchmarks
