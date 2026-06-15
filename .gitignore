@@ -23,8 +23,10 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
-test_output/        # generated STEP/DXF/STL files from test runs
-logs/               # runtime metrics and subscriber data (live on Render disk)
+# generated STEP/DXF/STL files from test runs
+test_output/
+# runtime metrics and subscriber data (lives on Render disk, not in repo)
+logs/
 
 # ── IDE / Editor ─────────────────────────────────────────────────────────────
 .vscode/
