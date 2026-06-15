@@ -8,6 +8,8 @@ import io
 import os
 import json
 import re
+import subprocess
+import sys
 import time
 import threading
 try:
@@ -1741,31 +1743,46 @@ def download_step():
         p2_sfx = '-P2' if pulley == '2' else ''
         fl_sfx = '+flanges' if _fl_enabled else ''
         fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
-        try:
-            if _use_assembly:
-                from exporters.step_exporter import generate_pulley_assembly_step
-                step_bytes = generate_pulley_assembly_step(kw)
-            else:
-                from exporters.step_exporter import generate_pulley_step
-                step_bytes = generate_pulley_step(**{k: v for k, v in kw.items()
-                                                     if k not in ('plate_height_mm', 'bend_radius_mm')})
-        except ImportError as _ie:
-            import subprocess, sys, traceback as _tb
-            import logging as _log
-            _log.getLogger(__name__).error('STEP import failed: %s\n%s', _ie, _tb.format_exc())
-            if getattr(sys, 'frozen', False):
-                return f'STEP import error in bundle: {_ie}', 400
-            root    = os.path.dirname(os.path.abspath(__file__))
-            venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
-            worker  = os.path.join(root, 'exporters', 'step_worker.py')
-            worker_kw = dict(kw, export_type='assembly' if _use_assembly else 'pulley')
-            result  = subprocess.run(
-                [venv_py, worker, json.dumps(worker_kw)],
+
+        _ss_bin = os.environ.get('SMALL_STEP_BIN', '')
+        if _ss_bin:
+            # small_step path: shells out to step_worker_ss.py (no cadquery needed)
+            root      = os.path.dirname(os.path.abspath(__file__))
+            worker_ss = os.path.join(root, 'exporters', 'step_worker_ss.py')
+            result    = subprocess.run(
+                [sys.executable, worker_ss, json.dumps(kw)],
                 capture_output=True, cwd=root,
+                env={**os.environ, 'SMALL_STEP_BIN': _ss_bin},
             )
             if result.returncode != 0:
-                return f'STEP error: {result.stderr.decode()}', 400
+                return f'STEP error (small_step): {result.stderr.decode(errors="replace")}', 400
             step_bytes = result.stdout
+        else:
+            try:
+                if _use_assembly:
+                    from exporters.step_exporter import generate_pulley_assembly_step
+                    step_bytes = generate_pulley_assembly_step(kw)
+                else:
+                    from exporters.step_exporter import generate_pulley_step
+                    step_bytes = generate_pulley_step(**{k: v for k, v in kw.items()
+                                                         if k not in ('plate_height_mm', 'bend_radius_mm')})
+            except ImportError as _ie:
+                import traceback as _tb
+                import logging as _log
+                _log.getLogger(__name__).error('STEP import failed: %s\n%s', _ie, _tb.format_exc())
+                if getattr(sys, 'frozen', False):
+                    return f'STEP import error in bundle: {_ie}', 400
+                root    = os.path.dirname(os.path.abspath(__file__))
+                venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
+                worker  = os.path.join(root, 'exporters', 'step_worker.py')
+                worker_kw = dict(kw, export_type='assembly' if _use_assembly else 'pulley')
+                result  = subprocess.run(
+                    [venv_py, worker, json.dumps(worker_kw)],
+                    capture_output=True, cwd=root,
+                )
+                if result.returncode != 0:
+                    return f'STEP error: {result.stderr.decode()}', 400
+                step_bytes = result.stdout
 
         step_bytes = _rename_step_product(step_bytes, fname[:-5])
         step_bytes = _embed_step(step_bytes, request.args)
@@ -2332,22 +2349,34 @@ def download_flange_step():
             keyway_h_mm      = keyway_h_mm,
         )
 
-        try:
-            from exporters.step_exporter import generate_flange_step
-            step_bytes = generate_flange_step(**kw)
-        except ImportError:
-            import subprocess, sys
-            root    = _os.path.dirname(_os.path.abspath(__file__))
-            venv_py = _os.path.join(root, '.venv312', 'Scripts', 'python.exe')
-            worker  = _os.path.join(root, 'exporters', 'step_worker.py')
-            worker_kw = dict(kw, export_type='flange')
-            result  = subprocess.run(
-                [venv_py, worker, _json.dumps(worker_kw)],
+        _ss_bin = os.environ.get('SMALL_STEP_BIN', '')
+        if _ss_bin:
+            root      = os.path.dirname(os.path.abspath(__file__))
+            worker_ss = os.path.join(root, 'exporters', 'step_worker_ss.py')
+            result    = subprocess.run(
+                [sys.executable, worker_ss, _json.dumps(dict(kw, export_type='flange'))],
                 capture_output=True, cwd=root,
+                env={**os.environ, 'SMALL_STEP_BIN': _ss_bin},
             )
             if result.returncode != 0:
-                return f'Flange STEP error: {result.stderr.decode()}', 400
+                return f'Flange STEP error (small_step): {result.stderr.decode(errors="replace")}', 400
             step_bytes = result.stdout
+        else:
+            try:
+                from exporters.step_exporter import generate_flange_step
+                step_bytes = generate_flange_step(**kw)
+            except ImportError:
+                root    = _os.path.dirname(_os.path.abspath(__file__))
+                venv_py = _os.path.join(root, '.venv312', 'Scripts', 'python.exe')
+                worker  = _os.path.join(root, 'exporters', 'step_worker.py')
+                worker_kw = dict(kw, export_type='flange')
+                result  = subprocess.run(
+                    [venv_py, worker, _json.dumps(worker_kw)],
+                    capture_output=True, cwd=root,
+                )
+                if result.returncode != 0:
+                    return f'Flange STEP error: {result.stderr.decode()}', 400
+                step_bytes = result.stdout
 
         suffix   = '-upper-flange' if which == 'top' else '-lower-flange'
         type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
