@@ -24,6 +24,7 @@ build/
 .coverage
 htmlcov/
 test_output/        # generated STEP/DXF/STL files from test runs
+logs/               # runtime metrics and subscriber data (live on Render disk)
 
 # ── IDE / Editor ─────────────────────────────────────────────────────────────
 .vscode/
