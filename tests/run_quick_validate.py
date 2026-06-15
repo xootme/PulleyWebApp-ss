@@ -17,7 +17,9 @@ import random
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
+ROOT       = Path(__file__).parent.parent
+OUTPUT_DIR = ROOT / "test_output"
+OUTPUT_DIR.mkdir(exist_ok=True)
 sys.path.insert(0, str(ROOT))
 
 _OCP_SITE = Path(r"C:\Users\cmyer\AppData\Roaming\CheapCADTools\runtime\site-packages")
@@ -260,8 +262,12 @@ with flask_app.test_client() as c:
             print()
             continue
 
+        safe_label = label.replace(' ', '_').replace('=', '').replace('/', '-')
+        out_path = OUTPUT_DIR / f"s{seed}_{i+1:02d}_{safe_label}.step"
+        out_path.write_bytes(resp.data)
+
         solids = resp.data.count(b'MANIFOLD_SOLID_BREP')
-        print(f"  STEP: {len(resp.data):,} bytes  {dt:.2f}s  solids={solids}")
+        print(f"  STEP: {len(resp.data):,} bytes  {dt:.2f}s  solids={solids}  -> {out_path.name}")
 
         for name, fn in [
             ('NIST SFA 5.45  ', validate_sfa),

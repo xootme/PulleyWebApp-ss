@@ -23,6 +23,7 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+test_output/        # generated STEP/DXF/STL files from test runs
 
 # ── IDE / Editor ─────────────────────────────────────────────────────────────
 .vscode/

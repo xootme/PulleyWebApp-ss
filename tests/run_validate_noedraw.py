@@ -2,12 +2,15 @@
 Like run_quick_validate.py but without eDrawings (no COM/GUI needed).
 Run from PulleyWebApp-ss root:
     .venv312/Scripts/python.exe tests/run_validate_noedraw.py [seed [count]]
+
+Generated STEP files are saved to test_output/ (gitignored).
 """
 import sys, os, tempfile, subprocess, random, time
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT       = Path(__file__).parent.parent
+OUTPUT_DIR = ROOT / "test_output"
+OUTPUT_DIR.mkdir(exist_ok=True)
 
 _OCP_SITE = Path(r"C:\Users\cmyer\AppData\Roaming\CheapCADTools\runtime\site-packages")
 _SS_BIN   = ROOT.parent / "small_step" / "target" / "x86_64-pc-windows-gnu" / "debug" / "small_step.exe"
@@ -15,6 +18,7 @@ _SFA      = ROOT / "tools" / "sfa" / "sfa-cl.exe"
 _FC_CMD   = Path(r"C:\Program Files\FreeCAD 1.1\bin\freecadcmd.exe")
 _FC_SCRIPT= ROOT / "tests" / "_freecad_import.py"
 
+sys.path.insert(0, str(ROOT))
 os.environ['SMALL_STEP_BIN'] = str(_SS_BIN)
 if str(_OCP_SITE) not in sys.path:
     sys.path.insert(0, str(_OCP_SITE))
@@ -166,8 +170,12 @@ with flask_app.test_client() as c:
             print()
             continue
 
+        safe_label = label.replace(' ', '_').replace('=', '').replace('/', '-')
+        out_path = OUTPUT_DIR / f"s{seed}_{i+1:02d}_{safe_label}.step"
+        out_path.write_bytes(resp.data)
+
         print(f"  STEP: {len(resp.data):,} bytes  {dt:.2f}s  "
-              f"solids={resp.data.count(b'MANIFOLD_SOLID_BREP')}")
+              f"solids={resp.data.count(b'MANIFOLD_SOLID_BREP')}  -> {out_path.name}")
 
         for name, fn in [
             ('NIST SFA 5.45  ', validate_sfa),
