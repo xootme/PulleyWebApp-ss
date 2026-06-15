@@ -3,6 +3,13 @@ venv/
 .venv/
 env/
 
+# ── Third-party tool binaries (download separately, see tools/sfa/README.md) ─
+tools/sfa/*.exe
+tools/sfa/*.zip
+tools/sfa/*.msi
+tools/sfa/*.pdf
+tools/sfa/*.xlsx
+
 # ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
