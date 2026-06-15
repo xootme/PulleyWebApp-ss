@@ -55,7 +55,7 @@ def _nub_circle_r(r_tooth_od, tooth_ht, nub_dia_mm):
 
 
 def _run(cmd):
-    result = subprocess.run(cmd, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, check=False)
     if result.returncode != 0:
         sys.stderr.write(result.stderr.decode(errors='replace'))
         sys.exit(1)
@@ -169,6 +169,10 @@ def main():
 
     # Generate DXF
     from exporters.dxf_exporter import generate_dxf
+    # small_step: pulley body always has a round bore (circle in DXF).
+    # Shaped bores (d-flat / keyway) are applied only to the hub body
+    # via --flat / --keyway CLI flags. Passing them to generate_dxf would
+    # emit an LWPOLYLINE that small_step cannot read.
     dxf_bytes = generate_dxf(
         family=family, pitch=pitch, num_teeth=num_teeth,
         bore_mm=bore_mm, clearance_mm=clearance_mm, backlash_mm=backlash_mm,
@@ -176,7 +180,7 @@ def main():
         spoke_count=spoke_count,
         spoke_width_mm=spoke_width_mm, spoke_hub_od_mm=spoke_hub_od_mm,
         rim_depth_mm=rim_depth_mm, fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
-        flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
+        flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0,
     )
     if isinstance(dxf_bytes, str):
         dxf_bytes = dxf_bytes.encode()
