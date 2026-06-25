@@ -1,8 +1,35 @@
 # Architectural Decision Records
 
+## ADR-007 — STEP export via small_step (Rust) replacing cadquery
+**Date:** 2026-06-16
+**Status:** Active
+
+**Context:**
+cadquery (via Python 3.12 subprocess) produced correct STEP geometry but had two
+practical problems: a slow cold-start on each request (OCC kernel initialisation)
+and an added dependency on a separate `.venv312` subprocess for every STEP download.
+A custom Rust STEP emitter (`C:\Users\cmyer\Documents\small_step\`) was developed
+as a direct CLI binary that emits AP214 B-rep without any CAD kernel.
+
+**Decision:**
+Replace all cadquery STEP calls with the `small_step` binary via `step_worker_ss.py`.
+The binary is invoked as a subprocess: `small_step combined <dxf> <height> [options]`.
+When `SMALL_STEP_BIN` env var is set, `_run_ss_worker()` in `app.py` uses it; if unset,
+the old `step_worker.py` cadquery path remains available as a fallback.
+
+**Consequences:**
+- `step_worker.py` (cadquery) retained as a fallback but no longer called at runtime.
+- `step_exporter.export_step` / `generate_pulley_step` imports removed from all routes.
+- `from exporters.step_exporter import (...)` retained only for STL functions.
+- `SMALL_STEP_BIN` must be set in the environment pointing to the compiled binary.
+- `cadquery` removed from `requirements.txt`; Flask venv upgraded from Python 3.12 to 3.14.
+- ADR-001 and ADR-002 below are superseded for STEP; cadquery is now only a fallback.
+
+---
+
 ## ADR-001 — Python 3.12 for STEP export
 **Date:** 2026-04-11  
-**Status:** Active
+**Status:** Superseded by ADR-007 (cadquery STEP path replaced by small_step Rust binary)
 
 **Context:**  
 The project originally ran on Python 3.14. STEP export was stubbed out with a 501 response
@@ -30,9 +57,9 @@ Python 3.14 provides no practical benefit for this application.
 
 ---
 
-## ADR-002 — STL via trimesh, STEP via cadquery
+## ADR-002 — STL via trimesh, STEP via cadquery → small_step
 **Date:** 2026-04-11  
-**Status:** Active
+**Status:** Partially superseded by ADR-007 (STEP path changed; STL path unchanged)
 
 **Context:**  
 Two different 3D export formats are needed: STL (for 3D printing) and STEP (for CAD import).

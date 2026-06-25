@@ -33,7 +33,7 @@ from pathlib import Path
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 ROOT    = Path(__file__).parent.parent
-VENV_PY = ROOT / '.venv312' / 'Scripts' / 'python.exe'
+VENV_PY = ROOT / '.venv314' / 'Scripts' / 'python.exe'
 if not VENV_PY.exists():
     VENV_PY = Path(sys.executable)
 
@@ -50,7 +50,10 @@ PYTEST_GROUPS = {
     'test_flange_geometry': 'Flange Geometry',
     'test_flange':          'Flange Export',
     'test_benchmarks':      'Benchmarks',
-    'test_repro':           'Regression',
+    'test_repro':                  'Regression',
+    'test_dual_pulley_bore_spoke': 'Regression',
+    'test_nub_socket_merge':       'STEP Geometry',
+    'test_addin_helpers':          'Addin Helpers',
     'test_nightly_random':  'Nightly Random',
 }
 QUEUE_FILE = 'test_queue_pytest'
@@ -868,7 +871,7 @@ def run_pytest(pytest_tests, dash_port):
          *run_ignore,
          *plugin_args,
          '--tb=no',
-         '-v', '--no-header', '--color=no'],
+         '-vv', '--no-header', '--color=no'],
         cwd=str(ROOT), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
@@ -879,7 +882,7 @@ def run_pytest(pytest_tests, dash_port):
     # Format: "tests/test_foo.py::ClassName::test_name PASSED"
     import re as _re
     _STATUS_RE = _re.compile(
-        r'^tests/[^\s]+::(.+?)\s+(PASSED|FAILED|SKIPPED|ERROR)\s*$'
+        r'^tests/[^\s]+::(.+?)\s+(PASSED|FAILED|SKIPPED|ERROR)(?:$|[\s(])'
     )
 
     def _read_stdout():
@@ -901,17 +904,22 @@ def run_pytest(pytest_tests, dash_port):
     for group in seen_groups:
         _group_end(group)
 
-    # Any still-pending tests were not collected (likely import errors)
+    rc = proc.returncode
+    # Any still-pending tests were either silently skipped (skipif class-level,
+    # exit 0) or not collected at all (import error, exit 1+).
     with _lock:
         for t in _state['tests']:
             if t['status'] == 'pending' and t['group'] in seen_groups:
-                t['status'] = 'failed'
-                t['error']  = 'Not collected by pytest (possible import error)'
+                if rc in (0, 5):
+                    t['status'] = 'skipped'
+                else:
+                    t['status'] = 'failed'
+                    t['error']  = 'Not collected by pytest (possible import error)'
                 _push({'type': 'test', **t})
 
     plugin_path.unlink(missing_ok=True)
     # Exit code 5 = no tests ran / all skipped — treat as success
-    return proc.returncode in (0, 5)
+    return rc in (0, 5)
 
 
 def run_queue_test(group_name, cls, method_name, skip, tmod):
@@ -953,6 +961,35 @@ def _matches(name, group, filters_test, filters_group):
     return True
 
 
+def _free_port(port: int):
+    """Kill any process listening on `port` so we can bind to it cleanly."""
+    import socket as _sock
+    # Quick check — skip the expensive netstat scan if port is already free
+    with _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM) as s:
+        s.setsockopt(_sock.SOL_SOCKET, _sock.SO_REUSEADDR, 1)
+        if s.connect_ex(('127.0.0.1', port)) != 0:
+            return  # nothing listening
+    import signal as _sig
+    try:
+        result = subprocess.run(
+            ['netstat', '-ano'],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in result.stdout.splitlines():
+            if f':{port} ' in line and 'LISTENING' in line:
+                parts = line.split()
+                pid = int(parts[-1])
+                if pid > 0:
+                    try:
+                        os.kill(pid, _sig.SIGTERM)
+                        print(f'Freed port {port}: killed PID {pid}')
+                    except (OSError, PermissionError):
+                        pass
+    except Exception:
+        pass
+    time.sleep(0.3)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='PulleyWebApp test runner with live dashboard.',
@@ -974,6 +1011,9 @@ def main():
     ap.add_argument('--group', dest='groups', action='append', default=[],
                     metavar='GROUP', help='Run tests in groups matching GROUP (repeatable)')
     args = ap.parse_args()
+
+    _free_port(args.flask_port)
+    _free_port(args.dash_port)
 
     _reset_state(flask_url=f'http://localhost:{args.flask_port}')
     start_dash_server(args.dash_port)
@@ -1061,7 +1101,7 @@ def main():
 
     # Keep Flask alive so repro buttons in dashboard remain clickable
     print(f'Dashboard : {dash_url}')
-    print(f'App       : {args.app_url}  (repro buttons use this — Ctrl+C to quit)')
+    print(f'App       : http://localhost:{args.flask_port}  (repro buttons use this — Ctrl+C to quit)')
     try:
         while True:
             time.sleep(1)

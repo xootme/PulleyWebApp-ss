@@ -6,10 +6,10 @@ import hashlib
 import math
 import io
 import os
+import sys
 import json
 import re
 import subprocess
-import sys
 import time
 import threading
 try:
@@ -27,7 +27,8 @@ from flask import Flask, render_template, request, Response, jsonify, send_from_
 from exporters.job_queue import (
     create_job, get_job, start_job, update_progress, finish_job, get_queue_status,
     create_session, get_session_status, heartbeat, release_session, get_queue_info,
-    register_trial_download, TRIAL_DOWNLOADS_PER_WEEK, clear_all_state
+    register_trial_download, TRIAL_DOWNLOADS_PER_WEEK, clear_all_state,
+    clear_stale_on_startup,
 )
 from functools import wraps
 
@@ -54,9 +55,9 @@ def require_active_session(f):
     """Decorator: Check if user has active session before allowing expensive operations."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Skip checks during testing
+        # Skip checks in no-queue mode (local/desktop) or during testing
         from flask import current_app
-        if current_app.config.get('TESTING'):
+        if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING') or current_app.config.get('TESTING'):
             return f(*args, **kwargs)
 
         # Get session_id from URL params, form data, or JSON body
@@ -98,20 +99,68 @@ def require_active_session(f):
                 'limit': limit
             }), 429
 
-        # Get machine_id from session if registered
-        from exporters.job_queue import _SESSIONS, _LOCK
-        with _LOCK:
-            if session_id in _SESSIONS:
-                request.machine_id = _SESSIONS[session_id].get('machine_id')
-
         # Update heartbeat
         heartbeat(session_id)
 
         return f(*args, **kwargs)
     return decorated_function
 
+# ── small_step binary ─────────────────────────────────────────────────────────
+# On Render set SMALL_STEP_BIN env var to the compiled Linux binary path.
+# On Windows dev the release build is detected automatically as a fallback.
+_SS_BIN = os.environ.get(
+    'SMALL_STEP_BIN',
+    os.path.join(os.path.dirname(__file__),
+                 '..', 'small_step', 'target',
+                 'x86_64-pc-windows-gnu', 'release', 'small_step.exe'),
+)
+_SS_BIN = os.path.normpath(_SS_BIN)
+_SS_AVAILABLE = os.path.isfile(_SS_BIN)
+
+
+def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
+    """Run step_worker_ss.py in a subprocess; return stdout STEP bytes.
+
+    Raises RuntimeError on non-zero exit so callers can return 400.
+    """
+    # Interim guard: partial-height (recessed) spokes hit build_partial_height_solid,
+    # which currently emits an OCCT-invalid solid (UnorientableShape on the spoke-island
+    # web caps — see ToDo.md "BUG — partial-height spokes"). Block STEP generation with a
+    # clear message rather than ship an invalid file. REMOVE THIS GUARD when that bug is
+    # fixed (and wire the socket↔void merge into the partial-height path).
+    def _is_partial_spoke(p: dict) -> bool:
+        try:
+            return (float(p.get('spoke_count', 0) or 0) > 0
+                    and float(p.get('spoke_height_mm', 0.0) or 0.0) > 0.0)
+        except (TypeError, ValueError):
+            return False
+    if _is_partial_spoke(worker_kw) or _is_partial_spoke(worker_kw.get('kw2') or {}):
+        raise RuntimeError(
+            'Partial-height (recessed) spokes are temporarily unavailable — they '
+            'currently generate invalid STEP geometry. Set spoke height to 0 for '
+            'full-height spokes.')
+
+    root      = os.path.dirname(os.path.abspath(__file__))
+    venv_win  = os.path.join(root, '.venv314', 'Scripts', 'python.exe')
+    python    = venv_win if os.path.isfile(venv_win) else sys.executable
+    worker_ss = os.path.join(root, 'exporters', 'step_worker_ss.py')
+    env       = dict(os.environ, SMALL_STEP_BIN=_SS_BIN)
+    result    = subprocess.run(
+        [python, worker_ss, json.dumps(worker_kw)],
+        capture_output=True, cwd=root, timeout=timeout, env=env,
+    )
+    if result.returncode != 0:
+        import logging as _log
+        _log.getLogger(__name__).error(
+            'small_step worker failed (rc=%d): %s',
+            result.returncode, result.stderr.decode(errors='replace'),
+        )
+        raise RuntimeError(result.stderr.decode(errors='replace'))
+    return result.stdout
+
+
 # ── App version ───────────────────────────────────────────────────────────────
-APP_VERSION        = '1.0'
+APP_VERSION        = '1.1'
 # Increment when a param is renamed, split, or its meaning changes.
 # New optional params never need a bump — missing keys just use form defaults.
 CCT_SCHEMA_VERSION = 1
@@ -132,6 +181,25 @@ _CPU_CONSTRAINT_THRESHOLD = 80.0
 _MEM_CONSTRAINT_THRESHOLD = 85.0
 _download_lock       = threading.Lock()   # in-process guard (dev / single-worker)
 _metrics_lock        = threading.Lock()
+
+# ── Error log (circular buffer, max 512 KB on disk) ───────────────────────────
+import logging as _logging
+import logging.handlers as _log_handlers
+_ERROR_LOG_FILE = os.path.join(_LOG_DIR, 'server_errors.log')
+try:
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    _err_handler = _log_handlers.RotatingFileHandler(
+        _ERROR_LOG_FILE, maxBytes=256 * 1024, backupCount=1, encoding='utf-8',
+    )
+    _err_handler.setLevel(_logging.WARNING)
+    _err_handler.setFormatter(_logging.Formatter(
+        '%(asctime)s %(levelname)s %(name)s: %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S',
+    ))
+    _logging.getLogger().addHandler(_err_handler)        # root → catches everything
+    _logging.getLogger('werkzeug').addHandler(_err_handler)
+except Exception:
+    pass  # never crash on log setup failure
 
 # Per-worker request rate counter (resets each metrics sample)
 _request_count      = 0
@@ -341,52 +409,54 @@ _FUSION_CONFIG = os.path.join(
     os.environ.get('APPDATA', os.path.expanduser('~')),
     'CheapCADTools', 'config.json')
 
-def _mirror_to_fusion(content: bytes, filename: str) -> None:
-    """Copy a download to the Fusion watch folder when the addin is connected."""
-    try:
-        if not os.path.exists(_FUSION_CONFIG):
-            return
-        with open(_FUSION_CONFIG) as f:
-            cfg = json.load(f)
-        watch_dir = cfg.get('fusion_watch_dir')
-        if not (cfg.get('fusion_connected') and watch_dir):
-            return
-        os.makedirs(watch_dir, exist_ok=True)
-        dest = os.path.join(watch_dir, filename)
-        with open(dest, 'wb') as f:
-            f.write(content)
-    except Exception as _mirror_err:
-        import traceback as _tb
-        import logging as _lg
-        _lg.getLogger(__name__).error(
-            '_mirror_to_fusion failed for %s: %s\n%s',
-            filename, _mirror_err, _tb.format_exc()
-        )
+# ── CAD addin mirroring ────────────────────────────────────────────────────────
+# Each desktop CAD addin (Fusion, SolidWorks, FreeCAD) writes its connection flag
+# and watch directory to the shared config file when it starts. Downloads are
+# mirrored into every connected addin's watch folder so the addin auto-imports
+# them — and so the client can skip the redundant browser download.
+_ADDIN_TARGETS = (
+    ('fusion_connected',     'fusion_watch_dir'),
+    ('solidworks_connected', 'solidworks_watch_dir'),
+    ('freecad_connected',    'freecad_watch_dir'),
+)
 
-# ── SolidWorks listener integration ───────────────────────────────────────────
-# Config key is shared with Fusion (same file); SolidWorks listener writes
-# solidworks_connected + solidworks_watch_dir when it starts up.
-def _mirror_to_solidworks(content: bytes, filename: str) -> None:
-    """Copy a download to the SolidWorks watch folder when the listener is running."""
+
+def _mirror_to_addins(content: bytes, filename: str) -> bool:
+    """Copy a download into every connected CAD addin's watch folder.
+
+    Returns True if the file was written to at least one watch folder, so the
+    caller can suppress the browser download (avoids a duplicate landing in the
+    user's Downloads folder alongside the mirrored copy).
+    """
     try:
         if not os.path.exists(_FUSION_CONFIG):
-            return
+            return False
         with open(_FUSION_CONFIG) as f:
             cfg = json.load(f)
-        watch_dir = cfg.get('solidworks_watch_dir')
-        if not (cfg.get('solidworks_connected') and watch_dir):
-            return
-        os.makedirs(watch_dir, exist_ok=True)
-        dest = os.path.join(watch_dir, filename)
-        with open(dest, 'wb') as f:
-            f.write(content)
-    except Exception as _mirror_err:
-        import traceback as _tb
+    except Exception as _cfg_err:
         import logging as _lg
-        _lg.getLogger(__name__).error(
-            '_mirror_to_solidworks failed for %s: %s\n%s',
-            filename, _mirror_err, _tb.format_exc()
-        )
+        _lg.getLogger(__name__).error('mirror: could not read config: %s', _cfg_err)
+        return False
+
+    mirrored = False
+    for connected_key, dir_key in _ADDIN_TARGETS:
+        watch_dir = cfg.get(dir_key)
+        if not (cfg.get(connected_key) and watch_dir):
+            continue
+        try:
+            os.makedirs(watch_dir, exist_ok=True)
+            with open(os.path.join(watch_dir, filename), 'wb') as f:
+                f.write(content)
+            mirrored = True
+        except Exception as _mirror_err:
+            import traceback as _tb
+            import logging as _lg
+            _lg.getLogger(__name__).error(
+                'mirror to %s failed for %s: %s\n%s',
+                dir_key, filename, _mirror_err, _tb.format_exc()
+            )
+    return mirrored
+
 
 app = Flask(__name__,
             template_folder=os.path.join(_base_dir, 'templates'),
@@ -409,6 +479,11 @@ app.config['COMPRESS_MIN_SIZE'] = 512  # don't compress tiny responses
 Compress(app)
 # ──────────────────────────────────────────
 
+# ─── Startup: clear any stale queue session left by a previous process ────────
+if not os.environ.get('PULLEY_TESTING'):
+    clear_stale_on_startup()
+# ──────────────────────────────────────────
+
 # ─── HTTP caching ─────────────────────────
 # Routes whose output is fully determined by query parameters.
 _CACHEABLE_PREFIXES = (
@@ -420,8 +495,12 @@ _CACHE_MAX_AGE = 3600   # 1 hour; Cloudflare + browser cache
 
 
 def _params_etag():
-    """Stable ETag derived from query-string parameters and server build time."""
-    raw = BUILD_TIME + '|' + '|'.join(f'{k}={v}' for k, v in sorted(request.args.items()))
+    """Stable ETag derived from the route path, query-string parameters, and
+    server build time. The path MUST be included: otherwise /download/step and
+    /download/stl with identical params produce the same ETag, and a cached
+    response for one format can satisfy a conditional request for the other."""
+    raw = (BUILD_TIME + '|' + request.path + '|'
+           + '|'.join(f'{k}={v}' for k, v in sorted(request.args.items())))
     return '"' + hashlib.md5(raw.encode()).hexdigest() + '"'
 
 
@@ -434,6 +513,11 @@ def _count_request():
 def _check_client_cache():
     """Return 304 Not Modified when the client already has the current version."""
     if request.method != 'GET':
+        return
+    # File downloads are served no-store (see after_request). Never 304 them:
+    # the browser has no stored body to fall back on, so a 304 yields an empty
+    # download that the browser reports as "Removed".
+    if request.path.startswith('/download/'):
         return
     if not any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
         return
@@ -449,6 +533,22 @@ def _check_client_cache():
                      'Cache-Control': f'public, max-age={_CACHE_MAX_AGE}'},
         )
 # ──────────────────────────────────────────
+
+
+@app.after_request
+def _signal_download(response):
+    """Set a short-lived cookie on every /download/ response so the client can
+    detect that a file download actually started (and its status). The browser
+    downloads files via a hidden iframe pointed at the real URL — there is no
+    JS-visible completion event for that, so this cookie is the signal. Value is
+    "<epoch_ms>-<status>"; it changes on every download so the client sees it
+    differ from the value it snapshotted before triggering the download.
+    """
+    if request.path.startswith('/download/'):
+        marker = f'{int(time.time() * 1000)}-{response.status_code}'
+        response.set_cookie('download_signal', marker, max_age=60,
+                            path='/', samesite='Lax')
+    return response
 
 
 @app.after_request
@@ -498,13 +598,16 @@ def _track_download(response):
                 _fmt = 'other'
             _increment_download_count(_fmt)
         if any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
-            response.headers['ETag'] = _params_etag()
             # Downloads: no-store prevents all browser caching (Edge on 127.0.0.1
             # ignores max-age=0 for downloads; no-store is the only reliable option).
-            # API/preview routes: full max-age for performance.
+            # No ETag here — an ETag alongside no-store invites conditional
+            # revalidation that 304s into an empty ("Removed") download.
+            # API/preview routes: ETag + full max-age for performance.
             if request.path.startswith('/download/'):
                 response.headers['Cache-Control'] = 'no-store'
+                response.headers.pop('ETag', None)
             else:
+                response.headers['ETag'] = _params_etag()
                 response.headers['Cache-Control'] = f'public, max-age={_CACHE_MAX_AGE}'
     return response
 
@@ -570,9 +673,9 @@ def _get_preset_value(spec, preset_type, preset_key, custom_val):
 
 @app.route('/')
 def index():
-    # In testing mode, skip queue entirely — pass empty session_id so the JS
-    # doesn't replace the URL (which would wipe the repro query params)
-    if os.environ.get('PULLEY_TESTING'):
+    # In no-queue mode (local/desktop) or testing mode, skip queue entirely.
+    # Empty session_id tells the JS not to replace the URL.
+    if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
         return render_template(
             'index.html',
             session_id='',
@@ -694,23 +797,7 @@ def api_onshape_import():
         fname = f'{family}-{pitch}-{num_teeth}T.step'
 
         # ── Generate STEP ─────────────────────────────────────────────────────
-        try:
-            from exporters.step_exporter import generate_pulley_step
-            step_bytes = generate_pulley_step(
-                **{k: v for k, v in kw.items() if k not in ('plate_height_mm', 'bend_radius_mm')}
-            )
-        except ImportError:
-            import subprocess
-            root      = os.path.dirname(os.path.abspath(__file__))
-            venv_py   = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
-            worker    = os.path.join(root, 'exporters', 'step_worker.py')
-            result    = subprocess.run(
-                [venv_py, worker, json.dumps(dict(kw, export_type='pulley'))],
-                capture_output=True, cwd=root,
-            )
-            if result.returncode != 0:
-                return jsonify({'ok': False, 'error': result.stderr.decode()}), 400
-            step_bytes = result.stdout
+        step_bytes = _run_ss_worker(dict(kw, export_type='pulley'))
 
         step_bytes = _rename_step_product(step_bytes, fname[:-5])
 
@@ -947,8 +1034,7 @@ def download_dxf():
             flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
         )
         dxf = _embed_dxf(dxf if isinstance(dxf, bytes) else dxf.encode(), request.args)
-        _mirror_to_fusion(dxf, filename)
-        _mirror_to_solidworks(dxf, filename)
+        _mirror_to_addins(dxf, filename)
         return Response(
             dxf,
             mimetype='application/dxf',
@@ -1307,19 +1393,60 @@ def _cct_meta(args) -> dict:
     return {'cct': dict(args), 'v': APP_VERSION, 'sv': CCT_SCHEMA_VERSION}
 
 
+def _safe_dl_name(name: str) -> str:
+    """Sanitise a download filename for the Content-Disposition header.
+
+    A '+' in the filename caused Chromium to download the file and then
+    immediately mark it "Removed" (file never landed on disk) — belt/assembly
+    downloads, which have no '+', always worked. Replace '+' and whitespace
+    with '-' so the name only uses plainly-safe characters.
+    """
+    base, dot, ext = name.rpartition('.')
+    stem = base if dot else name
+    stem = stem.replace('+', '-').replace(' ', '-')
+    # collapse any doubled separators introduced by the replacement
+    while '--' in stem:
+        stem = stem.replace('--', '-')
+    return f'{stem}.{ext}' if dot else stem
+
+
 def _rename_step_product(step_bytes: bytes, product_name: str) -> bytes:
-    """Replace the PRODUCT name(s) in a STEP file so Fusion 360 uses the right component name."""
+    """Replace PRODUCT names in a STEP file so the CAD app shows correct component names.
+
+    small_step emits fixed internal names (pulley, hub, top_flange, bottom_flange).
+    Each gets a prefix derived from product_name (e.g. HTD-3M-40T) plus its
+    display name (Pulley, Hub, TopFlange, BottomFlange).
+    """
+    _PART_MAP = {
+        'pulley':        'Pulley',
+        'hub':           'Hub',
+        'top_flange':    'TopFlange',
+        'bottom_flange': 'BottomFlange',
+    }
     try:
         import re as _re_sp
         text = step_bytes.decode('utf-8', errors='replace')
-        # STEP PRODUCT entity: PRODUCT('old_name','old_name','',(...))
-        # Replace both the name and description fields (first two quoted args).
-        safe = product_name.replace("'", " ")
-        text = _re_sp.sub(
-            r"PRODUCT\('[^']*','[^']*',",
-            f"PRODUCT('{safe}','{safe}',",
-            text,
-        )
+        # Strip any +flanges suffix to get the base pulley identifier
+        base = product_name.replace("'", " ").split('+')[0].rstrip('-')
+        replaced = False
+        for raw, display in _PART_MAP.items():
+            new_name = f'{base}-{display}'
+            new_text = _re_sp.sub(
+                rf"PRODUCT\('{_re_sp.escape(raw)}','{_re_sp.escape(raw)}',",
+                f"PRODUCT('{new_name}','{new_name}',",
+                text,
+            )
+            if new_text != text:
+                text = new_text
+                replaced = True
+        if not replaced:
+            # Fallback: single-body STEP not from small_step — rename whatever is there
+            safe = product_name.replace("'", " ")
+            text = _re_sp.sub(
+                r"PRODUCT\('[^']*','[^']*',",
+                f"PRODUCT('{safe}','{safe}',",
+                text,
+            )
         return text.encode('utf-8')
     except Exception:
         return step_bytes
@@ -1743,54 +1870,24 @@ def download_step():
         p2_sfx = '-P2' if pulley == '2' else ''
         fl_sfx = '+flanges' if _fl_enabled else ''
         fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
-
-        _ss_bin = os.environ.get('SMALL_STEP_BIN', '')
-        if _ss_bin:
-            # small_step path: shells out to step_worker_ss.py (no cadquery needed)
-            root      = os.path.dirname(os.path.abspath(__file__))
-            worker_ss = os.path.join(root, 'exporters', 'step_worker_ss.py')
-            result    = subprocess.run(
-                [sys.executable, worker_ss, json.dumps(kw)],
-                capture_output=True, cwd=root,
-                env={**os.environ, 'SMALL_STEP_BIN': _ss_bin},
-            )
-            if result.returncode != 0:
-                return f'STEP error (small_step): {result.stderr.decode(errors="replace")}', 400
-            step_bytes = result.stdout
-        else:
-            try:
-                if _use_assembly:
-                    from exporters.step_exporter import generate_pulley_assembly_step
-                    step_bytes = generate_pulley_assembly_step(kw)
-                else:
-                    from exporters.step_exporter import generate_pulley_step
-                    step_bytes = generate_pulley_step(**{k: v for k, v in kw.items()
-                                                         if k not in ('plate_height_mm', 'bend_radius_mm')})
-            except ImportError as _ie:
-                import traceback as _tb
-                import logging as _log
-                _log.getLogger(__name__).error('STEP import failed: %s\n%s', _ie, _tb.format_exc())
-                if getattr(sys, 'frozen', False):
-                    return f'STEP import error in bundle: {_ie}', 400
-                root    = os.path.dirname(os.path.abspath(__file__))
-                venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
-                worker  = os.path.join(root, 'exporters', 'step_worker.py')
-                worker_kw = dict(kw, export_type='assembly' if _use_assembly else 'pulley')
-                result  = subprocess.run(
-                    [venv_py, worker, json.dumps(worker_kw)],
-                    capture_output=True, cwd=root,
-                )
-                if result.returncode != 0:
-                    return f'STEP error: {result.stderr.decode()}', 400
-                step_bytes = result.stdout
+        try:
+            step_bytes = _run_ss_worker(dict(kw, export_type='pulley'))
+        except RuntimeError as _e:
+            return f'STEP error: {_e}', 400
 
         step_bytes = _rename_step_product(step_bytes, fname[:-5])
         step_bytes = _embed_step(step_bytes, request.args)
-        _mirror_to_fusion(step_bytes, fname)
-        _mirror_to_solidworks(step_bytes, fname)
+        dl_name = _safe_dl_name(fname)
+        # Mirror with the RAW name (keep '+') so addins detect multi-body files.
+        if _mirror_to_addins(step_bytes, fname):
+            # A connected CAD addin received the file; skip the browser download
+            # so it isn't duplicated in the user's Downloads folder.
+            return ('', 204)
         return Response(step_bytes, mimetype='application/step',
-                        headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+                        headers={'Content-Disposition': f'attachment; filename="{dl_name}"'})
     except Exception as e:
+        import logging as _log, traceback as _tb
+        _log.getLogger(__name__).error('STEP generation failed: %s\n%s', e, _tb.format_exc())
         return f'Error generating STEP: {e}', 400
 
 
@@ -1818,16 +1915,19 @@ def download_belt_step():
         _default_c   = (num_teeth1 + num_teeth2) * spec['pitch'] / (2.0 * math.pi)
         center_dist  = float(request.args.get('center_distance', _default_c))
 
-        from exporters.step_exporter import generate_belt_step
-        step_bytes = generate_belt_step(
-            family=family, pitch=pitch,
-            num_teeth_left=num_teeth1, num_teeth_right=num_teeth2,
-            center_dist_mm=center_dist,
-            belt_height_mm=belt_h,
-        )
+        try:
+            step_bytes = _run_ss_worker(dict(
+                export_type='belt',
+                family=family, pitch=pitch,
+                num_teeth_left=num_teeth1, num_teeth_right=num_teeth2,
+                center_dist_mm=center_dist,
+                belt_height_mm=belt_h,
+            ))
+        except RuntimeError as _e:
+            return f'Belt STEP error: {_e}', 400
         filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.step'
-        _mirror_to_fusion(step_bytes, filename)
-        _mirror_to_solidworks(step_bytes, filename)
+        if _mirror_to_addins(step_bytes, filename):
+            return ('', 204)
         return Response(
             step_bytes,
             mimetype='application/step',
@@ -1912,35 +2012,26 @@ def download_all_step():
         _fname_stem = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all'
                        if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all')
 
+        worker_kw = dict(kw1, export_type='all')
+        if kw2:
+            worker_kw['kw2'] = kw2
+        if belt_kw:
+            worker_kw['belt_kw'] = belt_kw
         try:
-            from exporters.step_exporter import generate_all_parts_step
-            step_bytes = generate_all_parts_step(kw1, kw2, belt_kw)
-        except ImportError as _ie:
-            import subprocess, sys
-            if getattr(sys, 'frozen', False):
-                return f'STEP import error in bundle: {_ie}', 400
-            root    = os.path.dirname(os.path.abspath(__file__))
-            venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
-            worker  = os.path.join(root, 'exporters', 'step_worker.py')
-            worker_kw = dict(kw1, export_type='all')
-            if kw2:
-                worker_kw['kw2'] = kw2
-            if belt_kw:
-                worker_kw['belt_kw'] = belt_kw
-            result = subprocess.run(
-                [venv_py, worker, _json.dumps(worker_kw)],
-                capture_output=True, cwd=root,
-            )
-            if result.returncode != 0:
-                return f'STEP error: {result.stderr.decode()}', 400
-            step_bytes = result.stdout
+            step_bytes = _run_ss_worker(worker_kw)
+        except RuntimeError as _e:
+            return f'STEP error: {_e}', 400
 
         fname = _fname_stem + '.step'
         # All-parts STEP is always an assembly — don't overwrite individual part names.
-        _mirror_to_fusion(step_bytes, fname)
-        _mirror_to_solidworks(step_bytes, fname)
+        # Embed the CCT signature so the CAD addins' watchers recognise the file.
+        step_bytes = _embed_step(step_bytes, request.args)
+        dl_name = _safe_dl_name(fname)
+        # Mirror with the RAW name (keep '+') so addins detect the assembly.
+        if _mirror_to_addins(step_bytes, fname):
+            return ('', 204)
         return Response(step_bytes, mimetype='application/step',
-                        headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+                        headers={'Content-Disposition': f'attachment; filename="{dl_name}"'})
     except Exception as exc:
         import traceback
         return Response(f'All-parts STEP failed:\n{traceback.format_exc()}',
@@ -2349,41 +2440,17 @@ def download_flange_step():
             keyway_h_mm      = keyway_h_mm,
         )
 
-        _ss_bin = os.environ.get('SMALL_STEP_BIN', '')
-        if _ss_bin:
-            root      = os.path.dirname(os.path.abspath(__file__))
-            worker_ss = os.path.join(root, 'exporters', 'step_worker_ss.py')
-            result    = subprocess.run(
-                [sys.executable, worker_ss, _json.dumps(dict(kw, export_type='flange'))],
-                capture_output=True, cwd=root,
-                env={**os.environ, 'SMALL_STEP_BIN': _ss_bin},
-            )
-            if result.returncode != 0:
-                return f'Flange STEP error (small_step): {result.stderr.decode(errors="replace")}', 400
-            step_bytes = result.stdout
-        else:
-            try:
-                from exporters.step_exporter import generate_flange_step
-                step_bytes = generate_flange_step(**kw)
-            except ImportError:
-                root    = _os.path.dirname(_os.path.abspath(__file__))
-                venv_py = _os.path.join(root, '.venv312', 'Scripts', 'python.exe')
-                worker  = _os.path.join(root, 'exporters', 'step_worker.py')
-                worker_kw = dict(kw, export_type='flange')
-                result  = subprocess.run(
-                    [venv_py, worker, _json.dumps(worker_kw)],
-                    capture_output=True, cwd=root,
-                )
-                if result.returncode != 0:
-                    return f'Flange STEP error: {result.stderr.decode()}', 400
-                step_bytes = result.stdout
+        try:
+            step_bytes = _run_ss_worker(dict(kw, export_type='flange'))
+        except RuntimeError as _e:
+            return f'Flange STEP error: {_e}', 400
 
         suffix   = '-upper-flange' if which == 'top' else '-lower-flange'
         type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
         filename = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.step'
         step_bytes = _rename_step_product(step_bytes, filename[:-5])
-        _mirror_to_fusion(step_bytes, filename)
-        _mirror_to_solidworks(step_bytes, filename)
+        if _mirror_to_addins(step_bytes, filename):
+            return ('', 204)
         return Response(step_bytes, mimetype='application/step',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
@@ -3596,12 +3663,127 @@ def api_admin_render_deploys():
 
 @app.route('/download/<job_id>.step')
 def download_async_step(job_id):
-    """Serve generated STEP file from async download job."""
+    """Serve generated STEP file from async download job.
+
+    Optional ?name= overrides the download filename (single-part async
+    downloads pass the friendly name, e.g. HTD-3M-40T+flanges.step)."""
     file_path = os.path.join(_LOG_DIR, f'{job_id}.step')
     if not os.path.exists(file_path):
         return 'File not found', 404
+    # Friendly download name is stored on the job (set by the async generator),
+    # NOT passed as a query string — a clean extension-terminated URL is what the
+    # browser reliably saves; query strings on the download URL were being dropped.
+    job = get_job(job_id)
+    dl_name = getattr(job, 'output_name', None) if job else None
+    dl_name = os.path.basename(dl_name) if dl_name else f'{job_id}.step'
+    if not dl_name.lower().endswith('.step'):
+        dl_name += '.step'
     return send_file(file_path, mimetype='application/step',
-                     as_attachment=True, download_name=f'{job_id}.step')
+                     as_attachment=True, download_name=dl_name)
+
+
+@app.route('/api/download/step-async', methods=['POST'])
+@require_active_session
+def api_download_step_async():
+    """Start async STEP generation for a single pulley (P1 or P2).
+
+    Mirrors the reliable all-step path: generate to a file on disk, then the
+    client navigates to /download/<job_id>.step (a static file, instant
+    response). A direct window.location to the slow /download/step route was
+    being dropped ("Removed") by Chromium on some setups; serving a
+    pre-generated static file avoids the multi-second navigation entirely.
+    """
+    try:
+        query_params = request.get_json() or {}
+        job = create_job('step', query_params)
+
+        def generate_async():
+            start_job(job.id)
+            try:
+                pulley = query_params.get('pulley', '1')
+                family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+                    _parse_stl_params(query_params, pulley)
+                pfx = 'p2_' if pulley == '2' else ''
+                hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(query_params, pfx)
+                sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
+                    _parse_spoke_params(query_params, pfx)
+                eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+                _fl_enabled = query_params.get(f'{pfx}flange_enabled') == '1'
+                fp = _parse_flange_params(query_params, pfx) if _fl_enabled else {}
+
+                update_progress(job.id, 20)
+
+                kw = dict(
+                    family=family, pitch=pitch, num_teeth=num_teeth,
+                    bore_mm=bore_mm, belt_height_mm=belt_height,
+                    clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+                    hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+                    screw_dia_mm=sd, screw_count=sc,
+                    captured_nut=cn, flat_depth_mm=fd,
+                    keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                    spoke_count=sp_c if sp_en else 0,
+                    spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                    rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+                    spoke_height_mm=sp_h,
+                    flange_enabled       = _fl_enabled,
+                    flange_3dprint       = fp.get('flange_3dprint', True),
+                    flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
+                    flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
+                    flange_height_mm     = fp.get('flange_height_mm', 1.5),
+                    flange_top_separate  = fp.get('top_separate', True),
+                    nubs_enabled         = fp.get('nubs_enabled', False),
+                    nub_count            = fp.get('nub_count', 4),
+                    nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
+                    nub_height_mm        = fp.get('nub_height_mm', 2.0),
+                    nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
+                    plate_height_mm      = fp.get('plate_height_mm', 1.0),
+                    bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
+                )
+
+                update_progress(job.id, 30)
+                step_bytes = _run_ss_worker(dict(kw, export_type='pulley'), timeout=110)
+                update_progress(job.id, 80)
+
+                p2_sfx = '-P2' if pulley == '2' else ''
+                fl_sfx = '+flanges' if _fl_enabled else ''
+                fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
+                step_bytes = _rename_step_product(step_bytes, fname[:-5])
+                step_bytes = _embed_step(step_bytes, query_params)
+
+                output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
+                with open(output_path, 'wb') as f:
+                    f.write(step_bytes)
+                dl_name = _safe_dl_name(fname)
+                # Mirror with the RAW filename (keep any '+'): the CAD addins
+                # detect multi-body assemblies by a '+' in the name and must skip
+                # importToTarget for them. _safe_dl_name strips '+' for Chromium's
+                # benefit and is only needed for the browser download.
+                _mirrored = _mirror_to_addins(step_bytes, fname)
+
+                # Stash the friendly filename on the job so the static route can
+                # serve it without a query string on the download URL. The
+                # mirrored flag tells the client to skip the browser download
+                # when a CAD addin already received the file.
+                _j = get_job(job.id)
+                if _j is not None:
+                    _j.output_name = dl_name
+                    _j.mirrored = _mirrored
+
+                update_progress(job.id, 100)
+                finish_job(job.id, output_file=f'/download/{job.id}.step')
+            except Exception as e:
+                finish_job(job.id, error=str(e))
+
+        if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
+            generate_async()  # run in request thread — no daemon thread, no zombie
+        else:
+            threading.Thread(target=generate_async, daemon=True).start()
+        return jsonify({
+            'job_id': job.id,
+            'status_url': f'/api/download-status/{job.id}',
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/admin/jobs')
@@ -3789,76 +3971,30 @@ def api_download_all_step_async():
 
                 update_progress(job.id, 30)  # Generating STEP
 
-                def _progress_callback(pct):
-                    """Map subprocess progress (25-90%) to UI progress (30-80%)."""
-                    mapped_pct = 30 + int((pct - 25) * (80 - 30) / (90 - 25))
-                    update_progress(job.id, mapped_pct)
-
-                try:
-                    from exporters.step_exporter import generate_all_parts_step
-                    step_bytes = generate_all_parts_step(kw1, kw2, belt_kw, progress_callback=_progress_callback)
-                except ImportError as _import_err:
-                    # Fall back to subprocess (Python 3.12 venv)
-                    import subprocess as _subprocess
-                    print(f"[STEP] Direct import failed ({_import_err}), using subprocess", flush=True)
-                    root    = os.path.dirname(os.path.abspath(__file__))
-                    venv_py = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
-                    worker  = os.path.join(root, 'exporters', 'step_worker.py')
-                    worker_kw = dict(kw1, export_type='all')
-                    if kw2:
-                        worker_kw['kw2'] = kw2
-                    if belt_kw:
-                        worker_kw['belt_kw'] = belt_kw
-
-                    # Use Popen to monitor subprocess and parse real progress
-                    proc = _subprocess.Popen(
-                        [venv_py, worker, _json.dumps(worker_kw)],
-                        stdout=_subprocess.PIPE, stderr=_subprocess.PIPE, text=True, cwd=root,
-                    )
-
-                    # Read stderr for progress messages while subprocess runs
-                    # Use timeout to avoid hanging if subprocess stalls
-                    stderr_lines = []
-                    start_time = time.time()
-                    timeout_sec = 60  # 60 second timeout — Cloudflare/Render max is ~30s
-
-                    try:
-                        stdout, remaining_stderr = proc.communicate(timeout=timeout_sec)
-                        if remaining_stderr:
-                            stderr_lines.append(remaining_stderr)
-                            # Parse any progress messages from final stderr
-                            for line in remaining_stderr.split('\n'):
-                                if line.strip():
-                                    stderr_lines.append(line)
-                                    try:
-                                        msg = _json.loads(line.strip())
-                                        if 'progress' in msg:
-                                            pct = msg['progress']
-                                            mapped_pct = 30 + int((pct - 25) * (80 - 30) / (90 - 25))
-                                            update_progress(job.id, mapped_pct)
-                                    except _json.JSONDecodeError:
-                                        pass
-                    except _subprocess.TimeoutExpired:
-                        proc.kill()
-                        stdout, remaining_stderr = proc.communicate()
-                        stderr_text = ''.join(stderr_lines) + (remaining_stderr or '')
-                        raise RuntimeError(f'STEP generation timeout (>5min) — subprocess killed. Output: {stderr_text[-500:]}')
-
-                    print(f"[STEP] Subprocess finished: returncode={proc.returncode}, stdout_len={len(stdout) if stdout else 0}, stderr_lines={len(stderr_lines)}", flush=True)
-                    if proc.returncode != 0:
-                        stderr_text = ''.join(stderr_lines)
-                        error_msg = f'STEP error (exit {proc.returncode}): {stderr_text[-1000:]}'
-                        print(f"[STEP] {error_msg}", flush=True)
-                        raise RuntimeError(error_msg)
-                    step_bytes = stdout
-
+                async_worker_kw = dict(kw1, export_type='all')
+                if kw2:
+                    async_worker_kw['kw2'] = kw2
+                if belt_kw:
+                    async_worker_kw['belt_kw'] = belt_kw
+                step_bytes = _run_ss_worker(async_worker_kw, timeout=110)
                 update_progress(job.id, 80)  # Writing file
+                # Embed the CCT signature so the CAD addins' watchers recognise
+                # the file and import it (they skip files without the marker).
+                step_bytes = _embed_step(step_bytes, query_params)
                 _t1 = kw1['num_teeth']
                 _fname = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all.step'
                          if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all.step')
                 output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
                 with open(output_path, 'wb') as f:
                     f.write(step_bytes)
+                dl_name = _safe_dl_name(_fname)
+                # Mirror with the RAW name (keep '+'): addins detect the '-all'
+                # assembly and '+' multi-body files to skip importToTarget.
+                _mirrored = _mirror_to_addins(step_bytes, _fname)
+                _j = get_job(job.id)
+                if _j is not None:
+                    _j.output_name = dl_name
+                    _j.mirrored = _mirrored
 
                 update_progress(job.id, 100)
                 finish_job(job.id, output_file=f'/download/{job.id}.step')
@@ -3866,9 +4002,10 @@ def api_download_all_step_async():
             except Exception as e:
                 finish_job(job.id, error=str(e))
 
-        # Start worker thread
-        thread = threading.Thread(target=generate_async, daemon=True)
-        thread.start()
+        if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
+            generate_async()  # run in request thread — no daemon thread, no zombie
+        else:
+            threading.Thread(target=generate_async, daemon=True).start()
 
         return jsonify({
             'job_id': job.id,
@@ -4044,14 +4181,6 @@ def api_download_step():
         }), 429
 
     try:
-        # Build request-like object with the params
-        import io
-        from werkzeug.datastructures import ImmutableMultiDict
-
-        args_dict = {k: str(v) for k, v in params_dict.items()}
-        request.environ['QUERY_STRING'] = '&'.join(f'{k}={v}' for k, v in args_dict.items())
-
-        # Call the existing STEP generation logic
         pulley = params_dict.get('pulley', '1')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
             _parse_stl_params(params_dict, pulley)
@@ -4071,15 +4200,27 @@ def api_download_step():
             hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc,
             captured_nut=cn, flat_depth_mm=fd,
-            keyway_width_mm=kw_w, keyway_height_mm=kw_h,
-            spokes_enabled=sp_en, spokes_hub_od_mm=sp_hub,
-            spokes_rim_depth_mm=sp_rim, spokes_width_mm=sp_w,
-            spokes_fillet_tip_mm=sp_ft, spokes_fillet_base_mm=sp_fb,
-            spokes_count=sp_c, spokes_height_mm=sp_h, spokes_split=sp_split,
-            flange=fp if fp else None
+            keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spoke_count=sp_c if sp_en else 0,
+            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+            rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+            spoke_height_mm=sp_h,
+            flange_enabled=_fl_enabled,
+            flange_3dprint=fp.get('flange_3dprint', True),
+            flange_angle_deg=fp.get('flange_angle_deg', 15.0),
+            flange_rim_radius_mm=fp.get('rim_radius_mm', 3.0),
+            flange_height_mm=fp.get('flange_height_mm', 1.5),
+            flange_top_separate=fp.get('top_separate', True),
+            nubs_enabled=fp.get('nubs_enabled', False),
+            nub_count=fp.get('nub_count', 4),
+            nub_dia_mm=fp.get('nub_dia_mm', 3.0),
+            nub_height_mm=fp.get('nub_height_mm', 2.0),
+            nub_allowance_mm=fp.get('nub_allowance_mm', 0.2),
+            plate_height_mm=fp.get('plate_height_mm', 1.0),
+            bend_radius_mm=fp.get('bend_radius_mm', 0.0),
         )
 
-        step_data = step_exporter.export_step(**kw)
+        step_data = _run_ss_worker(dict(kw, export_type='pulley'))
         step_data = _embed_step(step_data, params_dict)
 
         fname = f'{family}-{pitch}-{num_teeth}T.step'
@@ -4168,17 +4309,17 @@ def api_download_stl():
 
         eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
 
-        stl_data = step_exporter.export_stl(
+        stl_data = generate_pulley_stl(
             family=family, pitch=pitch, num_teeth=num_teeth,
             bore_mm=bore_mm, belt_height_mm=belt_height,
             clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
             hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc, captured_nut=cn, flat_depth_mm=fd,
-            keyway_width_mm=kw_w, keyway_height_mm=kw_h,
-            spokes_enabled=sp_en, spokes_hub_od_mm=sp_hub,
-            spokes_rim_depth_mm=sp_rim, spokes_width_mm=sp_w,
-            spokes_fillet_tip_mm=sp_ft, spokes_fillet_base_mm=sp_fb,
-            spokes_count=sp_c, spokes_height_mm=sp_h, spokes_split=sp_split
+            keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spoke_count=sp_c if sp_en else 0, spoke_hub_od_mm=sp_hub,
+            rim_depth_mm=sp_rim, spoke_width_mm=sp_w,
+            fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+            spoke_height_mm=sp_h,
         )
         stl_data = _embed_stl(stl_data, params_dict)
 

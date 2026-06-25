@@ -6,8 +6,8 @@ Quick reference guide to all markdown files in the project. Read this first to n
 
 ### [CLAUDE.md](CLAUDE.md)
 **Claude Code project instructions and constraints**
-- Python 3.12 requirement (cadquery limitation)
-- STEP export via subprocess (`.venv312\Scripts\python.exe`)
+- Python 3.14 (cadquery removed; small_step Rust binary handles STEP)
+- STEP export via subprocess (`.venv314\Scripts\python.exe`)
 - Key file locations and deployment procedure
 - *Read this first if working with Claude Code*
 
@@ -31,7 +31,7 @@ Quick reference guide to all markdown files in the project. Read this first to n
 ### [DECISIONS.md](DECISIONS.md)
 **Architectural Decision Records (ADRs)**
 - Key technical decisions and rationale
-- Python 3.12 for STEP/cadquery
+- ADR-001: Python 3.12 for STEP/cadquery (superseded by ADR-002: small_step Rust binary)
 - Trade-offs and alternatives considered
 - *Reference for "why did we choose X?"*
 
@@ -45,21 +45,8 @@ Quick reference guide to all markdown files in the project. Read this first to n
 
 ## 🎯 Queue System (Single-User Access)
 
-### [QUEUE_SYSTEM.md](QUEUE_SYSTEM.md)
-**Queue system design and behavior**
-- Single-user access enforcement (prevent crashes)
-- FIFO queueing with automatic promotion
-- Session timeouts: 5min active, 1min idle, 30sec stale
-- Countdown timer, heartbeat mechanism
-- Trial download tracking (2/week per machine_id)
-- *Complete queue system specification*
-
-### [QUEUE_DEPLOYMENT.md](QUEUE_DEPLOYMENT.md)
-**Queue system deployment and environment detection**
-- Online vs. standalone mode auto-detection
-- Environment variable configuration
-- WooCommerce integration notes
-- *How the queue system adapts to different deployments*
+Queue design is documented in `CCT_Architecture.md` (Section 3 — Queue System).
+A dedicated `QUEUE_SYSTEM.md` spec has not yet been written.
 
 ## 📡 API & Integration
 
@@ -74,12 +61,6 @@ Quick reference guide to all markdown files in the project. Read this first to n
 
 ## ⚙️ Features & Implementation
 
-### [3D_SpokeHeight.md](3D_SpokeHeight.md)
-**Research notes on 3D spoke height calculation**
-- Geometry and rendering for spoked pulleys
-- Angular offset mathematics
-- *Technical reference for spoke feature*
-
 ### [flange_feature.md](flange_feature.md)
 **Flange design specification**
 - 3D printing vs. metal flange approaches
@@ -87,30 +68,18 @@ Quick reference guide to all markdown files in the project. Read this first to n
 - Nub geometry for press-fit assembly
 - *Specification for flange exports*
 
-### [hub.md](hub.md)
-**Hub design reference**
-- Shaft retention methods (D-flat, keyway, tapered)
-- Engineering standards and bore calculations
-- *Reference for hub geometry*
-
 ## 📋 Project Management
 
-### [TODO.md](TODO.md)
+### [ToDo.md](ToDo.md)
 **Backlog and roadmap**
 - Before public launch checklist
 - STEP geometry improvements (small_step Rust project)
+- Known bug: partial-height spokes generate OCCT-invalid STEP (guarded in `_run_ss_worker`)
 - Design metadata embedding (CCT schema versioning)
 - Load testing dashboard
 - Agent/headless API access
 - CAD plugin roadmap (SolidWorks, FreeCAD, OnShape)
 - *Living document of what's left to do*
-
-### [CAD_Market.md](CAD_Market.md)
-**CAD plugin market research**
-- Feature comparison across platforms
-- Plugin distribution channels
-- Positioning and pricing strategy
-- *Business/product research notes*
 
 ---
 
@@ -120,31 +89,21 @@ Quick reference guide to all markdown files in the project. Read this first to n
 PulleyWebApp/
 ├── 📄 INDEX.md                    ← You are here
 │
-├── 🎯 Queue System
-│   ├── QUEUE_SYSTEM.md            (Design & behavior)
-│   └── QUEUE_DEPLOYMENT.md        (Environment setup)
-│
 ├── 🚀 Deployment & Ops
 │   ├── CLAUDE.md                  (Claude Code instructions)
 │   ├── web_provisioning.md        (Deploy checklist & architecture)
-│   └── cheapcadtools.md           (CheapCADTools.com hosting)
+│   └── cheapcadtools.md           (CheapCADTools.com hosting & ops)
 │
 ├── 🏗️ Architecture & Design
-│   ├── CCT_Architecture.md        (Platform architecture)
+│   ├── CCT_Architecture.md        (Platform architecture + queue system)
 │   ├── DECISIONS.md               (Architectural decision records)
-│   └── TODO.md                    (Backlog & roadmap)
+│   └── ToDo.md                    (Backlog & roadmap)
 │
 ├── 📡 Integration
 │   └── ADDIN_INTEGRATION.md       (CAD addin guide)
 │
-├── ⚙️ Features
-│   ├── 3D_SpokeHeight.md          (Spoke height research)
-│   ├── flange_feature.md          (Flange design spec)
-│   └── hub.md                     (Hub design reference)
-│
-└── 📊 Research
-    ├── CAD_Market.md             (Market research)
-    └── (temp files: hub.md, CAD_Market.md, etc.)
+└── ⚙️ Features
+    └── flange_feature.md          (Flange design spec)
 ```
 
 ## 🔍 Quick Links by Role
@@ -160,7 +119,7 @@ PulleyWebApp/
 
 ### I'm adding a feature
 1. [DECISIONS.md](DECISIONS.md) — Why existing choices were made
-2. [TODO.md](TODO.md) — Backlog and requirements
+2. [ToDo.md](ToDo.md) — Backlog and requirements
 3. Feature-specific file (e.g., [flange_feature.md](flange_feature.md))
 
 ### I'm understanding the architecture
@@ -169,9 +128,8 @@ PulleyWebApp/
 3. [ADDIN_INTEGRATION.md](ADDIN_INTEGRATION.md) — Multi-platform support
 
 ### I'm debugging the queue
-1. [QUEUE_SYSTEM.md](QUEUE_SYSTEM.md) — Behavior specification
-2. [QUEUE_DEPLOYMENT.md](QUEUE_DEPLOYMENT.md) — Environment detection
-3. [web_provisioning.md](web_provisioning.md) — API endpoints
+1. [CCT_Architecture.md](CCT_Architecture.md) — Queue system design (Section 3)
+2. [web_provisioning.md](web_provisioning.md) — API endpoints and env vars
 
 ---
 
@@ -183,4 +141,4 @@ PulleyWebApp/
 - For **why decisions**, see [DECISIONS.md](DECISIONS.md)
 - For **what's left**, see [TODO.md](TODO.md)
 
-Last updated: 2026-06-06
+Last updated: 2026-06-16

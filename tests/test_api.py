@@ -230,7 +230,7 @@ def test_download_stl_single(client, family, pitch):
 
 
 # ---------------------------------------------------------------------------
-# /download/step  — cadquery available on Python 3.12 venv, expect 200
+# /download/step  — small_step Rust binary path, expect 200
 # ---------------------------------------------------------------------------
 def test_download_step_returns_200(client):
     r = client.get(

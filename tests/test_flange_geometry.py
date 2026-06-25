@@ -30,7 +30,9 @@ R_TOOTH_OD    = 47.0      # representative pulley OD radius
 RIM_DEPTH_MM  = 8.0       # rim ring depth (spoke case)
 SPOKE_HUB_OD  = 25.0      # spoke hub OD (not used in inner-r rule; R_OD - rim prevails)
 
-# Expected inner radius when spokes active
+# Expected inner radius when spokes active.
+# R_TOOTH_OD here acts as R_groove_bottom (the tooth-root radius, NOT the
+# tooth-tip OD). Callers must pass R_groove_bottom = R_OD - tooth_ht, not R_OD.
 R_INNER_SPOKES = R_TOOTH_OD - RIM_DEPTH_MM   # 39.0
 
 
@@ -40,7 +42,9 @@ R_INNER_SPOKES = R_TOOTH_OD - RIM_DEPTH_MM   # 39.0
 
 class TestFlangeInnerR3dprint:
 
-    def test_spokes_active_returns_R_OD_minus_rim_depth(self):
+    def test_spokes_active_returns_r_groove_bottom_minus_rim_depth(self):
+        # r_tooth_OD must be R_groove_bottom (= R_OD - tooth_ht), NOT R_OD.
+        # Passing R_OD here would shift the result outward by tooth_height.
         r = flange_inner_r_3dprint(
             bore_mm=BORE_MM, hub_od_mm=HUB_OD_MM,
             spokes_enabled=True, spoke_hub_od_mm=SPOKE_HUB_OD,
@@ -117,7 +121,8 @@ class TestFlangeInnerR3dprint:
 
 class TestFlangeInnerRMetalTop:
 
-    def test_spokes_active_returns_R_OD_minus_rim_depth(self):
+    def test_spokes_active_returns_r_groove_bottom_minus_rim_depth(self):
+        # r_tooth_OD must be R_groove_bottom, not R_OD. See flange_geometry.py docstring.
         r = flange_inner_r_metal_top(
             bore_mm=BORE_MM, hub_od_mm=HUB_OD_MM,
             spokes_enabled=True, spoke_hub_od_mm=SPOKE_HUB_OD,
@@ -154,7 +159,8 @@ class TestFlangeInnerRMetalTop:
 
 class TestFlangeInnerRMetalBottom:
 
-    def test_spokes_active_returns_R_OD_minus_rim_depth(self):
+    def test_spokes_active_returns_r_groove_bottom_minus_rim_depth(self):
+        # r_tooth_OD must be R_groove_bottom, not R_OD. See flange_geometry.py docstring.
         r = flange_inner_r_metal_bottom(
             bore_mm=BORE_MM,
             spokes_enabled=True, spoke_hub_od_mm=SPOKE_HUB_OD,

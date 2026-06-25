@@ -215,17 +215,25 @@ def generate_3dprint_flange_stl(
             # Use rim boundary (R_OD - tooth_ht - rim_depth), not R_OD - rim_depth
             r_spoke_outer = ((R_OD - tooth_ht) - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
             nub_cyls = []
+            # Embed nubs 0.5 mm into the flange body so the Boolean union has no
+            # coplanar face at Z=0, which would produce degenerate spike triangles.
+            _NUB_EMBED = 0.5
             for x, y in _nub_xy(nub_count, r_nub):
-                cyl = trimesh.creation.cylinder(radius=r_pin, height=nub_pin_h, sections=16)
-                cyl.apply_translation([x, y, -nub_pin_h / 2.0])
+                cyl_h = nub_pin_h + _NUB_EMBED
+                cyl = trimesh.creation.cylinder(radius=r_pin, height=cyl_h, sections=16)
+                # Span Z = -nub_pin_h to Z = +_NUB_EMBED
+                cyl.apply_translation([x, y, (_NUB_EMBED - nub_pin_h) / 2.0])
                 nub_cyls.append(cyl)
             if nub_cyls:
                 try:
                     top_mesh = trimesh.boolean.union([top_mesh] + nub_cyls, engine='manifold')
                     clip_h = nub_pin_h + 2.0
-                    # Clip nubs at flange ID (spoke OD boundary) - nubs don't extend inward from here
-                    if r_spoke_outer > 0.0:
-                        clip = trimesh.creation.cylinder(radius=r_spoke_outer, height=clip_h, sections=64)
+                    # Clip nubs at flange ID — use spoke rim boundary if spokes active,
+                    # else r_inner (the plain flange ID).  Always applied so nubs never
+                    # protrude through the inner face of the flange ring.
+                    clip_id = r_spoke_outer if r_spoke_outer > 0.0 else r_inner
+                    if r_nub - r_pin < clip_id:
+                        clip = trimesh.creation.cylinder(radius=clip_id, height=clip_h, sections=64)
                         clip.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                         top_mesh = trimesh.boolean.difference([top_mesh, clip], engine='manifold')
                     # Clip at spoke inner rim (hub boss surface) only if nubs extend into spoke hub
@@ -671,19 +679,24 @@ def build_flange_meshes(
                                  if (spokes_enabled and rim_depth_mm > 0.0)
                                  else 0.0)
                 nub_cyls = []
+                _NUB_EMBED = 0.5
                 for x, y in _nub_xy(fp['nub_count'], r_nub):
-                    cyl = trimesh.creation.cylinder(radius=r_pin, height=nub_pin_h, sections=16)
-                    # Nubs protrude down from Z=0 (flange bottom face)
-                    cyl.apply_translation([x, y, -nub_pin_h / 2.0])
+                    cyl_h = nub_pin_h + _NUB_EMBED
+                    cyl = trimesh.creation.cylinder(radius=r_pin, height=cyl_h, sections=16)
+                    # Embed 0.5 mm into flange to avoid coplanar face at Z=0
+                    cyl.apply_translation([x, y, (_NUB_EMBED - nub_pin_h) / 2.0])
                     nub_cyls.append(cyl)
                 if nub_cyls:
                     try:
                         top = trimesh.boolean.union([top] + nub_cyls, engine='manifold')
                         clip_h = nub_pin_h + 2.0
-                        # Clip nubs at flange ID (spoke OD boundary) - nubs don't extend inward from here
-                        if r_spoke_outer > 0.0:
+                        # Clip nubs at flange ID — use spoke rim boundary if spokes active,
+                        # else r_inner (the plain flange ID).  Always applied so nubs never
+                        # protrude through the inner face of the flange ring.
+                        clip_id = r_spoke_outer if r_spoke_outer > 0.0 else r_inner
+                        if r_nub - r_pin < clip_id:
                             clip_cyl = trimesh.creation.cylinder(
-                                radius=r_spoke_outer, height=clip_h, sections=64)
+                                radius=clip_id, height=clip_h, sections=64)
                             clip_cyl.apply_translation([0.0, 0.0, -nub_pin_h / 2.0])
                             top = trimesh.boolean.difference(
                                 [top, clip_cyl], engine='manifold')

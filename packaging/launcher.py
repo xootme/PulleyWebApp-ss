@@ -431,6 +431,9 @@ _check_licence()
 # ── Start Flask ───────────────────────────────────────────────────────────────
 PORT = 5154
 
+# Disable the queue system for local desktop use — single user, no contention.
+os.environ['QUEUE_DISABLED'] = '1'
+
 from app import app  # noqa: E402
 
 

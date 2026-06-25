@@ -10,7 +10,9 @@ A flange is an annular plate mounted on a pulley that prevents the belt from sli
 
 The flange plate extends inward no further than the innermost applicable boundary:
 
-1. **Spokes active** → inner face of the solid rim ring = R_tooth_OD − Rim Depth
+1. **Spokes active** → inner face of the solid rim ring = R_groove_bottom − Rim Depth
+   where R_groove_bottom = R_tooth_OD − tooth_height (the tooth-root / groove-bottom radius,
+   NOT the tooth-tip OD). Equivalently: R_tooth_OD − tooth_height − Rim Depth.
 2. **No spokes, hub present** → hub OD
 3. **No spokes, no hub** → bore diameter
 
@@ -41,7 +43,7 @@ Both a top and a bottom flange are always generated as separate parts.
 
 ### Inner rim behavior
 
-Both the top and bottom plates follow the inner rim rule above. When spokes are active, both plates stop at R_tooth_OD − Rim Depth (the inner face of the solid rim ring). When spokes are not active, the bottom plate extends to the bore and the top plate extends to the hub OD.
+Both the top and bottom plates follow the inner rim rule above. When spokes are active, both plates stop at R_groove_bottom − Rim Depth (the inner face of the solid rim ring), where R_groove_bottom = R_tooth_OD − tooth_height. When spokes are not active, the bottom plate extends to the bore and the top plate extends to the hub OD.
 
 ### Hub intersection warning
 
@@ -68,7 +70,7 @@ The 3D-printed flange is a solid wedge of material. Cross-section: starts at the
 
 ### Inner rim behavior
 
-Both the top and bottom flanges follow the inner rim rule above. When spokes are active, both flanges stop at R_tooth_OD − Rim Depth (the inner face of the solid rim ring). The flange plate does not extend into the spoke web or hub boss area.
+Both the top and bottom flanges follow the inner rim rule above. When spokes are active, both flanges stop at R_groove_bottom − Rim Depth (the inner face of the solid rim ring), where R_groove_bottom = R_tooth_OD − tooth_height. The flange plate does not extend into the spoke web or hub boss area.
 
 ### Bottom flange
 
@@ -87,7 +89,7 @@ The bottom flange plate stops at the inner face of the rim ring (or hub OD, or b
 
 Nubs are cylindrical pegs extending from the underside of the top flange into matching sockets in the pulley body. Their purpose is to increase bonding strength between the top flange and the pulley. A socket is always cut into the pulley body for every nub.
 
-**Nub placement:** The nub outer edge sits at R_groove_bottom − min(tooth_height, 3 mm), so nub centers lie on a circle of radius R_groove_bottom − min(tooth_height, 3 mm) − nub_diameter / 2. If a nub extends inward past the spokes' inner rim, the nub is clipped at that boundary. If a nub extends inward past the spoke outer rim (the inner face of the solid rim ring, at R_OD − Rim Depth), the nub is clipped at that boundary as well.
+**Nub placement:** The nub outer edge sits at R_groove_bottom − min(tooth_height, 3 mm), so nub centers lie on a circle of radius R_groove_bottom − min(tooth_height, 3 mm) − nub_diameter / 2. If a nub extends inward past the spokes' inner rim, the nub is clipped at that boundary. If a nub extends inward past the spoke outer rim (the inner face of the solid rim ring, at R_groove_bottom − Rim Depth = R_OD − tooth_height − Rim Depth), the nub is clipped at that boundary as well.
 
 - **Number of Nubs** — Equally spaced around the nub center circle. If adjacent nubs overlap, they are merged into one shape (boolean union).
 - **Nub Height** — Defines the socket depth cut into the pulley body. The physical nub on the flange is shorter by the Socket Fit Allowance height component, leaving a small gap at the base of the socket when fully seated. Minimum: 1 mm. Maximum: 1/3 of belt height.

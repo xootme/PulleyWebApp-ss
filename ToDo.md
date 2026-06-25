@@ -2,6 +2,71 @@
 
 ## Backlog
 
+### Tests needed — post-deploy gaps (identified 2026-06-23) — ✅ DONE (2026-06-24)
+
+All three regression-coverage gaps now have tests (added 2026-06-24, before the socket-void merge deploy):
+- #1 → `tests/test_3d.py::TestSpokeRimStlTopologyFix` (spoke+rim STL, download + preview, min/mid/high tooth counts × 5 families)
+- #2 → `tests/test_addin_helpers.py` (AddinDownloader: success, machine_id in payload, 429 limit, HTTP/network errors)
+- #3 → `tests/test_flange.py::TestFlangeNubClipping` (nub pins clipped at the spoke rim boundary, do not intrude into the void)
+
+Original specs retained below for reference.
+
+#### 1. TopologyException regression — spokes + rim STL (`step_exporter.py`)
+**Commits:** `85585bd`, `6bd2a31` — added `buffer(0)` to clean near-coincident tooth vertices before Shapely boolean ops in `generate_pulley_stl` and `generate_pulley_stl_preview`.
+
+**What to test:**
+- `generate_pulley_stl` with spokes enabled (`spoke_count≥2`) **and** `rim_depth_mm > 0` — must not raise `TopologyException` or any exception
+- `generate_pulley_stl_preview` with same combo (preview path was fixed separately in `6bd2a31`)
+- Cover at least: HTD-5M, GT-3M, T-T5, Imperial-XL at min_teeth and a mid-range tooth count (e.g. 36T)
+- High tooth counts (60T+) are most likely to produce near-coincident vertices — include at least one
+- Verify returned bytes are valid STL (header `b'...'` first 80 bytes, then triangle count > 0)
+
+**Trigger params:** `spoke_count=4, spoke_width_mm=4.0, spoke_hub_od_mm=14.0, rim_depth_mm=2.0`
+
+**File to add tests to:** `tests/test_3d.py` (new class `TestSpokeRimStlTopologyFix`)
+
+---
+
+#### 2. `addin_helpers.AddinDownloader` — zero tests (new module `exporters/addin_helpers.py`)
+**Commit:** `7d5de4a`
+
+**Public surface to test:**
+- `AddinDownloader(base_url, machine_id, timeout)` constructor
+- `.download_step(params)` → bytes on HTTP 200
+- `.download_dxf(params)` → bytes on HTTP 200
+- `.download_stl(params)` → bytes on HTTP 200
+- `DownloadLimitExceeded` raised on HTTP 429; `e.count` and `e.limit` set from response JSON `{"count": N, "limit": M}`
+- `DownloadError` raised on any other non-200 status (e.g. 500)
+- `DownloadError` raised on `urllib.error.URLError` (network failure / timeout)
+- `machine_id` appears in every outgoing request URL
+
+**How to mock:** `unittest.mock.patch('urllib.request.urlopen')` — return a `MagicMock` with `.read()` returning bytes and `.status` / `.getcode()` returning 200; for error cases raise `urllib.error.HTTPError`.
+
+**File:** new `tests/test_addin_helpers.py`
+
+---
+
+#### 3. Flange nub clipping — clipping order reversed (`exporters/flange_exporter.py`)
+**Commits:** multiple around `fix nub clipping` — old code clipped at hub-inner first then hub-outer; new code always clips at `r_spoke_outer = (R_OD - tooth_ht) - rim_depth` first, then conditionally clips at `r_spoke_inner` only if `r_nub - r_pin <= r_spoke_inner`.
+
+**What to test** (mesh inspection via trimesh):
+- `generate_3dprint_flange_stl(... nub_count>0, spokes_enabled=True)` must not raise any exception
+- No nub vertex extends radially past `r_spoke_outer` (rim boundary): all vertices with `z > 0` have `sqrt(x²+y²) <= r_spoke_outer + tolerance`
+- When nubs are small (`r_nub - r_pin > r_spoke_inner`), no clipping at hub inner — vertices exist at `r ≈ r_spoke_outer`, not truncated further inward
+- `build_flange_meshes(... nub_count>0, spokes_enabled=True)` (preview path uses same logic)
+
+**Key values to compute in test:**
+```python
+from geometry.flange_geometry import _pulley_radii
+R_OD, _, tooth_ht = _pulley_radii(family, pitch, teeth)
+R_tr = R_OD - tooth_ht
+r_spoke_outer = R_tr - rim_depth_mm   # nubs must not exceed this
+```
+
+**File:** `tests/test_flange.py` (new class `TestFlangeNubClipping`)
+
+---
+
 ### Before Public Launch
 - [ ] **Remove dev backdoor password** — delete `DEV_BACKDOOR_KEY` from `PulleyWebApp.py` (Fusion addin), the `backdoor_key == 'xoot'` block from `/api/provision` in `app.py`, and `_DEV_BACKDOOR` from `packaging/launcher.py`
 
@@ -15,16 +80,38 @@ Rust project (no deps). Build: `cargo +stable-x86_64-pc-windows-gnu build`
 - [x] Confirmed pulleys can use CIRCLE + TRIMMED_CURVE for land/root arcs; LINE for flanks
 - [x] Built Rust StepBuilder that emits all required AP214 entities
 - [x] HTD-3M 20T geometry: profile math, wrap_point/wrap_arc, 9 segments per tooth
-- [x] Generates `htd_3m_20t.step` (~507 KB); loads in eDrawings (SolidWorks viewer)
+- [x] Non-manifold topology fixed: coordinate→vertex_id cache in StepBuilder; adjacent faces reuse same edge entities
+- [x] Top/bottom cap faces closed: winding/direction correct; bore loop ≥ 3 arcs (OCCT drops self-referencing 1- or 2-arc bore)
+- [x] Arc encoding: CW arcs use ascending TRIMMED_CURVE + same_sense=.F. in EDGE_CURVE (OCCT/FreeCAD/Fusion/eDrawings all agree)
+- [x] Spoke void geometry: full-height spoke webs (partial-height webs later found OCCT-invalid — see Known issues below)
+- [x] Flange generation: 3D-print and metal flanges as named solids (PRODUCT hierarchy per solid, June 11)
+- [x] Glue-nub system: pins + sockets, clipped crescent merge, B2 socket↔void merge, June 13–16
+- [x] **B2 socket-over-void fix (June 16)**: when any socket center is over a void window, fall back to standard crescent path; wrong-geometry artifacts resolved for 30-nub/50-nub configs
+- [x] **Generalized socket↔void merge — ribbon eliminated (June 24)**: replaced the two-face "trench" merge with `build_merged_socket_void_solid_v2` + `trace_cap_loops` — a single top cap whose holes are the merged outlines of every void unioned with overlapping socket crescents. Handles filleted spokes generically (the old `extract_void_info` bailed on fillets, which is why the ~0.224 mm ribbon was always present on filleted-spoke pulleys), sockets over webs/voids/straddling edges, and full-circle sockets. Falls back to the crescent path on any inconsistency (`SMALL_STEP_DIAG` reports `merge: v2 applied|fallback`). Validated OCCT-valid across 8 configs + confirmed ribbon-free in Fusion/FreeCAD/eDrawings. Regression test: `tests/test_nub_socket_merge.py`.
+- [x] `run_ss_dev.bat` updated to use release binary (was pointing to stale debug build)
+- [x] `require_active_session` now respects `PULLEY_TESTING=1` env var for dev mode
 
-**Known issues — what to fix next:**
-- [ ] **Non-manifold topology**: each face creates fresh VERTEX_POINT/EDGE_CURVE entities even at shared corners — adjacent faces must reuse the same edge entities. Needs a coordinate→vertex_id cache in StepBuilder.
-- [ ] **Top/bottom faces not closed**: outer profile edge loop has direction/winding issues; top and bottom annular faces (with bore hole) don't seal the solid
-- [ ] **Bore appears solid**: bore cylindrical face winding is reversed — bore should cut inward, not fill
-- [ ] **Teeth look triangular**: the arc wrapping for tip/root fillets produces incorrect angles after rotation; the 9-primitive profile geometry needs debugging against a known-good reference profile
-- [ ] **Unit crash**: `SI_UNIT(.MILLI.,.METRE.)` (correct format) causes OCC crash on TransferRoots due to non-manifold topology failing validation at mm scale; old 3-arg format gives 1000× wrong scale. Fix is the manifold topology issue above.
-- [ ] Consider outputting SHELL_BASED_SURFACE_MODEL instead of MANIFOLD_SOLID_BREP until topology is clean
-- [ ] Consider adding SURFACE_CURVE + PCURVE on each edge for full AP214 compliance (required for SolidWorks/Fusion direct import without repair)
+**Known issues — small_step:**
+- [ ] FreeCAD rejects complex pulley profiles (missing SURFACE_CURVE/PCURVE) — eDrawings and Fusion work fine
+- [ ] Merged-pin path regresses curved-tooth 50T flange samples (pre-existing; separate-solid fallback still committed)
+- [x] ~~B2 socket↔void ribbon~~ — RESOLVED June 24 by the generalized merge (see Done above)
+
+- [ ] **BUG — partial-height spokes produce an OCCT-invalid solid** (`build_partial_height_solid`). Found June 24; **pre-existing** (reproduced on the pre-merge binary, so unrelated to the June 24 merge work). Currently guarded: partial-height spoke STEP is blocked in `app.py::_run_ss_worker` with a user-facing message — **remove the guard when this is fixed.**
+
+  **Symptom:** any pulley with `spoke_height_mm > 0` and `< belt_height` (recessed/partial-height spoke web) generates a STEP whose pulley solid is `BRepCheck`-invalid. Opens but is non-watertight; unreliable for booleans/printing.
+
+  **Root cause (located):** OCCT reports `BRepCheck_UnorientableShape` on exactly the **10 spoke-island faces** (the partial-height web caps at z1 and z2 — 5 spokes × 2). That status means the shell can't be globally oriented: an edge is traversed the **same direction by both** of its two adjacent faces (a local non-orientable seam). The islands are built by `build_spoke_islands` → `build_planar_segment_face`; the suspect mismatch is between each island's wire edges and the edges they must share with `build_circle_band_faces` (rim/hub cylinder bands at z2..z3 / z0..z1) and the void side-wall laterals (`build_lateral_faces_range`, z1..z2).
+
+  **Isolation:** `spoke_height=5` with **no flange, no nubs** is already invalid (188-face body) → it's the spoke body itself, not flanges/nubs. Full-height spokes (`spoke_height=0`) are valid (136-face body). Partial-height **also** silently drops nub sockets (`build_partial_height_solid` doesn't cut them — emits `warning: nub sockets not cut into partial-height spoke pulleys`), so once the body is fixed the socket-void merge must be wired into this path too.
+
+  **Tried (did NOT fix):** swapping the `is_top` flags on the two island faces (`build_planar_segment_face(... z2, true/false)`) — still invalid. So it is **not** a blanket normal inversion; it's a specific per-edge direction mismatch.
+
+  **How to pursue:**
+  1. Reproduce: generate `spoke_height_mm=5` (no flange/nubs) → invalid solid.
+  2. Use `small_step/archive/check_occ.py` for pass/fail and the per-face `BRepCheck_UnorientableShape` status (scratchpad `occ_detail.py` pattern: iterate faces, `BRepCheck_Analyzer.Result(face).Status()`).
+  3. Add a temporary Rust dump in `build_partial_height_solid`: for each island edge print its two endpoints + the matching band/void-wall edge's endpoints and `oriented_edge` sense, and find the edge whose two owners share the same direction.
+  4. Likely fix is in `build_spoke_islands` (segment ordering/`orient_planar_segments` winding) or the sense used when reusing the band/void-wall edges in the island loop so every shared edge is traversed oppositely by its two faces.
+  5. Regression: `tests/test_nub_socket_merge.py` already has a `partial_height_d15` case (generation-only, OCC skipped) — flip it to assert OCC-valid once fixed, and add a no-flange/no-nub variant.
 
 ### Design Metadata in Exported Files
 - [x] Embed CCT params as JSON in STEP (`/* CCT:{...} */` comment after HEADER)

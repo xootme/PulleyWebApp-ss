@@ -2,6 +2,6 @@ services:
   - type: web
     name: pulleywebapp
     env: python
-    buildCommand: apt-get install -y libcairo2 && pip install -r requirements.txt
+    buildCommand: bash render_build.sh
     startCommand: gunicorn app:app --config gunicorn.conf.py
-    pythonVersion: "3.12"
+    pythonVersion: "3.14"

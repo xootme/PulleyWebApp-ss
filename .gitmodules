@@ -1,0 +1,3 @@
+[submodule "small_step"]
+	path = small_step
+	url = https://github.com/xootme/small_step.git

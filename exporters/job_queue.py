@@ -138,6 +138,9 @@ class Job:
         self.output_file = None
         self.error = None
         self.params = params
+        # True when the file was mirrored to a connected CAD addin's watch
+        # folder; the client then skips the redundant browser download.
+        self.mirrored = False
 
     def to_dict(self):
         with _LOCK:
@@ -154,7 +157,7 @@ class Job:
             'started': self.started.isoformat() if self.started else None,
             'progress': self.progress, 'queue_position': queue_position,
             'active_jobs': active_count, 'output_file': self.output_file,
-            'error': self.error,
+            'error': self.error, 'mirrored': self.mirrored,
         }
 
 
@@ -363,7 +366,11 @@ def _expire_active(active, sessions, now):
         return active, sessions
     elapsed = now - active['started_at']
     idle    = now - active.get('last_heartbeat', active['started_at'])
-    if idle > IDLE_TIMEOUT_SEC or elapsed > SESSION_TIMEOUT_SEC:
+    # Hard session cap only applies when others are waiting; with an empty
+    # queue the idle timeout alone is sufficient (avoids evicting a solo user
+    # who takes longer than 5 minutes to configure a complex pulley).
+    hard_cap_exceeded = sessions and elapsed > SESSION_TIMEOUT_SEC
+    if idle > IDLE_TIMEOUT_SEC or hard_cap_exceeded:
         active = _promote_next(None, sessions, now)
     return active, sessions
 
@@ -378,6 +385,30 @@ def _cleanup_stale_queued_sessions():
         for sid in stale:
             del sessions[sid]
         _save_state(active, sessions)
+
+
+def clear_stale_on_startup():
+    """Clear any active session left over from a previous server process.
+
+    Called once at Flask startup. A new process means the previous server
+    (and its active session) is gone, so any persisted active session is
+    stale by definition and must be cleared to unblock the queue.
+    Queued waiting sessions are also dropped since their browsers are gone.
+    """
+    if not os.path.exists(_SESSION_FILE):
+        return
+    with _LOCK:
+        fh, active, sessions = _load_and_lock()
+        try:
+            if active is not None or sessions:
+                _save_and_unlock(fh, None, {})
+            else:
+                _file_unlock(fh)
+                fh.close()
+        except Exception:
+            _file_unlock(fh)
+            fh.close()
+            raise
 
 
 # ── Trial download tracking (unchanged) ───────────────────────────────────────

@@ -44,12 +44,16 @@ Every tool is a self-contained Flask application in its own GitHub repo. The sam
 |------|---------|
 | `app.py` | Flask routes — UI, preview, download, provision, admin API |
 | `geometry/<tool>_geometry.py` | Core math — shared by all export formats |
+| `geometry/flange_geometry.py` | Flange cross-section profiles and inner-radius rules |
 | `exporters/` | Format-specific exporters (SVG, DXF, STL, STEP, PNG) |
+| `exporters/job_queue.py` | Session + queue state (disk-persisted); disabled by `QUEUE_DISABLED` |
+| `exporters/step_worker.py` | STEP subprocess worker — cadquery path (unexercised fallback) |
+| `exporters/step_worker_ss.py` | STEP subprocess worker — small_step Rust path (fast, no cadquery) |
 | `templates/index.html` | Full UI — all controls, JS, Three.js 3D viewer |
 | `static/style.css` | All styles; bump `?v=N` on the CSS link when changed |
 | `static/*_help.html` | Context help panels |
 | `packaging/build_release.py` | Local-only desktop build (PyArmor + PyInstaller) |
-| `packaging/launcher.py` | PyInstaller entry point; opens browser, sets env vars |
+| `packaging/launcher.py` | PyInstaller entry point; opens browser, sets `QUEUE_DISABLED=1` |
 | `web_provisioning.md` | Deployment checklist — follow before every push |
 | `DECISIONS.md` | Architectural decision log |
 | `TODO.md` | Backlog |
@@ -62,14 +66,20 @@ User parameters (query string)
         ▼
 geometry/<tool>_geometry.py   ← 2D profile math, shared by all formats
         │
-        ├── exporters/svg_exporter.py   → SVG  (browser download)
-        ├── exporters/dxf_exporter.py   → DXF  (browser download)
-        ├── exporters/png_exporter.py   → PNG  (2D preview)
-        ├── exporters/step_exporter.py  → STL  (trimesh)  +  STEP (cadquery)
-        └── app.py /download/* routes   → Response with Content-Disposition
+        ├── exporters/svg_exporter.py      → SVG  (browser download)
+        ├── exporters/dxf_exporter.py      → DXF  (browser download)
+        ├── exporters/png_exporter.py      → PNG  (2D preview)
+        ├── exporters/step_exporter.py     → STL  (trimesh)
+        │
+        └── /download/step  ──► SMALL_STEP_BIN set?
+                                    │
+                            Yes ────┴──── No
+                             │             │
+                   step_worker_ss.py   step_worker.py
+                   (small_step Rust)   (cadquery, unexercised fallback)
 ```
 
-**STEP note:** cadquery requires Python ≤3.12. The `/download/step` route always shells out to `.venv312/Scripts/python.exe` via `exporters/step_worker.py`. Flask itself can run on any Python version. Never import cadquery into the main Flask process.
+**STEP — small_step path (active):** `/download/step`, `/download/flange-step`, and `/download/all-step` all use `exporters/step_worker_ss.py`, which generates a DXF then calls the `small_step` Rust binary. `SMALL_STEP_BIN` env var must point to the compiled binary. The cadquery fallback (`exporters/step_worker.py`) still exists but is not exercised at runtime.
 
 ### Embedded metadata
 
@@ -89,12 +99,16 @@ The web app reads these back via a file-picker import button. The Fusion addin r
 
 STEP export is memory-intensive. Concurrent requests caused memory exhaustion and server crashes on the free/starter Render tier. The queue system serialises access: **only one user may run a STEP export at a time**; everyone else waits in a fair FIFO queue.
 
+### Two builds
+
+The queue is only active in the **online/Render build**. The desktop build (and local dev server) sets `QUEUE_DISABLED=1`, which makes `@require_active_session` a no-op and skips session creation on the index route. This is set automatically by `packaging/launcher.py` before Flask starts.
+
 ### Components
 
 | File | Role |
 |------|------|
 | `exporters/job_queue.py` | In-memory session + queue state, disk-persisted to `logs/session.json` and `logs/queue.json`. Background cleanup thread (10 s interval). |
-| `app.py` | `@require_session` decorator guards `/download/step`. Session API routes below. |
+| `app.py` | `@require_active_session` decorator guards `/download/step` and other expensive routes. Session API routes below. |
 | `templates/queue.html` | Queue status UI — join, position counter, countdown, release button. Auto-refreshes every 5 s. |
 
 ### Session API routes
@@ -148,7 +162,55 @@ IDLE_TIMEOUT_SEC    = 60      # 1 min idle logout
 
 ---
 
-## 4. Subscription & Licensing
+## 4. small_step — Rust STEP Emitter
+
+`small_step` is a hand-written Rust B-rep STEP emitter at `C:\Users\cmyer\Documents\small_step\`. It generates AP214 STEP files directly from DXF 2D profiles without any boolean kernel — geometry is computed analytically.
+
+### Why it exists
+
+cadquery (the original Python STEP path) required Python ≤3.12 and a 2 GB OCP wheel; it was slow (3–8 s per export) and could not be imported into the main Flask process. small_step generates the same STEP files in under 0.5 s with no Python dependency. cadquery has been removed from requirements.txt; the Flask venv is now Python 3.14.
+
+### CLI interface
+
+```
+small_step combined <input.dxf> <height_mm> [spoke_height_mm]
+    [--top-3d  <r_inner> <r_tooth_od> <rim_r> <angle_deg> <flange_h>]
+    [--nubs    <count> <dia_mm> <height_mm> <allowance_mm> <r_outer_mm>]
+    [--bot-3d  <r_inner> <r_tooth_od> <rim_r> <angle_deg> <flange_h>]
+    [--top-metal / --bot-metal ...]
+    [--hub <od> <h>  [--flat <d>] [--keyway <w> <h>]]
+
+small_step flange-3d   <r_inner> <r_tooth_od> <rim_r> <angle_deg> <flange_h> [top|bottom]
+small_step flange-metal <r_inner> <r_od> <rim_r> <angle_deg> <thick> <bend> [top|bottom]
+```
+
+**`--nubs` parameter:** `r_outer_mm` is the radius at which the nub OD is tangent (= `R_groove_bottom − min(tooth_ht, 3mm)`). small_step subtracts `dia/2` internally to get the nub centre. Do **not** pass the centre radius — that shifts nubs inward by `dia/2` and causes them to breach the flange ID.
+
+**Flange inner radius with spokes:** pass `r_tooth_od = R_groove_bottom = R_OD − tooth_height` (not the full tooth-tip OD). The flat section of the flange runs from `r_inner` to `r_tooth_od`; for spoke pulleys `r_inner = R_groove_bottom − rim_depth`.
+
+### Building
+
+```
+cd C:\Users\cmyer\Documents\small_step
+cargo build --release --target x86_64-pc-windows-gnu
+# Binary: target/x86_64-pc-windows-gnu/release/small_step.exe
+```
+
+Set `SMALL_STEP_BIN` env var to the binary path to activate the fast STEP path.
+
+### STEP validation
+
+A validation suite lives in `tests/`:
+
+| Script | Validators |
+|--------|-----------|
+| `run_validate_noedraw.py` | NIST SFA 5.45, OCC (via cadquery OCP), FreeCAD 1.1 headless |
+| `run_quick_validate.py` | Same + eDrawings 2026 COM (requires interactive terminal) |
+| `test_ss_validators.py` | Full random-config validator mirroring nightly test logic |
+
+---
+
+## 5. Subscription & Licensing
 
 ### Common backbone (all platforms)
 
@@ -274,10 +336,12 @@ No platform identity API needed — email is the identity anchor.
 | `AUTODESK_APP_ID` | Set after Autodesk App Store registration; empty → subscribers.json fallback |
 | `ONSHAPE_CLIENT_ID` | OnShape OAuth app client ID (Mode B only) |
 | `ONSHAPE_CLIENT_SECRET` | OnShape OAuth app client secret (Mode B only) |
+| `SMALL_STEP_BIN` | Path to compiled small_step binary; activates the fast Rust STEP path |
+| `QUEUE_DISABLED` | Set to `1` to bypass the session queue (desktop/local builds only — set by launcher.py) |
 
 ---
 
-## 5. The Desktop App
+## 6. The Desktop App
 
 The desktop app is the same Flask app, packaged:
 
@@ -292,6 +356,7 @@ packaging/build_release.py   (run manually on dev machine ONLY)
 
 `launcher.py` is the PyInstaller entry point. It:
 - Sets `PULLEY_BASE_DIR` so Flask finds templates/static inside the bundle (`sys._MEIPASS`)
+- Sets `QUEUE_DISABLED=1` to bypass the session queue (single local user — no contention)
 - Opens `localhost:5154` in the default browser
 - Runs Flask in a background thread
 
@@ -299,7 +364,7 @@ The desktop app and web app are separate release artifacts. A git push updates t
 
 ---
 
-## 6. CAD Plugin Pattern
+## 7. CAD Plugin Pattern
 
 CCT CAD plugins are **thin bridges** — they do not duplicate the web app UI. The web app is the UI. The plugin's only jobs are:
 
@@ -353,7 +418,7 @@ The panel is registered as an Application Extension in the OnShape Dev Portal:
 
 ---
 
-## 7. Building a New CCT Tool
+## 8. Building a New CCT Tool
 
 ### Step 1 — New Flask repo
 
@@ -402,7 +467,7 @@ Copy `Fusion Addins/PulleyWebApp/`, update:
 
 ---
 
-## 8. Conventions
+## 9. Conventions
 
 ### URLs and routing
 - Tool live URL: `cheapcadtools.com/tools/<slug>`
@@ -413,8 +478,9 @@ Copy `Fusion Addins/PulleyWebApp/`, update:
 - Subscriber management: `/api/subscribers/add|remove` — Bearer token
 
 ### Python
-- Python 3.12 required. `cadquery` requires ≤3.12 (OCP wheels don't exist for 3.13+).
-- STEP export always shells out to `.venv312/Scripts/python.exe` — never import cadquery in the main process.
+- Python 3.14 — cadquery removed; no Python version constraint on STEP export.
+- **Active STEP path:** `small_step` Rust binary via `exporters/step_worker_ss.py`. Requires `SMALL_STEP_BIN` env var pointing to the compiled binary.
+- **Unexercised fallback:** cadquery via `exporters/step_worker.py` — not called at runtime; not maintained.
 - STL/preview: trimesh + shapely + manifold3d (no cadquery dependency, runs on any Python).
 
 ### Desktop build
@@ -442,7 +508,7 @@ See `web_provisioning.md` for the full checklist. Short version:
 
 ---
 
-## 9. Infrastructure Contacts & Credentials
+## 10. Infrastructure Contacts & Credentials
 
 | Service | Account | Notes |
 |---------|---------|-------|

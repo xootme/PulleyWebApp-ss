@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=21">
+  <link rel="stylesheet" href="/static/style.css?v=22">
 </head>
 <body>
 
@@ -132,6 +132,7 @@
       <label for="bore">Bore Diameter (mm)</label>
       <input type="number" id="bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(1)">
       <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
+      <div id="bore-warn-1" style="display:none;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;margin-top:4px;"></div>
     </section>
 
     <section class="card fb-2d">
@@ -554,6 +555,7 @@
       <label for="p2_bore">Bore Diameter (mm)</label>
       <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(2)">
       <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
+      <div id="bore-warn-2" style="display:none;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;margin-top:4px;"></div>
     </section>
 
     <section class="card fb-2d">
@@ -1639,6 +1641,47 @@ function syncP2Belt() {
 function clampBore(el) {
   const v = parseFloat(el.value);
   if (!isNaN(v) && v < 1) el.value = 1;
+  const n = el.id === 'bore' ? 1 : 2;
+  _validateBore(n);
+}
+
+// ── Bore diameter geometry validation ────────────────────────────────────────
+// Without spokes: bore must be ≤ groove diameter − 1 mm
+// With spokes:    bore must be ≤ spoke void outer diameter − 1 mm
+//   groove_d      = od − 2 × tooth_ht
+//   void_outer_d  = groove_d − 2 × rim_depth
+function _validateBore(n) {
+  const boreEl  = document.getElementById(n === 1 ? 'bore' : 'p2_bore');
+  const warnEl  = document.getElementById(`bore-warn-${n}`);
+  if (!warnEl || !boreEl) return;
+
+  const bore    = parseFloat(boreEl.value) || 0;
+  const od      = parseFloat(document.getElementById(n === 1 ? 'od' : 'p2_od').value) || 0;
+  const spec    = n === 1 ? currentSpec : (currentSpec2 || currentSpec);
+
+  if (!spec || od <= 0 || bore <= 0) { warnEl.style.display = 'none'; return; }
+
+  const tooth_ht  = spec.tooth_ht || 0;
+  const groove_d  = od - 2 * tooth_ht;
+
+  const spokesOn  = document.getElementById(`spokes${n}_enabled`)?.checked;
+  let bore_max, limitLabel;
+  if (spokesOn) {
+    const rim_depth = parseFloat(document.getElementById(`spokes${n}_rim_depth`)?.value) || 0;
+    const void_od   = groove_d - 2 * rim_depth;
+    bore_max   = void_od - 1;
+    limitLabel = `spoke void OD ${void_od.toFixed(1)} mm − 1 mm`;
+  } else {
+    bore_max   = groove_d - 1;
+    limitLabel = `groove diameter ${groove_d.toFixed(1)} mm − 1 mm`;
+  }
+
+  if (bore > bore_max) {
+    warnEl.textContent = `⚠ Bore ${bore} mm exceeds limit of ${bore_max.toFixed(1)} mm (${limitLabel})`;
+    warnEl.style.display = 'block';
+  } else {
+    warnEl.style.display = 'none';
+  }
 }
 
 function _clampHubInput(el) {
@@ -1915,6 +1958,7 @@ async function _doTeethChange(n) {
   }
   updateMinDistance();
   updateBeltTeethFromCenter();
+  _validateBore(n);
   schedulePreview();
 }
 
@@ -1975,6 +2019,7 @@ async function syncOD(n) {
     document.getElementById('p2_od').value = data.od;
     updateP2Labels(data.teeth, data.od);
   }
+  _validateBore(n);
 }
 
 function updateLabels(teeth, od) {
@@ -2511,6 +2556,15 @@ function _syncDynamicBounds() {
       bendEl.dispatchEvent(new Event('input', { bubbles: true }));
     }
   });
+
+  // Max nub count: clamp whenever OD, spec, or nub diameter changes
+  [1, 2].forEach(n => {
+    const nubsOn = document.getElementById(`flange${n}_nubs_enabled`)?.checked
+                && document.getElementById(`flange${n}_top_separate`)?.checked
+                && document.getElementById(`flange${n}_3dprint`)?.checked
+                && document.getElementById(`flange${n}_enabled`)?.checked;
+    if (nubsOn) _enforceMaxNubs(n);
+  });
 }
 
 // Keep old name as alias so existing call sites still work
@@ -2631,6 +2685,25 @@ document.getElementById('bug-report-overlay').addEventListener('click', function
 });
 
 // ── Error Modal Functions ────────────────────────────────────────────────────────
+
+function showToast(message) {
+  // Lightweight transient confirmation (no CSS file dependency).
+  let t = document.getElementById('cct-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'cct-toast';
+    t.style.cssText =
+      'position:fixed;left:50%;bottom:32px;transform:translateX(-50%);' +
+      'background:#761516;color:#fff;padding:12px 20px;border-radius:6px;' +
+      'font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25);' +
+      'z-index:10000;opacity:0;transition:opacity .2s;pointer-events:none;';
+    document.body.appendChild(t);
+  }
+  t.textContent = message;
+  requestAnimationFrame(() => { t.style.opacity = '1'; });
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
 
 function showErrorModal(errorMessage) {
   const overlay = document.getElementById('error-modal-overlay');
@@ -2833,57 +2906,59 @@ function _dlUrl(url) {
   return finalUrl + sep + '_ts=' + Date.now();
 }
 
-async function downloadWithProgress(url, defaultFilename) {
+// Download a server-generated file by navigating a hidden iframe straight to
+// the real URL (the routes set Content-Disposition: attachment). This is the
+// same mechanism the working "Download All" uses (a direct hit to a real URL)
+// and avoids the blob:-URL path entirely — Chrome was marking blob downloads
+// "Removed" and never writing them to disk on some setups.
+//
+// The server sets a short-lived `download_token` cookie when it streams the
+// file (see the after_request hook in app.py). We poll for that cookie to know
+// the download actually started, then hide the overlay. A timeout fallback
+// covers errors (an error response sets no cookie and renders harmlessly inside
+// the hidden iframe rather than navigating the page away).
+function _readCookie(name) {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? m[1] : null;
+}
+
+function downloadWithProgress(url, defaultFilename) {
   const overlay = document.getElementById('loading-overlay');
   const text = document.getElementById('loading-text');
-
   text.textContent = 'Generating 3D Solid...';
   overlay.style.display = 'flex';
 
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      const ct      = response.headers.get('Content-Type') || '';
-      const errText = await response.text();
-      // Cloudflare/proxy error pages return HTML — don't dump raw markup at the user.
-      const isHtml  = ct.includes('text/html') || errText.trimStart().startsWith('<');
-      if (isHtml) {
-        const renderUrl = url.replace(/^https?:\/\/cheapcadtools\.com/, 'https://pulleywebapp.onrender.com');
+  // Download via a direct top-level navigation to the real URL — exactly the
+  // mechanism STL uses (window.location), which saves reliably. The routes set
+  // Content-Disposition: attachment, so the browser downloads the file WITHOUT
+  // unloading this page, which lets the overlay + cookie poll below keep running.
+  // (The blob:-URL approach this replaced was being marked "Removed" by Chrome
+  // and never written to disk on some setups.)
+  const prevSignal = _readCookie('download_signal');
+  window.location = url;
+
+  // The server bumps the `download_signal` cookie ("<ms>-<status>") on every
+  // /download/ response, so we know the download started once it changes.
+  const started = Date.now();
+  const poll = setInterval(() => {
+    const cur = _readCookie('download_signal');
+    if (cur && cur !== prevSignal) {
+      clearInterval(poll);
+      overlay.style.display = 'none';
+      const status = parseInt((cur.split('-')[1] || '200'), 10);
+      if (status >= 400) {
         showErrorModalWithRetry(
-          `Server error ${response.status} — the server may be busy or the request timed out.\n\n` +
-          `This can happen with complex pulleys (dual drive, spokes, flanges).\n\n` +
-          `Retrying will download directly from the generation server.`,
-          () => downloadWithProgress(renderUrl, defaultFilename)
+          `The server could not generate this file (error ${status}). ` +
+          `This can happen with complex pulleys — please try again.`,
+          () => downloadWithProgress(url, defaultFilename)
         );
-        return;
       }
-      throw new Error(errText || `Server error ${response.status}`);
+    } else if (Date.now() - started > 120000) {
+      clearInterval(poll);
+      overlay.style.display = 'none';
+      showErrorModal('Download did not start — the server may be busy. Please try again.');
     }
-
-    let filename = defaultFilename;
-    const disposition = response.headers.get('Content-Disposition');
-    if (disposition && disposition.indexOf('filename=') !== -1) {
-      const matches = disposition.match(/filename="([^"]+)"/);
-      if (matches && matches[1]) filename = matches[1];
-    }
-
-    const blob = await response.blob();
-    const objUrl = window.URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = objUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-
-    window.URL.revokeObjectURL(objUrl);
-    document.body.removeChild(a);
-  } catch (e) {
-    showErrorModal("Download failed: " + e.message);
-  } finally {
-    overlay.style.display = 'none';
-  }
+  }, 300);
 }
 
 function downloadSTEP(n) {
@@ -2912,8 +2987,10 @@ function downloadSTEP(n) {
     params[`${pfx}flange_support_max_spacing`]  = document.getElementById(`flange${fn}_support_max_spacing`).value;
     params[`${pfx}flange_support_air_gap`]      = document.getElementById(`flange${fn}_support_air_gap`).value;
   }
-  const url = _dlUrl('/download/step?' + new URLSearchParams(params));
-  downloadWithProgress(url, `Pulley_${n}.step`);
+  // Generate to a file first, then navigate to the static result — the same
+  // reliable mechanism "Download All" uses. A direct window.location to the
+  // slow /download/step route was being dropped ("Removed") by Chromium.
+  _startAsyncJob('/api/download/step-async', params, () => downloadSTEP(n));
 }
 
 function downloadAllSTEP() {
@@ -3432,6 +3509,7 @@ function onSpokesChange(n) {
   }
 
   _syncSpokeHubLock(n);
+  _validateBore(n);
   schedulePreview();
   saveSettings();
 }
@@ -3475,6 +3553,29 @@ function onFlangeChange(n) {
 
   schedulePreview();
   saveSettings();
+}
+
+function _enforceMaxNubs(n) {
+  const spec   = n === 1 ? currentSpec : (currentSpec2 || currentSpec);
+  const od     = parseFloat(document.getElementById(n === 1 ? 'od' : 'p2_od').value) || 0;
+  const diaEl  = document.getElementById(`flange${n}_nub_dia`);
+  const cntEl  = document.getElementById(`flange${n}_nub_count`);
+  if (!spec || od <= 0 || !diaEl || !cntEl) return;
+
+  const tooth_ht     = spec.tooth_ht || 0;
+  const R_OD         = od / 2;
+  const r_groove_bot = R_OD - tooth_ht;
+  const margin       = Math.min(tooth_ht, 3.0);
+  const r_outer      = r_groove_bot - margin;
+  const nub_dia      = parseFloat(diaEl.value) || 3.0;
+  const r_nub_centre = r_outer - nub_dia / 2;
+
+  if (r_nub_centre <= 0) return;
+  const maxSafe = Math.max(1, Math.floor(Math.PI * r_nub_centre / (nub_dia / 2)));
+  cntEl.max = maxSafe;
+  if (parseInt(cntEl.value) > maxSafe) {
+    cntEl.value = maxSafe;
+  }
 }
 
 function _flangeParams(n) {
@@ -3696,8 +3797,8 @@ function _validateHub(n) {
     lines.push(`Wall: ${wall.toFixed(1)} mm`);
   }
 
-  if (hubOD <= bore)
-    lines.push(`⚠ Hub OD (${hubOD} mm) must be larger than bore (${bore} mm)`);
+  if (hubOD < bore + 1)
+    lines.push(`⚠ Hub OD (${hubOD} mm) must be ≥ bore + 1 mm = ${(bore + 1).toFixed(1)} mm`);
 
   info.textContent = lines.join(' · ');
 }
@@ -3754,6 +3855,32 @@ function _onBoreChangeHub(n) {
 let _currentJobId = null;
 let _jobPollTimer = null;
 let _jobStartTime = null;
+let _retryDownload = null;   // set by whoever starts a job; used by pollJobStatus on failure
+
+// Start an async job at `endpoint` with `params` (JSON body), then reuse the
+// progress modal + pollJobStatus flow. On done, pollJobStatus navigates to the
+// generated static file (reliable — same path as "Download All").
+function _startAsyncJob(endpoint, params, retryFn) {
+  _retryDownload = retryFn || null;
+  const sessionId = new URLSearchParams(window.location.search).get('session_id');
+  if (sessionId) params.session_id = sessionId;
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+  .then(data => {
+    _currentJobId = data.job_id;
+    _jobStartTime = Date.now();
+    showProgressModal();
+    pollJobStatus();
+  })
+  .catch(err => {
+    showErrorModalWithRetry(`Failed to start download: ${err.message}`,
+                            retryFn || (() => {}));
+  });
+}
 
 function showProgressModal() {
   document.getElementById('progress-modal-overlay').style.display = 'flex';
@@ -3797,22 +3924,28 @@ function startAsyncDownload(type) {
   addSpokeParams(2, 'p2_');
 
   // Add flange params if enabled
+  // Param names must match _parse_flange_params() on the server (flange_* prefix).
+  // Keep this in sync with downloadSTEP()'s flange block.
   const addFlangeParams = (n, pfx, fn) => {
     const fl_en = document.getElementById(`flange${fn}_enabled`)?.checked;
     if (!fl_en) return;
-    params[`${pfx}flange_enabled`] = '1';
-    params[`${pfx}flange_3dprint`] = document.getElementById(`flange${fn}_3dprint`)?.checked ? '1' : '0';
-    params[`${pfx}flange_angle_deg`] = document.getElementById(`flange${fn}_angle_deg`)?.value || 15;
-    params[`${pfx}flange_rim_radius_mm`] = document.getElementById(`flange${fn}_rim_radius`)?.value || 3;
-    params[`${pfx}flange_height_mm`] = document.getElementById(`flange${fn}_height`)?.value || 1.5;
+    params[`${pfx}flange_enabled`]      = '1';
+    params[`${pfx}flange_3dprint`]      = document.getElementById(`flange${fn}_3dprint`)?.checked ? '1' : '0';
+    params[`${pfx}flange_angle`]        = document.getElementById(`flange${fn}_angle`)?.value || 15;
+    params[`${pfx}flange_rim_radius`]   = document.getElementById(`flange${fn}_rim_radius`)?.value || 3;
+    params[`${pfx}flange_height`]       = document.getElementById(`flange${fn}_height`)?.value || 1.5;
+    params[`${pfx}flange_plate_height`] = document.getElementById(`flange${fn}_plate_height`)?.value || 1;
+    params[`${pfx}flange_bend_radius`]  = document.getElementById(`flange${fn}_bend_radius`)?.value || 0;
     params[`${pfx}flange_top_separate`] = document.getElementById(`flange${fn}_top_separate`)?.checked ? '1' : '0';
-    params[`${pfx}nubs_enabled`] = document.getElementById(`flange${fn}_nubs`)?.checked ? '1' : '0';
-    params[`${pfx}nub_count`] = document.getElementById(`flange${fn}_nub_count`)?.value || 4;
-    params[`${pfx}nub_dia_mm`] = document.getElementById(`flange${fn}_nub_dia`)?.value || 3;
-    params[`${pfx}nub_height_mm`] = document.getElementById(`flange${fn}_nub_height`)?.value || 2;
-    params[`${pfx}nub_allowance_mm`] = document.getElementById(`flange${fn}_nub_allowance`)?.value || 0.2;
-    params[`${pfx}plate_height_mm`] = document.getElementById(`flange${fn}_plate_height`)?.value || 1;
-    params[`${pfx}bend_radius_mm`] = document.getElementById(`flange${fn}_bend_radius`)?.value || 0;
+    params[`${pfx}flange_nubs_enabled`] = document.getElementById(`flange${fn}_nubs_enabled`)?.checked ? '1' : '0';
+    params[`${pfx}flange_nub_count`]    = document.getElementById(`flange${fn}_nub_count`)?.value || 4;
+    params[`${pfx}flange_nub_dia`]      = document.getElementById(`flange${fn}_nub_dia`)?.value || 3;
+    params[`${pfx}flange_nub_height`]   = document.getElementById(`flange${fn}_nub_height`)?.value || 2;
+    params[`${pfx}flange_nub_allowance`]       = document.getElementById(`flange${fn}_nub_allowance`)?.value || 0.2;
+    params[`${pfx}flange_supports_enabled`]    = document.getElementById(`flange${fn}_supports_enabled`)?.checked ? '1' : '0';
+    params[`${pfx}flange_support_nozzle_dia`]  = document.getElementById(`flange${fn}_support_nozzle_dia`)?.value || 0.4;
+    params[`${pfx}flange_support_max_spacing`] = document.getElementById(`flange${fn}_support_max_spacing`)?.value || 10;
+    params[`${pfx}flange_support_air_gap`]     = document.getElementById(`flange${fn}_support_air_gap`)?.value || 0.2;
   };
   addFlangeParams(1, '', 1);
   addFlangeParams(2, 'p2_', 2);
@@ -3869,13 +4002,27 @@ function pollJobStatus() {
       // If done or failed, stop polling and handle completion
       if (job.status === 'done') {
         hideProgressModal();
-        // Trigger download
-        window.location = job.output_file;
+        if (job.mirrored) {
+          // A connected CAD addin (Fusion/SolidWorks/FreeCAD) already received
+          // the file via the watch folder — skip the browser download so it
+          // isn't duplicated in the user's Downloads folder.
+          showToast('Sent to your CAD app');
+        } else {
+          // Trigger browser download to default Downloads folder.
+          // <a download> is reliable across browsers; window.location can be
+          // dropped by Chromium when triggered from an async callback.
+          const a = document.createElement('a');
+          a.href = job.output_file;
+          a.download = '';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
       } else if (job.status === 'failed') {
         hideProgressModal();
         showErrorModalWithRetry(
           `Generation failed: ${job.error}`,
-          () => startAsyncDownload('all-step') // retry
+          _retryDownload || (() => startAsyncDownload('all-step'))
         );
       } else {
         // Still waiting or processing, poll again in 500ms

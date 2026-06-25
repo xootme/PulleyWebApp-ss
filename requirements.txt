@@ -9,7 +9,6 @@ shapely>=2.0
 scipy>=1.10
 numpy>=1.24
 manifold3d>=3.0
-cadquery>=2.7
 sendgrid>=6.9
 pytest-benchmark>=4.0
 psutil>=5.9

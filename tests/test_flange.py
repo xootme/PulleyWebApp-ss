@@ -441,3 +441,56 @@ def test_metal_flange_all_families_top(family, pitch):
         which='top',
     )
     assert isinstance(stl, bytes) and len(stl) > 84, f'{family}-{pitch}: STL too short'
+
+
+# ===========================================================================
+# Flange nub clipping — nubs must not intrude into the spoke void
+# (clipping order fix: always clip at r_spoke_outer = (R_OD - tooth_ht) - rim_depth)
+# ===========================================================================
+class TestFlangeNubClipping:
+    """Nub pins protrude down from the top 3D-print flange. With spokes enabled
+    they must be clipped at the spoke rim boundary so no pin material reaches
+    into the spoke void (radius < r_spoke_outer)."""
+
+    F, P, T = 'HTD', '5M', 40       # bigger pulley → meaningful spoke void
+    BORE, BELT = 8.0, 10.0
+    HUB_OD, RIM = 14.0, 3.0
+
+    def _r_spoke_outer(self):
+        R_OD, _, tooth_ht = _pulley_radii(self.F, self.P, self.T)
+        return (R_OD - tooth_ht) - self.RIM, R_OD
+
+    def _stl(self, nubs=True, **kw):
+        p = dict(
+            family=self.F, pitch=self.P, num_teeth=self.T,
+            bore_mm=self.BORE, belt_height_mm=self.BELT, which='top',
+            spokes_enabled=True, spoke_hub_od_mm=self.HUB_OD, rim_depth_mm=self.RIM,
+            nubs_enabled=nubs, nub_count=8, nub_dia_mm=4.0, nub_height_mm=2.0,
+        )
+        p.update(kw)
+        return generate_3dprint_flange_stl(**p)
+
+    def test_nubs_spokes_no_crash(self):
+        stl = self._stl(nubs=True)
+        assert isinstance(stl, bytes) and len(stl) > 84
+        assert _load(stl).volume > 0
+
+    def test_nub_pins_present_below_belt(self):
+        """Adding nubs introduces pin geometry below the belt face; without
+        nubs the top flange sits entirely at/above the belt face."""
+        v_no  = _load(self._stl(nubs=False)).vertices
+        v_yes = _load(self._stl(nubs=True)).vertices
+        assert v_no[:, 2].min() >= self.BELT - 1e-3, 'no-nub flange dipped below belt'
+        assert v_yes[:, 2].min() < self.BELT - 0.5, 'nub pins did not protrude below belt'
+
+    def test_nubs_do_not_intrude_into_spoke_void(self):
+        """Every vertex (flange ring + clipped nub pins) must stay outside the
+        spoke rim boundary. If the clip regressed, pins would reach inward toward
+        the hub and this min radius would drop well below r_spoke_outer."""
+        r_spoke_outer, _R_OD = self._r_spoke_outer()
+        v = _load(self._stl(nubs=True)).vertices
+        r = np.sqrt(v[:, 0] ** 2 + v[:, 1] ** 2)
+        assert r.min() >= r_spoke_outer - 0.15, (
+            f'nub/flange vertex intrudes into spoke void: '
+            f'rmin={r.min():.3f} < r_spoke_outer={r_spoke_outer:.3f}'
+        )

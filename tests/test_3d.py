@@ -3,10 +3,18 @@ test_3d.py — STL exporter tests.
 Covers single-pulley and drive (dual) STL generation, part isolation,
 and basic mesh validity (watertight, non-empty).
 """
+import importlib.util
 import io
 import math
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
 import pytest
 import trimesh
+
+_cadquery_available = importlib.util.find_spec('cadquery') is not None
 
 from exporters.step_exporter import (
     generate_pulley_stl,
@@ -376,78 +384,128 @@ class TestChamferConesSTL:
 
 
 # ---------------------------------------------------------------------------
-# generate_pulley_step — retention feature smoke tests
+# Hub retention STEP smoke tests — use small_step + NIST SFA (no cadquery needed)
 # ---------------------------------------------------------------------------
+def _find_ss_binary():
+    """Return path to small_step binary, or None."""
+    import os as _os
+    env = _os.environ.get('SMALL_STEP_BIN')
+    if env and Path(env).is_file():
+        return env
+    for p in (
+        _ROOT / 'small_step' / 'target' / 'release' / 'small_step.exe',
+        _ROOT / 'small_step' / 'target' / 'x86_64-pc-windows-gnu' / 'release' / 'small_step.exe',
+        Path.home() / 'Documents' / 'small_step' / 'target' / 'x86_64-pc-windows-gnu' / 'release' / 'small_step.exe',
+    ):
+        if p.is_file():
+            return str(p)
+    return None
+
+
+_SFA_BIN = Path(__file__).parent.parent / 'tools' / 'sfa' / 'sfa-cl.exe'
+_ROOT = Path(__file__).parent.parent
+
+
+def _gen_hub_step(params: dict) -> bytes:
+    """Generate STEP bytes for a hub-retention config via small_step."""
+    from exporters.step_worker_ss import _build_pulley_cmd
+    from exporters.dxf_exporter import generate_dxf
+
+    binary = _find_ss_binary()
+    if not binary:
+        pytest.skip('small_step binary not found')
+
+    dxf = generate_dxf(
+        family=params['family'], pitch=params['pitch'],
+        num_teeth=int(params['num_teeth']), bore_mm=float(params['bore_mm']),
+        clearance_mm=0.0, backlash_mm=0.0, print_extra_mm=0.0,
+        spoke_count=int(params.get('spoke_count', 0)),
+        spoke_width_mm=float(params.get('spoke_width_mm', 0.0)),
+        spoke_hub_od_mm=float(params.get('spoke_hub_od_mm', 0.0)),
+        rim_depth_mm=float(params.get('rim_depth_mm', 0.0)),
+        fillet_tip_mm=0.0, fillet_base_mm=0.0,
+        flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0,
+    )
+    if isinstance(dxf, str):
+        dxf = dxf.encode()
+
+    with tempfile.NamedTemporaryFile(suffix='.dxf', delete=False, mode='wb') as f:
+        dxf_tmp = f.name
+        f.write(dxf)
+    try:
+        cmd = _build_pulley_cmd(params, binary, dxf_tmp)
+        r = subprocess.run(cmd, capture_output=True)
+        assert r.returncode == 0, f'small_step failed: {r.stderr.decode(errors="replace")[:400]}'
+        return r.stdout
+    finally:
+        os.unlink(dxf_tmp)
+
+
+def _sfa_valid(step_bytes: bytes) -> tuple[bool, str]:
+    """Run NIST SFA syntax check. Returns (ok, message)."""
+    if not _SFA_BIN.is_file():
+        return True, 'sfa-cl.exe not found — skipping syntax check'
+    with tempfile.NamedTemporaryFile(suffix='.step', delete=False, mode='wb') as f:
+        tmp = f.name; f.write(step_bytes)
+    try:
+        res = subprocess.run([str(_SFA_BIN), tmp, 'syntax', 'noopen', 'nolog'],
+                             capture_output=True, text=True, timeout=60)
+        out = res.stdout + res.stderr
+        clean = any('No syntax errors' in l for l in out.splitlines())
+        probs = [l.strip() for l in out.splitlines() if '**' in l]
+        return (clean and not probs), ('; '.join(probs[:3]) if probs else out[:200])
+    finally:
+        os.unlink(tmp)
+
+
 class TestStepRetention:
-    """generate_pulley_step returns valid STEP bytes for each retention type."""
+    """Hub-retention STEP smoke tests via small_step + NIST SFA syntax validation."""
 
     _BASE = dict(
         family='HTD', pitch='5M', num_teeth=20, bore_mm=8.0,
-        belt_height_mm=10.0, clearance_mm=0.0, backlash_mm=0.0,
-        hub_od_mm=24.0, hub_height_mm=10.0,
+        belt_height_mm=10.0, hub_od_mm=24.0, hub_height_mm=10.0,
     )
 
+    def _check(self, params):
+        data = _gen_hub_step(params)
+        assert len(data) > 1000
+        ok, msg = _sfa_valid(data)
+        assert ok, f'NIST SFA: {msg}'
+
     def test_step_no_hub_returns_bytes(self):
-        stl = generate_pulley_step(
-            family='HTD', pitch='5M', num_teeth=20, bore_mm=8.0,
-            belt_height_mm=10.0,
-        )
-        assert isinstance(stl, bytes)
-        assert len(stl) > 1000
+        data = _gen_hub_step(dict(
+            family='HTD', pitch='5M', num_teeth=20, bore_mm=8.0, belt_height_mm=10.0,
+        ))
+        assert len(data) > 1000
+        ok, msg = _sfa_valid(data)
+        assert ok, f'NIST SFA: {msg}'
 
     def test_step_standard_setscrew(self):
-        data = generate_pulley_step(
-            **self._BASE,
-            screw_dia_mm=5.0, screw_count=2, captured_nut=False,
-        )
-        assert isinstance(data, bytes) and len(data) > 1000
+        self._check({**self._BASE, 'screw_dia_mm': 5.0, 'screw_count': 2})
 
     def test_step_captured_nut(self):
-        data = generate_pulley_step(
-            **self._BASE,
-            screw_dia_mm=5.0, screw_count=2, captured_nut=True,
-        )
-        assert isinstance(data, bytes) and len(data) > 1000
+        self._check({**self._BASE, 'screw_dia_mm': 5.0, 'screw_count': 2, 'captured_nut': True})
 
     def test_step_dshaft_no_screw(self):
-        data = generate_pulley_step(
-            **self._BASE,
-            flat_depth_mm=1.5,
-        )
-        assert isinstance(data, bytes) and len(data) > 1000
+        self._check({**self._BASE, 'flat_depth_mm': 1.5})
 
     def test_step_dshaft_with_captured_nut(self):
-        """D-shaft + captured-nut: nut pocket should align with flat face (not crash)."""
-        data = generate_pulley_step(
-            **self._BASE,
-            flat_depth_mm=1.5,
-            screw_dia_mm=5.0, screw_count=1, captured_nut=True,
-        )
-        assert isinstance(data, bytes) and len(data) > 1000
+        """D-shaft + captured-nut: nut pocket must align with flat face."""
+        self._check({**self._BASE, 'flat_depth_mm': 1.5,
+                     'screw_dia_mm': 5.0, 'screw_count': 1, 'captured_nut': True})
 
     def test_step_keyway(self):
-        data = generate_pulley_step(
-            **self._BASE,
-            keyway_w_mm=4.0, keyway_h_mm=2.0,
-        )
-        assert isinstance(data, bytes) and len(data) > 1000
+        self._check({**self._BASE, 'keyway_w_mm': 4.0, 'keyway_h_mm': 2.0})
 
     def test_step_keyway_with_setscrew(self):
-        data = generate_pulley_step(
-            **self._BASE,
-            keyway_w_mm=4.0, keyway_h_mm=2.0,
-            screw_dia_mm=5.0, screw_count=1, captured_nut=True,
-        )
-        assert isinstance(data, bytes) and len(data) > 1000
+        self._check({**self._BASE, 'keyway_w_mm': 4.0, 'keyway_h_mm': 2.0,
+                     'screw_dia_mm': 5.0, 'screw_count': 1, 'captured_nut': True})
 
     def test_step_spokes_with_hub(self):
-        data = generate_pulley_step(
-            **self._BASE,
-            spoke_count=4, spoke_width_mm=4.0, spoke_hub_od_mm=18.0,
-            rim_depth_mm=2.0, spoke_height_mm=5.0,
-            screw_dia_mm=5.0, screw_count=2, captured_nut=True,
-        )
-        assert isinstance(data, bytes) and len(data) > 1000
+        self._check({**self._BASE,
+                     'spoke_count': 4, 'spoke_width_mm': 4.0,
+                     'spoke_hub_od_mm': 18.0, 'rim_depth_mm': 2.0,
+                     'screw_dia_mm': 5.0, 'screw_count': 2, 'captured_nut': True})
 
 
 # ---------------------------------------------------------------------------
@@ -477,3 +535,48 @@ def test_outline_points_count(family, pitch):
     pts, R_OD, sp = _build_outline_points(family, pitch, teeth)
     assert len(pts) >= teeth * 2, 'Expected at least 2 points per tooth'
     assert R_OD > 0
+
+
+# ---------------------------------------------------------------------------
+# Spokes + rim STL — TopologyException regression (commits 85585bd, 6bd2a31)
+# ---------------------------------------------------------------------------
+# generate_pulley_stl / _preview added buffer(0) to clean near-coincident tooth
+# vertices before the Shapely boolean that cuts spoke voids. High tooth counts
+# are the most likely to produce the near-coincident vertices that raised
+# TopologyException. Both the download path and the preview path must survive.
+class TestSpokeRimStlTopologyFix:
+    """Smoke-tests that spoke+rim geometry produces valid meshes.
+
+    One representative case (HTD-5M) for download and preview paths.
+    Full multi-family STEP validation is in test_nub_socket_merge.py which
+    uses the small_step binary and is much faster per case.
+    """
+
+    SPOKE_KW = dict(
+        spoke_count=4, spoke_width_mm=4.0, spoke_hub_od_mm=14.0, rim_depth_mm=2.0,
+    )
+
+    def test_spoke_rim_stl_download_no_topology_error(self):
+        spec = get_spec('HTD', '5M')
+        stl = generate_pulley_stl(
+            family='HTD', pitch='5M', num_teeth=36,
+            bore_mm=BORE_MM, belt_height_mm=10.0,
+            clearance_mm=std_cl(spec), backlash_mm=std_bl(spec),
+            **self.SPOKE_KW,
+        )
+        assert isinstance(stl, bytes) and len(stl) > 84
+        mesh = _load_stl(stl)
+        assert not mesh.is_empty
+        assert mesh.volume > 0
+
+    def test_spoke_rim_stl_preview_no_topology_error(self):
+        spec = get_spec('HTD', '5M')
+        stl = generate_pulley_stl_preview(
+            family='HTD', pitch='5M', num_teeth=36,
+            bore_mm=BORE_MM, belt_height_mm=10.0,
+            clearance_mm=std_cl(spec), backlash_mm=std_bl(spec),
+            **self.SPOKE_KW,
+        )
+        assert isinstance(stl, bytes) and len(stl) > 84
+        mesh = _load_stl(stl)
+        assert not mesh.is_empty

@@ -1256,6 +1256,7 @@ def generate_flange_step(
                 r_pin     = max(0.1, (nub_dia_mm - nub_allowance_mm) / 2.0)
                 nub_h     = max(1.0, min(nub_height_mm, belt_height_mm / 3.0))
                 nub_pin_h = max(0.1, nub_h - nub_allowance_mm)
+                _NUB_EMBED = 0.5  # mm into flange body — avoids coplanar face at Z=0
                 for i in range(nub_count):
                     ang = 2.0 * math.pi * i / nub_count
                     cx  = r_nub * math.cos(ang)
@@ -1263,16 +1264,17 @@ def generate_flange_step(
                     pin = (cq.Workplane('XY')
                            .moveTo(cx, cy)
                            .circle(r_pin)
-                           .extrude(nub_pin_h, clean=False)
+                           .extrude(nub_pin_h + _NUB_EMBED, clean=False)
                            .translate((0.0, 0.0, -nub_pin_h)))
                     flange = flange.union(pin, clean=False)
-                # Clip nubs at flange ID (rim boundary) - nubs don't extend inward from here
-                # Use _R_tr (actual tooth root radius), not R_OD, to match flange ID
+                # Clip nubs at flange ID so they never protrude through the inner face.
+                # Use spoke rim boundary when spokes active, else r_inner (plain flange ID).
                 r_spoke_outer = (_R_tr - rim_depth_mm) if (spokes_enabled and rim_depth_mm > 0.0) else 0.0
-                if r_spoke_outer > 0.0:
+                clip_id = r_spoke_outer if r_spoke_outer > 0.0 else r_inner
+                if r_nub - r_pin < clip_id:
                     clip_h = nub_pin_h + 2.0
                     clip = (cq.Workplane('XY')
-                            .circle(r_spoke_outer)
+                            .circle(clip_id)
                             .extrude(clip_h, clean=False)
                             .translate((0.0, 0.0, -nub_pin_h)))
                     flange = flange.cut(clip, clean=False)

@@ -4,6 +4,7 @@
 **Primary URL:** `https://cheapcadtools.com/tools/pulleys`
 **Repo:** `https://github.com/xootme/PulleyWebApp`
 **Branch:** `main`
+**Submodules:** `small_step` (Rust STEP binary) — Render must have "Clone submodules" enabled in the service settings
 
 ---
 
@@ -89,7 +90,7 @@ If so, update the metadata schema in both places and bump the version number.
 #### 4a — Full test suite with live dashboard (run first, before benchmarks)
 
 ```bash
-.venv312/Scripts/python tests/run_tests.py
+.venv314/Scripts/python tests/run_tests.py
 ```
 
 This starts Flask automatically on port 5099, launches a live dashboard at
@@ -98,13 +99,13 @@ queue system tests), and keeps the app running so repro links stay clickable.
 
 To run headless and exit automatically (e.g. in a script):
 ```bash
-.venv312/Scripts/python tests/run_tests.py --exit-when-done
+.venv314/Scripts/python tests/run_tests.py --exit-when-done
 ```
 
 To run a single group or test by name:
 ```bash
-.venv312/Scripts/python tests/run_tests.py --group "Queue System"
-.venv312/Scripts/python tests/run_tests.py --test test_burst_join
+.venv314/Scripts/python tests/run_tests.py --group "Queue System"
+.venv314/Scripts/python tests/run_tests.py --test test_burst_join
 ```
 
 All tests must pass before proceeding. A failing test is a hard stop — do not benchmark
@@ -121,14 +122,14 @@ Results are appended to `Perf_History.csv` (committed alongside the code change)
 
 ```bash
 # Unit benchmarks (no server needed)
-.venv312/Scripts/python record_benchmarks.py
+.venv314/Scripts/python record_benchmarks.py
 
 # Concurrency test — dev server baseline (server must be running at 127.0.0.1:5000)
-.venv312/Scripts/python concurrency_test.py --csv Perf_History.csv
+.venv314/Scripts/python concurrency_test.py --csv Perf_History.csv
 
 # Concurrency test — gunicorn multi-worker + heavy payloads
 # (auto-starts gunicorn; dev server does not need to be running)
-.venv312/Scripts/python concurrency_test.py --gunicorn --workers 2 --heavy --csv Perf_History.csv
+.venv314/Scripts/python concurrency_test.py --gunicorn --workers 2 --heavy --csv Perf_History.csv
 ```
 
 `record_benchmarks.py` prints a summary table (mean, p95, p99, max) and appends one row per test
@@ -152,6 +153,25 @@ investigating.
 - [ ] Gunicorn ratios ≈1.0 at N=2 for all standard endpoints
 - [ ] Heavy payload tests passed without `[ERR]` flags (`--heavy`)
 - [ ] `Perf_History.csv` staged for commit
+
+#### 4c — CAD addin unit tests
+
+These tests run without FreeCAD or Fusion 360 installed and verify the server
+lifecycle pattern used by both CAD addins (check → start → stop).
+
+```bash
+python -m pytest "C:\Users\cmyer\Documents\CCT_Addins\FreeCAD\TimingPulley\tests" -v
+```
+
+All 5 tests must pass. They cover:
+- Server already running → `_proc` stays `None`, is never terminated on exit
+- `stop_if_we_started()` with `_proc = None` → silent no-op
+- EXE present and not running → process launched, terminated on stop
+- EXE missing → returns `False`, nothing spawned
+- EXE launched but never responds (8 s timeout) → `_proc` still set so cleanup can terminate it
+
+**Checklist:**
+- [ ] All 5 addin lifecycle tests passed (exit 0)
 
 ### Step 5 — Commit and push
 
@@ -198,7 +218,7 @@ must go through this step.
 
 #### 7a — Build the release
 ```bash
-.venv312/Scripts/python packaging/build_release.py
+.venv314/Scripts/python packaging/build_release.py
 # Output: releases/PulleyApp_<date>.zip
 ```
 
@@ -208,7 +228,7 @@ Copy the direct download URL.
 
 #### 7c — Generate licence and env vars
 ```bash
-.venv312/Scripts/python packaging/prepare_release.py --app-url <paste URL from 7b>
+.venv314/Scripts/python packaging/prepare_release.py --app-url <paste URL from 7b>
 ```
 
 #### 7d — Update Render environment variables
@@ -284,9 +304,13 @@ export default {
 
 ### Render Configuration (per tool service)
 - **Runtime:** Python 3
-- **Build Command:** `pip install -r requirements.txt`
+- **Build Command:** `bash render_build.sh`
 - **Start Command:** `gunicorn app:app`
 - **Custom Domain:** none required — Worker handles routing
+
+`render_build.sh` installs Rust (if absent), compiles `small_step/` (the git submodule) to
+`small_step/target/release/small_step`, then runs `pip install -r requirements.txt`.
+The app auto-detects the binary at that path — no `SMALL_STEP_BIN` env var needed on Render.
 
 ### DNS (Cloudflare)
 No CNAME record for `tools` is required. The Worker runs on the root domain proxy.
@@ -315,7 +339,7 @@ Run this whenever a new local release is needed, from the registered Windows dev
 
 ### Step A — Build the release
 ```bash
-.venv312/Scripts/python packaging/build_release.py
+.venv314/Scripts/python packaging/build_release.py
 # Output: releases/PulleyApp_<date>.zip
 ```
 
@@ -325,7 +349,7 @@ Copy the direct download URL (e.g. `https://github.com/xootme/PulleyWebApp/relea
 
 ### Step C — Generate licence and Render env vars
 ```bash
-.venv312/Scripts/python packaging/prepare_release.py --app-url <paste URL from Step B>
+.venv314/Scripts/python packaging/prepare_release.py --app-url <paste URL from Step B>
 ```
 This prints three environment variables. Saves a copy to `licences/local_release_<date>.env` (gitignored).
 

@@ -72,9 +72,18 @@ def flange_inner_r_3dprint(
     """Inner radius of a 3D-print flange (same rule for top and bottom).
 
     Priority: spokes (inner rim ring face) > hub > bore.
-    When spokes are active the flange stops at the inner face of the solid rim
-    ring, i.e. R_tooth_OD − rim_depth_mm.  This is the outer boundary of the
-    spoke void, not the hub boss surface.
+
+    IMPORTANT — what to pass as r_tooth_OD:
+      • No spokes: pass R_OD (the tooth-tip outer radius).
+      • Spokes active: pass R_groove_bottom = R_OD − tooth_height (the tooth-root
+        radius, NOT the tooth-tip OD). The function returns r_tooth_OD − rim_depth_mm,
+        so callers must supply the groove-bottom radius to get the correct spoke-void
+        OD = R_groove_bottom − rim_depth_mm. Passing R_OD instead shifts the result
+        outward by tooth_height.
+
+    Correct caller pattern:
+        r_tooth_ref = R_OD - tooth_ht if spokes_enabled else R_OD
+        r_inner = flange_inner_r_3dprint(..., r_tooth_OD=r_tooth_ref, ...)
     """
     if spokes_enabled and r_tooth_OD > 0.0 and rim_depth_mm > 0.0:
         return r_tooth_OD - rim_depth_mm
