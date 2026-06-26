@@ -100,18 +100,48 @@ Rust project (no deps). Build: `cargo +stable-x86_64-pc-windows-gnu build`
 
   **Symptom:** any pulley with `spoke_height_mm > 0` and `< belt_height` (recessed/partial-height spoke web) generates a STEP whose pulley solid is `BRepCheck`-invalid. Opens but is non-watertight; unreliable for booleans/printing.
 
-  **Root cause (located):** OCCT reports `BRepCheck_UnorientableShape` on exactly the **10 spoke-island faces** (the partial-height web caps at z1 and z2 — 5 spokes × 2). That status means the shell can't be globally oriented: an edge is traversed the **same direction by both** of its two adjacent faces (a local non-orientable seam). The islands are built by `build_spoke_islands` → `build_planar_segment_face`; the suspect mismatch is between each island's wire edges and the edges they must share with `build_circle_band_faces` (rim/hub cylinder bands at z2..z3 / z0..z1) and the void side-wall laterals (`build_lateral_faces_range`, z1..z2).
+  **ROOT CAUSE (fully located June 24):** OCCT reports `BRepCheck_UnorientableShape` on the **10 spoke-island cap faces** (web caps at z1, z2 — 5 spokes × 2). The shell itself is `NoError` and every edge is shared exactly twice with opposite ORIENTED_EDGE sense (topology is manifold). The real defect is **per-face**: `ShapeAnalysis_Wire::CheckSelfIntersection` returns true on each island cap wire. The flagged pairs are the **hub arc edge and its two neighbouring hub-fillet arcs** (`fillet_base`): they meet **tangent (G1)** at the shared vertex, and OCCT's tolerance-based wire self-intersection check treats two tangent adjacent curved edges as intersecting. The rim side does *not* trip it — the rim arc (r≈56 mm) is nearly straight, so no sliver; only the tightly-curved hub arc (r≈hub_r) + fillet forms a sliver within tolerance.
 
-  **Isolation:** `spoke_height=5` with **no flange, no nubs** is already invalid (188-face body) → it's the spoke body itself, not flanges/nubs. Full-height spokes (`spoke_height=0`) are valid (136-face body). Partial-height **also** silently drops nub sockets (`build_partial_height_solid` doesn't cut them — emits `warning: nub sockets not cut into partial-height spoke pulleys`), so once the body is fixed the socket-void merge must be wired into this path too.
+  **Decisive evidence:**
+  - Non-filleted partial-height (`fillet_tip=fillet_base=0`) is **OCCT-valid** (165 faces, 0 invalid). Fillets are the trigger.
+  - Full-height filleted (`spoke_height=0`) is valid — the *same* fillet/arc tangency lives in the void **hole** loop there but is wound the opposite way (concave fillet → clean "S" junction), so it isn't flagged.
+  - Dense geometric sampling of the island wire shows it closed, simple, correct winding (area +190 top / −190 bottom). The "self-intersection" is purely OCCT's tangent-tolerance false positive, but FreeCAD/eDrawings/Fusion all use OCCT so they all reject it.
+  - Scratchpad probes used: `occ_status.py` (per-face `BRepCheck_Status`), `occ_diag.py` (`ShapeAnalysis_Wire` checks), `occ_selfint.py` (`CheckIntersectingEdges(i,j)` → flags adjacent hub-arc/fillet pairs).
 
-  **Tried (did NOT fix):** swapping the `is_top` flags on the two island faces (`build_planar_segment_face(... z2, true/false)`) — still invalid. So it is **not** a blanket normal inversion; it's a specific per-edge direction mismatch.
+  **Tried (did NOT fix):** swapping `is_top` flags — flips normal + winding together, face stays self-consistent, no change (expected).
 
-  **How to pursue:**
-  1. Reproduce: generate `spoke_height_mm=5` (no flange/nubs) → invalid solid.
-  2. Use `small_step/archive/check_occ.py` for pass/fail and the per-face `BRepCheck_UnorientableShape` status (scratchpad `occ_detail.py` pattern: iterate faces, `BRepCheck_Analyzer.Result(face).Status()`).
-  3. Add a temporary Rust dump in `build_partial_height_solid`: for each island edge print its two endpoints + the matching band/void-wall edge's endpoints and `oriented_edge` sense, and find the edge whose two owners share the same direction.
-  4. Likely fix is in `build_spoke_islands` (segment ordering/`orient_planar_segments` winding) or the sense used when reusing the band/void-wall edges in the island loop so every shared edge is traversed oppositely by its two faces.
-  5. Regression: `tests/test_nub_socket_merge.py` already has a `partial_height_d15` case (generation-only, OCC skipped) — flip it to assert OCC-valid once fixed, and add a no-flange/no-nub variant.
+  **FIXED (June 25) for NARROW spokes — `split_island_hub_arc`:** the tangent
+  hub-arc↔fillet junction is broken by laying a straight **chord across the
+  hub-arc run** of each web cap. The hub arc moves onto its own thin
+  circular-segment sub-face (hub arc + chord = a secant, not tangent); the main
+  web cap gets a flat hub edge (chord meets the fillets at an angle). No wire
+  contains a tangent arc-arc pair, so OCCT accepts it. **Fillets are kept.**
+  Validated OCCT-valid across 4/5/6/8 spokes + the merge test
+  `partial_height_d15` (filleted, flange + nubs). _(Tried and rejected first:
+  zeroing fillets — it breaks wide spokes, which need the fillet arc for
+  `inject_synthetic_hub_arc`; see git history.)_
+
+  **Nub sockets — DONE (June 25):** narrow filleted partial-height with fused nub
+  sockets at ANY depth is OCCT-valid. Built via a unified per-cell rim wall
+  (z0..z3) + socket-floor z-level splits threaded through the web layer (flanks,
+  fillets, hub wall). Validated nub heights 0.5..9 mm on a 10 mm pulley (floor
+  above, in, and below the web). Tests: `tests/test_nub_socket_merge.py`
+  `partial_height_d15` / `_deep` / `_plain`.
+
+  **STILL BROKEN — WIDE spokes (base fillet does not reach the hub):** root cause
+  now clear. When the `fillet_base` doesn't reach `hub_r`, the void's real inner
+  boundary is where adjacent fillets meet (above `hub_r`), and the hub region
+  below that is a **solid collar** — so the web is a CONNECTED annulus, not
+  separate spoke islands. `inject_synthetic_hub_arc` fakes a hub arc + radial
+  `line_a`/`line_b` down to `hub_r`, which places **walls inside that solid
+  collar**. The shell closes (0 dangling) but those interior walls make it
+  globally **non-orientable** (OCCT `UnorientableShape` on the islands;
+  `ShapeFix_Shell` reverses the whole wall region). Guarded with a clear error.
+  **Fix:** drop the synthetic injection; treat the void at its true inner outline
+  (no hub arc) and build the web cap as ONE connected annulus (trace the outer
+  loop = spoke rim arcs + void detours, hub circle inner; no z1..z2 hub wall).
+  Reuses the `trace_cap_loops` engine. Repro: P2 HTD-8M-75T, hub_od 15,
+  rim_depth 10, 11 spokes.
 
 ### Design Metadata in Exported Files
 - [x] Embed CCT params as JSON in STEP (`/* CCT:{...} */` comment after HEADER)

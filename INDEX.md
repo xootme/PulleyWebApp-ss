@@ -74,7 +74,7 @@ A dedicated `QUEUE_SYSTEM.md` spec has not yet been written.
 **Backlog and roadmap**
 - Before public launch checklist
 - STEP geometry improvements (small_step Rust project)
-- Known bug: partial-height spokes generate OCCT-invalid STEP (guarded in `_run_ss_worker`)
+- Partial-height spokes: narrow configs export valid STEP with fillets (`split_island_hub_arc`); wide-spoke configs bail with a clear error (open-shell bug, see ToDo.md)
 - Design metadata embedding (CCT schema versioning)
 - Load testing dashboard
 - Agent/headless API access

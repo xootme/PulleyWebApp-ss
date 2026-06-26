@@ -121,11 +121,25 @@ CASES = [
                                  nub_dia_mm=10.0, nub_count=10),                 True,  True),
     ("tiny_nubs_d3_n12",   _base(nub_dia_mm=3.0, nub_count=12),                  False, True),
     ("tangent_d4_n10",     _base(nub_dia_mm=4.0, nub_count=10),                  False, True),
-    # KNOWN PRE-EXISTING BUG (independent of the socket-void merge): partial-height
-    # spokes go through build_partial_height_solid, which (a) does not cut nub
-    # sockets, and (b) currently emits an OCCT-invalid solid. Reproduced on the
-    # pre-merge binary too. Generation-only here until that path is fixed.
-    ("partial_height_d15", _base(spoke_height_mm=5.0),                           False, False),
+    # Partial-height (recessed) spokes go through build_partial_height_solid.
+    # NARROW spokes (natural hub arc) are now OCCT-valid WITH fillets (the cap's
+    # tangent hub-arc↔fillet junction is split off onto a thin sub-face,
+    # split_island_hub_arc) AND with nub sockets cut into the top rim ring. WIDE
+    # spokes (no hub arc → synthetic injection) still leave an open shell and the
+    # binary bails with a clear error; app.py surfaces it as a 400.
+    # (ToDo.md "BUG — partial-height spokes".)
+    #   - narrow + fillets + flange + nub sockets, fused (no ribbon) → OCCT-valid.
+    #     nub_height < top-recess depth so the socket floor stays in the recess
+    #     band (deeper sockets are guarded — see app/ToDo).
+    ("partial_height_d15", _base(spoke_height_mm=5.0, nub_height_mm=0.8),        False, True),
+    #   - narrow + no fillet / no flange / no nubs → OCCT-valid
+    ("partial_height_plain", _base(spoke_height_mm=5.0,
+                                   fillet_tip_mm=0.0, fillet_base_mm=0.0,
+                                   flange_enabled=False, nubs_enabled=False),    False, True),
+    #   - DEEP sockets: nub taller than the top recess so the socket floor drops
+    #     into/through the web. The unified per-cell rim wall + web-level splits
+    #     carve the notch and the socket↔web inner wall. → OCCT-valid.
+    ("partial_height_deep", _base(spoke_height_mm=5.0, nub_height_mm=2.0),       False, True),
 ]
 
 
@@ -210,6 +224,28 @@ def run() -> int:
 def test_nub_socket_merge():
     """pytest entry point."""
     assert run() == 0
+
+
+def test_wide_spoke_partial_height_bails_cleanly():
+    """Wide-spoke partial-height (synthetic hub arc) still leaves an open shell,
+    so the binary must bail with a clear error rather than emit an invalid solid.
+    """
+    binary = _find_binary()
+    if not binary:
+        import pytest
+        pytest.skip("small_step binary not found")
+    # HTD-8M-75T, hub_od 15, rim_depth 10, 11 wide spokes — needs the synthetic
+    # hub arc injection (no natural hub arc in the void loop).
+    params = _base(
+        num_teeth=75, bore_mm=5.0, spoke_count=11, spoke_width_mm=7.0,
+        spoke_hub_od_mm=15.0, hub_od_mm=15.0, rim_depth_mm=10.0,
+        keyway_w_mm=0.0, keyway_h_mm=0.0, spoke_height_mm=5.0,
+        flange_enabled=False, nubs_enabled=False,
+    )
+    rc, out, err = _gen(binary, params)
+    assert rc != 0, "wide-spoke partial-height should fail, not emit a solid"
+    assert b"ISO-10303-21" not in out
+    assert "partial-height" in err and "wide spokes" in err, err[:200]
 
 
 if __name__ == "__main__":

@@ -123,23 +123,11 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
 
     Raises RuntimeError on non-zero exit so callers can return 400.
     """
-    # Interim guard: partial-height (recessed) spokes hit build_partial_height_solid,
-    # which currently emits an OCCT-invalid solid (UnorientableShape on the spoke-island
-    # web caps — see ToDo.md "BUG — partial-height spokes"). Block STEP generation with a
-    # clear message rather than ship an invalid file. REMOVE THIS GUARD when that bug is
-    # fixed (and wire the socket↔void merge into the partial-height path).
-    def _is_partial_spoke(p: dict) -> bool:
-        try:
-            return (float(p.get('spoke_count', 0) or 0) > 0
-                    and float(p.get('spoke_height_mm', 0.0) or 0.0) > 0.0)
-        except (TypeError, ValueError):
-            return False
-    if _is_partial_spoke(worker_kw) or _is_partial_spoke(worker_kw.get('kw2') or {}):
-        raise RuntimeError(
-            'Partial-height (recessed) spokes are temporarily unavailable — they '
-            'currently generate invalid STEP geometry. Set spoke height to 0 for '
-            'full-height spokes.')
-
+    # Partial-height (recessed) spokes: narrow-spoke configs are handled by
+    # small_step (the filleted web caps are split across the hub arc to satisfy
+    # OCCT). Wide-spoke configs (no natural hub arc) still produce an open shell
+    # and the worker exits non-zero with a clear message, surfaced as a 400 below.
+    # Partial-height also does not cut nub sockets yet (ToDo.md).
     root      = os.path.dirname(os.path.abspath(__file__))
     venv_win  = os.path.join(root, '.venv314', 'Scripts', 'python.exe')
     python    = venv_win if os.path.isfile(venv_win) else sys.executable
