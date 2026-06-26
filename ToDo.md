@@ -137,11 +137,18 @@ Rust project (no deps). Build: `cargo +stable-x86_64-pc-windows-gnu build`
   collar**. The shell closes (0 dangling) but those interior walls make it
   globally **non-orientable** (OCCT `UnorientableShape` on the islands;
   `ShapeFix_Shell` reverses the whole wall region). Guarded with a clear error.
-  **Fix:** drop the synthetic injection; treat the void at its true inner outline
-  (no hub arc) and build the web cap as ONE connected annulus (trace the outer
-  loop = spoke rim arcs + void detours, hub circle inner; no z1..z2 hub wall).
-  Reuses the `trace_cap_loops` engine. Repro: P2 HTD-8M-75T, hub_od 15,
-  rim_depth 10, 11 spokes.
+  **Progress (June 25) — `build_partial_height_wide`:** drops the synthetic
+  injection and builds the correct connected-annulus topology (web = one annulus,
+  outer = spoke rim arcs + each void's real inner detour, inner = hub circle; no
+  z1..z2 hub wall). **The shell now CLOSES (0 non-manifold edges)** — the core
+  topology insight is validated. Remaining: the web cap is one big planar face
+  whose void detours contain tangent `fillet_base`↔`fillet_base` meetings, which
+  trip OCCT's wire self-intersection check (same class as the narrow island hub
+  arc). **Finish:** split the web cap into per-spoke sectors with radial cuts at
+  each void's inner vertex (so each fillet_base meets a straight cut, not another
+  arc), and set `hub_split_angles` to the inner-vertex angles so the hub bands /
+  caps match. The function is in place and routed-but-guarded. Repro: P2
+  HTD-8M-75T, hub_od 15, rim_depth 10, 11 spokes.
 
 ### Design Metadata in Exported Files
 - [x] Embed CCT params as JSON in STEP (`/* CCT:{...} */` comment after HEADER)
