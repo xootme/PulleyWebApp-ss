@@ -53,6 +53,7 @@ PYTEST_GROUPS = {
     'test_repro':                  'Regression',
     'test_dual_pulley_bore_spoke': 'Regression',
     'test_nub_socket_merge':       'STEP Geometry',
+    'test_keyway_screw':           'STEP Geometry',
     'test_addin_helpers':          'Addin Helpers',
     'test_nightly_random':  'Nightly Random',
 }
