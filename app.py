@@ -416,6 +416,14 @@ def _mirror_to_addins(content: bytes, filename: str) -> bool:
     caller can suppress the browser download (avoids a duplicate landing in the
     user's Downloads folder alongside the mirrored copy).
     """
+    # Automated tests must receive the real browser download — a CAD addin left
+    # connected on the dev machine would otherwise turn /download/* into a 204
+    # and fail the download/embedding tests. Skip mirroring under the test flag;
+    # normal local dev (QUEUE_DISABLED, no TESTING) still mirrors so a connected
+    # addin auto-imports the download.
+    from flask import current_app
+    if os.environ.get('PULLEY_TESTING') or current_app.config.get('TESTING'):
+        return False
     try:
         if not os.path.exists(_FUSION_CONFIG):
             return False
