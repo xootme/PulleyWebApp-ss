@@ -20,7 +20,7 @@ import sys
 from datetime import datetime
 
 ROOT        = os.path.dirname(os.path.abspath(__file__))
-VENV_PY     = os.path.join(ROOT, '.venv312', 'Scripts', 'python.exe')
+VENV_PY     = os.path.join(ROOT, '.venv314', 'Scripts', 'python.exe')
 JSON_OUT    = os.path.join(ROOT, '.benchmarks', 'latest.json')
 CSV_FILE    = os.path.join(ROOT, 'Perf_History.csv')
 CSV_COLUMNS = [
