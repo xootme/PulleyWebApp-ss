@@ -124,6 +124,41 @@ def _gen(binary: str, kw, kh, sd, sc, cap) -> tuple[int, bytes, str]:
         os.unlink(dxf_tmp)
 
 
+def _check_case(binary: str, occ_py: str | None, kw, kh, sd, sc, cap) -> tuple[bool, str]:
+    """Generate one keyway+screw config and validate it. Returns (ok, note)."""
+    rc, out, err = _gen(binary, kw, kh, sd, sc, cap)
+    if rc != 0 or b"ISO-10303-21" not in out:
+        return False, f"generation failed rc={rc} {err[:160]}"
+    if not occ_py:
+        return True, "OCC skipped (no interpreter)"
+    with tempfile.NamedTemporaryFile(suffix=".step", delete=False, mode="wb") as sf:
+        step_tmp = sf.name
+        sf.write(out)
+    try:
+        v = subprocess.run([occ_py, "-c", _OCC_SCRIPT, step_tmp], capture_output=True, text=True)
+        if v.returncode != 0:
+            return False, f"{v.stdout.strip()} {v.stderr[:160]}"
+        return True, v.stdout.strip().splitlines()[-1]
+    finally:
+        os.unlink(step_tmp)
+
+
+# One pytest item per config so coverage is visible in the test count.
+import pytest  # noqa: E402
+
+_BINARY = _find_binary()
+_OCC_PY = _find_occ_python()
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c[0] for c in CASES])
+def test_keyway_screw(case):
+    if not _BINARY:
+        pytest.skip("small_step binary not found (set SMALL_STEP_BIN)")
+    name, kw, kh, sd, sc, cap = case
+    ok, note = _check_case(_BINARY, _OCC_PY, kw, kh, sd, sc, cap)
+    assert ok, f"{name}: {note}"
+
+
 def run() -> int:
     binary = _find_binary()
     if not binary:
@@ -132,36 +167,13 @@ def run() -> int:
     occ_py = _find_occ_python()
     print(f"binary: {binary}")
     print(f"OCC:    {occ_py or '(none — validity checks skipped)'}\n")
-
     failures = 0
     for name, kw, kh, sd, sc, cap in CASES:
-        rc, out, err = _gen(binary, kw, kh, sd, sc, cap)
-        if rc != 0 or b"ISO-10303-21" not in out:
-            print(f"[FAIL] {name}: generation failed rc={rc} {err[:160]}")
-            failures += 1
-            continue
-        note = ""
-        if occ_py:
-            with tempfile.NamedTemporaryFile(suffix=".step", delete=False, mode="wb") as sf:
-                step_tmp = sf.name
-                sf.write(out)
-            try:
-                v = subprocess.run([occ_py, "-c", _OCC_SCRIPT, step_tmp], capture_output=True, text=True)
-                if v.returncode != 0:
-                    print(f"[FAIL] {name}: {v.stdout.strip()} {v.stderr[:160]}")
-                    failures += 1
-                    continue
-                note = v.stdout.strip().splitlines()[-1]
-            finally:
-                os.unlink(step_tmp)
-        print(f"[PASS] {name:16s} {note}")
-
+        ok, note = _check_case(binary, occ_py, kw, kh, sd, sc, cap)
+        print(f"[{'PASS' if ok else 'FAIL'}] {name:16s} {note}")
+        failures += 0 if ok else 1
     print(f"\n{len(CASES) - failures}/{len(CASES)} passed")
     return 1 if failures else 0
-
-
-def test_keyway_screw():
-    assert run() == 0
 
 
 if __name__ == "__main__":

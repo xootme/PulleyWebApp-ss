@@ -190,6 +190,52 @@ def _gen(binary: str, params: dict) -> tuple[int, bytes, str]:
         os.unlink(dxf_tmp)
 
 
+def _check_case(binary, occ_py, name, params, expect_merge, check_occ) -> tuple[bool, str]:
+    """Generate one config and validate merge engagement + OCC. Returns (ok, note)."""
+    rc, out, err = _gen(binary, params)
+    if rc != 0 or b"ISO-10303-21" not in out:
+        return False, f"generation failed rc={rc} {err[:160]}"
+
+    diag = "applied" if "merge: v2 applied" in err else \
+           "fallback" if "merge: v2 fallback" in err else "none"
+    if expect_merge and diag != "applied":
+        return False, f"expected merge applied, got '{diag}' (ribbon may have returned)"
+    if not expect_merge and diag == "applied":
+        return False, "merge unexpectedly engaged (expected full-circle path)"
+
+    nfaces = len(re.findall(rb"ADVANCED_FACE", out))
+    if occ_py and check_occ:
+        with tempfile.NamedTemporaryFile(suffix=".step", delete=False, mode="wb") as sf:
+            step_tmp = sf.name
+            sf.write(out)
+        try:
+            v = subprocess.run([occ_py, "-c", _OCC_SCRIPT, step_tmp], capture_output=True, text=True)
+            if v.returncode != 0:
+                return False, f"OCC invalid — {v.stdout.strip()} {v.stderr[:160]}"
+            occ_note = f"OCC {v.stdout.strip()}"
+        finally:
+            os.unlink(step_tmp)
+    else:
+        occ_note = "OCC skipped" if not check_occ else "OCC skipped (no interpreter)"
+    return True, f"merge={diag:8s} faces={nfaces:3d} {len(out):7d}B  {occ_note}"
+
+
+# One pytest item per config so coverage is visible in the test count.
+import pytest  # noqa: E402
+
+_BINARY = _find_binary()
+_OCC_PY = _find_occ_python()
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c[0] for c in CASES])
+def test_nub_socket_merge(case):
+    if not _BINARY:
+        pytest.skip("small_step binary not found (set SMALL_STEP_BIN)")
+    name, params, expect_merge, check_occ = case
+    ok, note = _check_case(_BINARY, _OCC_PY, name, params, expect_merge, check_occ)
+    assert ok, f"{name}: {note}"
+
+
 def run() -> int:
     binary = _find_binary()
     if not binary:
@@ -198,55 +244,13 @@ def run() -> int:
     occ_py = _find_occ_python()
     print(f"binary: {binary}")
     print(f"OCC:    {occ_py or '(none — validity checks skipped)'}\n")
-
     failures = 0
     for name, params, expect_merge, check_occ in CASES:
-        rc, out, err = _gen(binary, params)
-        if rc != 0 or b"ISO-10303-21" not in out:
-            print(f"[FAIL] {name}: generation failed rc={rc} {err[:160]}")
-            failures += 1
-            continue
-
-        diag = "applied" if "merge: v2 applied" in err else \
-               "fallback" if "merge: v2 fallback" in err else "none"
-        if expect_merge and diag != "applied":
-            print(f"[FAIL] {name}: expected merge applied, got '{diag}' "
-                  f"(ribbon may have returned)")
-            failures += 1
-            continue
-        if not expect_merge and diag == "applied":
-            print(f"[FAIL] {name}: merge unexpectedly engaged (expected full-circle path)")
-            failures += 1
-            continue
-
-        nfaces = len(re.findall(rb"ADVANCED_FACE", out))
-        occ_note = ""
-        if occ_py and check_occ:
-            with tempfile.NamedTemporaryFile(suffix=".step", delete=False, mode="wb") as sf:
-                step_tmp = sf.name
-                sf.write(out)
-            try:
-                v = subprocess.run([occ_py, "-c", _OCC_SCRIPT, step_tmp],
-                                   capture_output=True, text=True)
-                if v.returncode != 0:
-                    print(f"[FAIL] {name}: OCC invalid — {v.stdout.strip()} {v.stderr[:160]}")
-                    failures += 1
-                    continue
-                occ_note = f"OCC {v.stdout.strip()}"
-            finally:
-                os.unlink(step_tmp)
-        elif not check_occ:
-            occ_note = "OCC skipped (known pre-existing issue)"
-
-        print(f"[PASS] {name:18s} merge={diag:8s} faces={nfaces:3d} {len(out):7d}B  {occ_note}")
-
+        ok, note = _check_case(binary, occ_py, name, params, expect_merge, check_occ)
+        print(f"[{'PASS' if ok else 'FAIL'}] {name:28s} {note}")
+        failures += 0 if ok else 1
     print(f"\n{len(CASES) - failures}/{len(CASES)} passed")
     return 1 if failures else 0
-
-
-def test_nub_socket_merge():
-    """pytest entry point."""
-    assert run() == 0
 
 
 def test_wide_spoke_partial_height_valid():
