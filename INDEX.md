@@ -74,7 +74,8 @@ A dedicated `QUEUE_SYSTEM.md` spec has not yet been written.
 **Backlog and roadmap**
 - Before public launch checklist
 - STEP geometry improvements (small_step Rust project)
-- Partial-height spokes: narrow configs export valid STEP with fillets (`split_island_hub_arc`); wide-spoke configs bail with a clear error (open-shell bug, see ToDo.md)
+- Partial-height spokes: narrow configs export valid STEP with fillets (`split_island_hub_arc`); wide spokes (base fillet doesn't reach the hub) export valid STEP via the connected "star" web cap (`build_partial_height_wide`); nub sockets fused at any depth
+- Keyway + set-screw: a keyway-aligned set screw merges into the slot as a blind hole (`build_keyway_screw_merge`) — no free-standing tube
 - Design metadata embedding (CCT schema versioning)
 - Load testing dashboard
 - Agent/headless API access

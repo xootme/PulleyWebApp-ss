@@ -2036,9 +2036,13 @@ function updateLabels(teeth, od) {
     document.getElementById('preview-footer').textContent    =
       `${family} ${pitch} · P1: ${teeth}T OD ${od} mm · PD ${pd} mm`;
   }
+  // Pulley OD just changed — re-check that the spoke layout still fits.
+  revalidateSpokesForDiameter(1);
 }
 
 function updateP2Labels(teeth, od) {
+  // Pulley OD just changed — re-check that the spoke layout still fits.
+  revalidateSpokesForDiameter(2);
   if (!currentSpec) return;
   const pd = ((currentSpec.pitch_mm * teeth) / Math.PI).toFixed(3);
   document.getElementById('p2-pitch-circle-info').textContent = `Pitch diameter: ${pd} mm`;
@@ -3467,6 +3471,50 @@ function _revertSpokeOverlap(n, check) {
     warnEl.classList.remove('flash');
     void warnEl.offsetWidth;
     warnEl.classList.add('flash');
+  }
+}
+
+// Re-validate the diameter-dependent spoke geometry after the belt profile / OD
+// changes. Changing teeth / pitch / family changes the pulley OD, which can push a
+// previously-valid spoke layout into tip-circle overlap, or make the hub OD exceed
+// the (now smaller) pulley OD. Surface or clear the 2D warnings here. We do NOT
+// auto-revert a spoke field (unlike onSpokesChange) because the user changed the
+// belt profile, not a spoke parameter — the fix is theirs to make.
+// Called from updateLabels / updateP2Labels, which run after every OD update.
+function revalidateSpokesForDiameter(n) {
+  const enabledEl = document.getElementById(`spokes${n}_enabled`);
+  if (!enabledEl) return;
+  const spokesOn = enabledEl.checked;
+
+  // Hub OD vs pulley OD / bore.
+  const hubOd    = parseFloat(document.getElementById(`spokes${n}_hub_od`).value) || 0;
+  const bore     = parseFloat(document.getElementById(n === 2 ? 'p2_bore' : 'bore').value) || 0;
+  const odEl     = document.getElementById(n === 2 ? 'p2_od' : 'od');
+  const pulleyOd = odEl ? parseFloat(odEl.value) || 0 : 0;
+  const hubWarn  = document.getElementById(`spokes${n}_hub_warn`);
+  const hubTooLarge  = pulleyOd > 0 && hubOd >= pulleyOd;
+  const boreTooLarge = hubOd > 0 && bore >= hubOd;
+  if (hubWarn) {
+    hubWarn.style.display = (spokesOn && (hubTooLarge || boreTooLarge)) ? 'block' : 'none';
+    hubWarn.textContent = hubTooLarge
+      ? '⚠ Hub OD exceeds pulley OD — spokes ignored in preview'
+      : '⚠ Bore ≥ spoke Hub OD — spokes ignored in preview';
+  }
+
+  // Tip-circle overlap — directly depends on the pulley OD.
+  const overlapWarn = document.getElementById(`spokes${n}_overlap_warn`);
+  if (overlapWarn) {
+    const check = spokesOn ? _spokeOverlapCheck(n) : { overlapping: false };
+    if (check.overlapping) {
+      overlapWarn.textContent = check.msg || '⚠ Spokes overlap at tip circle';
+      overlapWarn.style.display = 'block';
+      overlapWarn.classList.remove('flash');
+      void overlapWarn.offsetWidth;
+      overlapWarn.classList.add('flash');
+    } else {
+      overlapWarn.style.display = 'none';
+      overlapWarn.classList.remove('flash');
+    }
   }
 }
 

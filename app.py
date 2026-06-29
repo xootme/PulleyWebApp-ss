@@ -123,11 +123,11 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
 
     Raises RuntimeError on non-zero exit so callers can return 400.
     """
-    # Partial-height (recessed) spokes: narrow-spoke configs are handled by
-    # small_step (the filleted web caps are split across the hub arc to satisfy
-    # OCCT). Wide-spoke configs (no natural hub arc) still produce an open shell
-    # and the worker exits non-zero with a clear message, surfaced as a 400 below.
-    # Partial-height also does not cut nub sockets yet (ToDo.md).
+    # Partial-height (recessed) spokes are handled by small_step for both narrow
+    # spokes (the void wraps the hub) and wide spokes (the void stops short of the
+    # hub, so the web is a connected collar built as one star-shaped cap). Nub
+    # sockets are cut and fused at any depth. A worker non-zero exit is still
+    # surfaced as a 400 below.
     root      = os.path.dirname(os.path.abspath(__file__))
     venv_win  = os.path.join(root, '.venv314', 'Scripts', 'python.exe')
     python    = venv_win if os.path.isfile(venv_win) else sys.executable

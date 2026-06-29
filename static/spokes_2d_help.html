@@ -74,7 +74,7 @@ in the axial direction.</p>
       mounting or gluing a flange.</li>
 </ul>
 <div class="note">Spoke Height is only visible when 3D Features is active. The 2D SVG/DXF profile always shows the full spoke cutout regardless of this setting.</div>
-<div class="note">Partial-height spoke webs (Spoke Height &gt; 0) export to STEP with their fillets intact, and nub sockets are cut and fused into the pocket at any nub depth (no ribbon). <strong>Very wide spokes on a small hub</strong> are an exception — if STEP generation reports that recessed spokes aren't supported for your configuration, increase the spoke Hub OD or use full-height spokes (Spoke Height = 0).</div>
+<div class="note">Partial-height spoke webs (Spoke Height &gt; 0) export to STEP with their fillets intact, and nub sockets are cut and fused into the pocket at any nub depth (no ribbon). This works for both narrow spokes and very wide spokes on a small hub (where the base fillets don't reach the hub) — the recessed web is built as a connected hub collar with radial spokes.</div>
 
 <h3>2D Export Behaviour</h3>
 <p>When spokes are enabled, the 2D SVG and DXF downloads include the spoke void cutout profiles.
