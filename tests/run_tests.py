@@ -77,9 +77,35 @@ _state = {
     'group_timings':  {},
     'random_configs': [],   # [{run_idx, family, pitch, ...}] set when nightly runs
     'flask_url':      'http://localhost:5000',
+    'addins_connected': [], # CAD addins connected on this machine (banner warning)
 }
 _subscribers  = []   # SSE client queues
 _group_starts = {}   # {group: float timestamp}
+
+
+# Names of CAD addins that, when connected, make app.py mirror downloads to their
+# watch folder (a 204 instead of a 200). The harness forces the real download via
+# PULLEY_TESTING, so the download tests still pass — but we warn on the dashboard
+# that the addin-mirror path is NOT being exercised in that run.
+_ADDIN_CONNECTED_KEYS = [
+    ('fusion_connected',     'Fusion 360'),
+    ('solidworks_connected', 'SolidWorks'),
+    ('freecad_connected',    'FreeCAD'),
+]
+
+
+def _detect_connected_addins():
+    cfg_path = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')),
+                            'CheapCADTools', 'config.json')
+    try:
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+    except Exception:
+        return []
+    return [name for key, name in _ADDIN_CONNECTED_KEYS if cfg.get(key)]
+
+
+_state['addins_connected'] = _detect_connected_addins()
 
 
 def _snapshot():
@@ -219,6 +245,9 @@ h1   { font-size: 22px; color: #f1f5f9; margin-bottom: 4px; }
 .badge-ok   { background: #1a4a2a; color: #2ecc71; }
 .badge-err  { background: #4a1a1a; color: #e74c3c; }
 .badge-warn { background: #3a3a1a; color: #f1c40f; }
+.addin-warn { background: #3a2a0a; color: #f1c40f; border: 1px solid #6a5010;
+              border-radius: 6px; padding: 10px 14px; margin: 12px 0;
+              font-size: 14px; font-weight: 600; }
 .conn-dot   { font-size: 11px; color: #888; }
 .conn-dot.live { color: #2ecc71; }
 .countdown  { font-size: 13px; color: #888; margin-left: auto; font-family: monospace; }
@@ -286,6 +315,8 @@ td.dur  { width: 72px; color: #f0f0f0; text-align: right; font-size: 13px; font-
 <body>
 <h1>PulleyWebApp — Test Dashboard</h1>
 <div class="sub" id="sub">Loading…</div>
+
+<div id="addin-warn" class="addin-warn" style="display:none"></div>
 
 <div class="meta">
   <span id="srv" class="badge badge-warn">⏳ Starting…</span>
@@ -528,6 +559,16 @@ function applyState(state) {
   randomConfigs = state.random_configs || [];
   if (state.flask_url) flaskUrl = state.flask_url;
   if (state.group_timings) Object.assign(grpActual, state.group_timings);
+  const aw = document.getElementById('addin-warn');
+  const addins = state.addins_connected || [];
+  if (addins.length) {
+    aw.style.display = 'block';
+    aw.innerHTML = '⚠ ' + addins.join(', ') + ' addin connected — download tests are bypassing the addin mirror ' +
+                   '(forced browser download via PULLEY_TESTING). The real 204 mirror-to-watch-folder path is NOT ' +
+                   'exercised this run. Close the addin to test it.';
+  } else {
+    aw.style.display = 'none';
+  }
   loadHistory();
   setServer(state.server || 'starting');
   rebuildTable(); updateStats(); updateTimers();
