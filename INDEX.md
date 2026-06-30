@@ -12,11 +12,11 @@ Quick reference guide to all markdown files in the project. Read this first to n
 - *Read this first if working with Claude Code*
 
 ### [web_provisioning.md](web_provisioning.md)
-**Web app deployment checklist and architecture**
-- Render.com hosting (Flask + gunicorn)
-- Cloudflare Worker routing
-- Pre-deployment steps (docs, schema, tests, benchmarks)
-- Local release build procedure
+**Web app deployment checklist**
+- Pre-deployment steps (diff review, docs, schema, tests, benchmarks)
+- Commit, push, and report card steps
+- Desktop release build (Step 7 — run on every functional code change)
+- Infrastructure config lives in [CCT_Architecture.md § 10](CCT_Architecture.md)
 - *Read before deploying to production*
 
 ## 🏗️ Architecture & Design
@@ -26,6 +26,7 @@ Quick reference guide to all markdown files in the project. Read this first to n
 - CheapCAD Tools company/product overview
 - Multi-tool platform strategy
 - Release/licensing model
+- Live infrastructure config (Cloudflare Worker script, Render build commands, DNS) — § 10
 - *Context for why the project exists*
 
 ### [DECISIONS.md](DECISIONS.md)
@@ -142,4 +143,4 @@ PulleyWebApp/
 - For **why decisions**, see [DECISIONS.md](DECISIONS.md)
 - For **what's left**, see [TODO.md](TODO.md)
 
-Last updated: 2026-06-16
+Last updated: 2026-06-30

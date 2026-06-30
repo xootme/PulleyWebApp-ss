@@ -2,13 +2,13 @@
 
 **Platform:** Render.com (Containerized Cloud Hosting)
 **Primary URL:** `https://cheapcadtools.com/tools/pulleys`
-**Repo:** `https://github.com/xootme/PulleyWebApp`
+**Repo:** `https://github.com/xootme/PulleyWebApp-ss`
 **Branch:** `main`
 **Submodules:** `small_step` (Rust STEP binary) — Render must have "Clone submodules" enabled in the service settings
 
 ---
 
-## 1. Current Architecture: Cloudflare Worker + Render
+## Architecture Overview
 
 Tools are served at `cheapcadtools.com/tools/<slug>` using a Cloudflare Worker to route requests
 from the main domain to individual Render services. GreenGeeks continues to serve the main
@@ -30,7 +30,7 @@ User → cheapcadtools.com/tools/pulleys
 
 ---
 
-## 2. Deployment Checklist
+## Deploy Checklist
 
 Because we have linked the **Windows Credential Manager** to the local environment, deployments are fully automated once the checklist is complete.
 
@@ -187,7 +187,7 @@ git push origin main
 After every push, run the report generator to capture a snapshot of this deploy:
 
 ```bash
-python generate_checkin_report.py
+.venv314/Scripts/python generate_checkin_report.py
 ```
 
 This reads the current git state and `Perf_History.csv`, compares benchmarks to the
@@ -210,11 +210,12 @@ git push origin main
 
 ### Step 7 — Build and publish a new desktop release
 
-The web app is now live, but the desktop app (running locally at port 5154) is a **separate
-artifact** and is not updated by a git push. Any fix or feature that affects the desktop app
-must go through this step.
+Run this step whenever a functional change is made to the code — the desktop app is a
+**separate artifact** and is not updated by a git push. Any fix or feature that affects
+the desktop app must go through this step.
 
 **Run on the registered Windows dev machine only — never on CI/CD.**
+**PyArmor Pro licence:** `C:\Users\cmyer\Documents\PayArmor\pyarmor-regfile-11621.zip` (200 slots max)
 
 #### 7a — Build the release
 ```bash
@@ -230,6 +231,7 @@ Copy the direct download URL.
 ```bash
 .venv314/Scripts/python packaging/prepare_release.py --app-url <paste URL from 7b>
 ```
+This prints four environment variables and saves a copy to `licences/local_release_<date>.env` (gitignored).
 
 #### 7d — Update Render environment variables
 Go to Render dashboard → `pulleywebapp` service → **Environment** and set:
@@ -244,80 +246,34 @@ Click **Save Changes** → Render redeploys automatically.
 > `PULLEY_APP_VERSION` on Render. If the env var is not bumped, the addin will never
 > show the update banner — even if the web app has received fixes via git push.
 
+#### 7e — Verify provision endpoint
+```bash
+curl -X POST https://www.cheapcadtools.com/api/provision \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"test","email":"test@example.com"}'
+# Expect: 403 {"error":"No active subscription found..."}
+# (Confirms server is up and auth is working)
+```
+
 **Checklist:**
 - [ ] `build_release.py` ran without errors
 - [ ] Zip uploaded to GitHub Release
 - [ ] `prepare_release.py` ran and printed env vars
 - [ ] All four Render env vars updated
 - [ ] Render redeployed successfully
+- [ ] Provision endpoint returns 403 (server live, auth working)
 - [ ] Addin update banner appears when opening Timing Pulleys in Fusion 360
 
 ---
 
-## 3. Infrastructure Settings
+## Infrastructure Settings
 
-### Cloudflare Worker — `cct-tools-router`
-- **Route:** `cheapcadtools.com/*` (catches all requests — Worker decides pass-through vs. route)
-- **Zone:** `cheapcadtools.com`
-
-Worker script routes the following paths to Render; everything else passes through to GreenGeeks:
-
-```javascript
-export default {
-  async fetch(request) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    // Tool routing table — add one line per new tool
-    const tools = {
-      '/tools/pulleys': 'https://pulleywebapp.onrender.com',
-    };
-
-    if (path === '/tools' || path === '/tools/') {
-      return fetch('https://tools-hub.onrender.com/', request);
-    }
-
-    for (const [prefix, origin] of Object.entries(tools)) {
-      if (path.startsWith(prefix)) {
-        const stripped = path.slice(prefix.length) || '/';
-        const target = new URL(origin);
-        target.pathname = stripped;
-        target.search = url.search;
-        return fetch(new Request(target.toString(), request));
-      }
-    }
-
-    // Render-only paths (static assets, API, downloads) — route to Render unconditionally
-    const renderOnly = ['/static/', '/api/', '/download/', '/preview/', '/admin'];
-    if (renderOnly.some(p => path.startsWith(p))) {
-      return fetch('https://pulleywebapp.onrender.com' + path + url.search, request);
-    }
-
-    // Everything else — pass through to GreenGeeks
-    return fetch(request);
-  }
-}
-```
-
-> **Important:** The route must be `cheapcadtools.com/*` (not `/tools*`). The Worker handles
-> pass-through to GreenGeeks for all non-tool paths, so this is safe.
-
-### Render Configuration (per tool service)
-- **Runtime:** Python 3
-- **Build Command:** `bash render_build.sh`
-- **Start Command:** `gunicorn app:app`
-- **Custom Domain:** none required — Worker handles routing
-
-`render_build.sh` installs Rust (if absent), compiles `small_step/` (the git submodule) to
-`small_step/target/release/small_step`, then runs `pip install -r requirements.txt`.
-The app auto-detects the binary at that path — no `SMALL_STEP_BIN` env var needed on Render.
-
-### DNS (Cloudflare)
-No CNAME record for `tools` is required. The Worker runs on the root domain proxy.
+For Cloudflare Worker code, Render build/start commands, and DNS configuration, see
+[CCT_Architecture.md — § 10. Live Configuration](CCT_Architecture.md).
 
 ---
 
-## 4. Adding a New Tool
+## Adding a New Tool
 
 1. Create the tool as a standalone Flask app in its own GitHub repo
 2. Deploy to Render (connect the new repo, start command: `gunicorn app:app`)
@@ -332,48 +288,7 @@ See `tools_hub_architecture.html` for the full automated deployment plan (GitHub
 
 ---
 
-## 5. Local Release Build
-
-Run this whenever a new local release is needed, from the registered Windows dev machine.
-**Never run on CI/CD — PyArmor consumes a device slot per build machine.**
-
-### Step A — Build the release
-```bash
-.venv314/Scripts/python packaging/build_release.py
-# Output: releases/PulleyApp_<date>.zip
-```
-
-### Step B — Upload PulleyApp.zip
-Upload `releases/PulleyApp_<date>.zip` to a GitHub Release on the repo.
-Copy the direct download URL (e.g. `https://github.com/xootme/PulleyWebApp/releases/download/v1/PulleyApp_<date>.zip`).
-
-### Step C — Generate licence and Render env vars
-```bash
-.venv314/Scripts/python packaging/prepare_release.py --app-url <paste URL from Step B>
-```
-This prints three environment variables. Saves a copy to `licences/local_release_<date>.env` (gitignored).
-
-### Step D — Update Render environment variables
-1. Go to Render dashboard → `pulleywebapp` service → **Environment**
-2. Set or update:
-   - `PULLEY_LICENCE_B64` — paste value from Step C
-   - `PULLEY_LICENCE_EXPIRY` — paste value from Step C (YYYY-MM-DD)
-   - `PULLEY_APP_URL` — paste GitHub Release URL from Step B
-   - `PULLEY_APP_VERSION` — paste value from Step C (YYYYMMDD date string; used by the addin to detect when a new download is available)
-3. Click **Save Changes** → Render redeploys automatically
-
-### Step E — Verify provision endpoint
-```bash
-curl -X POST https://www.cheapcadtools.com/api/provision \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":"test","email":"test@example.com"}'
-# Expect: 403 {"error":"No active subscription found..."}
-# (Confirms server is up and auth is working)
-```
-
----
-
-## 6. Subscriber Management
+## Subscriber Management
 
 Add a subscriber after an App Store purchase:
 ```bash
@@ -395,7 +310,7 @@ curl -X POST https://www.cheapcadtools.com/api/subscribers/remove \
 
 ---
 
-## 7. Architecture Lessons
+## Architecture Lessons
 
 - **Cloudflare Workers ≠ Page Rules.** Workers have 100,000 free requests/day with no script
   limit. The 3-rule cap applies only to Page Rules — a separate product.

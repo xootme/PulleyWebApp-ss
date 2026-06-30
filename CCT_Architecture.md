@@ -508,7 +508,70 @@ See `web_provisioning.md` for the full checklist. Short version:
 
 ---
 
-## 10. Infrastructure Contacts & Credentials
+## 10. Live Configuration
+
+### Cloudflare Worker — `cct-tools-router`
+- **Route:** `cheapcadtools.com/*` (catches all requests — Worker decides pass-through vs. route)
+- **Zone:** `cheapcadtools.com`
+
+Worker script routes the following paths to Render; everything else passes through to GreenGeeks:
+
+```javascript
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // Tool routing table — add one line per new tool
+    const tools = {
+      '/tools/pulleys': 'https://pulleywebapp.onrender.com',
+    };
+
+    if (path === '/tools' || path === '/tools/') {
+      return fetch('https://tools-hub.onrender.com/', request);
+    }
+
+    for (const [prefix, origin] of Object.entries(tools)) {
+      if (path.startsWith(prefix)) {
+        const stripped = path.slice(prefix.length) || '/';
+        const target = new URL(origin);
+        target.pathname = stripped;
+        target.search = url.search;
+        return fetch(new Request(target.toString(), request));
+      }
+    }
+
+    // Render-only paths (static assets, API, downloads) — route to Render unconditionally
+    const renderOnly = ['/static/', '/api/', '/download/', '/preview/', '/admin'];
+    if (renderOnly.some(p => path.startsWith(p))) {
+      return fetch('https://pulleywebapp.onrender.com' + path + url.search, request);
+    }
+
+    // Everything else — pass through to GreenGeeks
+    return fetch(request);
+  }
+}
+```
+
+> **Important:** The route must be `cheapcadtools.com/*` (not `/tools*`). The Worker handles
+> pass-through to GreenGeeks for all non-tool paths, so this is safe.
+
+### Render Configuration (per tool service)
+- **Runtime:** Python 3
+- **Build Command:** `bash render_build.sh`
+- **Start Command:** `gunicorn app:app`
+- **Custom Domain:** none required — Worker handles routing
+
+`render_build.sh` installs Rust (if absent), compiles `small_step/` (the git submodule) to
+`small_step/target/release/small_step`, then runs `pip install -r requirements.txt`.
+The app auto-detects the binary at that path — no `SMALL_STEP_BIN` env var needed on Render.
+
+### DNS (Cloudflare)
+No CNAME record for `tools` is required. The Worker runs on the root domain proxy.
+
+---
+
+## 11. Infrastructure Contacts & Credentials
 
 | Service | Account | Notes |
 |---------|---------|-------|

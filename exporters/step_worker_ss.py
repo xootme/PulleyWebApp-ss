@@ -46,6 +46,33 @@ import re
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Minimum compatible small_step binary version (MAJOR, MINOR, PATCH).
+# Bump MINOR when a new subcommand or flag is required; MAJOR on breaking CLI changes.
+SMALL_STEP_MIN_VERSION = (0, 2, 0)
+
+_version_checked: dict = {}   # bin_path → True once verified
+
+
+def _check_binary_version(ss_bin: str) -> None:
+    """Raise RuntimeError if the binary is older than SMALL_STEP_MIN_VERSION."""
+    if ss_bin in _version_checked:
+        return
+    try:
+        r = subprocess.run([ss_bin, '--version'], capture_output=True, text=True, timeout=5)
+        # expects stdout: "small_step X.Y.Z"
+        parts = r.stdout.strip().split()
+        if len(parts) != 2 or parts[0] != 'small_step':
+            raise RuntimeError(f'unexpected --version output: {r.stdout.strip()!r}')
+        ver = tuple(int(x) for x in parts[1].split('.'))
+        if ver < SMALL_STEP_MIN_VERSION:
+            raise RuntimeError(
+                f'small_step binary is v{parts[1]}, need >={".".join(str(x) for x in SMALL_STEP_MIN_VERSION)}. '
+                f'Rebuild from source and update bin/small_step_linux.'
+            )
+    except FileNotFoundError:
+        raise RuntimeError(f'small_step binary not executable: {ss_bin!r}')
+    _version_checked[ss_bin] = True
+
 
 def _profile_key(family: str, pitch: str) -> str:
     from geometry.pulley_geometry import PROFILE_KEY_PREFIX
@@ -441,18 +468,30 @@ def main():
 
     ss_bin = os.environ.get('SMALL_STEP_BIN', '')
     if not ss_bin or not os.path.isfile(ss_bin):
-        # Auto-detect: small_step/target/release/small_step[.exe] next to app root
         _app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         _exe = 'small_step.exe' if os.name == 'nt' else 'small_step'
-        _candidate = os.path.join(_app_root, 'small_step', 'target', 'release', _exe)
-        if os.path.isfile(_candidate):
-            ss_bin = _candidate
-        else:
+        _candidates = [
+            # Pre-compiled Linux binary committed to the repo (Render path)
+            os.path.join(_app_root, 'bin', 'small_step_linux'),
+            # Local dev: built from source in the small_step submodule/sibling dir
+            os.path.join(_app_root, 'small_step', 'target', 'release', _exe),
+        ]
+        for _c in _candidates:
+            if os.path.isfile(_c):
+                ss_bin = _c
+                break
+        if not ss_bin:
             sys.stderr.write(
-                f'small_step binary not found. Set SMALL_STEP_BIN or build via render_build.sh.\n'
-                f'Looked at: {_candidate!r}\n'
+                f'small_step binary not found. Set SMALL_STEP_BIN, or build via render_build.sh.\n'
+                f'Looked at: {_candidates}\n'
             )
             sys.exit(1)
+
+    try:
+        _check_binary_version(ss_bin)
+    except RuntimeError as e:
+        sys.stderr.write(f'small_step version error: {e}\n')
+        sys.exit(1)
 
     export_type = params.pop('export_type', 'pulley')
 

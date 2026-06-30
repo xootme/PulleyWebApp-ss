@@ -1,5 +1,62 @@
 # ToDo — Timing Pulley Generator
 
+## Health Check — -ss Migration (Priority: Do Before Next Feature Work)
+
+Step 7 (desktop release build) has not been run since the project moved to the `-ss`
+branch. The web app has received significant changes (small_step Rust binary, Python 3.14,
+nub socket geometry, queue system, flange exports) that have never been validated end-to-end
+through a full release build + addin cycle. Run this checklist top-to-bottom before starting
+any new feature work.
+
+### 1. Render deployment (online / server)
+
+- [ ] Render dashboard shows latest commit (`d3a51c8`) as "Live" — no build errors
+- [ ] `https://cheapcadtools.com/tools/pulleys` loads (HTTP 200, page renders)
+- [ ] SVG download returns a valid SVG file
+- [ ] DXF download returns a valid DXF file
+- [ ] STL download returns a valid STL file (check nub sockets are thin crescents, not full cylinders)
+- [ ] STEP download completes — confirms `small_step` binary compiled and running on Render
+- [ ] 3D preview renders in browser (Three.js STL viewer)
+- [ ] Spokes + rim + flange + nubs config: STEP and STL both download without error
+- [ ] Queue system: join queue, get active session, complete a STEP download, release session
+
+### 2. Web app — online smoke test
+
+- [ ] Two-pulley drive view: both P1 and P2 STL/STEP download correctly
+- [ ] Flange nub sockets: download P1 STL with spokes + nubs — open in slicer, confirm sockets are thin crescents (not deep full-circle cuts)
+- [ ] Embedded CCT metadata: import a downloaded STEP/DXF/STL back into the web app via the Import button — params restore correctly
+- [ ] Provision endpoint returns 403 for unknown user (server live, auth working):
+  ```
+  curl -X POST https://www.cheapcadtools.com/api/provision \
+    -H "Content-Type: application/json" \
+    -d '{"user_id":"test","email":"test@example.com"}'
+  ```
+
+### 3. Desktop release build (web_provisioning.md Step 7)
+
+- [ ] Run `packaging/build_release.py` — exits 0, produces `releases/PulleyApp_<date>.zip`
+- [ ] PyArmor obfuscation succeeds with Python 3.14 (check for device-slot warning — max 200)
+- [ ] PyInstaller bundles without errors
+- [ ] Launch `PulleyApp.exe` from the zip — browser opens at `localhost:5154`
+- [ ] Desktop SVG download works
+- [ ] Desktop DXF download works
+- [ ] Desktop STL download works (check nub sockets)
+- [ ] Desktop STEP download works (small_step binary bundled in the package)
+- [ ] Queue is disabled in desktop build (`QUEUE_DISABLED=1` set by launcher)
+- [ ] Upload zip to GitHub Release, run `prepare_release.py`, update all four Render env vars (Step 7b–7d)
+- [ ] Addin update banner appears in Fusion 360 after env vars are updated
+
+### 4. CAD addin integration
+
+- [ ] **Fusion 360:** Open addin → provision check passes → desktop app launches at port 5154
+- [ ] **Fusion 360:** Download STEP from desktop app → file auto-imports into Fusion (watch folder / CCT_Import)
+- [ ] **Fusion 360:** Download STL from desktop app → file auto-imports (new behavior — STL now mirrors same as STEP)
+- [ ] **Fusion 360:** Download STEP from online app → file auto-imports into Fusion (Fusion connected, online server)
+- [ ] **FreeCAD:** Addin lifecycle tests pass (`python -m pytest C:\Users\cmyer\Documents\CCT_Addins\FreeCAD\TimingPulley\tests -v`)
+- [ ] **FreeCAD:** Manual test — open addin, download STEP, file imports correctly
+
+---
+
 ## Backlog
 
 ### Tests needed — post-deploy gaps (identified 2026-06-23) — ✅ DONE (2026-06-24)
