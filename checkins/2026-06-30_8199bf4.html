@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deploy Report — 8199bf4 — 2026-06-30 10:44</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1e293b;
+         margin: 0; padding: 24px; background: #f8fafc; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+           padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  h2 { font-size: 14px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .06em; color: #64748b; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: #64748b; border-bottom: 1px solid #e2e8f0;
+        padding: 4px 8px; }
+  td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  .num  { text-align: right; font-family: ui-monospace, monospace; font-size: 12px; }
+  .muted { color: #94a3b8; font-style: italic; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px;
+            font-size:12px; font-weight:600; }
+  .body-text { color:#475569; margin: 8px 0 0; white-space: pre-wrap; }
+  .meta { color:#64748b; font-size:13px; margin-top:4px; }
+  code { font-family: ui-monospace, monospace; background:#f1f5f9;
+          padding:1px 5px; border-radius:3px; font-size:12px; }
+  .header-row { display:flex; justify-content:space-between; align-items:flex-start; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header-row">
+    <div>
+      <h1>Deploy Report</h1>
+      <p class="meta">Generated 2026-06-30 10:44 &nbsp;·&nbsp; Commit <code>8199bf4</code> &nbsp;·&nbsp; 2026-06-30 10:37:29 -0700</p>
+    </div>
+    <div>
+      <span class="badge" style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac">✓ CLEAN</span>
+    </div>
+  </div>
+  <hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0">
+  <h2>Commit</h2>
+  <p style="margin:0;font-size:15px;font-weight:600">render_build.sh: remove apt-get (not available in Render native Python env)</p>
+  <p class="body-text">Render's managed Python build environment does not support apt-get.
+cairosvg is pure Python and finds libcairo2 at runtime from the system path.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com></p>
+</div>
+
+
+
+<div class="card">
+  <h2>Changed Files —  1 file changed, 1 insertion(+), 6 deletions(-)</h2>
+  <table>
+    <tr><th>File</th></tr>
+    <tr><td class="muted">No file diff available</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Benchmarks &nbsp;<span style="font-size:12px;font-weight:400;color:#64748b">Comparing <code>d3a51c8</code> vs <code>2b0010a</code></span></h2>
+  <table>
+    <tr>
+      <th>Test</th>
+      <th style="text-align:right">Prev (ms)</th>
+      <th style="text-align:right">Current (ms)</th>
+      <th style="text-align:right">Delta</th>
+      <th style="text-align:center">Status</th>
+    </tr>
+    <tr style="background:#f0fdf4"><td class="mono">test_dxf_medium</td><td class="num">14.0</td><td class="num">14.1</td><td class="num" style="color:#16a34a;font-weight:600">+0.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_medium_with_spokes</td><td class="num">14.6</td><td class="num">16.2</td><td class="num" style="color:#16a34a;font-weight:600">+11.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_small</td><td class="num">8.1</td><td class="num">8.3</td><td class="num" style="color:#16a34a;font-weight:600">+2.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#fffbeb"><td class="mono">test_flange_3dprint_bottom</td><td class="num">8.6</td><td class="num">10.9</td><td class="num" style="color:#b45309;font-weight:600">+26.3%</td><td style="color:#b45309;text-align:center">⚠</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_top</td><td class="num">1.4</td><td class="num">1.4</td><td class="num" style="color:#16a34a;font-weight:600">+1.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#fffbeb"><td class="mono">test_flange_3dprint_with_spokes</td><td class="num">1.3</td><td class="num">1.9</td><td class="num" style="color:#b45309;font-weight:600">+46.7%</td><td style="color:#b45309;text-align:center">⚠</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_metal_bottom</td><td class="num">24.7</td><td class="num">22.0</td><td class="num" style="color:#16a34a;font-weight:600">-10.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_metal_top</td><td class="num">11.3</td><td class="num">10.3</td><td class="num" style="color:#16a34a;font-weight:600">-8.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium</td><td class="num">20.6</td><td class="num">20.8</td><td class="num" style="color:#16a34a;font-weight:600">+0.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium_with_spokes</td><td class="num">139.7</td><td class="num">142.2</td><td class="num" style="color:#16a34a;font-weight:600">+1.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_small</td><td class="num">13.3</td><td class="num">13.2</td><td class="num" style="color:#16a34a;font-weight:600">-0.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_large</td><td class="num">61.9</td><td class="num">67.6</td><td class="num" style="color:#16a34a;font-weight:600">+9.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium</td><td class="num">36.7</td><td class="num">35.9</td><td class="num" style="color:#16a34a;font-weight:600">-2.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_hub_and_spokes</td><td class="num">296.1</td><td class="num">280.5</td><td class="num" style="color:#16a34a;font-weight:600">-5.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_hub</td><td class="num">84.0</td><td class="num">81.7</td><td class="num" style="color:#16a34a;font-weight:600">-2.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_spokes</td><td class="num">171.9</td><td class="num">179.0</td><td class="num" style="color:#16a34a;font-weight:600">+4.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_small</td><td class="num">23.3</td><td class="num">23.9</td><td class="num" style="color:#16a34a;font-weight:600">+2.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium</td><td class="num">1.5</td><td class="num">1.5</td><td class="num" style="color:#16a34a;font-weight:600">-1.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium_with_spokes</td><td class="num">1.5</td><td class="num">1.5</td><td class="num" style="color:#16a34a;font-weight:600">+2.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_small</td><td class="num">0.7</td><td class="num">0.7</td><td class="num" style="color:#16a34a;font-weight:600">-2.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+
+  </table>
+  <p style="margin:10px 0 0;font-size:12px;color:#94a3b8">
+    ⬆ improved &gt;20% &nbsp;|&nbsp; ⚠ slow &gt;20% &nbsp;|&nbsp; ✗ regression &gt;50% &nbsp;|&nbsp; + new test
+  </p>
+</div>
+
+<div class="card">
+  <h2>Recent Commits</h2>
+  <table>
+    <tr><th>Hash</th><th>Subject</th></tr>
+    <tr style="font-weight:700"><td class="mono">8199bf4</td><td>render_build.sh: remove apt-get (not available in Render native Python env)</td></tr>
+<tr><td class="mono">c11fe59</td><td>Replace glibc binary with static musl build (no glibc dependency)</td></tr>
+<tr><td class="mono">c72eee7</td><td>Fix: set executable bit on small_step_linux binary</td></tr>
+<tr><td class="mono">3d28eef</td><td>Ship small_step v0.2.0 Linux binary; add version check; simplify Render build</td></tr>
+<tr><td class="mono">d3a51c8</td><td>Fix STL nub sockets: true crescent clip, independent depth, clamped height</td></tr>
+<tr><td class="mono">a93e85f</td><td>Dashboard: warn when a CAD addin is connected during a test run</td></tr>
+<tr><td class="mono">32e0d12</td><td>Skip addin-mirror in test mode so downloads return the real 200</td></tr>
+<tr><td class="mono">2a75483</td><td>Map test_keyway_screw to the STEP Geometry dashboard group</td></tr>
+<tr><td class="mono">b0de379</td><td>Parametrize keyway + nub-socket suites (one pytest item per config)</td></tr>
+<tr><td class="mono">73fc0da</td><td>Deploy audit for 2b0010a: benchmarks + check-in report</td></tr>
+
+  </table>
+</div>
+
+</body>
+</html>
