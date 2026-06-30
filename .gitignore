@@ -46,6 +46,10 @@ desktop.ini
 testing.html
 *.log
 run_ss_dev.bat
+flask_ss_err.txt
+flask_ss_output.txt
+flask_err.txt
+flask_output.txt
 
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 # Raw JSON scratch output — Perf_History.csv is committed instead

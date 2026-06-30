@@ -1138,8 +1138,13 @@ def main():
 
     if args.exit_when_done:
         proc.terminate()
-        proc.wait()
-        sys.exit(1 if any_failed else 0)
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1 if any_failed else 0)
 
     # Keep Flask alive so repro buttons in dashboard remain clickable
     print(f'Dashboard : {dash_url}')

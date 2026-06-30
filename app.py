@@ -3902,7 +3902,7 @@ def api_download_all_step_async():
         query_params = request.get_json() or {}
         job = create_job('all-step', query_params)
 
-        _app = app._get_current_object()
+        _app = app
 
         def generate_async():
             """Background worker: generate all STEP assembly.
