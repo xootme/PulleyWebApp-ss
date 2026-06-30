@@ -3698,7 +3698,11 @@ def api_download_step_async():
         query_params = request.get_json() or {}
         job = create_job('step', query_params)
 
+        _app = app
+
         def generate_async():
+            _ctx = _app.app_context()
+            _ctx.push()
             start_job(job.id)
             try:
                 pulley = query_params.get('pulley', '1')
@@ -3774,6 +3778,8 @@ def api_download_step_async():
                 finish_job(job.id, output_file=f'/download/{job.id}.step')
             except Exception as e:
                 finish_job(job.id, error=str(e))
+            finally:
+                _ctx.pop()
 
         if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
             generate_async()  # run in request thread — no daemon thread, no zombie
