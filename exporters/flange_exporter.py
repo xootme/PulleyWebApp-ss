@@ -387,6 +387,7 @@ def build_socket_meshes(
     spokes_enabled: bool = False,
     spoke_hub_od_mm: float = 0.0,
     rim_depth_mm: float = 0.0,
+    spoke_height_mm: float = 0.0,
     sections: int = 16,
 ) -> list:
     """Return trimesh cylinder meshes for the socket holes in the pulley top face.
@@ -401,8 +402,11 @@ def build_socket_meshes(
 
     R_OD, _R_gb, tooth_ht = _pulley_radii(family, pitch, num_teeth, clearance_mm, print_extra_mm)
     nub_dia = fp['nub_dia_mm']
-    # Socket depth = full nub_h (not reduced by allowance); allowance only shrinks the pin
-    nub_h   = fp['nub_height_mm']
+    # Socket depth uses the SAME clamped nub height as the pin (build_3dprint_flange:
+    # min 1 mm, max belt/3). The socket is cut to this full depth; the printed pin is
+    # then nub_allowance SHORTER (see nub_pin_h there), so the nub seats with a
+    # clearance gap at the bottom and the flange sits flush on the rim.
+    nub_h   = max(1.0, min(fp['nub_height_mm'], belt_height_mm / 3.0))
     r_nub = _nub_circle_radius(R_OD, tooth_ht, nub_dia)
     # Socket is nominal nub_dia; pin is undersized by allowance for clearance fit
     r_socket = nub_dia / 2.0
@@ -412,14 +416,16 @@ def build_socket_meshes(
                      if (spokes_enabled and spoke_hub_od_mm > 0.0)
                      else 0.0)
 
-    # The cutting cylinder must extend clearly above AND below the intended
-    # pocket so manifold has no topological ambiguity.
-    # • Top of cut  = belt_height_mm + 20  (well above the belt face)
-    # • Bottom of cut = belt_height_mm - nub_h  (socket floor)
-    # We use a tall upward extension so the cylinder clearly penetrates the
-    # top face from outside — this forces manifold to open the face rather
-    # than cap it.
-    cut_bottom = belt_height_mm - nub_h
+    # Socket depth = the nub height, independent of spoke height. The crescent
+    # clip (below) keeps the pocket inside the full-height rim ring and opens it to
+    # the void along its inner edge at the top, so the socket never needs to be
+    # deepened to the recess floor — the nub must seat against a floor exactly
+    # nub_height below the top face regardless of how tall the spokes are.
+    cut_depth  = nub_h
+    # The cutting cylinder must extend clearly above AND below the pocket so
+    # manifold has no topological ambiguity (tall upward extension penetrates the
+    # top face from outside so manifold opens the face rather than capping it).
+    cut_bottom = belt_height_mm - cut_depth
     cut_top    = belt_height_mm + 20.0    # 20 mm above belt face
     cut_h      = cut_top - cut_bottom
     cut_z      = (cut_top + cut_bottom) / 2.0
@@ -431,17 +437,51 @@ def build_socket_meshes(
         cyl.apply_translation([x, y, cut_z])
         cyls.append(cyl)
 
-    # Clip at spoke inner rim: the clip cylinder is the same for every socket,
-    # so union all sockets first then do one difference — O(2) instead of O(N).
-    needs_clip = r_spoke_inner > 0.0 and (r_nub - r_socket) < r_spoke_inner
-    if needs_clip and cyls:
+    # Crescent clip (match the STEP). On a spoked pulley the rim ring is solid
+    # only at radius >= the spoke-void rim (tooth_root - rim_depth); inside it is
+    # the recessed web/void. small_step clips every socket whose inner edge dips
+    # below that boundary to a thin crescent pocket in the SOLID rim ring (the
+    # spoke/web interior is left intact and fused to the void). Subtracting the
+    # whole socket cylinder instead would bite deep into the spoke (over a spoke)
+    # or scallop into the void (over a gap) — reading as a "full circle" that does
+    # not match the STEP's thin crescent. So we replicate the STEP's clip here.
+    #
+    # CRITICAL: derive the rim radius from the SAME tooth-root outline the pulley
+    # mesh uses (generate_pulley_stl: min |outline| - rim_depth), NOT the
+    # _pulley_radii estimate (R_OD - tooth_ht), which sits ~0.1–0.7 mm outside the
+    # true rim and leaves an uncut sliver between the crescent and the void (the
+    # "ribbon"). Clip a hair (0.2 mm) INSIDE the true rim so the crescent always
+    # reaches into the void boundary with no wall.
+    rim_radius = 0.0
+    if spokes_enabled and rim_depth_mm > 0.0:
+        try:
+            from exporters.step_exporter import _build_outline_points  # deferred: avoid import cycle
+            _outline, _, _ = _build_outline_points(
+                family, pitch, num_teeth, clearance_mm, 0.0, print_extra_mm)
+            _R_tr = min(math.hypot(px, py) for px, py in _outline)
+            rim_radius = _R_tr - rim_depth_mm
+        except Exception:
+            rim_radius = (R_OD - tooth_ht) - rim_depth_mm   # fall back to the estimate
+
+    if rim_radius > 0.0 and (r_nub - r_socket) < rim_radius:
+        clip_r = max(rim_radius - 0.2, 0.0)   # thin crescent in the rim ring, opens to void
+    elif r_spoke_inner > 0.0 and (r_nub - r_socket) < r_spoke_inner:
+        clip_r = r_spoke_inner   # safety: keep sockets out of the hub boss
+    else:
+        clip_r = 0.0
+
+    # One clip cylinder for every socket: union all sockets, then one difference.
+    if clip_r > 0.0 and cyls:
         try:
             inner_clip = trimesh.creation.cylinder(
-                radius=r_spoke_inner, height=cut_h + 2.0, sections=64)
+                radius=clip_r, height=cut_h + 2.0, sections=96)
             inner_clip.apply_translation([0.0, 0.0, cut_z])
             sockets_union = (trimesh.boolean.union(cyls, engine='manifold')
                              if len(cyls) > 1 else cyls[0])
-            return [trimesh.boolean.difference([sockets_union, inner_clip], engine='manifold')]
+            clipped = trimesh.boolean.difference([sockets_union, inner_clip], engine='manifold')
+            # If a socket sat entirely inside the void (mis-placed nub), the clip
+            # removes it — nothing to cut, so drop the empty mesh.
+            return [clipped] if len(clipped.vertices) > 0 else []
         except Exception:
             pass  # fall through and return unclipped cylinders
     return cyls

@@ -2168,6 +2168,7 @@ def generate_drive_stl_preview(
                     clearance_mm=clearance_mm1, print_extra_mm=print_extra_mm1,
                     hub_od_mm=hub_od_mm1, spokes_enabled=sp_en1,
                     spoke_hub_od_mm=spoke_hub_od_mm1, rim_depth_mm=rim_depth_mm1,
+                    spoke_height_mm=spoke_height_mm1 if sp_en1 else 0.0,
                 )
                 if sockets1 and getattr(p1, 'is_volume', False):
                     for s in sockets1:
@@ -2202,6 +2203,7 @@ def generate_drive_stl_preview(
                     clearance_mm=clearance_mm2, print_extra_mm=print_extra_mm2,
                     hub_od_mm=hub_od_mm2, spokes_enabled=sp_en2,
                     spoke_hub_od_mm=spoke_hub_od_mm2, rim_depth_mm=rim_depth_mm2,
+                    spoke_height_mm=spoke_height_mm2 if sp_en2 else 0.0,
                 )
                 if sockets2 and getattr(p2, 'is_volume', False):
                     for s in sockets2:

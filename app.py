@@ -1653,7 +1653,7 @@ def api_preview_stl():
                         fp, family, pitch, num_teeth, bore_mm, belt_height,
                         clearance_mm=cl_mm, print_extra_mm=pr_ex,
                         hub_od_mm=hub_od, spokes_enabled=sp_en, spoke_hub_od_mm=sp_hub,
-                        rim_depth_mm=sp_rim,
+                        rim_depth_mm=sp_rim, spoke_height_mm=sp_h if sp_en else 0.0,
                     ) or None
             _fl_enabled = request.args.get('flange_enabled') == '1'
             _fl_h = fp.get('flange_height_mm', 1.5) if _fl_enabled and fp else 1.5
@@ -1779,6 +1779,7 @@ def download_stl():
                     clearance_mm=cl_mm, print_extra_mm=pr_ex,
                     hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
                     spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
+                    spoke_height_mm=sp_h if sp_en else 0.0,
                 ) if fp.get('nubs_enabled') else []
 
                 stl_preview = generate_pulley_stl_preview(
@@ -1802,6 +1803,10 @@ def download_stl():
         fl_sfx = '+flange' if _fl_enabled else ''
         fname = f'{family}-{pitch}-{num_teeth}T{suffix}{fl_sfx}.stl'
         stl = _embed_stl(stl if isinstance(stl, bytes) else bytes(stl), request.args)
+        # Mirror to a connected CAD addin's watch folder (CCT_Import) so it auto-
+        # imports, same as STEP downloads; skip the browser download if it landed.
+        if _mirror_to_addins(stl, fname):
+            return ('', 204)
         return Response(stl, mimetype='model/stl',
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
