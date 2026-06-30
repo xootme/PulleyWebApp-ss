@@ -3902,8 +3902,16 @@ def api_download_all_step_async():
         query_params = request.get_json() or {}
         job = create_job('all-step', query_params)
 
+        _app = app._get_current_object()
+
         def generate_async():
-            """Background worker: generate all STEP assembly."""
+            """Background worker: generate all STEP assembly.
+
+            Runs in a daemon thread — push an app context so _mirror_to_addins
+            and any other helper that calls current_app can find it.
+            """
+            _ctx = _app.app_context()
+            _ctx.push()
             start_job(job.id)  # Move from queued to processing
             try:
                 import json as _json
@@ -4002,6 +4010,8 @@ def api_download_all_step_async():
 
             except Exception as e:
                 finish_job(job.id, error=str(e))
+            finally:
+                _ctx.pop()
 
         if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
             generate_async()  # run in request thread — no daemon thread, no zombie

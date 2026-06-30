@@ -557,14 +557,19 @@ export default {
 > pass-through to GreenGeeks for all non-tool paths, so this is safe.
 
 ### Render Configuration (per tool service)
+- **Repo:** `https://github.com/xootme/PulleyWebApp-ss` (branch `main`)
 - **Runtime:** Python 3
 - **Build Command:** `bash render_build.sh`
 - **Start Command:** `gunicorn app:app`
 - **Custom Domain:** none required — Worker handles routing
 
-`render_build.sh` installs Rust (if absent), compiles `small_step/` (the git submodule) to
-`small_step/target/release/small_step`, then runs `pip install -r requirements.txt`.
-The app auto-detects the binary at that path — no `SMALL_STEP_BIN` env var needed on Render.
+`render_build.sh` does three things: `chmod +x bin/small_step_linux`, runs `bin/small_step_linux --version`
+to verify the binary, then `pip install -r requirements.txt`.
+
+The `small_step` Rust binary is a **pre-compiled musl-static x86_64 Linux binary** committed directly
+to `bin/small_step_linux` in the repo — `small_step` is a private repo and cannot be cloned as a
+Render submodule. `step_worker_ss.py` auto-detects it at `bin/small_step_linux` (no `SMALL_STEP_BIN`
+env var needed on Render). See `RELEASE.md` in the `small_step` repo for the rebuild procedure.
 
 ### DNS (Cloudflare)
 No CNAME record for `tools` is required. The Worker runs on the root domain proxy.
