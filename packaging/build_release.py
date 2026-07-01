@@ -30,7 +30,6 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from datetime import datetime
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -40,7 +39,7 @@ ROOT        = Path(__file__).resolve().parent.parent   # repo root
 BUILD_DIR   = ROOT / 'build' / 'obfuscated'
 DIST_DIR    = ROOT / 'dist' / 'PulleyApp'
 RELEASES    = ROOT / 'releases'
-VERSION     = datetime.now().strftime('%Y%m%d')        # e.g. 20260504
+VERSION     = (ROOT / 'version.txt').read_text(encoding='utf-8').strip()
 PYTHON      = sys.executable                           # must be .venv312 Python
 
 GITHUB_REPO    = 'xootme/PulleyApp-releases'
@@ -163,7 +162,7 @@ def step6_publish(zip_path):
     # Create fresh release
     rel = _gh_request('POST', f'repos/{GITHUB_REPO}/releases', token=token, data={
         'tag_name': tag,
-        'name': f'PulleyApp {VERSION[:4]}-{VERSION[4:6]}-{VERSION[6:]}',
+        'name': f'PulleyApp {VERSION}',
         'body': '',
         'draft': False,
         'prerelease': False,

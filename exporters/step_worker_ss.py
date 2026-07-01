@@ -463,6 +463,81 @@ def _export_flange(params, ss_bin):
     sys.stdout.buffer.write(_run_cmd(cmd))
 
 
+def run(params: dict, ss_bin: str) -> bytes:
+    """Generate STEP bytes in-process (used by the PyInstaller frozen build).
+
+    Same logic as main() but accepts params directly and returns bytes instead
+    of writing to stdout.  Raises RuntimeError on failure.
+    """
+    params = dict(params)   # don't mutate caller's dict
+    export_type = params.pop('export_type', 'pulley')
+
+    if export_type == 'flange':
+        import io as _io2
+        buf = _io2.BytesIO()
+        old_buf = sys.stdout
+        sys.stdout = type(sys.stdout)(buf)  # won't work cleanly — call helper
+        # _export_flange writes to sys.stdout.buffer; capture via monkey-patch
+        class _CaptureBuf:
+            def __init__(self): self.data = b''
+            def write(self, b): self.data += b
+            def flush(self): pass
+        cap = _CaptureBuf()
+        class _FakeStdout:
+            buffer = cap
+        old_stdout = sys.stdout
+        sys.stdout = _FakeStdout()
+        try:
+            _export_flange(params, ss_bin)
+        finally:
+            sys.stdout = old_stdout
+        return cap.data
+
+    if export_type == 'belt':
+        return _generate_belt_bytes(params, ss_bin)
+
+    if export_type == 'all':
+        kw2      = params.pop('kw2', None)
+        belt_kw  = params.pop('belt_kw', None)
+        family   = params.get('family', 'HTD')
+        pitch    = params.get('pitch', '5M')
+
+        phi_left = phi_right = 0.0
+        if belt_kw:
+            from geometry.pulley_geometry import build_two_pulley_belt, BELT_FAMILIES
+            if family in BELT_FAMILIES:
+                num_t1 = int(belt_kw.get('num_teeth_left',  params.get('num_teeth', 20)))
+                num_t2 = int(belt_kw.get('num_teeth_right', kw2.get('num_teeth', num_t1) if kw2 else num_t1))
+                cdist  = float(belt_kw.get('center_dist_mm', 0.0))
+                try:
+                    _, _, phi_left, phi_right = build_two_pulley_belt(
+                        family, pitch, num_t1, num_t2, cdist, x_offset=0.0
+                    )
+                except Exception:
+                    phi_left = phi_right = 0.0
+
+        p1_bytes = _generate_pulley_bytes(params, ss_bin)
+        p1_bytes = _rotate_step_z(p1_bytes, phi_left)
+        parts    = [p1_bytes]
+
+        if kw2:
+            p2_bytes = _generate_pulley_bytes(kw2, ss_bin)
+            p2_bytes = _rotate_step_z(p2_bytes, phi_right)
+            cdist = float(belt_kw.get('center_dist_mm', 0.0)) if belt_kw else 0.0
+            if cdist:
+                p2_bytes = _translate_step_x(p2_bytes, cdist)
+            parts.append(p2_bytes)
+
+        if belt_kw:
+            parts.append(_generate_belt_bytes(belt_kw, ss_bin))
+
+        label = f'{family}-{pitch}-assembly'
+        return _merge_steps(parts, label)
+
+    # Default: 'pulley'
+    return _generate_pulley_bytes(params, ss_bin)
+
+
 def main():
     params = json.loads(sys.argv[1])
 

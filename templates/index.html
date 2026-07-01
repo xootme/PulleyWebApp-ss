@@ -2440,40 +2440,127 @@ function closeDlMenus() {
 
 document.addEventListener('click', closeDlMenus);
 
+// ── Browser fingerprint + download-limit guard ────────────────────────────────
+// Fingerprint is computed once on load. Token is fetched before each download.
+// All limit checks fail OPEN: if anything goes wrong the download proceeds.
+
+let _cctFP = null;   // 32-char hex fingerprint, null if unavailable
+
+(async function _initCctFP() {
+  try {
+    const parts = [];
+    parts.push(navigator.userAgent || '');
+    parts.push(screen.width + 'x' + screen.height + 'x' + screen.colorDepth);
+    try { parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch(e) {}
+    parts.push(navigator.language || '');
+    parts.push(String(navigator.hardwareConcurrency || ''));
+    parts.push(String(navigator.deviceMemory || ''));
+    parts.push(navigator.platform || '');
+    // Canvas fingerprint — most discriminating signal
+    try {
+      const cv = document.createElement('canvas');
+      const cx = cv.getContext('2d');
+      cx.textBaseline = 'top';
+      cx.font = '14px monospace';
+      cx.fillStyle = '#f44';
+      cx.fillRect(0, 0, 80, 20);
+      cx.fillStyle = '#246';
+      cx.fillText('CCT⚙', 2, 2);
+      parts.push(cv.toDataURL().slice(-80));
+    } catch(e) {}
+    // WebGL renderer string
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      if (ext) parts.push(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL));
+    } catch(e) {}
+    const raw = parts.join('|||');
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+    _cctFP = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('').slice(0, 32);
+  } catch(e) {
+    _cctFP = null;   // fingerprint unavailable → all downloads pass through
+  }
+})();
+
+async function _cctGetToken() {
+  // Returns {ok:true, token:"..."} | {ok:false, count:N, limit:M} | null (fail open)
+  if (!_cctFP) return null;
+  try {
+    const r = await fetch('/api/fp-token', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({fp: _cctFP}),
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) {
+    return null;   // network error → fail open
+  }
+}
+
+function _cctLimitMsg(count, limit) {
+  showErrorModal(
+    `The free version of this app is limited to ${limit} downloads per week.\n` +
+    `You have used ${count} of ${limit} this week — your allowance resets on Sunday.\n\n` +
+    `Download the desktop app for unlimited local use.`
+  );
+}
+
+function _cctAppendToken(url, token) {
+  if (!token) return url;
+  return url + (url.includes('?') ? '&' : '?') + '_fpt=' + token;
+}
+
+async function _cctGuardedDownload(url) {
+  // Wraps _triggerDownload / window.location with a limit check.
+  // Returns false if denied, true otherwise.
+  const tok = await _cctGetToken();
+  if (tok && tok.ok === false) { _cctLimitMsg(tok.count, tok.limit); return false; }
+  _triggerDownload(_cctAppendToken(url, tok && tok.token));
+  return true;
+}
+
+async function _cctGuardedProgress(url, filename) {
+  const tok = await _cctGetToken();
+  if (tok && tok.ok === false) { _cctLimitMsg(tok.count, tok.limit); return false; }
+  downloadWithProgress(_cctAppendToken(url, tok && tok.token), filename);
+  return true;
+}
+
 // ── Download ──────────────────────────────────────────────────────────────────
-function downloadSVG(n, includeData = true) {
+async function downloadSVG(n, includeData = true) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
   params.include_data = includeData ? '1' : '0';
-  _triggerDownload(_dlUrl('/download/svg?' + new URLSearchParams(params)));
-  if (document.getElementById(`rim_layer${n}_enabled`)?.checked) {
+  const ok = await _cctGuardedDownload(_dlUrl('/download/svg?' + new URLSearchParams(params)));
+  if (ok && document.getElementById(`rim_layer${n}_enabled`)?.checked) {
     setTimeout(() => _triggerDownload(_dlUrl('/download/svg-rim?' + new URLSearchParams(params))), 400);
   }
 }
 
-function downloadDXF(n) {
+async function downloadDXF(n) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
-  _triggerDownload(_dlUrl('/download/dxf?' + new URLSearchParams(params)));
-  if (document.getElementById(`rim_layer${n}_enabled`)?.checked) {
+  const ok = await _cctGuardedDownload(_dlUrl('/download/dxf?' + new URLSearchParams(params)));
+  if (ok && document.getElementById(`rim_layer${n}_enabled`)?.checked) {
     setTimeout(() => _triggerDownload(_dlUrl('/download/dxf-rim?' + new URLSearchParams(params))), 400);
   }
 }
 
-function downloadBeltSVG() {
-  window.location = _dlUrl('/download/belt-svg?' + new URLSearchParams(buildBeltParams()));
+async function downloadBeltSVG() {
+  await _cctGuardedDownload(_dlUrl('/download/belt-svg?' + new URLSearchParams(buildBeltParams())));
 }
 
-function downloadBeltSTEP() {
+async function downloadBeltSTEP() {
   const params = buildBeltParams();
   params.belt_height = document.getElementById('belt_height').value;
-  downloadWithProgress(_dlUrl('/download/belt-step?' + new URLSearchParams(params)), 'Belt.step');
+  await _cctGuardedProgress(_dlUrl('/download/belt-step?' + new URLSearchParams(params)), 'Belt.step');
 }
 
-function downloadBeltSTL() {
+async function downloadBeltSTL() {
   const params = buildBeltParams();
   params.belt_height = document.getElementById('belt_height').value;
-  window.location = _dlUrl('/download/belt-stl?' + new URLSearchParams(params));
+  await _cctGuardedDownload(_dlUrl('/download/belt-stl?' + new URLSearchParams(params)));
 }
 
 function buildBeltParams() {
@@ -2489,8 +2576,8 @@ function buildBeltParams() {
   };
 }
 
-function downloadBeltDXF() {
-  window.location = _dlUrl('/download/belt-dxf?' + new URLSearchParams(buildBeltParams()));
+async function downloadBeltDXF() {
+  await _cctGuardedDownload(_dlUrl('/download/belt-dxf?' + new URLSearchParams(buildBeltParams())));
 }
 
 function updateBeltBtn() {
@@ -2975,7 +3062,7 @@ function downloadWithProgress(url, defaultFilename) {
   }, 300);
 }
 
-function downloadSTEP(n) {
+async function downloadSTEP(n) {
   const params = buildParams();
   params.belt_height = document.getElementById('belt_height').value;
   if (n === 2) params.pulley = '2';
@@ -3004,30 +3091,31 @@ function downloadSTEP(n) {
   // Generate to a file first, then navigate to the static result — the same
   // reliable mechanism "Download All" uses. A direct window.location to the
   // slow /download/step route was being dropped ("Removed") by Chromium.
+  const _stepTok = await _cctGetToken();
+  if (_stepTok && _stepTok.ok === false) { _cctLimitMsg(_stepTok.count, _stepTok.limit); return; }
+  if (_stepTok && _stepTok.token) params._fpt = _stepTok.token;
   _startAsyncJob('/api/download/step-async', params, () => downloadSTEP(n));
 }
 
-function downloadAllSTEP() {
-  // Use async download with job queue to avoid Cloudflare timeout
-  startAsyncDownload('all-step');
+async function downloadAllSTEP() {
+  await startAsyncDownload('all-step');
 }
 
-function downloadAllDXF() {
-  const params = buildBeltParams();  // includes all P1/P2 params + center_distance in dual mode
-  window.location = _dlUrl('/download/all-dxf?' + new URLSearchParams(params));
-}
-
-function downloadAllSVG() {
-  // Reuse the dual belt SVG — shows both pulleys and belt in one system drawing
+async function downloadAllDXF() {
   const params = buildBeltParams();
-  window.location = _dlUrl('/download/belt-svg?' + new URLSearchParams(params));
+  await _cctGuardedDownload(_dlUrl('/download/all-dxf?' + new URLSearchParams(params)));
 }
 
-function downloadSTL(n) {
+async function downloadAllSVG() {
+  const params = buildBeltParams();
+  await _cctGuardedDownload(_dlUrl('/download/belt-svg?' + new URLSearchParams(params)));
+}
+
+async function downloadSTL(n) {
   const params = buildParams();
   params.belt_height = document.getElementById('belt_height').value;
   if (n === 2) params.pulley = '2';
-  window.location = _dlUrl('/download/stl?' + new URLSearchParams(params));
+  await _cctGuardedDownload(_dlUrl('/download/stl?' + new URLSearchParams(params)));
 }
 
 // ── Three.js 3D preview ───────────────────────────────────────────────────────
@@ -3708,13 +3796,13 @@ function updateFlangeDlButtons(n) {
   if (botBtn)  botBtn.style.display  = 'none';
 }
 
-function downloadFlange(n, which) {
+async function downloadFlange(n, which) {
   const fp = _flangeParams(n);
   fp.flange_which = which;
-  _triggerDownload(_dlUrl('/download/flange-stl?' + new URLSearchParams(fp)));
+  await _cctGuardedDownload(_dlUrl('/download/flange-stl?' + new URLSearchParams(fp)));
 }
 
-function downloadFlangeAssembly(n) {
+async function downloadFlangeAssembly(n) {
   const fp = _flangeParams(n);
   // Add hub geometry params needed by generate_pulley_stl
   const prefix = n === 2 ? 'p2_' : '';
@@ -3734,8 +3822,8 @@ function downloadFlangeAssembly(n) {
   fp.spokes_height     = document.getElementById(`spokes${n}_height`).value;
   fp.backlash_preset   = n === 2 ? (p.p2_backlash_preset || 'STANDARD') : (p.backlash_preset || 'STANDARD');
   fp.backlash_custom   = n === 2 ? (p.p2_backlash_custom || 0)           : (p.backlash_custom  || 0);
-  downloadWithProgress(_dlUrl('/download/flange-assembly?' + new URLSearchParams(fp)),
-                       `${fp.family}${fp.pitch}-${fp.teeth}T-Assembly.stl`);
+  await _cctGuardedProgress(_dlUrl('/download/flange-assembly?' + new URLSearchParams(fp)),
+                            `${fp.family}${fp.pitch}-${fp.teeth}T-Assembly.stl`);
 }
 
 // Shared fillet re-validation used by both onFilletChange and onSpokesChange.
@@ -3965,7 +4053,7 @@ function cancelDownload() {
   hideProgressModal();
 }
 
-function startAsyncDownload(type) {
+async function startAsyncDownload(type) {
   /**
    * Start an async download job (e.g., 'all-step').
    * Shows progress modal and polls /api/download-status/{job_id} every 500ms.
@@ -4036,6 +4124,14 @@ function startAsyncDownload(type) {
   if (sessionId) {
     params.session_id = sessionId;
   }
+
+  // Download-limit token (fails open — limit not enforced if token unavailable)
+  const _asyncTok = await _cctGetToken();
+  if (_asyncTok && _asyncTok.ok === false) {
+    _cctLimitMsg(_asyncTok.count, _asyncTok.limit);
+    return;
+  }
+  if (_asyncTok && _asyncTok.token) params._fpt = _asyncTok.token;
 
   fetch(endpoint, {
     method: 'POST',

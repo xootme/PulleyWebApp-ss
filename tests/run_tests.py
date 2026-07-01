@@ -55,6 +55,7 @@ PYTEST_GROUPS = {
     'test_nub_socket_merge':       'STEP Geometry',
     'test_keyway_screw':           'STEP Geometry',
     'test_addin_helpers':          'Addin Helpers',
+    'test_downloads':              'Download Routes',
     'test_nightly_random':  'Nightly Random',
 }
 QUEUE_FILE = 'test_queue_pytest'

@@ -210,37 +210,40 @@ git push origin main
 
 ### Step 7 — Build and publish a new desktop release
 
-Run this step whenever a functional change is made to the code — the desktop app is a
-**separate artifact** and is not updated by a git push. Any fix or feature that affects
-the desktop app must go through this step.
+`deploy.py` runs this step automatically for every deploy. Pass `--skip-desktop` to skip it
+for web-only fixes (rare — both apps should normally be kept in sync).
 
 **Run on the registered Windows dev machine only — never on CI/CD.**
 **PyArmor Pro licence:** `C:\Users\cmyer\Documents\PayArmor\pyarmor-regfile-11621.zip` (200 slots max)
 
-#### 7a — Build the release
+#### What `deploy.py` Step 7 does automatically
+
+1. Runs `packaging/build_release_ss.py`:
+   - PyArmor obfuscates `app.py`, `geometry/`, `exporters/`
+   - PyInstaller bundles everything into `dist/PulleyApp/`
+   - Zips to `releases/PulleyApp_<version>.zip` (version read from `version.txt`)
+   - Creates/replaces GitHub Release `v<version>` on `xootme/PulleyApp-releases`
+   - Uploads asset as `PulleyApp.zip` (permanent "latest" URL never changes)
+   - Updates Render env vars `PULLEY_APP_VERSION` and `PULLEY_APP_CHANGELOG`
+   - Triggers a Render redeploy
+
+2. Optionally runs `packaging/prepare_release.py` (licence renewal — ~once per year):
+   - Generates a new `pyarmor.rkey` expiring 365 days from today
+   - Prints `PULLEY_LICENCE_B64` and `PULLEY_LICENCE_EXPIRY` to paste into Render
+
+#### To run Step 7 manually (without `deploy.py`):
 ```bash
-.venv314/Scripts/python packaging/build_release.py
-# Output: releases/PulleyApp_<date>.zip
+.venv314/Scripts/python packaging/build_release_ss.py
+# For licence renewal only:
+.venv314/Scripts/python packaging/prepare_release.py
 ```
 
-#### 7b — Upload PulleyApp.zip
-Upload `releases/PulleyApp_<date>.zip` to a GitHub Release on the repo.
-Copy the direct download URL.
-
-#### 7c — Generate licence and env vars
-```bash
-.venv314/Scripts/python packaging/prepare_release.py --app-url <paste URL from 7b>
-```
-This prints four environment variables and saves a copy to `licences/local_release_<date>.env` (gitignored).
-
-#### 7d — Update Render environment variables
+#### After licence renewal — update Render manually
 Go to Render dashboard → `pulleywebapp` service → **Environment** and set:
-- `PULLEY_APP_URL` — GitHub Release download URL
-- `PULLEY_APP_VERSION` — date string printed by `prepare_release.py` (e.g. `20260520`)
-- `PULLEY_LICENCE_B64` — base64 licence printed by `prepare_release.py`
+- `PULLEY_LICENCE_B64` — base64 value printed by `prepare_release.py`
 - `PULLEY_LICENCE_EXPIRY` — expiry date printed by `prepare_release.py`
 
-Click **Save Changes** → Render redeploys automatically.
+(`PULLEY_APP_VERSION` and `PULLEY_APP_URL` are updated automatically by `build_release_ss.py`.)
 
 > **Why this matters:** The Fusion 360 addin compares the local `version.txt` against
 > `PULLEY_APP_VERSION` on Render. If the env var is not bumped, the addin will never
@@ -256,11 +259,10 @@ curl -X POST https://www.cheapcadtools.com/api/provision \
 ```
 
 **Checklist:**
-- [ ] `build_release.py` ran without errors
-- [ ] Zip uploaded to GitHub Release
-- [ ] `prepare_release.py` ran and printed env vars
-- [ ] All four Render env vars updated
-- [ ] Render redeployed successfully
+- [ ] `deploy.py` Step 7 ran `build_release_ss.py` without errors
+- [ ] GitHub Release `v<version>` created and `PulleyApp.zip` uploaded
+- [ ] Render `PULLEY_APP_VERSION` updated and redeploy triggered
+- [ ] (If licence renewal) `PULLEY_LICENCE_B64` / `PULLEY_LICENCE_EXPIRY` updated in Render
 - [ ] Provision endpoint returns 403 (server live, auth working)
 - [ ] Addin update banner appears when opening Timing Pulleys in Fusion 360
 

@@ -30,11 +30,17 @@ IDLE_TIMEOUT_SEC    = 60        # 1 minute idle (active session only)
 # Shared session state file — written by every worker, read by every worker
 _SESSION_FILE = os.path.join(_LOG_DIR, 'sessions.json')
 
-# Trial download tracking
+# Trial download tracking (CAD addins)
 _TRIAL_DOWNLOADS_FILE = os.path.join(_LOG_DIR, 'trial_downloads.json')
 _TRIAL_LOCK = threading.Lock()
 TRIAL_DOWNLOADS_PER_WEEK = 2
 TRIAL_RETENTION_DAYS = 7
+
+# Web download tracking (browser fingerprint-based)
+_WEB_DOWNLOADS_FILE = os.path.join(_LOG_DIR, 'web_downloads.json')
+_WEB_DL_LOCK = threading.Lock()
+WEB_DOWNLOADS_PER_WEEK = 2
+_FP_AMBIGUITY_IPS = 5   # ≥5 distinct IPs sharing a FP this week → ambiguous → allow
 
 
 # ── File-backed shared state ───────────────────────────────────────────────────
@@ -457,6 +463,68 @@ def _cleanup_old_trial_downloads():
                 del data[mid]
         if data:
             _save_trial_downloads(data)
+
+
+# ── Web download tracking (browser fingerprint) ────────────────────────────────
+
+def _web_week_key():
+    y, w, _ = datetime.now().isocalendar()
+    return f'{y}-W{w:02d}'
+
+
+def check_web_download(fp: str, ip: str):
+    """Check whether this browser fingerprint may download this week.
+
+    Returns (allowed, count, limit).  Fails open on any error or ambiguity —
+    the caller should allow the download whenever allowed is True.
+    """
+    try:
+        with _WEB_DL_LOCK:
+            data = _load_web_downloads()
+            wk   = _web_week_key()
+            wk_rec = data.get(fp, {}).get(wk, {'count': 0, 'ips': []})
+            count  = wk_rec['count']
+            # Ambiguous fingerprint: too many distinct IPs → allow (shared machine/VPN/NAT)
+            if len(set(wk_rec['ips'])) >= _FP_AMBIGUITY_IPS:
+                return True, count, WEB_DOWNLOADS_PER_WEEK
+            return count < WEB_DOWNLOADS_PER_WEEK, count, WEB_DOWNLOADS_PER_WEEK
+    except Exception:
+        return True, 0, WEB_DOWNLOADS_PER_WEEK  # fail open
+
+
+def record_web_download(fp: str, ip: str):
+    """Increment the download counter for this fingerprint.  Fails silently."""
+    try:
+        with _WEB_DL_LOCK:
+            data   = _load_web_downloads()
+            wk     = _web_week_key()
+            fp_rec = data.setdefault(fp, {})
+            wk_rec = fp_rec.setdefault(wk, {'count': 0, 'ips': []})
+            wk_rec['count'] += 1
+            if ip and ip not in wk_rec['ips']:
+                wk_rec['ips'].append(ip)
+            # Prune all weeks except the current one for this FP
+            for old_wk in [k for k in fp_rec if k != wk]:
+                del fp_rec[old_wk]
+            _save_web_downloads(data)
+    except Exception:
+        pass
+
+
+def _load_web_downloads():
+    if not os.path.exists(_WEB_DOWNLOADS_FILE):
+        return {}
+    try:
+        with open(_WEB_DOWNLOADS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_web_downloads(data):
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    with open(_WEB_DOWNLOADS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
 
 
 # ── Background threads ─────────────────────────────────────────────────────────

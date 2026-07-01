@@ -22,7 +22,7 @@ import base64
 import subprocess
 import sys
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -38,7 +38,7 @@ def main():
                         help='Public download URL for PulleyApp.zip (GitHub Release asset)')
     args = parser.parse_args()
 
-    version = datetime.now().strftime('%Y%m%d')   # matches build_release.py VERSION
+    version = (ROOT / 'version.txt').read_text(encoding='utf-8').strip()
     expiry  = (date.today() + timedelta(days=365)).strftime('%Y-%m-%d')
 
     print(f'\nGenerating licence.lic expiring {expiry} ...')

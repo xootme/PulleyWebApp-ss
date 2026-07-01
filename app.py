@@ -29,8 +29,58 @@ from exporters.job_queue import (
     create_session, get_session_status, heartbeat, release_session, get_queue_info,
     register_trial_download, TRIAL_DOWNLOADS_PER_WEEK, clear_all_state,
     clear_stale_on_startup,
+    check_web_download, record_web_download, WEB_DOWNLOADS_PER_WEEK,
 )
 from functools import wraps
+import threading as _threading
+import uuid as _uuid_mod
+import time as _time_mod
+
+# ── Web download token store ───────────────────────────────────────────────────
+# Short-lived single-use tokens issued by /api/fp-token; consumed by download
+# routes to record a fingerprinted download without putting the FP in the URL.
+_FP_TOKENS: dict = {}
+_FP_TOKEN_LOCK = _threading.Lock()
+_FP_TOKEN_TTL  = 300   # 5 minutes — covers slow connections and async jobs
+
+
+def _issue_web_token(fp: str, ip: str) -> str:
+    """Issue and store a single-use download token for this fingerprint."""
+    token = _uuid_mod.uuid4().hex
+    expires = _time_mod.monotonic() + _FP_TOKEN_TTL
+    with _FP_TOKEN_LOCK:
+        # Prune expired tokens opportunistically
+        now = _time_mod.monotonic()
+        expired = [t for t, v in _FP_TOKENS.items() if v['exp'] < now]
+        for t in expired:
+            _FP_TOKENS.pop(t, None)
+        _FP_TOKENS[token] = {'fp': fp, 'ip': ip, 'exp': expires}
+    return token
+
+
+def _consume_web_token(req) -> None:
+    """Consume a download token from the request and record the web download.
+    Fails silently if the token is absent, expired, or invalid — fail open.
+    """
+    token = req.args.get('_fpt') or (req.get_json(silent=True) or {}).get('_fpt')
+    if not token:
+        return
+    with _FP_TOKEN_LOCK:
+        entry = _FP_TOKENS.pop(token, None)
+    if entry and _time_mod.monotonic() < entry['exp']:
+        record_web_download(entry['fp'], entry['ip'])
+
+
+def _consume_web_token_from_body(body: dict) -> None:
+    """Consume a token embedded in a POST JSON body (async job routes)."""
+    token = body.pop('_fpt', None)
+    if not token:
+        return
+    with _FP_TOKEN_LOCK:
+        entry = _FP_TOKENS.pop(token, None)
+    if entry and _time_mod.monotonic() < entry['exp']:
+        record_web_download(entry['fp'], entry['ip'])
+
 
 def _get_machine_id():
     """Get machine_id from request context, header, or generate from IP+UA."""
@@ -119,15 +169,21 @@ _SS_AVAILABLE = os.path.isfile(_SS_BIN)
 
 
 def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
-    """Run step_worker_ss.py in a subprocess; return stdout STEP bytes.
+    """Run the small_step worker; return STEP bytes.
 
-    Raises RuntimeError on non-zero exit so callers can return 400.
+    In a PyInstaller frozen build sys.executable is the launcher EXE, not a
+    Python interpreter, so spawning a subprocess would just re-launch the app.
+    Instead, when frozen we call step_worker_ss.run() directly in-process.
+
+    Raises RuntimeError on failure so callers can return 400.
     """
-    # Partial-height (recessed) spokes are handled by small_step for both narrow
-    # spokes (the void wraps the hub) and wide spokes (the void stops short of the
-    # hub, so the web is a connected collar built as one star-shaped cap). Nub
-    # sockets are cut and fused at any depth. A worker non-zero exit is still
-    # surfaced as a 400 below.
+    if getattr(sys, 'frozen', False):
+        from exporters.step_worker_ss import run as _ss_run
+        try:
+            return _ss_run(worker_kw, _SS_BIN)
+        except Exception as _e:
+            raise RuntimeError(str(_e)) from _e
+
     root      = os.path.dirname(os.path.abspath(__file__))
     venv_win  = os.path.join(root, '.venv314', 'Scripts', 'python.exe')
     python    = venv_win if os.path.isfile(venv_win) else sys.executable
@@ -148,7 +204,7 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
 
 
 # ── App version ───────────────────────────────────────────────────────────────
-APP_VERSION        = '1.1'
+APP_VERSION        = '1.2.0'
 # Increment when a param is renamed, split, or its meaning changes.
 # New optional params never need a bump — missing keys just use form defaults.
 CCT_SCHEMA_VERSION = 1
@@ -383,7 +439,7 @@ from exporters.dxf_exporter import (
 )
 from exporters.step_exporter import (
     generate_pulley_stl, generate_pulley_stl_preview,
-    generate_drive_stl_preview,
+    generate_drive_stl_preview, _build_belt_mesh,
 )
 from exporters.flange_exporter import (
     generate_3dprint_flange_stl,
@@ -962,6 +1018,7 @@ def api_preview():
 @app.route('/download/svg')
 def download_svg():
     """Return SVG file download."""
+    _consume_web_token(request)
     try:
         family  = request.args.get('family', 'HTD')
         pitch   = request.args.get('pitch', '5M')
@@ -987,6 +1044,7 @@ def download_svg():
 @app.route('/download/dxf')
 def download_dxf():
     """Return DXF file download for pulley 1 or pulley 2."""
+    _consume_web_token(request)
     try:
         family = request.args.get('family', 'HTD')
         pitch  = request.args.get('pitch',  '5M')
@@ -1082,6 +1140,7 @@ def download_svg_rim():
             bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
             print_extra_mm=pr_ex, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
         )
+        svg = _embed_svg(svg, request.args)
         return Response(svg, mimetype='image/svg+xml',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
@@ -1126,6 +1185,7 @@ def download_dxf_rim():
             bore_mm=bore_mm, clearance_mm=cl_mm, backlash_mm=bl_mm,
             print_extra_mm=pr_ex, spoke_hub_od_mm=sp_hub_od, rim_depth_mm=sp_rim,
         )
+        dxf = _embed_dxf(dxf if isinstance(dxf, bytes) else dxf.encode(), request.args)
         return Response(dxf, mimetype='application/dxf',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
@@ -1321,6 +1381,7 @@ def download_belt_svg():
     In dual mode: two-pulley belt layout SVG.
     In single mode: belt tooth cross-section SVG.
     """
+    _consume_web_token(request)
     try:
         family = request.args.get('family', 'HTD')
         pitch  = request.args.get('pitch',  '5M')
@@ -1378,6 +1439,7 @@ def download_belt_svg():
             svg      = generate_belt_svg(family, pitch, n_teeth=3)
             filename = f'{family}-{pitch}-belt-profile.svg'
 
+        svg = _embed_svg(svg, request.args)
         return Response(
             svg,
             mimetype='image/svg+xml',
@@ -1694,6 +1756,7 @@ def api_preview_stl():
 @app.route('/download/stl')
 def download_stl():
     """Return binary STL file download."""
+    _consume_web_token(request)
     try:
         pulley = request.args.get('pulley', '1')
         family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
@@ -1820,6 +1883,7 @@ def download_stl():
 @app.route('/download/step')
 @require_active_session
 def download_step():
+    _consume_web_token(request)
     try:
         import json, os
         pulley = request.args.get('pulley', '1')
@@ -1898,6 +1962,7 @@ def download_step():
 @app.route('/download/belt-step')
 def download_belt_step():
     """Two-pulley belt STEP export (cadquery, B-rep with true arcs + B-spline teeth)."""
+    _consume_web_token(request)
     try:
         family  = request.args.get('family', 'HTD')
         pitch   = request.args.get('pitch',  '5M')
@@ -1930,6 +1995,7 @@ def download_belt_step():
         except RuntimeError as _e:
             return f'Belt STEP error: {_e}', 400
         filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.step'
+        step_bytes = _embed_step(step_bytes, request.args)
         if _mirror_to_addins(step_bytes, filename):
             return ('', 204)
         return Response(
@@ -1950,6 +2016,7 @@ def download_all_step():
     """Multipart STEP with all pulleys and their flanges in one file.
     In dual mode (dual=true) includes P1 + P2; otherwise just P1.
     """
+    _consume_web_token(request)
     try:
         import json as _json
         dual = request.args.get('dual') == 'true'
@@ -2044,7 +2111,46 @@ def download_all_step():
 
 @app.route('/download/belt-stl')
 def download_belt_stl():
-    return Response('Belt STL export — coming soon', status=501, mimetype='text/plain')
+    """Return binary STL of the two-pulley belt body."""
+    _consume_web_token(request)
+    try:
+        family = request.args.get('family', 'HTD')
+        pitch  = request.args.get('pitch',  '5M')
+        dual   = request.args.get('dual') == 'true'
+
+        if not dual:
+            return Response(
+                'Belt STL export requires Two Pulley Drive mode.',
+                status=400, mimetype='text/plain')
+
+        key = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return f'Unknown profile {family}/{pitch}', 400
+        spec = PULLEY_SPECS[key]
+
+        num_teeth1  = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
+        num_teeth2  = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
+        belt_h      = float(request.args.get('belt_height', 10.0))
+        _default_c  = (num_teeth1 + num_teeth2) * spec['pitch'] / (2.0 * math.pi)
+        center_dist = float(request.args.get('center_distance', _default_c))
+
+        mesh = _build_belt_mesh(family, pitch, num_teeth1, num_teeth2,
+                                center_dist, belt_h, cx1=0.0)
+        if mesh is None:
+            return f'Belt STL not available for {family}/{pitch}', 400
+
+        stl_bytes = mesh.export(file_type='stl')
+        if isinstance(stl_bytes, memoryview):
+            stl_bytes = bytes(stl_bytes)
+        stl_bytes = _embed_stl(stl_bytes, request.args)
+        filename  = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.stl'
+        if _mirror_to_addins(stl_bytes, filename):
+            return ('', 204)
+        return Response(stl_bytes, mimetype='model/stl',
+                        headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except Exception as e:
+        import traceback
+        return f'Error generating belt STL: {e}\n{traceback.format_exc()}', 400
 
 @app.route('/download/belt-dxf')
 def download_belt_dxf():
@@ -2052,6 +2158,7 @@ def download_belt_dxf():
     In dual mode: two-pulley belt layout DXF.
     In single mode: belt tooth cross-section DXF.
     """
+    _consume_web_token(request)
     try:
         family = request.args.get('family', 'HTD')
         pitch  = request.args.get('pitch',  '5M')
@@ -2095,6 +2202,7 @@ def download_belt_dxf():
             dxf_bytes = generate_belt_dxf(family, pitch, n_teeth=3)
             filename  = f'{family}-{pitch}-belt-profile.dxf'
 
+        dxf_bytes = _embed_dxf(dxf_bytes, request.args)
         return Response(
             dxf_bytes,
             mimetype='application/dxf',
@@ -2107,6 +2215,7 @@ def download_belt_dxf():
 @app.route('/download/all-dxf')
 def download_all_dxf():
     """Combined layout DXF: P1 profile, P2 profile, belt outline in one file."""
+    _consume_web_token(request)
     try:
         family = request.args.get('family', 'HTD')
         pitch  = request.args.get('pitch',  '5M')
@@ -2162,6 +2271,7 @@ def download_all_dxf():
             keyway_h_mm2=float(request.args.get('p2_hub_keyway_h',     0.0)),
             center_dist_mm=center_dist,
         )
+        dxf_bytes = _embed_dxf(dxf_bytes, request.args)
         filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-all.dxf'
         _mirror_to_addins(dxf_bytes, filename)
         return Response(
@@ -2171,6 +2281,40 @@ def download_all_dxf():
         )
     except Exception as e:
         return f'Error generating combined DXF: {e}', 400
+
+
+@app.route('/api/fp-token', methods=['POST'])
+def api_fp_token():
+    """Issue a single-use download token after checking the weekly web limit.
+
+    Body: {"fp": "<32-char hex fingerprint>"}
+    Response:
+      {"ok": true,  "token": "<hex>"}          — allowed, use token in download URL
+      {"ok": true,  "token": null}              — no FP provided, allow without recording
+      {"ok": false, "count": N, "limit": M}     — limit reached
+    Fails open: any server error returns {"ok": true, "token": null}.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        fp   = (data.get('fp') or '').strip()
+        ip   = (request.headers.get('X-Forwarded-For', request.remote_addr or '')
+                .split(',')[0].strip())
+
+        # Localhost / desktop build: no limit
+        if os.environ.get('QUEUE_DISABLED') or ip in ('127.0.0.1', '::1'):
+            return jsonify({'ok': True, 'token': None})
+
+        if not fp or len(fp) > 64:
+            return jsonify({'ok': True, 'token': None})
+
+        allowed, count, limit = check_web_download(fp, ip)
+        if not allowed:
+            return jsonify({'ok': False, 'count': count, 'limit': limit})
+
+        token = _issue_web_token(fp, ip)
+        return jsonify({'ok': True, 'token': token})
+    except Exception:
+        return jsonify({'ok': True, 'token': None})   # fail open
 
 
 @app.route('/api/validate-spoke-fillets')
@@ -2362,6 +2506,7 @@ def download_flange_stl():
                            flange_plate_height, flange_bend_radius (metal).
     Optional: hub_od, spokes_enabled, spokes_hub_od, clearance_preset, backlash_preset.
     """
+    _consume_web_token(request)
     try:
         args = request.args
 
@@ -2522,6 +2667,7 @@ def download_flange_step():
         type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
         filename = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.step'
         step_bytes = _rename_step_product(step_bytes, filename[:-5])
+        step_bytes = _embed_step(step_bytes, request.args)
         if _mirror_to_addins(step_bytes, filename):
             return ('', 204)
         return Response(step_bytes, mimetype='application/step',
@@ -2541,6 +2687,7 @@ def download_flange_assembly():
     generate_pulley_stl(); both flanges and any support ribs are concatenated
     (no boolean union — slicer handles overlapping).
     """
+    _consume_web_token(request)
     try:
         import trimesh as _trimesh
         args = request.args
@@ -3768,6 +3915,7 @@ def api_download_step_async():
     """
     try:
         query_params = request.get_json() or {}
+        _consume_web_token_from_body(query_params)
         job = create_job('step', query_params)
 
         _app = app
@@ -3978,6 +4126,7 @@ def api_download_all_step_async():
     try:
         # Extract params from request JSON (convert from form params)
         query_params = request.get_json() or {}
+        _consume_web_token_from_body(query_params)
         job = create_job('all-step', query_params)
 
         _app = app

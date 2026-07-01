@@ -664,40 +664,26 @@ def generate_belt_dxf_for_step(
     num_teeth1: int,
     num_teeth2: int,
     center_dist_mm: float,
-    back_tolerance_mm: float = 0.02,
-    teeth_tolerance_mm: float = 0.05,
 ) -> bytes:
-    """
-    DXF for small_step belt extrusion.
+    """DXF for small_step belt extrusion.
 
-      BELT_BACK  — closed outer boundary → LINE segments (back_tolerance_mm RDP)
-      BELT_TEETH — inner toothed boundary → single SPLINE entity
-
-    The SPLINE fit-points list is inner_pts + [inner_pts[0]], so the first and
-    last fit point are the same.  collect_segments() reads start=end=inner_pts[0],
-    and build_one_loop closes the loop immediately as a single segment.
-
-    small_step calls fit_to_bspline on the fit points.  The cubic B-spline
-    collocation matrix has half-bandwidth p=3, so the banded LU solver runs in
-    O(9n) instead of the old O(n³) dense solver.  This eliminates the precision
-    loss that previously caused teeth to disappear on the straight sections.
+    Uses belt_outline_segments() so the geometry is identical to the combined
+    layout DXF:
+      BELT_BACK  — LINE + ARC segments for the smooth back surface
+      BELT_TEETH — one SPLINE per tooth (shared endpoints chain into one closed
+                   void loop inside small_step's build_one_loop)
 
     Returns empty bytes when the family has no belt tooth data.
     """
-    belt_ring_poly, tooth_polys, _, _ = build_two_pulley_belt(
-        family, pitch, num_teeth1, num_teeth2, center_dist_mm
-    )
-    if not belt_ring_poly:
+    from geometry.pulley_geometry import belt_outline_segments
+    try:
+        outer_segs, inner_segs, _, _, _ = belt_outline_segments(
+            family, pitch, num_teeth1, num_teeth2, center_dist_mm
+        )
+    except Exception:
         return b''
-
-    def _simplify(pts, tol):
-        reduced = _rdp(pts + [pts[0]], tol)
-        if len(reduced) > 1 and reduced[0] == reduced[-1]:
-            reduced = reduced[:-1]
-        return reduced if len(reduced) >= 3 else pts
-
-    belt_ring_poly = _simplify(belt_ring_poly, back_tolerance_mm)
-    inner_pts = _simplify(tooth_polys[0], teeth_tolerance_mm) if tooth_polys else []
+    if not inner_segs:
+        return b''
 
     doc = ezdxf.new('R2010')
     doc.header['$INSUNITS'] = 4
@@ -706,33 +692,20 @@ def generate_belt_dxf_for_step(
     doc.layers.new('BELT_BACK',  dxfattribs={'color': 5, 'linetype': 'Continuous'})
     doc.layers.new('BELT_TEETH', dxfattribs={'color': 3, 'linetype': 'Continuous'})
 
-    # Outer boundary: LINE segments (smooth curve, no tooth detail needed)
-    for i in range(len(belt_ring_poly)):
-        x0, y0 = belt_ring_poly[i]
-        x1, y1 = belt_ring_poly[(i + 1) % len(belt_ring_poly)]
-        msp.add_line((x0, y0), (x1, y1), dxfattribs={'layer': 'BELT_BACK'})
+    _segs_to_dxf(msp, outer_segs, {'layer': 'BELT_BACK'})
+    _segs_to_dxf(msp, inner_segs, {'layer': 'BELT_TEETH'})
 
-    # Inner toothed boundary: split into short SPLINE chunks so CAD viewers
-    # tessellate each segment at enough density to show individual teeth.
-    # A single full-belt B-spline (~836 pts, ~600mm) gets the same fixed
-    # tessellation count as a short segment, making teeth vanish in the viewer.
-    # At 0.05mm Python simplification: ~12 pts/tooth. MAX_CHUNK=60 → ~5 teeth
-    # per segment → viewer renders each at sufficient density.
-    # Adjacent chunks share their boundary point exactly so build_one_loop
-    # in small_step chains them into one closed void loop.
-    if inner_pts:
-        _MAX_CHUNK = 60
-        n_inner = len(inner_pts)
-        i = 0
-        while i < n_inner:
-            end = min(i + _MAX_CHUNK, n_inner)
-            # Closing point: next chunk start (or loop back to inner_pts[0])
-            closing = inner_pts[end % n_inner]
-            chunk = inner_pts[i:end] + [closing]
-            msp.add_spline(
-                [(x, y, 0.0) for x, y in chunk],
+    # Close the inner loop: the last tooth's end may not coincide with the
+    # first tooth's start (belt_outline_segments doesn't add a return segment).
+    # Add a closing LINE so small_step's build_one_loop can complete the loop.
+    if inner_segs:
+        first_pt = inner_segs[0][1][0]
+        last_pt  = inner_segs[-1][1][-1]
+        if math.hypot(last_pt[0] - first_pt[0], last_pt[1] - first_pt[1]) > 1e-6:
+            msp.add_line(
+                (last_pt[0],  last_pt[1],  0),
+                (first_pt[0], first_pt[1], 0),
                 dxfattribs={'layer': 'BELT_TEETH'},
             )
-            i = end
 
     return _serialise_dxf(doc)
