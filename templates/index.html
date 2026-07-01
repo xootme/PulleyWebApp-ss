@@ -486,9 +486,17 @@
           <button class="dl-item fb-3d" onclick="downloadBeltSTL(); closeDlMenus()">STL</button>
         </div>
       </div>
-      <div class="dl-wrap" id="dl-all-step-wrap" style="display:none;margin-top:6px;">
+      <div class="dl-wrap fb-3d" id="dl-all-step-wrap" style="display:none;margin-top:6px;">
         <button class="btn-download" style="background:#7c3aed;border:3px solid #4c1d95;"
                 onclick="downloadAllSTEP()">⬇ Download All (STEP)</button>
+      </div>
+      <div class="dl-wrap fb-2d" id="dl-all-2d-wrap" style="display:none;margin-top:6px;">
+        <button class="btn-download" style="background:#7c3aed;border:3px solid #4c1d95;"
+                onclick="toggleDlMenu('dl-all-2d', event)">⬇ Download All</button>
+        <div class="dl-menu hidden" id="dl-all-2d">
+          <button class="dl-item" onclick="downloadAllSVG(); closeDlMenus()">SVG</button>
+          <button class="dl-item" onclick="downloadAllDXF(); closeDlMenus()">DXF</button>
+        </div>
       </div>
     </section>
 
@@ -2491,7 +2499,9 @@ function updateBeltBtn() {
   const dual      = document.getElementById('dual_enable').checked;
   document.getElementById('belt-svg-wrap').classList.toggle('hidden', !hasBelt);
   document.getElementById('tab-belt')    .classList.toggle('hidden', !hasBelt);
-  document.getElementById('dl-all-step-wrap').style.display = (hasBelt && dual) ? '' : 'none';
+  const showAll = hasBelt && dual;
+  document.getElementById('dl-all-step-wrap').style.display = showAll ? '' : 'none';
+  document.getElementById('dl-all-2d-wrap').style.display   = showAll ? '' : 'none';
   // If switching away from a belt-only family, reset to pulley tab
   if (!hasBelt && previewTab === 'belt') {
     previewTab = 'pulley';
@@ -3000,6 +3010,17 @@ function downloadSTEP(n) {
 function downloadAllSTEP() {
   // Use async download with job queue to avoid Cloudflare timeout
   startAsyncDownload('all-step');
+}
+
+function downloadAllDXF() {
+  const params = buildBeltParams();  // includes all P1/P2 params + center_distance in dual mode
+  window.location = _dlUrl('/download/all-dxf?' + new URLSearchParams(params));
+}
+
+function downloadAllSVG() {
+  // Reuse the dual belt SVG — shows both pulleys and belt in one system drawing
+  const params = buildBeltParams();
+  window.location = _dlUrl('/download/belt-svg?' + new URLSearchParams(params));
 }
 
 function downloadSTL(n) {

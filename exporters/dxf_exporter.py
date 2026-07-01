@@ -284,6 +284,190 @@ def _serialise_dxf(doc) -> bytes:
     return buf.getvalue().encode('utf-8')
 
 
+def _rotate_segs(segs, phi: float):
+    """Return segment list rotated CW by phi radians (compass convention, same as _rot)."""
+    if abs(phi) < 1e-9:
+        return segs
+    c, s = math.cos(phi), math.sin(phi)
+    def _r(x, y):
+        return x * c + y * s, -x * s + y * c
+    result = []
+    for seg in segs:
+        kind = seg[0]
+        if kind == 'spline':
+            _, pts = seg
+            result.append(('spline', [_r(x, y) for x, y in pts]))
+        elif kind == 'arc':
+            _, cx, cy, r, (sx, sy), (mx, my), (ex, ey) = seg
+            rcx, rcy = _r(cx, cy)
+            result.append(('arc', rcx, rcy, r,
+                           _r(sx, sy), _r(mx, my), _r(ex, ey)))
+        elif kind == 'line':
+            _, x0, y0, x1, y1 = seg
+            rx0, ry0 = _r(x0, y0)
+            rx1, ry1 = _r(x1, y1)
+            result.append(('line', rx0, ry0, rx1, ry1))
+    return result
+
+
+def _shift_segs(segs, dx: float, dy: float):
+    """Return segment list with all coordinates translated by (dx, dy)."""
+    result = []
+    for seg in segs:
+        kind = seg[0]
+        if kind == 'spline':
+            _, pts = seg
+            result.append(('spline', [(x + dx, y + dy) for x, y in pts]))
+        elif kind == 'arc':
+            _, cx, cy, r, (sx, sy), (mx, my), (ex, ey) = seg
+            result.append(('arc', cx + dx, cy + dy, r,
+                           (sx + dx, sy + dy), (mx + dx, my + dy), (ex + dx, ey + dy)))
+        elif kind == 'line':
+            _, x0, y0, x1, y1 = seg
+            result.append(('line', x0 + dx, y0 + dy, x1 + dx, y1 + dy))
+    return result
+
+
+def generate_combined_layout_dxf(
+    family: str,
+    pitch: str,
+    num_teeth1: int,
+    bore_mm1: float,
+    clearance_mm1: float = 0.0,
+    backlash_mm1: float = 0.0,
+    print_extra_mm1: float = 0.0,
+    spoke_count1: int = 0,
+    spoke_width_mm1: float = 0.0,
+    spoke_hub_od_mm1: float = 0.0,
+    rim_depth_mm1: float = 2.0,
+    fillet_tip_mm1: float = 0.0,
+    fillet_base_mm1: float = 0.0,
+    flat_depth_mm1: float = 0.0,
+    keyway_w_mm1: float = 0.0,
+    keyway_h_mm1: float = 0.0,
+    num_teeth2: int = 0,
+    bore_mm2: float = 0.0,
+    clearance_mm2: float = 0.0,
+    backlash_mm2: float = 0.0,
+    print_extra_mm2: float = 0.0,
+    spoke_count2: int = 0,
+    spoke_width_mm2: float = 0.0,
+    spoke_hub_od_mm2: float = 0.0,
+    rim_depth_mm2: float = 2.0,
+    fillet_tip_mm2: float = 0.0,
+    fillet_base_mm2: float = 0.0,
+    flat_depth_mm2: float = 0.0,
+    keyway_w_mm2: float = 0.0,
+    keyway_h_mm2: float = 0.0,
+    center_dist_mm: float = 100.0,
+) -> bytes:
+    """
+    Combined drive-assembly DXF: P1 tooth profile at origin, P2 at center_dist_mm,
+    belt outline wrapping around both — everything at true operating geometry.
+    Used by the 2D 'Download All' button.
+    """
+    key = _profile_key(family, pitch)
+    if key not in PULLEY_SPECS:
+        raise ValueError(f"Unknown profile key '{key}'")
+
+    n2 = num_teeth2 if num_teeth2 > 0 else num_teeth1
+
+    doc = ezdxf.new('R2010')
+    doc.header['$INSUNITS'] = 4
+    doc.header['$MEASUREMENT'] = 1
+    msp = doc.modelspace()
+
+    doc.layers.new('PROFILE',    dxfattribs={'color': 7, 'linetype': 'Continuous'})
+    doc.layers.new('BORE',       dxfattribs={'color': 1, 'linetype': 'Continuous'})
+    doc.layers.new('SPOKES',     dxfattribs={'color': 3, 'linetype': 'Continuous'})
+    doc.layers.new('BELT_BACK',  dxfattribs={'color': 5, 'linetype': 'Continuous'})
+    doc.layers.new('BELT_TEETH', dxfattribs={'color': 4, 'linetype': 'Continuous'})
+
+    # Phase angles so pulley grooves mesh with belt teeth (same as SVG/STEP exporters)
+    phi_left = phi_right = 0.0
+    if family in BELT_FAMILIES:
+        try:
+            _, _, phi_left, phi_right = build_two_pulley_belt(
+                family, pitch, num_teeth1, n2, center_dist_mm, x_offset=0.0)
+        except Exception:
+            pass
+
+    def _draw_pulley(cx, cy, num_teeth, bore_mm, clearance_mm, backlash_mm,
+                     print_extra_mm, spoke_count, spoke_width_mm, spoke_hub_od_mm,
+                     rim_depth_mm, fillet_tip_mm, fillet_base_mm,
+                     flat_depth_mm, keyway_w_mm, keyway_h_mm, phi=0.0):
+        segs, R_OD, _edge_a, wrapped = pulley_outline_segments(
+            family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm)
+        segs = _rotate_segs(segs, phi)
+        _segs_to_dxf(msp, _shift_segs(segs, cx, cy), {'layer': 'PROFILE'})
+
+        if bore_mm > 0:
+            _bore_drawn = False
+            if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+                from exporters.step_exporter import _build_bore_2d
+                _bp = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+                if _bp is not None:
+                    coords = [(x + cx, y + cy) for x, y in list(_bp.exterior.coords)[:-1]]
+                    msp.add_lwpolyline(coords, format='xy', close=True,
+                                       dxfattribs={'layer': 'BORE'})
+                    _bore_drawn = True
+            if not _bore_drawn:
+                msp.add_circle(center=(cx, cy, 0.0), radius=bore_mm / 2.0,
+                               dxfattribs={'layer': 'BORE'})
+
+        if spoke_count >= 2 and spoke_width_mm > 0.0:
+            R_tooth_root = min(math.hypot(x, y) for x, y in wrapped) if wrapped else R_OD
+            R_hub = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
+            R_rim = max(R_hub + 0.5, R_tooth_root - rim_depth_mm)
+            msp.add_circle(center=(cx, cy, 0.0), radius=R_hub, dxfattribs={'layer': 'BORE'})
+            sp_attr = {'layer': 'SPOKES'}
+            for void in _spoke_void_segments(R_hub, R_rim, spoke_count, spoke_width_mm,
+                                              fillet_tip_mm=fillet_tip_mm,
+                                              fillet_base_mm=fillet_base_mm):
+                for seg in void:
+                    ds = _seg_to_dxf(seg)
+                    if ds is None:
+                        continue
+                    if ds[0] == 'line':
+                        _, p1, p2 = ds
+                        msp.add_line((p1[0] + cx, p1[1] + cy, 0),
+                                     (p2[0] + cx, p2[1] + cy, 0), dxfattribs=sp_attr)
+                    else:
+                        _, center, r, sa, ea = ds
+                        msp.add_arc(center=(center[0] + cx, center[1] + cy, 0),
+                                    radius=r, start_angle=sa, end_angle=ea,
+                                    dxfattribs=sp_attr)
+
+    # P1 at origin, P2 at operating center distance — matches belt geometry exactly
+    _draw_pulley(0.0, 0.0, num_teeth1, bore_mm1, clearance_mm1, backlash_mm1,
+                 print_extra_mm1, spoke_count1, spoke_width_mm1, spoke_hub_od_mm1,
+                 rim_depth_mm1, fillet_tip_mm1, fillet_base_mm1,
+                 flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, phi=phi_left)
+
+    if num_teeth2 > 0:
+        _draw_pulley(center_dist_mm, 0.0, num_teeth2, bore_mm2, clearance_mm2, backlash_mm2,
+                     print_extra_mm2, spoke_count2, spoke_width_mm2, spoke_hub_od_mm2,
+                     rim_depth_mm2, fillet_tip_mm2, fillet_base_mm2,
+                     flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, phi=phi_right)
+
+    # Belt wraps around P1 at x=0 and P2 at x=center_dist_mm — no shift needed
+    try:
+        outer_segs, inner_segs, _n_belt, _belt_spec, _C = belt_outline_segments(
+            family, pitch, num_teeth1, n2, center_dist_mm)
+        _segs_to_dxf(msp, outer_segs, {'layer': 'BELT_BACK'})
+        # Draw all belt teeth exactly as computed. The geometry math already
+        # handles the transition zone: _interp_at maps each tooth's local (bx,by)
+        # coordinates through a C1-continuous pitch line (tangent-continuous at
+        # the straight/arc junction), so the groove/fillet naturally bends from
+        # arc geometry to straight geometry. Tooth bodies (below OD) are rigid;
+        # the land/fillet (at OD) flexes smoothly — both are already correct.
+        _segs_to_dxf(msp, inner_segs, {'layer': 'BELT_TEETH'})
+    except Exception:
+        pass  # belt geometry unavailable for this family — skip silently
+
+    return _serialise_dxf(doc)
+
+
 def generate_rim_layer_dxf(
     family: str,
     pitch: str,

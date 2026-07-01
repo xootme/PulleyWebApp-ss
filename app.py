@@ -377,7 +377,10 @@ from geometry.pulley_geometry import (
 from exporters.svg_exporter import generate_svg, generate_svg_dual, generate_rim_layer_svg
 from exporters.png_exporter import generate_png, generate_png_dual
 from exporters.belt_svg_exporter import generate_belt_svg, generate_belt_png
-from exporters.dxf_exporter import generate_dxf, generate_belt_dxf, generate_belt_dxf_dual, generate_rim_layer_dxf
+from exporters.dxf_exporter import (
+    generate_dxf, generate_belt_dxf, generate_belt_dxf_dual,
+    generate_rim_layer_dxf, generate_combined_layout_dxf,
+)
 from exporters.step_exporter import (
     generate_pulley_stl, generate_pulley_stl_preview,
     generate_drive_stl_preview,
@@ -2099,6 +2102,75 @@ def download_belt_dxf():
         )
     except Exception as e:
         return f'Error generating belt DXF: {e}', 400
+
+
+@app.route('/download/all-dxf')
+def download_all_dxf():
+    """Combined layout DXF: P1 profile, P2 profile, belt outline in one file."""
+    try:
+        family = request.args.get('family', 'HTD')
+        pitch  = request.args.get('pitch',  '5M')
+        key    = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return f'Unknown profile {family}/{pitch}', 400
+        spec = PULLEY_SPECS[key]
+
+        num_teeth1 = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
+        num_teeth2 = max(spec['min_teeth'], int(request.args.get('p2_teeth', spec['min_teeth'])))
+        bore1      = _get_bore(request.args, 'bore')
+        bore2      = _get_bore(request.args, 'p2_bore')
+        pe1        = float(request.args.get('print_extra',    0.0))
+        pe2        = float(request.args.get('p2_print_extra', 0.0))
+        cl1 = _get_preset_value(spec, 'clearances',
+                                request.args.get('clearance_preset',    'STANDARD'),
+                                request.args.get('clearance_custom',    0.0))
+        bl1 = _get_preset_value(spec, 'backlash',
+                                request.args.get('backlash_preset',     'STANDARD'),
+                                request.args.get('backlash_custom',     0.0))
+        cl2 = _get_preset_value(spec, 'clearances',
+                                request.args.get('p2_clearance_preset', 'STANDARD'),
+                                request.args.get('p2_clearance_custom', 0.0))
+        bl2 = _get_preset_value(spec, 'backlash',
+                                request.args.get('p2_backlash_preset',  'STANDARD'),
+                                request.args.get('p2_backlash_custom',  0.0))
+
+        _default_c = (num_teeth1 + num_teeth2) * spec['pitch'] / (2.0 * math.pi)
+        center_dist = float(request.args.get('center_distance', _default_c))
+
+        sp1_en, sp1_hub_od, sp1_rim, sp1_w, sp1_ft, sp1_fb, sp1_cnt, _, _ = \
+            _parse_spoke_params(request.args, '')
+        sp2_en, sp2_hub_od, sp2_rim, sp2_w, sp2_ft, sp2_fb, sp2_cnt, _, _ = \
+            _parse_spoke_params(request.args, 'p2_')
+
+        dxf_bytes = generate_combined_layout_dxf(
+            family=family, pitch=pitch,
+            num_teeth1=num_teeth1, bore_mm1=bore1,
+            clearance_mm1=cl1, backlash_mm1=bl1, print_extra_mm1=pe1,
+            spoke_count1=sp1_cnt if sp1_en else 0,
+            spoke_width_mm1=sp1_w, spoke_hub_od_mm1=sp1_hub_od,
+            rim_depth_mm1=sp1_rim, fillet_tip_mm1=sp1_ft, fillet_base_mm1=sp1_fb,
+            flat_depth_mm1=float(request.args.get('hub_flat_depth',    0.0)),
+            keyway_w_mm1=float(request.args.get('hub_keyway_w',        0.0)),
+            keyway_h_mm1=float(request.args.get('hub_keyway_h',        0.0)),
+            num_teeth2=num_teeth2, bore_mm2=bore2,
+            clearance_mm2=cl2, backlash_mm2=bl2, print_extra_mm2=pe2,
+            spoke_count2=sp2_cnt if sp2_en else 0,
+            spoke_width_mm2=sp2_w, spoke_hub_od_mm2=sp2_hub_od,
+            rim_depth_mm2=sp2_rim, fillet_tip_mm2=sp2_ft, fillet_base_mm2=sp2_fb,
+            flat_depth_mm2=float(request.args.get('p2_hub_flat_depth', 0.0)),
+            keyway_w_mm2=float(request.args.get('p2_hub_keyway_w',     0.0)),
+            keyway_h_mm2=float(request.args.get('p2_hub_keyway_h',     0.0)),
+            center_dist_mm=center_dist,
+        )
+        filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-all.dxf'
+        _mirror_to_addins(dxf_bytes, filename)
+        return Response(
+            dxf_bytes,
+            mimetype='application/dxf',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        return f'Error generating combined DXF: {e}', 400
 
 
 @app.route('/api/validate-spoke-fillets')
