@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deploy Report — e3864c2 — 2026-07-01 16:08</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1e293b;
+         margin: 0; padding: 24px; background: #f8fafc; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+           padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  h2 { font-size: 14px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .06em; color: #64748b; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: #64748b; border-bottom: 1px solid #e2e8f0;
+        padding: 4px 8px; }
+  td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  .num  { text-align: right; font-family: ui-monospace, monospace; font-size: 12px; }
+  .muted { color: #94a3b8; font-style: italic; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px;
+            font-size:12px; font-weight:600; }
+  .body-text { color:#475569; margin: 8px 0 0; white-space: pre-wrap; }
+  .meta { color:#64748b; font-size:13px; margin-top:4px; }
+  code { font-family: ui-monospace, monospace; background:#f1f5f9;
+          padding:1px 5px; border-radius:3px; font-size:12px; }
+  .header-row { display:flex; justify-content:space-between; align-items:flex-start; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header-row">
+    <div>
+      <h1>Deploy Report</h1>
+      <p class="meta">Generated 2026-07-01 16:08 &nbsp;·&nbsp; Commit <code>e3864c2</code> &nbsp;·&nbsp; 2026-07-01 16:08:19 -0700</p>
+    </div>
+    <div>
+      <span class="badge" style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac">✓ CLEAN</span>
+    </div>
+  </div>
+  <hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0">
+  <h2>Commit</h2>
+  <p style="margin:0;font-size:15px;font-weight:600">v1.2.0: semver versioning, belt STEP/STL/DXF fixes, CCT metadata all routes, download smoke tests, desktop build default in deploy</p>
+  
+</div>
+
+
+
+<div class="card">
+  <h2>Changed Files —  14 files changed, 1485 insertions(+), 126 deletions(-)</h2>
+  <table>
+    <tr><th>File</th></tr>
+    <tr><td class="mono">app.py</td></tr>
+<tr><td class="mono">deploy.py</td></tr>
+<tr><td class="mono">exporters/dxf_exporter.py</td></tr>
+<tr><td class="mono">exporters/job_queue.py</td></tr>
+<tr><td class="mono">exporters/step_worker_ss.py</td></tr>
+<tr><td class="mono">packaging/build_release.py</td></tr>
+<tr><td class="mono">packaging/build_release_ss.py</td></tr>
+<tr><td class="mono">packaging/prepare_release.py</td></tr>
+<tr><td class="mono">templates/index.html</td></tr>
+<tr><td class="mono">tests/run_tests.py</td></tr>
+<tr><td class="mono">tests/test_downloads.py</td></tr>
+<tr><td class="mono">version.txt</td></tr>
+<tr><td class="mono">web_provisioning.md</td></tr>
+
+  </table>
+</div>
+
+<div class="card">
+  <h2>Benchmarks &nbsp;<span style="font-size:12px;font-weight:400;color:#64748b">Comparing <code>a7af8cb</code> vs <code>e4c55ae</code></span></h2>
+  <table>
+    <tr>
+      <th>Test</th>
+      <th style="text-align:right">Prev (ms)</th>
+      <th style="text-align:right">Current (ms)</th>
+      <th style="text-align:right">Delta</th>
+      <th style="text-align:center">Status</th>
+    </tr>
+    <tr style="background:#eff6ff"><td class="mono">conc/dxf_bare/N2</td><td class="num">64.1</td><td class="num">41.5</td><td class="num" style="color:#0369a1;font-weight:600">-35.3%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N4</td><td class="num">77.1</td><td class="num">71.0</td><td class="num" style="color:#16a34a;font-weight:600">-7.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N8</td><td class="num">138.8</td><td class="num">142.1</td><td class="num" style="color:#16a34a;font-weight:600">+2.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/flange_top/N2</td><td class="num">20.7</td><td class="num">18.6</td><td class="num" style="color:#16a34a;font-weight:600">-10.5%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/flange_top/N4</td><td class="num">22.4</td><td class="num">22.8</td><td class="num" style="color:#16a34a;font-weight:600">+1.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/flange_top/N8</td><td class="num">45.5</td><td class="num">49.7</td><td class="num" style="color:#16a34a;font-weight:600">+9.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_preview/N2</td><td class="num">144.1</td><td class="num">127.5</td><td class="num" style="color:#16a34a;font-weight:600">-11.5%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_preview/N4</td><td class="num">213.4</td><td class="num">203.3</td><td class="num" style="color:#16a34a;font-weight:600">-4.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_preview/N8</td><td class="num">411.5</td><td class="num">453.8</td><td class="num" style="color:#16a34a;font-weight:600">+10.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/heavy_stl/N2</td><td class="num">—</td><td class="num">212.1</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/heavy_stl/N4</td><td class="num">—</td><td class="num">376.2</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/heavy_stl/N8</td><td class="num">—</td><td class="num">738.2</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/preview_bare/N2</td><td class="num">50.2</td><td class="num">36.0</td><td class="num" style="color:#0369a1;font-weight:600">-28.2%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_bare/N4</td><td class="num">66.9</td><td class="num">69.1</td><td class="num" style="color:#16a34a;font-weight:600">+3.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_bare/N8</td><td class="num">129.3</td><td class="num">110.4</td><td class="num" style="color:#16a34a;font-weight:600">-14.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_spokes/N2</td><td class="num">42.4</td><td class="num">38.9</td><td class="num" style="color:#16a34a;font-weight:600">-8.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_spokes/N4</td><td class="num">64.9</td><td class="num">54.7</td><td class="num" style="color:#16a34a;font-weight:600">-15.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_spokes/N8</td><td class="num">145.7</td><td class="num">132.5</td><td class="num" style="color:#16a34a;font-weight:600">-9.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_bare/N2</td><td class="num">—</td><td class="num">64.5</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_bare/N4</td><td class="num">—</td><td class="num">115.9</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_bare/N8</td><td class="num">—</td><td class="num">222.9</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_spokes/N2</td><td class="num">—</td><td class="num">63.7</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_spokes/N4</td><td class="num">—</td><td class="num">121.0</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_spokes/N8</td><td class="num">—</td><td class="num">231.1</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/svg_bare/N2</td><td class="num">35.4</td><td class="num">19.7</td><td class="num" style="color:#0369a1;font-weight:600">-44.5%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_bare/N4</td><td class="num">18.9</td><td class="num">20.0</td><td class="num" style="color:#16a34a;font-weight:600">+5.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_bare/N8</td><td class="num">37.9</td><td class="num">34.6</td><td class="num" style="color:#16a34a;font-weight:600">-8.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/svg_spokes/N2</td><td class="num">20.8</td><td class="num">15.3</td><td class="num" style="color:#0369a1;font-weight:600">-26.6%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/svg_spokes/N4</td><td class="num">27.3</td><td class="num">18.8</td><td class="num" style="color:#0369a1;font-weight:600">-31.1%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_spokes/N8</td><td class="num">40.5</td><td class="num">36.9</td><td class="num" style="color:#16a34a;font-weight:600">-8.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_medium</td><td class="num">14.2</td><td class="num">13.2</td><td class="num" style="color:#16a34a;font-weight:600">-6.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_medium_with_spokes</td><td class="num">14.7</td><td class="num">15.9</td><td class="num" style="color:#16a34a;font-weight:600">+8.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_small</td><td class="num">8.5</td><td class="num">8.1</td><td class="num" style="color:#16a34a;font-weight:600">-4.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_bottom</td><td class="num">8.8</td><td class="num">9.3</td><td class="num" style="color:#16a34a;font-weight:600">+6.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_top</td><td class="num">1.6</td><td class="num">1.4</td><td class="num" style="color:#16a34a;font-weight:600">-10.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_with_spokes</td><td class="num">1.4</td><td class="num">1.5</td><td class="num" style="color:#16a34a;font-weight:600">+8.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_metal_bottom</td><td class="num">24.8</td><td class="num">22.0</td><td class="num" style="color:#16a34a;font-weight:600">-11.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_flange_metal_top</td><td class="num">10.9</td><td class="num">8.7</td><td class="num" style="color:#0369a1;font-weight:600">-20.4%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium</td><td class="num">21.0</td><td class="num">20.9</td><td class="num" style="color:#16a34a;font-weight:600">-0.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium_with_spokes</td><td class="num">142.1</td><td class="num">145.1</td><td class="num" style="color:#16a34a;font-weight:600">+2.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_small</td><td class="num">11.8</td><td class="num">11.2</td><td class="num" style="color:#16a34a;font-weight:600">-4.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_large</td><td class="num">60.9</td><td class="num">60.9</td><td class="num" style="color:#16a34a;font-weight:600">+0.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium</td><td class="num">37.0</td><td class="num">35.6</td><td class="num" style="color:#16a34a;font-weight:600">-3.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_hub_and_spokes</td><td class="num">286.4</td><td class="num">273.2</td><td class="num" style="color:#16a34a;font-weight:600">-4.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_hub</td><td class="num">88.2</td><td class="num">82.7</td><td class="num" style="color:#16a34a;font-weight:600">-6.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_spokes</td><td class="num">188.5</td><td class="num">170.9</td><td class="num" style="color:#16a34a;font-weight:600">-9.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_small</td><td class="num">24.4</td><td class="num">25.7</td><td class="num" style="color:#16a34a;font-weight:600">+5.5%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium</td><td class="num">1.5</td><td class="num">1.4</td><td class="num" style="color:#16a34a;font-weight:600">-2.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium_with_spokes</td><td class="num">1.5</td><td class="num">1.5</td><td class="num" style="color:#16a34a;font-weight:600">+0.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_small</td><td class="num">0.8</td><td class="num">0.8</td><td class="num" style="color:#16a34a;font-weight:600">+0.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+
+  </table>
+  <p style="margin:10px 0 0;font-size:12px;color:#94a3b8">
+    ⬆ improved &gt;20% &nbsp;|&nbsp; ⚠ slow &gt;20% &nbsp;|&nbsp; ✗ regression &gt;50% &nbsp;|&nbsp; + new test
+  </p>
+</div>
+
+<div class="card">
+  <h2>Recent Commits</h2>
+  <table>
+    <tr><th>Hash</th><th>Subject</th></tr>
+    <tr style="font-weight:700"><td class="mono">e3864c2</td><td>v1.2.0: semver versioning, belt STEP/STL/DXF fixes, CCT metadata all routes, download smoke tests, desktop build default in deploy</td></tr>
+<tr><td class="mono">a7af8cb</td><td>Add combined 2D DXF download for dual-pulley belt drives</td></tr>
+<tr><td class="mono">19cb131</td><td>Add deploy report for a7641dd</td></tr>
+<tr><td class="mono">a7641dd</td><td>Fix app context missing in step-async daemon thread (same bug as download-all)</td></tr>
+<tr><td class="mono">e4c55ae</td><td>Add deploy report for 95bd34f</td></tr>
+<tr><td class="mono">95bd34f</td><td>Fix download-all 500: app._get_current_object() invalid on plain Flask instance; gitignore runtime log files</td></tr>
+<tr><td class="mono">3473500</td><td>Add deploy report for 36e0b21</td></tr>
+<tr><td class="mono">36e0b21</td><td>Fix Flask app context in generate_async daemon thread; update CCT_Architecture.md Â§10</td></tr>
+<tr><td class="mono">8da9443</td><td>Add deploy report for 8199bf4</td></tr>
+<tr><td class="mono">8199bf4</td><td>render_build.sh: remove apt-get (not available in Render native Python env)</td></tr>
+
+  </table>
+</div>
+
+</body>
+</html>
