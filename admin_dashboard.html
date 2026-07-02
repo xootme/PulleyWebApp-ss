@@ -390,7 +390,7 @@
       <div class="card">
         <h2>Desktop Licence Keys <span id="lic-count" style="color:var(--muted);font-size:0.85em;font-weight:400;"></span></h2>
         <table>
-          <thead><tr><th>Key</th><th>Email</th><th>Valid Until</th><th>Machine ID</th><th></th></tr></thead>
+          <thead><tr><th>Key</th><th>Email</th><th>Valid Until</th><th>Machine ID</th><th colspan="2"></th></tr></thead>
           <tbody id="lic-table"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
         </table>
       </div>
@@ -1067,12 +1067,16 @@ async function loadLicences() {
       const resetBtn = acts.length
         ? `<button class="btn btn-danger btn-sm" onclick="resetLicence('${rec.key}')">Reset</button>`
         : `<button class="btn btn-sm" disabled style="opacity:0.4;cursor:not-allowed">Reset</button>`;
+      const emailBtn = rec.email
+        ? `<button class="btn btn-sm" onclick="resendLicenceEmail('${rec.key}')">Resend Email</button>`
+        : '';
       return `<tr>
         <td style="font-family:monospace;font-size:0.82em">${rec.key}</td>
         <td>${rec.email || '—'}</td>
         <td>${untilCell}</td>
         <td>${machineCell}</td>
         <td>${resetBtn}</td>
+        <td>${emailBtn}</td>
       </tr>`;
     }).join('');
   } catch(e) { console.warn('Licences load error', e); }
@@ -1083,6 +1087,13 @@ async function resetLicence(key) {
   const r = await apiFetch(`/api/admin/licences/${encodeURIComponent(key)}/reset`, { method: 'POST' });
   if (r.ok) loadLicences();
   else alert('Reset failed: ' + (await r.text()));
+}
+
+async function resendLicenceEmail(key) {
+  if (!confirm(`Resend purchase confirmation email for:\n${key}`)) return;
+  const r = await apiFetch(`/api/admin/licences/${encodeURIComponent(key)}/resend-email`, { method: 'POST' });
+  if (r.ok) { const d = await r.json(); alert(`Email sent to ${d.email}`); }
+  else alert('Send failed: ' + (await r.text()));
 }
 
 // ── Queue Monitor ─────────────────────────────────────────────────────────────

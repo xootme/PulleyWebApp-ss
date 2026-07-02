@@ -3125,7 +3125,8 @@ def api_desktop_activate():
             'activated_at': datetime.now().isoformat(),
         })
         _save_desktop_licences(licences)
-    return jsonify({'ok': True, 'valid_until': rec['valid_until']})
+    return jsonify({'ok': True, 'valid_until': rec['valid_until'],
+                    'app_url': _APP_DOWNLOAD_URL or ''})
 
 
 @app.route('/api/desktop/verify', methods=['POST'])
@@ -3169,6 +3170,78 @@ def api_admin_licences():
         })
     result.sort(key=lambda r: r['created_at'], reverse=True)
     return jsonify(result)
+
+
+@app.route('/api/admin/licences/<key>/resend-email', methods=['POST'])
+def api_admin_licence_resend_email(key):
+    """Resend purchase confirmation email for a desktop licence key (admin only)."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+    key = key.strip().upper()
+    with _desktop_licences_lock:
+        licences = _load_desktop_licences()
+        rec = licences.get(key)
+    if not rec:
+        return jsonify({'error': 'key not found'}), 404
+    email      = rec.get('email', '')
+    order_id   = rec.get('order_id', '')
+    valid_until = rec.get('valid_until', '')[:10]
+    if not email:
+        return jsonify({'error': 'no email on record for this key'}), 400
+    _send_licence_purchase_email(email, key, order_id, valid_until)
+    return jsonify({'ok': True, 'email': email})
+
+
+def _send_licence_purchase_email(email, key, order_id, valid_until):
+    """Send a FreeCAD licence purchase confirmation email via SendGrid."""
+    sg_key = os.environ.get('SENDGRID_API_KEY', '')
+    if not sg_key:
+        app.logger.warning('SENDGRID_API_KEY not set — licence email not sent')
+        return
+    try:
+        import urllib.request as _ur
+        body = json.dumps({
+            'personalizations': [{'to': [{'email': email}]}],
+            'from': {'email': 'support@cheapcadtools.com', 'name': 'CheapCAD Tools'},
+            'subject': f'Your CheapCAD Tools licence key — Order #{order_id}',
+            'content': [{
+                'type': 'text/plain',
+                'value': (
+                    f'Hi,\n\n'
+                    f'Thank you for purchasing CheapCAD Tools Timing Pulleys for FreeCAD!\n\n'
+                    f'Your licence key is:\n\n'
+                    f'    {key}\n\n'
+                    f'Valid until: {valid_until}\n\n'
+                    f'--- How to activate ---\n\n'
+                    f'1. Open FreeCAD\n'
+                    f'2. Go to Part Design menu → Timing Pulley (or use the toolbar)\n'
+                    f'3. In the CCT panel, click "Paid Local App"\n'
+                    f'4. Paste your licence key and click Activate\n'
+                    f'5. The app will download and install automatically\n\n'
+                    f'The key can be used on up to 2 computers. If you need to move\n'
+                    f'to a new machine, contact support@cheapcadtools.com to reset.\n\n'
+                    f'Order: #{order_id}\n\n'
+                    f'If you have any questions, reply to this email or visit\n'
+                    f'https://cheapcadtools.com/contact/\n\n'
+                    f'— CheapCAD Tools'
+                ),
+            }],
+        }).encode()
+        req = _ur.Request(
+            'https://api.sendgrid.com/v3/mail/send',
+            data=body,
+            headers={
+                'Authorization': f'Bearer {sg_key}',
+                'Content-Type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ur.urlopen(req, timeout=10):
+            pass
+        app.logger.info(f'Licence email sent to {email} for key {key}')
+    except Exception as exc:
+        app.logger.error(f'Licence email failed: {exc}')
 
 
 @app.route('/api/admin/licences/<key>/reset', methods=['POST'])
