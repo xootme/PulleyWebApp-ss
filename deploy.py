@@ -28,6 +28,9 @@ import sys
 import os
 import re
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 PYTHON = os.path.join(os.path.dirname(__file__), '.venv314', 'Scripts', 'python.exe')
 ROOT   = os.path.dirname(os.path.abspath(__file__))
 ADDIN_TESTS = r'C:\Users\cmyer\Documents\CCT_Addins\FreeCAD\TimingPulley\tests'
@@ -300,7 +303,7 @@ _prep_script  = os.path.join(ROOT, 'packaging', 'prepare_release.py')
 if _skip_desktop_flag:
     print('[--skip-desktop] Desktop build skipped.')
 else:
-    print('Building desktop release (PyArmor obfuscate → PyInstaller → zip → GitHub → Render)...')
+    print('Building desktop release (PyArmor obfuscate -> PyInstaller -> zip -> GitHub -> Render)...')
     print('Pass --skip-desktop to omit this step for web-only fixes.')
     _r7 = run(f'"{PYTHON}" "{_build_script}"', timeout=600)
     if _r7.returncode != 0:
