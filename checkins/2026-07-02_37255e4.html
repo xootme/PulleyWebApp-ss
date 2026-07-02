@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deploy Report — 37255e4 — 2026-07-02 12:30</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1e293b;
+         margin: 0; padding: 24px; background: #f8fafc; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+           padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  h2 { font-size: 14px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .06em; color: #64748b; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: #64748b; border-bottom: 1px solid #e2e8f0;
+        padding: 4px 8px; }
+  td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  .num  { text-align: right; font-family: ui-monospace, monospace; font-size: 12px; }
+  .muted { color: #94a3b8; font-style: italic; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px;
+            font-size:12px; font-weight:600; }
+  .body-text { color:#475569; margin: 8px 0 0; white-space: pre-wrap; }
+  .meta { color:#64748b; font-size:13px; margin-top:4px; }
+  code { font-family: ui-monospace, monospace; background:#f1f5f9;
+          padding:1px 5px; border-radius:3px; font-size:12px; }
+  .header-row { display:flex; justify-content:space-between; align-items:flex-start; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header-row">
+    <div>
+      <h1>Deploy Report</h1>
+      <p class="meta">Generated 2026-07-02 12:30 &nbsp;·&nbsp; Commit <code>37255e4</code> &nbsp;·&nbsp; 2026-07-02 12:30:13 -0700</p>
+    </div>
+    <div>
+      <span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5">⚠ REGRESSIONS</span>
+    </div>
+  </div>
+  <hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0">
+  <h2>Commit</h2>
+  <p style="margin:0;font-size:15px;font-weight:600">Add admin Licences tab, WooCommerce sales tracking, download IP log</p>
+  <p class="body-text">- Admin dashboard: merge Licences into Subscribers tab; add Desktop Licence Keys table with machine ID and Reset button
+- Admin dashboard: WooCommerce orders appear in Sales tab with purple FreeCAD badge
+- Admin dashboard: Downloads tab shows rolling last-10 list with timestamp and downloader IP
+- app.py: /api/admin/licences and /api/admin/licences/<key>/reset endpoints
+- app.py: /api/woo-webhook endpoint logs WooCommerce orders to autodesk_purchases.json
+- app.py: _increment_download_count records IP and timestamp; pulls real IP from X-Forwarded-For
+- step_worker_ss.py: rename STEP products with pulley spec prefix (e.g. HTD-5M-40T Pulley 1)
+- step_worker_ss.py: pass n_belt_teeth through for belt naming
+- step_exporter.py: clearance_height_mm support in drive STL preview
+- launcher_ss.py: utf-8-sig encoding for licence file; PULLEY_NO_BROWSER env var
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com></p>
+</div>
+
+<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:6px;padding:10px 16px;margin-bottom:16px;color:#dc2626;font-weight:600;">⚠ One or more benchmarks regressed &gt;50% — investigate before shipping.</div>
+
+<div class="card">
+  <h2>Changed Files —  8 files changed, 446 insertions(+), 11 deletions(-)</h2>
+  <table>
+    <tr><th>File</th></tr>
+    <tr><td class="mono">admin_dashboard.html</td></tr>
+<tr><td class="mono">app.py</td></tr>
+<tr><td class="mono">cheapcadtools.md</td></tr>
+<tr><td class="mono">exporters/step_exporter.py</td></tr>
+<tr><td class="mono">exporters/step_worker_ss.py</td></tr>
+<tr><td class="mono">packaging/launcher_ss.py</td></tr>
+<tr><td class="mono">templates/index.html</td></tr>
+
+  </table>
+</div>
+
+<div class="card">
+  <h2>Benchmarks &nbsp;<span style="font-size:12px;font-weight:400;color:#64748b">Comparing <code>2436026</code> vs <code>818fff4</code></span></h2>
+  <table>
+    <tr>
+      <th>Test</th>
+      <th style="text-align:right">Prev (ms)</th>
+      <th style="text-align:right">Current (ms)</th>
+      <th style="text-align:right">Delta</th>
+      <th style="text-align:center">Status</th>
+    </tr>
+    <tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N2</td><td class="num">44.7</td><td class="num">36.5</td><td class="num" style="color:#16a34a;font-weight:600">-18.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N4</td><td class="num">76.3</td><td class="num">75.4</td><td class="num" style="color:#16a34a;font-weight:600">-1.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/dxf_bare/N8</td><td class="num">148.4</td><td class="num">128.6</td><td class="num" style="color:#16a34a;font-weight:600">-13.3%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/flange_top/N2</td><td class="num">23.6</td><td class="num">21.6</td><td class="num" style="color:#16a34a;font-weight:600">-8.2%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/flange_top/N4</td><td class="num">23.2</td><td class="num">25.5</td><td class="num" style="color:#16a34a;font-weight:600">+10.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/flange_top/N8</td><td class="num">44.9</td><td class="num">44.5</td><td class="num" style="color:#16a34a;font-weight:600">-0.9%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_preview/N2</td><td class="num">144.1</td><td class="num">118.8</td><td class="num" style="color:#16a34a;font-weight:600">-17.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_preview/N4</td><td class="num">235.4</td><td class="num">196.0</td><td class="num" style="color:#16a34a;font-weight:600">-16.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/heavy_preview/N8</td><td class="num">430.6</td><td class="num">420.4</td><td class="num" style="color:#16a34a;font-weight:600">-2.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/heavy_stl/N2</td><td class="num">—</td><td class="num">198.5</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/heavy_stl/N4</td><td class="num">—</td><td class="num">348.3</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/heavy_stl/N8</td><td class="num">—</td><td class="num">735.7</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/preview_bare/N2</td><td class="num">49.2</td><td class="num">34.8</td><td class="num" style="color:#0369a1;font-weight:600">-29.2%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/preview_bare/N4</td><td class="num">91.3</td><td class="num">70.9</td><td class="num" style="color:#0369a1;font-weight:600">-22.3%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_bare/N8</td><td class="num">130.6</td><td class="num">106.9</td><td class="num" style="color:#16a34a;font-weight:600">-18.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_spokes/N2</td><td class="num">40.1</td><td class="num">35.4</td><td class="num" style="color:#16a34a;font-weight:600">-11.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/preview_spokes/N4</td><td class="num">70.2</td><td class="num">58.5</td><td class="num" style="color:#16a34a;font-weight:600">-16.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/preview_spokes/N8</td><td class="num">164.4</td><td class="num">131.4</td><td class="num" style="color:#0369a1;font-weight:600">-20.0%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_bare/N2</td><td class="num">—</td><td class="num">61.7</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_bare/N4</td><td class="num">—</td><td class="num">113.0</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_bare/N8</td><td class="num">—</td><td class="num">224.3</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_spokes/N2</td><td class="num">—</td><td class="num">61.0</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_spokes/N4</td><td class="num">—</td><td class="num">119.5</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#faf5ff"><td class="mono">conc/stl_spokes/N8</td><td class="num">—</td><td class="num">223.7</td><td class="num" style="color:#7c3aed;font-weight:600">—</td><td style="color:#7c3aed;text-align:center">+</td></tr>
+<tr style="background:#eff6ff"><td class="mono">conc/svg_bare/N2</td><td class="num">21.1</td><td class="num">14.8</td><td class="num" style="color:#0369a1;font-weight:600">-29.8%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_bare/N4</td><td class="num">22.7</td><td class="num">19.1</td><td class="num" style="color:#16a34a;font-weight:600">-16.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_bare/N8</td><td class="num">38.1</td><td class="num">38.3</td><td class="num" style="color:#16a34a;font-weight:600">+0.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#fef2f2"><td class="mono">conc/svg_spokes/N2</td><td class="num">11.9</td><td class="num">19.9</td><td class="num" style="color:#dc2626;font-weight:600">+68.2%</td><td style="color:#dc2626;text-align:center">✗</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_spokes/N4</td><td class="num">18.9</td><td class="num">18.1</td><td class="num" style="color:#16a34a;font-weight:600">-4.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">conc/svg_spokes/N8</td><td class="num">35.6</td><td class="num">37.7</td><td class="num" style="color:#16a34a;font-weight:600">+6.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_medium</td><td class="num">14.7</td><td class="num">13.7</td><td class="num" style="color:#16a34a;font-weight:600">-6.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_medium_with_spokes</td><td class="num">16.0</td><td class="num">14.9</td><td class="num" style="color:#16a34a;font-weight:600">-7.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_dxf_small</td><td class="num">8.6</td><td class="num">8.4</td><td class="num" style="color:#16a34a;font-weight:600">-2.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_bottom</td><td class="num">10.3</td><td class="num">9.2</td><td class="num" style="color:#16a34a;font-weight:600">-11.4%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_flange_3dprint_top</td><td class="num">1.8</td><td class="num">1.4</td><td class="num" style="color:#0369a1;font-weight:600">-23.9%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_3dprint_with_spokes</td><td class="num">1.5</td><td class="num">1.4</td><td class="num" style="color:#16a34a;font-weight:600">-8.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_flange_metal_bottom</td><td class="num">25.6</td><td class="num">21.3</td><td class="num" style="color:#16a34a;font-weight:600">-17.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#eff6ff"><td class="mono">test_flange_metal_top</td><td class="num">11.5</td><td class="num">8.7</td><td class="num" style="color:#0369a1;font-weight:600">-24.3%</td><td style="color:#0369a1;text-align:center">⬆</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium</td><td class="num">23.2</td><td class="num">20.7</td><td class="num" style="color:#16a34a;font-weight:600">-11.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_medium_with_spokes</td><td class="num">151.7</td><td class="num">141.0</td><td class="num" style="color:#16a34a;font-weight:600">-7.0%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_preview_small</td><td class="num">11.7</td><td class="num">11.0</td><td class="num" style="color:#16a34a;font-weight:600">-5.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_large</td><td class="num">61.6</td><td class="num">61.1</td><td class="num" style="color:#16a34a;font-weight:600">-0.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium</td><td class="num">36.6</td><td class="num">34.9</td><td class="num" style="color:#16a34a;font-weight:600">-4.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_hub_and_spokes</td><td class="num">289.8</td><td class="num">272.9</td><td class="num" style="color:#16a34a;font-weight:600">-5.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_hub</td><td class="num">83.9</td><td class="num">89.0</td><td class="num" style="color:#16a34a;font-weight:600">+6.1%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_medium_with_spokes</td><td class="num">179.3</td><td class="num">167.1</td><td class="num" style="color:#16a34a;font-weight:600">-6.8%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_stl_small</td><td class="num">22.7</td><td class="num">23.1</td><td class="num" style="color:#16a34a;font-weight:600">+1.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium</td><td class="num">1.5</td><td class="num">1.4</td><td class="num" style="color:#16a34a;font-weight:600">-7.7%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_medium_with_spokes</td><td class="num">1.5</td><td class="num">1.5</td><td class="num" style="color:#16a34a;font-weight:600">-5.6%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+<tr style="background:#f0fdf4"><td class="mono">test_svg_small</td><td class="num">0.8</td><td class="num">0.7</td><td class="num" style="color:#16a34a;font-weight:600">-5.5%</td><td style="color:#16a34a;text-align:center">✓</td></tr>
+
+  </table>
+  <p style="margin:10px 0 0;font-size:12px;color:#94a3b8">
+    ⬆ improved &gt;20% &nbsp;|&nbsp; ⚠ slow &gt;20% &nbsp;|&nbsp; ✗ regression &gt;50% &nbsp;|&nbsp; + new test
+  </p>
+</div>
+
+<div class="card">
+  <h2>Recent Commits</h2>
+  <table>
+    <tr><th>Hash</th><th>Subject</th></tr>
+    <tr style="font-weight:700"><td class="mono">37255e4</td><td>Add admin Licences tab, WooCommerce sales tracking, download IP log</td></tr>
+<tr><td class="mono">2436026</td><td>Fix deploy.py: auto-OK pause() when stdin is not a TTY (background runs)</td></tr>
+<tr><td class="mono">78f88c9</td><td>Bump to v1.2.1: fix logging.handlers missing from PyInstaller bundle</td></tr>
+<tr><td class="mono">818fff4</td><td>Add deploy report</td></tr>
+<tr><td class="mono">3d49b2c</td><td>Fix PyInstaller: add logging.handlers hidden import</td></tr>
+<tr><td class="mono">0605fa0</td><td>Add deploy report</td></tr>
+<tr><td class="mono">1f7e501</td><td>Fix deploy.py: UTF-8 stdout, open test dashboard in browser</td></tr>
+<tr><td class="mono">510f136</td><td>Add deploy report</td></tr>
+<tr><td class="mono">e3864c2</td><td>v1.2.0: semver versioning, belt STEP/STL/DXF fixes, CCT metadata all routes, download smoke tests, desktop build default in deploy</td></tr>
+<tr><td class="mono">a7af8cb</td><td>Add combined 2D DXF download for dual-pulley belt drives</td></tr>
+
+  </table>
+</div>
+
+</body>
+</html>
