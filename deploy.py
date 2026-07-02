@@ -63,6 +63,9 @@ def banner(title):
 
 def pause(prompt='Continue? [y/n] '):
     """Ask the user to confirm. Auto-OK when stdin has no TTY or is at EOF."""
+    if not sys.stdin.isatty():
+        print('[auto-OK: non-interactive]')
+        return
     try:
         ans = input(f'\n{prompt}').strip().lower()
     except EOFError:
