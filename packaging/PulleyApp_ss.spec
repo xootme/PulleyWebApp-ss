@@ -64,6 +64,7 @@ hidden_imports = [
     'manifold3d',
     'fileinput', 'tokenize', 'token',
     'tkinter', 'tkinter.ttk', 'tkinter.messagebox',
+    'logging.handlers',
 ]
 hidden_imports += collect_submodules('werkzeug')
 hidden_imports += collect_submodules('flask')
