@@ -173,6 +173,44 @@ def _rotate_step_z(step_bytes: bytes, phi: float) -> bytes:
     return text.encode('utf-8')
 
 
+_STEP_PART_NAMES = {
+    'pulley':        'Pulley',
+    'top_flange':    'Top Flange',
+    'bottom_flange': 'Bottom Flange',
+    'hub':           'Hub',
+    'belt':          'Belt',
+    'flange':        'Flange',
+}
+
+
+def _rename_step_products(step_bytes: bytes, suffix: str = '', prefix: str = '') -> bytes:
+    """Rename PRODUCT name fields in a STEP DATA section.
+
+    Builds display names like "HTD-5M-40T Pulley 1" from snake_case STEP names.
+    prefix  — pulley spec e.g. 'HTD-5M-40T' or belt spec e.g. 'HTD-5M-63T'
+    suffix  — index suffix e.g. ' 1' or ' 2' (empty for single-pulley exports)
+    """
+    text = step_bytes.decode('utf-8', errors='replace')
+
+    def _replace(m):
+        old  = m.group(2)
+        base = _STEP_PART_NAMES.get(old, old)
+        if prefix:
+            new = f'{prefix} {base}{suffix}'
+        else:
+            new = f'{base}{suffix}'
+        return f"{m.group(1)}'{new}','{new}'"
+
+    # Match only bare PRODUCT( lines (not PRODUCT_DEFINITION, PRODUCT_CONTEXT, etc.)
+    text = re.sub(
+        r'(^#\d+=PRODUCT\()\'([^\']+)\',\'[^\']*\'',
+        _replace,
+        text,
+        flags=re.MULTILINE,
+    )
+    return text.encode('utf-8')
+
+
 def _merge_steps(step_parts: list, label: str = 'assembly') -> bytes:
     """Concatenate multiple STEP DATA sections, renumbering entity IDs.
 
@@ -373,6 +411,7 @@ def _generate_pulley_bytes(params, ss_bin) -> bytes:
             pass
 
 
+
 def _generate_belt_bytes(belt_params, ss_bin) -> bytes:
     """Generate belt STEP via belt DXF + small_step basic command; return bytes."""
     from exporters.dxf_exporter import generate_belt_dxf_for_step
@@ -501,6 +540,8 @@ def run(params: dict, ss_bin: str) -> bytes:
         belt_kw  = params.pop('belt_kw', None)
         family   = params.get('family', 'HTD')
         pitch    = params.get('pitch', '5M')
+        nt1      = int(params.get('num_teeth', 0))
+        prefix1  = f'{family}-{pitch}-{nt1}T'
 
         phi_left = phi_right = 0.0
         if belt_kw:
@@ -518,18 +559,27 @@ def run(params: dict, ss_bin: str) -> bytes:
 
         p1_bytes = _generate_pulley_bytes(params, ss_bin)
         p1_bytes = _rotate_step_z(p1_bytes, phi_left)
+        suffix1  = ' 1' if kw2 else ''
+        p1_bytes = _rename_step_products(p1_bytes, suffix1, prefix1)
         parts    = [p1_bytes]
 
         if kw2:
+            fam2    = kw2.get('family', family)
+            pit2    = kw2.get('pitch', pitch)
+            nt2     = int(kw2.get('num_teeth', 0))
+            prefix2 = f'{fam2}-{pit2}-{nt2}T'
             p2_bytes = _generate_pulley_bytes(kw2, ss_bin)
             p2_bytes = _rotate_step_z(p2_bytes, phi_right)
             cdist = float(belt_kw.get('center_dist_mm', 0.0)) if belt_kw else 0.0
             if cdist:
                 p2_bytes = _translate_step_x(p2_bytes, cdist)
+            p2_bytes = _rename_step_products(p2_bytes, ' 2', prefix2)
             parts.append(p2_bytes)
 
         if belt_kw:
-            parts.append(_generate_belt_bytes(belt_kw, ss_bin))
+            n_belt = int(belt_kw.get('n_belt_teeth', 0))
+            belt_prefix = f'{family}-{pitch}-{n_belt}T' if n_belt else f'{family}-{pitch}'
+            parts.append(_rename_step_products(_generate_belt_bytes(belt_kw, ss_bin), prefix=belt_prefix))
 
         label = f'{family}-{pitch}-assembly'
         return _merge_steps(parts, label)
@@ -583,6 +633,8 @@ def main():
         belt_kw  = params.pop('belt_kw', None)
         family   = params.get('family', 'HTD')
         pitch    = params.get('pitch', '5M')
+        nt1      = int(params.get('num_teeth', 0))
+        prefix1  = f'{family}-{pitch}-{nt1}T'
 
         # Compute tooth-phase offsets so pulley grooves mesh with belt teeth.
         # build_two_pulley_belt returns phi in compass-CW radians (same convention
@@ -604,18 +656,27 @@ def main():
 
         p1_bytes = _generate_pulley_bytes(params, ss_bin)
         p1_bytes = _rotate_step_z(p1_bytes, phi_left)
+        suffix1  = ' 1' if kw2 else ''
+        p1_bytes = _rename_step_products(p1_bytes, suffix1, prefix1)
         parts    = [p1_bytes]
 
         if kw2:
+            fam2    = kw2.get('family', family)
+            pit2    = kw2.get('pitch', pitch)
+            nt2     = int(kw2.get('num_teeth', 0))
+            prefix2 = f'{fam2}-{pit2}-{nt2}T'
             p2_bytes = _generate_pulley_bytes(kw2, ss_bin)
             p2_bytes = _rotate_step_z(p2_bytes, phi_right)
             cdist = float(belt_kw.get('center_dist_mm', 0.0)) if belt_kw else 0.0
             if cdist:
                 p2_bytes = _translate_step_x(p2_bytes, cdist)
+            p2_bytes = _rename_step_products(p2_bytes, ' 2', prefix2)
             parts.append(p2_bytes)
 
         if belt_kw:
-            parts.append(_generate_belt_bytes(belt_kw, ss_bin))
+            n_belt = int(belt_kw.get('n_belt_teeth', 0))
+            belt_prefix = f'{family}-{pitch}-{n_belt}T' if n_belt else f'{family}-{pitch}'
+            parts.append(_rename_step_products(_generate_belt_bytes(belt_kw, ss_bin), prefix=belt_prefix))
 
         label = f'{family}-{pitch}-assembly'
         sys.stdout.buffer.write(_merge_steps(parts, label))

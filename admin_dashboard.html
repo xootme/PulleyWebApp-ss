@@ -346,6 +346,13 @@
         <div class="stat-grid" id="dl-stats"></div>
         <div class="dl-breakdown" id="dl-breakdown" style="display:none"></div>
       </div>
+      <div class="card">
+        <h2>Recent Downloads <span style="color:var(--muted);font-size:0.85em;font-weight:400">(last 10)</span></h2>
+        <table>
+          <thead><tr><th>Date / Time</th><th>IP</th><th>Format</th></tr></thead>
+          <tbody id="dl-recent"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Sales tab -->
@@ -378,6 +385,13 @@
         <table>
           <thead><tr><th>Key</th><th>User ID</th><th>Email</th><th>Status</th><th>Added</th><th></th></tr></thead>
           <tbody id="sub-table"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Desktop Licence Keys <span id="lic-count" style="color:var(--muted);font-size:0.85em;font-weight:400;"></span></h2>
+        <table>
+          <thead><tr><th>Key</th><th>Email</th><th>Valid Until</th><th>Machine ID</th><th></th></tr></thead>
+          <tbody id="lic-table"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -505,7 +519,7 @@ function switchTab(name, btn) {
   if (name === 'metrics')     loadMetrics();
   if (name === 'bugs')        loadBugs();
   if (name === 'downloads')   loadDownloads();
-  if (name === 'subscribers') loadSubscribers();
+  if (name === 'subscribers') { loadSubscribers(); loadLicences(); }
   if (name === 'sales')       loadSales();
   if (name === 'queue')       startQueueMonitor(); else stopQueueMonitor();
 }
@@ -517,7 +531,7 @@ function loadAll() {
   if (active === 'metrics')     loadMetrics();
   if (active === 'bugs')        loadBugs();
   if (active === 'downloads')   loadDownloads();
-  if (active === 'subscribers') loadSubscribers();
+  if (active === 'subscribers') { loadSubscribers(); loadLicences(); }
   if (active === 'sales')       loadSales();
   document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
@@ -924,6 +938,22 @@ async function loadDownloads() {
     } else {
       breakdown.style.display = 'none';
     }
+
+    const recent = (d.recent || []).slice().reverse();
+    const recentEl = document.getElementById('dl-recent');
+    if (!recent.length) {
+      recentEl.innerHTML = '<tr><td colspan="3" class="empty">No downloads recorded yet.</td></tr>';
+    } else {
+      recentEl.innerHTML = recent.map(r => {
+        const dt  = r.ts ? new Date(r.ts * 1000).toLocaleString() : '—';
+        const fmt = r.fmt ? `<span style="color:${FMT_COLORS[r.fmt]||'#aaa'}">${(FMT_LABELS[r.fmt]||r.fmt).toUpperCase()}</span>` : '—';
+        return `<tr>
+          <td style="white-space:nowrap">${dt}</td>
+          <td style="font-family:monospace;font-size:0.85em">${r.ip || '—'}</td>
+          <td>${fmt}</td>
+        </tr>`;
+      }).join('');
+    }
   } catch(e) { console.warn('Downloads load error', e); }
 }
 
@@ -1005,10 +1035,54 @@ async function loadSales() {
         <td style="color:${color};font-weight:600">${p.status || '—'}</td>
         <td>${amount}</td>
         <td style="font-family:monospace;font-size:0.8em">${p.txn_id || '—'}</td>
-        <td style="color:var(--muted);font-size:0.82em">${p.txn_type || '—'}</td>
+        <td style="font-size:0.82em">${p.txn_type === 'WooCommerce'
+          ? '<span style="background:#7c5cfc22;color:#7c5cfc;border-radius:4px;padding:2px 6px">FreeCAD</span>'
+          : p.txn_type === 'web_accept' || p.txn_type
+            ? '<span style="color:var(--muted)">Autodesk</span>'
+            : '—'}</td>
       </tr>`;
     }).join('');
   } catch(e) { console.warn('Sales load error', e); }
+}
+
+// ── Licences ──────────────────────────────────────────────────────────────────
+async function loadLicences() {
+  try {
+    const r = await apiFetch('/api/admin/licences');
+    if (!r.ok) { document.getElementById('lic-table').innerHTML = '<tr><td colspan="5" class="empty">Error loading licences.</td></tr>'; return; }
+    const rows = await r.json();
+    document.getElementById('lic-count').textContent = `(${rows.length})`;
+    if (!rows.length) {
+      document.getElementById('lic-table').innerHTML = '<tr><td colspan="5" class="empty">No licence keys yet.</td></tr>';
+      return;
+    }
+    document.getElementById('lic-table').innerHTML = rows.map(rec => {
+      const acts    = rec.activations || [];
+      const until   = rec.valid_until ? rec.valid_until.slice(0,10) : '—';
+      const expired = rec.valid_until && new Date(rec.valid_until) < new Date();
+      const untilCell = `<span style="color:${expired ? 'var(--crimson)' : 'var(--green)'}">${until}</span>`;
+      const machineCell = acts.length
+        ? acts.map(a => `<span style="font-family:monospace;font-size:0.82em">${a.machine_id}</span>`).join('<br>')
+        : '<span style="color:var(--muted)">—</span>';
+      const resetBtn = acts.length
+        ? `<button class="btn btn-danger btn-sm" onclick="resetLicence('${rec.key}')">Reset</button>`
+        : `<button class="btn btn-sm" disabled style="opacity:0.4;cursor:not-allowed">Reset</button>`;
+      return `<tr>
+        <td style="font-family:monospace;font-size:0.82em">${rec.key}</td>
+        <td>${rec.email || '—'}</td>
+        <td>${untilCell}</td>
+        <td>${machineCell}</td>
+        <td>${resetBtn}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.warn('Licences load error', e); }
+}
+
+async function resetLicence(key) {
+  if (!confirm(`Reset machine activation for:\n${key}\n\nThe user will need to re-activate on their machine.`)) return;
+  const r = await apiFetch(`/api/admin/licences/${encodeURIComponent(key)}/reset`, { method: 'POST' });
+  if (r.ok) loadLicences();
+  else alert('Reset failed: ' + (await r.text()));
 }
 
 // ── Queue Monitor ─────────────────────────────────────────────────────────────

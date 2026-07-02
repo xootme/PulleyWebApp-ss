@@ -351,7 +351,7 @@ _metrics_thread = threading.Thread(target=_metrics_sampler, daemon=True)
 _metrics_thread.start()
 
 
-def _increment_download_count(fmt=None):
+def _increment_download_count(fmt=None, ip=None):
     """Increment the persistent download counter; email at each multiple of 100.
 
     Uses fcntl.flock (exclusive file lock) on Linux so concurrent gunicorn
@@ -376,6 +376,9 @@ def _increment_download_count(fmt=None):
                 by_fmt = data.get('by_format', {})
                 by_fmt[fmt] = int(by_fmt.get(fmt, 0)) + 1
                 data['by_format'] = by_fmt
+            recent = data.get('recent', [])
+            recent.append({'ts': int(time.time()), 'ip': ip or '', 'fmt': fmt or 'other'})
+            data['recent'] = recent[-10:]
             payload = json.dumps(data).encode('utf-8')
             os.lseek(fd, 0, os.SEEK_SET)
             os.ftruncate(fd, 0)
@@ -396,6 +399,9 @@ def _increment_download_count(fmt=None):
                 by_fmt = data.get('by_format', {})
                 by_fmt[fmt] = int(by_fmt.get(fmt, 0)) + 1
                 data['by_format'] = by_fmt
+            recent = data.get('recent', [])
+            recent.append({'ts': int(time.time()), 'ip': ip or '', 'fmt': fmt or 'other'})
+            data['recent'] = recent[-10:]
             with open(_DOWNLOAD_COUNT_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f)
     if count % 100 == 0:
@@ -651,7 +657,12 @@ def _track_download(response):
                 _fmt = 'svg'
             else:
                 _fmt = 'other'
-            _increment_download_count(_fmt)
+            _client_ip = (
+                request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+                or request.remote_addr
+                or ''
+            )
+            _increment_download_count(_fmt, ip=_client_ip)
         if any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
             # Downloads: no-store prevents all browser caching (Edge on 127.0.0.1
             # ignores max-age=0 for downloads; no-store is the only reliable option).
@@ -1656,6 +1667,7 @@ def api_preview_stl():
                                       request.args.get('p2_backlash_preset', 'STANDARD'),
                                       request.args.get('p2_backlash_custom', 0.0))
             center_dist = float(request.args.get('center_distance', 100.0))
+            clearance_h = max(0.0, float(request.args.get('clearance_height', 0.0)))
             part = request.args.get('part', 'all')
             hub_od1, hub_h1, sd1, sc1, cn1, fd1, kw_w1, kw_h1 = _parse_hub_params(request.args, '')
             hub_od2, hub_h2, sd2, sc2, cn2, fd2, kw_w2, kw_h2 = _parse_hub_params(request.args, 'p2_')
@@ -1689,6 +1701,7 @@ def api_preview_stl():
                 spoke_height_mm2=sp_h2 if sp_en2 else 0.0,
                 part=part,
                 flange1=fl1, flange2=fl2,
+                clearance_height_mm=clearance_h,
             )
         else:
             pulley = request.args.get('pulley', '1')
@@ -2077,6 +2090,7 @@ def download_all_step():
                 num_teeth_right= kw2['num_teeth'],
                 center_dist_mm = center_dist,
                 belt_height_mm = raw_belt_h,
+                n_belt_teeth   = int(request.args.get('n_belt', 0)),
             )
 
         _t1 = kw1['num_teeth']
@@ -3134,6 +3148,46 @@ def api_desktop_verify():
     return jsonify({'ok': True, 'valid_until': rec['valid_until']})
 
 
+@app.route('/api/admin/licences', methods=['GET'])
+def api_admin_licences():
+    """List all desktop licence records with activation details."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+    with _desktop_licences_lock:
+        licences = _load_desktop_licences()
+    result = []
+    for key, rec in licences.items():
+        result.append({
+            'key':             key,
+            'email':           rec.get('email', ''),
+            'order_id':        rec.get('order_id', ''),
+            'valid_until':     rec.get('valid_until', ''),
+            'created_at':      rec.get('created_at', ''),
+            'max_activations': rec.get('max_activations', 1),
+            'activations':     rec.get('activations', []),
+        })
+    result.sort(key=lambda r: r['created_at'], reverse=True)
+    return jsonify(result)
+
+
+@app.route('/api/admin/licences/<key>/reset', methods=['POST'])
+def api_admin_licence_reset(key):
+    """Reset all machine activations for a licence key (admin only)."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+    key = key.strip().upper()
+    with _desktop_licences_lock:
+        licences = _load_desktop_licences()
+        if key not in licences:
+            return jsonify({'error': 'key not found'}), 404
+        prev = len(licences[key].get('activations', []))
+        licences[key]['activations'] = []
+        _save_desktop_licences(licences)
+    return jsonify({'ok': True, 'key': key, 'activations_cleared': prev})
+
+
 # Environment variables (set in Render dashboard):
 #   PROVISION_SECRET   — admin bearer token for /api/subscribers/add
 #   PULLEY_LICENCE_B64 — base64-encoded licence.lic (generated locally via prepare_release.py)
@@ -3339,6 +3393,79 @@ def _send_ipn_welcome_email(email, txn_id):
         app.logger.info(f'IPN welcome email sent to {email}')
     except Exception as exc:
         app.logger.error(f'IPN welcome email failed: {exc}')
+
+
+@app.route('/api/woo-webhook', methods=['POST'])
+def api_woo_webhook():
+    """WooCommerce order webhook — logs purchases to the same file as Autodesk IPN.
+
+    Set up in WooCommerce → Settings → Advanced → Webhooks:
+      Topic:   Order updated  (or Order created)
+      URL:     https://pulleywebapp.onrender.com/api/woo-webhook
+      Secret:  WC_WEBHOOK_SECRET env var value
+    """
+    import hmac as _hmac
+    import hashlib as _hashlib
+    import base64 as _base64
+
+    raw_body = request.get_data()
+
+    # Verify HMAC-SHA256 signature when secret is configured
+    if _WC_WEBHOOK_SECRET:
+        sig_header = request.headers.get('X-WC-Webhook-Signature', '')
+        expected = _base64.b64encode(
+            _hmac.new(_WC_WEBHOOK_SECRET.encode(), raw_body, _hashlib.sha256).digest()
+        ).decode()
+        if not _hmac.compare_digest(sig_header, expected):
+            app.logger.warning('WooCommerce webhook signature mismatch')
+            return jsonify({'error': 'invalid signature'}), 401
+
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        return jsonify({'error': 'invalid JSON'}), 400
+
+    woo_status = payload.get('status', '').lower()
+    status_map = {
+        'completed':  'Completed',
+        'refunded':   'Refunded',
+        'cancelled':  'Cancelled',
+        'processing': 'Processing',
+        'pending':    'Pending',
+        'on-hold':    'On-Hold',
+        'failed':     'Failed',
+    }
+    status  = status_map.get(woo_status, woo_status.capitalize())
+    txn_id  = str(payload.get('id', ''))
+    email   = (payload.get('billing', {}).get('email') or '').lower().strip()
+    amount  = str(payload.get('total', '0.00'))
+    items   = ', '.join(
+        li.get('name', '') for li in payload.get('line_items', []) if li.get('name')
+    )
+
+    record = {
+        'ts':       int(time.time()),
+        'txn_id':   txn_id,
+        'txn_type': 'WooCommerce',
+        'status':   status,
+        'email':    email,
+        'app_id':   items,
+        'amount':   amount,
+        'raw':      payload,
+    }
+
+    with _purchases_lock:
+        try:
+            purchases = json.load(open(_PURCHASES_FILE)) if os.path.exists(_PURCHASES_FILE) else []
+        except Exception:
+            purchases = []
+        purchases.append(record)
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        with open(_PURCHASES_FILE, 'w') as f:
+            json.dump(purchases, f, indent=2)
+
+    app.logger.info(f'WooCommerce webhook: order {txn_id} {status} {email} ${amount}')
+    return '', 200
 
 
 @app.route('/api/subscribers/add', methods=['POST'])
@@ -4203,6 +4330,7 @@ def api_download_all_step_async():
                         num_teeth_right= kw2['num_teeth'],
                         center_dist_mm = center_dist,
                         belt_height_mm = raw_belt_h,
+                        n_belt_teeth   = int(query_params.get('n_belt', 0)),
                     )
 
                 update_progress(job.id, 30)  # Generating STEP

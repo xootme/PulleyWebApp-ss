@@ -78,7 +78,7 @@ def _machine_id() -> str:
 
 def _load_licence():
     try:
-        with open(_LICENCE_FILE, 'r', encoding='utf-8') as f:
+        with open(_LICENCE_FILE, 'r', encoding='utf-8-sig') as f:
             return _json.load(f)
     except Exception:
         return {}
@@ -243,7 +243,8 @@ def _open_browser():
     webbrowser.open(f'http://127.0.0.1:{PORT}')
 
 
-threading.Thread(target=_open_browser, daemon=True).start()
+if not os.environ.get('PULLEY_NO_BROWSER'):
+    threading.Thread(target=_open_browser, daemon=True).start()
 
 app.run(
     host='127.0.0.1',

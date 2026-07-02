@@ -76,13 +76,86 @@ c.close()
 *   **Active Plugins:** 
     *   Contact Form 7
     *   LiteSpeed Cache
-    *   WooCommerce
+    *   WooCommerce 10.7.0
+    *   License Manager for WooCommerce (lmfwc)
 *   **Cleanup:** Default WooCommerce and WordPress pages (Cart, Checkout, Shop, Sample Page, etc.) were deleted to keep the site lean. Akismet was removed.
 
 ## Brand Identity & Colors
 *   **Primary Accent (Deep Red):** `#761516`
 *   **Background / Complementary (Silver/Gray):** `#eaebed` (Complements the metallic/slate logo lettering).
 *   **Text:** `#000000` (Black), `#ffffff` (White).
+
+## SSH Key Details
+
+The GreenGeeks server has **two** authorized SSH keys:
+*   **ED25519** (`claude-code` key): public key at `C:\Users\cmyer\Downloads\claude-code.pub`; private key at `~/.ssh/id_ed25519_greengeeks`. **Note:** this key is rejected by the server in practice — use the RSA key instead.
+*   **RSA key** (no passphrase): saved at `~/.ssh/id_rsa_greengeeks` (chmod 600). Passphrase was stripped with `ssh-keygen -p -P 'cKylNZ^JPBkFsluc' -N '' -f ~/.ssh/id_rsa_greengeeks`. This is the key that actually works.
+
+**Always use `~/.ssh/id_rsa_greengeeks`** for SSH and paramiko connections.
+
+The paramiko pattern should use:
+```python
+key_path = os.path.expanduser('~/.ssh/id_rsa_greengeeks')
+k = paramiko.RSAKey.from_private_key_file(key_path)
+```
+
+## WooCommerce Store
+
+### Store State
+*   WooCommerce 10.7.0 — very recent; uses **block-based product templates** (not classic PHP templates).
+*   Store may have a "coming soon" mode active: `<meta name='woo-coming-soon-page' content='yes'>` appears in rendered HTML. If the store isn't behaving correctly, check WooCommerce → Settings → General → Store notice / coming soon mode and disable it.
+*   No custom WooCommerce templates exist in the blockbase theme directory — WooCommerce uses its own block template engine.
+
+### Products
+| ID | Slug | Title | Price | Status |
+|---|---|---|---|---|
+| 142 | `freecad-timing-pulley-addin` | FreeCAD Timing Pulley Addin — 1 Year Licence | $9.99 | Virtual, published |
+
+*   Product URL: `https://cheapcadtools.com/product/freecad-timing-pulley-addin/`
+*   Product thumbnail: attachment ID **145** (`PulleyWebApp_Product1.png`), `_thumbnail_id = 145` set on post 142.
+*   Thumbnails generated at: 100×100, 150×150, 300×226, 300×300, 600×453, 768×579.
+*   Image file URL: `https://cheapcadtools.com/wp-content/uploads/2026/07/PulleyWebApp_Product1.png`
+*   **Product image display:** WooCommerce 10.7's block template requires images to be added to the **product gallery** (the gallery tab in the product editor, which populates `_product_image_gallery` post meta) — setting `_thumbnail_id` alone is not sufficient. The gallery block in the block template reads from the gallery meta; without it, no image renders even when `has-post-thumbnail` appears in the body class.
+
+### Page Structure
+| ID | Slug | Parent | URL | Purpose |
+|---|---|---|---|---|
+| 141 | `tools` | (none) | `/tools/` | Tools index page |
+| 75 | `pulleys` | 141 | `/tools/pulleys/` | FreeCAD Pulley landing (free app entry via CloudFlare → Render) |
+| 142 | `freecad-timing-pulley-addin` | (none, WC product) | `/product/freecad-timing-pulley-addin/` | WooCommerce purchase page |
+| 147 | `cart` | (none) | `/cart/` | WooCommerce Cart |
+| 148 | `checkout` | (none) | `/checkout/` | WooCommerce Checkout |
+| 149 | `my-account` | (none) | `/my-account/` | WooCommerce My Account |
+
+**CloudFlare proxy:** `https://cheapcadtools.com/tools/pulleys` → Render Flask app (free tier entry point).
+
+### WP-CLI Gotchas
+*   **Loose slug matching:** `wp post list --post_name=tools` does NOT do an exact match — it runs a SQL `LIKE '%tools%'` and returns any post whose slug contains "tools". Always verify with a direct DB query:
+    ```bash
+    wp db query "SELECT ID, post_title, post_name FROM wp_posts WHERE post_name = 'tools' AND post_status = 'publish';"
+    ```
+*   **MariaDB reserved words:** `separator` is a reserved word in MariaDB. Always backtick-quote it in raw SQL: `` `separator` ``.
+*   **LMFW tables:** Cannot be managed via REST API with read-only keys. Use `wp db query` with direct SQL INSERTs for generator creation.
+
+### License Manager for WooCommerce (LMFW)
+*   **Generator ID:** 1
+*   **Key format:** `CCT-XXXXXX-XXXXXX-XXXXXX-XXXXXX` (prefix CCT-, 4 chunks of 6 alphanumeric)
+*   **Expiry:** 365 days from activation
+*   **Activations per key:** 1
+*   **Linked product:** ID 142 (via `lmfwc_products_generators` table)
+*   **API keys (read-only):**
+    *   Consumer Key: `ck_594722dce127ada51e83b023440fb9dc2cc8f978`
+    *   Consumer Secret: `cs_7228026a35af0635527ba8ebe85ac230c0465ce6`
+*   **DB tables:** `lmfwc_licenses`, `lmfwc_generators`, `lmfwc_products_generators`
+*   **Insert generator example** (used when REST API is read-only):
+    ```sql
+    INSERT INTO `lmfwc_generators`
+      (`id`, `name`, `charset`, `chunks`, `chunk_length`, `activations_limit`, `expires_in`, `created_at`, `created_by`, `updated_at`, `updated_by`, `is_deleted`, `status`)
+    VALUES
+      (1, 'CCT Standard', 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 4, 6, 1, 365, NOW(), 1, NOW(), 1, 0, 1);
+    INSERT INTO `lmfwc_products_generators` (`product_id`, `generator_id`) VALUES (142, 1);
+    ```
+*   **Note:** `separator` column in `lmfwc_generators` is a MariaDB reserved word — must be backtick-quoted. The column stores the chunk separator character (default `-`).
 
 ## Pages & Structure
 *   **Home (ID: 16):** Set as Front Page.
@@ -217,6 +290,24 @@ curl -X POST http://localhost:5000/api/autodesk-ipn \
   -d "buyer_adsk_account=test@example.com&appId=YOUR_APP_ID&txn_id=test001&payment_status=Completed&mc_gross=19.99&txn_type=web_accept"
 ```
 Expected response: HTTP 200, empty body.
+
+## FreeCAD Addin — Install Location
+
+*   **FreeCAD version:** 1.1 (installed at `C:\Program Files\FreeCAD 1.1`)
+*   **Mod directory:** `C:\Users\cmyer\AppData\Roaming\FreeCAD\v1-1\Mod\`
+*   **Addon source:** `C:\Users\cmyer\Documents\CCT_Addins\FreeCAD\TimingPulley\`
+*   **Reinstall command:**
+    ```powershell
+    Copy-Item "C:\Users\cmyer\Documents\CCT_Addins\FreeCAD\TimingPulley" `
+              "C:\Users\cmyer\AppData\Roaming\FreeCAD\v1-1\Mod\TimingPulley" `
+              -Recurse -Force
+    ```
+
+## FreeCAD Addin — Key URLs
+*   **`_PAID_URL`** in `C:\Users\cmyer\Documents\CCT_Addins\FreeCAD\TimingPulley\cct_pulley\panel.py` line 18:
+    `https://cheapcadtools.com/product/freecad-timing-pulley-addin/`
+    (Updated from the old `/tools/pulleys` URL — "Get Paid App" button now goes to the WooCommerce purchase page.)
+*   **Free app URL** (hardcoded in `_open_free`): `https://cheapcadtools.com/tools/pulleys`
 
 ## Site Purpose
 An experimental platform ("Vibe Coding" project) serving as a landing page to sell simple, high-quality CAD tools—starting with a Fusion 360 Timing Belt Pulley Generator—at highly affordable prices compared to the cost of custom coding them from scratch.

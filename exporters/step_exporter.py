@@ -2072,6 +2072,7 @@ def generate_drive_stl_preview(
     part: str = 'all',
     flange1: dict = None,
     flange2: dict = None,
+    clearance_height_mm: float = 0.0,
 ) -> bytes:
     """
     Return binary STL bytes of a two-pulley belt drive.
@@ -2136,9 +2137,13 @@ def generate_drive_stl_preview(
     p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────
+    # Belt is the nominal user height (pulley = belt + clearance on each side).
+    _belt_h = max(0.5, belt_height_mm - clearance_height_mm)
     belt_mesh = _build_belt_mesh(
-        family, pitch, num_teeth1, num_teeth2, center_dist_mm, belt_height_mm, cx1
+        family, pitch, num_teeth1, num_teeth2, center_dist_mm, _belt_h, cx1
     )
+    if belt_mesh is not None and clearance_height_mm > 0.0:
+        belt_mesh.apply_translation([0.0, 0.0, clearance_height_mm / 2.0])
 
     # ── Optional flange meshes ────────────────────────────────────────────────
     fl_meshes1, fl_meshes2 = [], []

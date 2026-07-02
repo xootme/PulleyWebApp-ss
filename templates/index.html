@@ -4061,6 +4061,7 @@ async function startAsyncDownload(type) {
   const params = buildParams();
   // Add special params for all-part downloads
   params.belt_height = document.getElementById('belt_height').value;
+  params.n_belt      = document.getElementById('belt_teeth').value || 0;
   params.dual = document.getElementById('dual_enable').checked ? 'true' : '';
 
   // Add spoke params if enabled (P1 and/or P2)
