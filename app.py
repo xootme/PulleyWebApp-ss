@@ -436,7 +436,7 @@ def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCAD Tool
         err = result.get('message', 'resend failed')
         app.logger.error(f'Resend email failed to {to}: {err}')
         return False, err
-    except _ur.error.HTTPError as exc:
+    except _ur.HTTPError as exc:
         body = exc.read(512).decode('utf-8', errors='replace')
         app.logger.error(f'Resend email HTTP error to {to}: {exc} body={body}')
         return False, f'{exc} body={body}'
