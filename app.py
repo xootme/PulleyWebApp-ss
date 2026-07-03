@@ -436,10 +436,10 @@ def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'info@cheapcad
             s.login(user, password)
             s.sendmail(from_addr, [to], msg.as_string())
         app.logger.info(f'SMTP email sent to {to}: {subject}')
-        return True
+        return True, ''
     except Exception as exc:
         app.logger.error(f'SMTP email failed to {to}: {exc}')
-        return False
+        return False, str(exc)
 
 
 def _send_milestone_email(count):
@@ -3206,6 +3206,17 @@ def api_admin_licences():
     return jsonify(result)
 
 
+@app.route('/api/admin/test-smtp', methods=['POST'])
+def api_admin_test_smtp():
+    """Test SMTP connectivity — returns ok or the error string."""
+    auth = request.headers.get('Authorization', '')
+    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
+        return jsonify({'error': 'unauthorized'}), 401
+    to = (request.get_json(silent=True) or {}).get('to', 'xootme@gmail.com')
+    ok, err = _smtp_send(to, 'CCT SMTP test', 'This is a test email from pulleywebapp.onrender.com')
+    return jsonify({'ok': ok, 'error': err})
+
+
 @app.route('/api/admin/licences/<key>/resend-email', methods=['POST'])
 def api_admin_licence_resend_email(key):
     """Resend purchase confirmation email for a desktop licence key (admin only)."""
@@ -3223,7 +3234,9 @@ def api_admin_licence_resend_email(key):
     valid_until = rec.get('valid_until', '')[:10]
     if not email:
         return jsonify({'error': 'no email on record for this key'}), 400
-    _send_licence_purchase_email(email, key, order_id, valid_until)
+    ok, err = _send_licence_purchase_email(email, key, order_id, valid_until)
+    if not ok:
+        return jsonify({'error': f'Email failed: {err}'}), 502
     return jsonify({'ok': True, 'email': email})
 
 
@@ -3248,7 +3261,7 @@ def _send_licence_purchase_email(email, key, order_id, valid_until):
         f'https://cheapcadtools.com/contact/\n\n'
         f'— CheapCAD Tools'
     )
-    _smtp_send(email, f'Your CheapCAD Tools licence key — Order #{order_id}', body)
+    return _smtp_send(email, f'Your CheapCAD Tools licence key — Order #{order_id}', body)
 
 
 @app.route('/api/admin/licences/<key>/reset', methods=['POST'])
@@ -3446,7 +3459,7 @@ def _send_ipn_welcome_email(email, txn_id):
         f'https://cheapcadtools.com/contact/\n\n'
         f'— CheapCAD Tools'
     )
-    _smtp_send(email, 'Welcome to CheapCAD Tools — your subscription is active', body)
+    return _smtp_send(email, 'Welcome to CheapCAD Tools — your subscription is active', body)
 
 
 @app.route('/api/woo-webhook', methods=['POST'])
