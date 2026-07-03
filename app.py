@@ -408,35 +408,36 @@ def _increment_download_count(fmt=None, ip=None):
         _send_milestone_email(count)
 
 
-_WP_EMAIL_RELAY = 'https://cheapcadtools.com/wp-json/cct/v1/send-email'
-_WP_EMAIL_SECRET = 'WadaWadaBing3'   # same as PROVISION_SECRET — set once
+_RESEND_API_KEY = 're_RUGQ65Ty_4jxjAZMoew8XmkqnJ4B6K9Aa'
+_RESEND_URL = 'https://api.resend.com/emails'
 
 
-def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'info@cheapcadtools.com'):
-    """Send email via the WordPress relay on cheapcadtools.com.
+def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCAD Tools <info@cheapcadtools.com>'):
+    """Send email via Resend API.
 
     Returns (True, '') on success or (False, error_message) on failure.
     """
     import urllib.request as _ur
     payload = json.dumps({
-        'secret':  _WP_EMAIL_SECRET,
-        'to':      to,
+        'from':    from_addr,
+        'to':      [to],
         'subject': subject,
-        'body':    body,
+        'text':    body,
     }).encode()
     try:
-        req = _ur.Request(_WP_EMAIL_RELAY, data=payload,
-                          headers={'Content-Type': 'application/json'}, method='POST')
+        req = _ur.Request(_RESEND_URL, data=payload,
+                          headers={'Content-Type': 'application/json',
+                                   'Authorization': f'Bearer {_RESEND_API_KEY}'}, method='POST')
         with _ur.urlopen(req, timeout=20) as resp:
             result = json.loads(resp.read())
-        if result.get('ok'):
-            app.logger.info(f'WP relay email sent to {to}: {subject}')
+        if result.get('id'):
+            app.logger.info(f'Resend email sent to {to}: {subject}')
             return True, ''
-        err = result.get('message', 'wp_mail failed')
-        app.logger.error(f'WP relay email failed to {to}: {err}')
+        err = result.get('message', 'resend failed')
+        app.logger.error(f'Resend email failed to {to}: {err}')
         return False, err
     except Exception as exc:
-        app.logger.error(f'WP relay email error to {to}: {exc}')
+        app.logger.error(f'Resend email error to {to}: {exc}')
         return False, str(exc)
 
 
