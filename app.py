@@ -427,7 +427,8 @@ def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCAD Tool
     try:
         req = _ur.Request(_RESEND_URL, data=payload,
                           headers={'Content-Type': 'application/json',
-                                   'Authorization': f'Bearer {_RESEND_API_KEY}'}, method='POST')
+                                   'Authorization': f'Bearer {_RESEND_API_KEY}',
+                                   'User-Agent': 'CCT-PulleyApp/1.0'}, method='POST')
         with _ur.urlopen(req, timeout=20) as resp:
             result = json.loads(resp.read())
         if result.get('id'):
