@@ -186,10 +186,34 @@ k = paramiko.RSAKey.from_private_key_file(key_path)
 
 ## Contact Form Configuration
 *   **Form ID:** 18
-*   **Recipient:** `info@cheapcadtools.com`
-*   **Sender:** `wordpress@cheapcadtools.com` (Used to bypass GreenGeeks strict anti-spoofing/SMTP filters).
 *   **Fields:** Name, Email, Subject, Message. The message field is mandatory (`[textarea* your-message]`), and the "(optional)" text has been removed.
 *   **Technical Note:** When updating CF7 settings via WP-CLI, the `_mail` metadata requires native PHP array serialization via `wp eval` to update safely. Standard bash string injection causes corrupt headers and `mail_failed` errors.
+
+## Outgoing Email — GreenGeeks / WordPress
+
+GreenGeeks delivers outgoing mail via its local MTA. `info@cheapcadtools.com` is the sending address for all CCT transactional email.
+
+### WordPress mu-plugin relay (backup path)
+
+A mu-plugin at `cheapcadtools/wp-content/mu-plugins/cct-email-relay.php` exposes a REST endpoint that uses `wp_mail()` as an HTTP-callable relay:
+
+*   **Endpoint:** `POST https://cheapcadtools.com/wp-json/cct/v1/send-email`
+*   **Payload:** `{ "secret": "<PROVISION_SECRET>", "to": "...", "subject": "...", "body": "..." }`
+*   **Returns:** `{"ok":true}` or `{"ok":false,"message":"..."}` 
+*   **From:** `CheapCAD Tools <info@cheapcadtools.com>` (set in plugin header)
+
+**Cloudflare WAF bypass rule:** Cloudflare blocks datacenter IPs (e.g. Render) before WAF rules fire. A Security Rule in Cloudflare skips all WAF components for requests matching:
+```
+http.request.uri.path eq "/wp-json/cct/v1/send-email"
+```
+Action: Skip → All remaining custom rules, All rate limiting rules, All managed rules, All Super Bot Fight Mode Rules.
+
+**Active path:** The Render app uses **Resend** (not this relay) for all transactional email. The mu-plugin relay exists as a fallback. See `CCT_Architecture.md § Email` for the full Render-side sending stack.
+
+### Contact Form 7 mail config
+
+*   **Recipient:** `info@cheapcadtools.com`
+*   **Sender:** `wordpress@cheapcadtools.com` (bypasses GreenGeeks anti-spoofing filters — must use a `@cheapcadtools.com` sender)
 
 ## OnShape Application Extension
 
@@ -221,7 +245,6 @@ Open `http://localhost:5000/onshape` directly in a browser.
     *   `RENDER_API_KEY` — Render API key for the dashboard service proxy endpoints
     *   `RENDER_SERVICE_ID` — defaults to `srv-d7bve2a8qa3s738n68ig` if not set
     *   `PULLEY_LOG_DIR` — set to `/var/data/logs`
-    *   `SENDGRID_API_KEY` — milestone/bug email notifications
     *   `PULLEY_LICENCE_B64`, `PULLEY_LICENCE_EXPIRY`, `PULLEY_APP_URL` — set after annual build
     *   `AUTODESK_APP_ID` — set after App Store registration
 
@@ -262,8 +285,7 @@ Autodesk App Store sends a form-encoded POST to this endpoint after every transa
 
 ### Welcome email
 
-*   Sent via SendGrid REST API using `SENDGRID_API_KEY` env var.
-*   No-op if `SENDGRID_API_KEY` is not set (logs a warning instead).
+*   Sent via **Resend API** (`_smtp_send()` in `app.py`). See CCT_Architecture.md § Email for the full sending stack.
 *   Deduplication: checks existing purchase records before sending — re-delivery of the same IPN won't send a second email.
 *   From address and template body are hardcoded in `_send_ipn_welcome_email()` in `app.py`.
 

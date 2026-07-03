@@ -246,7 +246,7 @@ Plugin downloads app zip, writes licence.lic, stores expiry in config.json
 ```
 Customer buys on Autodesk App Store
   └── PayPal IPN → POST /api/autodesk-ipn
-        └── Render logs purchase, sends welcome email (SendGrid)
+        └── Render logs purchase, sends welcome email (Resend)
 
 Plugin calls GET checkentitlement
   https://apps.autodesk.com/webservices/checkentitlement?userid={id}&appid={appid}
@@ -332,7 +332,7 @@ No platform identity API needed — email is the identity anchor.
 | `PULLEY_APP_URL` | GitHub Release download URL for app zip |
 | `PULLEY_APP_VERSION` | Build date string; addin compares to local version.txt |
 | `RENDER_API_KEY` | For admin dashboard proxy endpoints |
-| `SENDGRID_API_KEY` | Welcome / milestone emails |
+| `RESEND_API_KEY` | Transactional email via Resend (hardcoded in app.py — `re_RUGQ65Ty_…`; domain `cheapcadtools.com` verified in Resend) |
 | `AUTODESK_APP_ID` | Set after Autodesk App Store registration; empty → subscribers.json fallback |
 | `ONSHAPE_CLIENT_ID` | OnShape OAuth app client ID (Mode B only) |
 | `ONSHAPE_CLIENT_SECRET` | OnShape OAuth app client secret (Mode B only) |
@@ -583,9 +583,24 @@ No CNAME record for `tools` is required. The Worker runs on the root domain prox
 | Render | xootme@gmail.com | Service ID `srv-d7bve2a8qa3s738n68ig`; API key in Windows Credential Manager |
 | GitHub | xootme | PAT in Windows Credential Manager (`git:https://github.com`); use `git credential fill` |
 | GreenGeeks | xootpro | SSH key `~/.ssh/id_ed25519_greengeeks`; paramiko for WordPress edits |
-| Cloudflare | — | Worker: `cct-tools-router`; route: `cheapcadtools.com/*` |
+| Cloudflare | — | Worker: `cct-tools-router`; route: `cheapcadtools.com/*`; WAF bypass rule for `/wp-json/cct/v1/send-email` |
 | Autodesk App Store | — | App ID set in `AUTODESK_APP_ID` env var after registration |
-| SendGrid | — | API key in Render env var `SENDGRID_API_KEY` |
+| Resend | xootme@gmail.com | Transactional email API; domain `cheapcadtools.com` verified; key `CCT_Email` hardcoded in `app.py`; `User-Agent: CCT-PulleyApp/1.0` required to bypass Cloudflare on `api.resend.com` |
 
 SSH to GreenGeeks: `ssh -i ~/.ssh/id_ed25519_greengeeks xootpro@chi203.greengeeks.net`
+
+### Email architecture
+
+All transactional email (licence keys, welcome messages, milestone alerts) goes through the **Resend HTTP API**. Render's outbound SMTP ports (465/587) are blocked — HTTP is the only option.
+
+```
+app.py  _smtp_send()
+    └── POST https://api.resend.com/emails
+            Authorization: Bearer re_RUGQ65Ty_…   (key name: CCT_Email, hardcoded in app.py)
+            User-Agent: CCT-PulleyApp/1.0          ← required; Python-urllib UA triggers Cloudflare 1010
+            from: CheapCAD Tools <info@cheapcadtools.com>
+            └── Resend delivers via cheapcadtools.com (domain verified in Resend dashboard)
+```
+
+A WordPress mu-plugin relay exists on GreenGeeks as a fallback (`wp-json/cct/v1/send-email`). See `cheapcadtools.md § Outgoing Email` for its configuration and the required Cloudflare WAF bypass rule.
 SSH to Render: `ssh -i ~/.ssh/id_ed25519_claude_cct srv-d7bve2a8qa3s738n68ig@ssh.oregon.render.com`
