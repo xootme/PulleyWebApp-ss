@@ -408,6 +408,40 @@ def _increment_download_count(fmt=None, ip=None):
         _send_milestone_email(count)
 
 
+def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'info@cheapcadtools.com') -> bool:
+    """Send an email via the configured SMTP server (port 465 SSL).
+
+    Reads SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD from env.
+    Returns True on success, False on failure.
+    """
+    import smtplib
+    from email.mime.text import MIMEText
+
+    host     = os.environ.get('SMTP_HOST', '')
+    port     = int(os.environ.get('SMTP_PORT', '465'))
+    user     = os.environ.get('SMTP_USER', '')
+    password = os.environ.get('SMTP_PASSWORD', '')
+
+    if not (host and user and password):
+        app.logger.warning('SMTP not configured — email not sent')
+        return False
+
+    msg = MIMEText(body, 'plain', 'utf-8')
+    msg['Subject'] = subject
+    msg['From']    = f'CheapCAD Tools <{from_addr}>'
+    msg['To']      = to
+
+    try:
+        with smtplib.SMTP_SSL(host, port, timeout=15) as s:
+            s.login(user, password)
+            s.sendmail(from_addr, [to], msg.as_string())
+        app.logger.info(f'SMTP email sent to {to}: {subject}')
+        return True
+    except Exception as exc:
+        app.logger.error(f'SMTP email failed to {to}: {exc}')
+        return False
+
+
 def _send_milestone_email(count):
     """Send a download-milestone notification via SendGrid."""
     api_key = os.environ.get('SENDGRID_API_KEY', '').strip()
@@ -3194,54 +3228,27 @@ def api_admin_licence_resend_email(key):
 
 
 def _send_licence_purchase_email(email, key, order_id, valid_until):
-    """Send a FreeCAD licence purchase confirmation email via SendGrid."""
-    sg_key = os.environ.get('SENDGRID_API_KEY', '')
-    if not sg_key:
-        app.logger.warning('SENDGRID_API_KEY not set — licence email not sent')
-        return
-    try:
-        import urllib.request as _ur
-        body = json.dumps({
-            'personalizations': [{'to': [{'email': email}]}],
-            'from': {'email': 'support@cheapcadtools.com', 'name': 'CheapCAD Tools'},
-            'subject': f'Your CheapCAD Tools licence key — Order #{order_id}',
-            'content': [{
-                'type': 'text/plain',
-                'value': (
-                    f'Hi,\n\n'
-                    f'Thank you for purchasing CheapCAD Tools Timing Pulleys for FreeCAD!\n\n'
-                    f'Your licence key is:\n\n'
-                    f'    {key}\n\n'
-                    f'Valid until: {valid_until}\n\n'
-                    f'--- How to activate ---\n\n'
-                    f'1. Open FreeCAD\n'
-                    f'2. Go to Part Design menu → Timing Pulley (or use the toolbar)\n'
-                    f'3. In the CCT panel, click "Paid Local App"\n'
-                    f'4. Paste your licence key and click Activate\n'
-                    f'5. The app will download and install automatically\n\n'
-                    f'The key can be used on up to 2 computers. If you need to move\n'
-                    f'to a new machine, contact support@cheapcadtools.com to reset.\n\n'
-                    f'Order: #{order_id}\n\n'
-                    f'If you have any questions, reply to this email or visit\n'
-                    f'https://cheapcadtools.com/contact/\n\n'
-                    f'— CheapCAD Tools'
-                ),
-            }],
-        }).encode()
-        req = _ur.Request(
-            'https://api.sendgrid.com/v3/mail/send',
-            data=body,
-            headers={
-                'Authorization': f'Bearer {sg_key}',
-                'Content-Type': 'application/json',
-            },
-            method='POST',
-        )
-        with _ur.urlopen(req, timeout=10):
-            pass
-        app.logger.info(f'Licence email sent to {email} for key {key}')
-    except Exception as exc:
-        app.logger.error(f'Licence email failed: {exc}')
+    """Send a FreeCAD licence purchase confirmation email via SMTP."""
+    body = (
+        f'Hi,\n\n'
+        f'Thank you for purchasing CheapCAD Tools Timing Pulleys for FreeCAD!\n\n'
+        f'Your licence key is:\n\n'
+        f'    {key}\n\n'
+        f'Valid until: {valid_until}\n\n'
+        f'--- How to activate ---\n\n'
+        f'1. Open FreeCAD\n'
+        f'2. Go to Part Design menu → Timing Pulley (or use the toolbar)\n'
+        f'3. In the CCT panel, click "Paid Local App"\n'
+        f'4. Paste your licence key and click Activate\n'
+        f'5. The app will download and install automatically\n\n'
+        f'The key can be used on up to 2 computers. If you need to move\n'
+        f'to a new machine, contact support@cheapcadtools.com to reset.\n\n'
+        f'Order: #{order_id}\n\n'
+        f'If you have any questions, reply to this email or visit\n'
+        f'https://cheapcadtools.com/contact/\n\n'
+        f'— CheapCAD Tools'
+    )
+    _smtp_send(email, f'Your CheapCAD Tools licence key — Order #{order_id}', body)
 
 
 @app.route('/api/admin/licences/<key>/reset', methods=['POST'])
@@ -3428,44 +3435,18 @@ def api_autodesk_ipn():
 
 
 def _send_ipn_welcome_email(email, txn_id):
-    """Send a purchase confirmation / getting-started email via SendGrid."""
-    sg_key = os.environ.get('SENDGRID_API_KEY', '')
-    if not sg_key:
-        return
-    try:
-        import urllib.request as _ur
-        body = json.dumps({
-            'personalizations': [{'to': [{'email': email}]}],
-            'from': {'email': 'support@cheapcadtools.com', 'name': 'CheapCAD Tools'},
-            'subject': 'Welcome to CheapCAD Tools — your subscription is active',
-            'content': [{
-                'type': 'text/plain',
-                'value': (
-                    f'Hi,\n\n'
-                    f'Thank you for subscribing to CheapCAD Tools on the Autodesk App Store!\n\n'
-                    f'Your subscription is now active. Restart Fusion 360 and the CheapCAD Tools '
-                    f'panel will install automatically.\n\n'
-                    f'Transaction ID: {txn_id}\n\n'
-                    f'If you have any questions, reply to this email or visit '
-                    f'https://cheapcadtools.com/contact/\n\n'
-                    f'— CheapCAD Tools'
-                ),
-            }],
-        }).encode()
-        req = _ur.Request(
-            'https://api.sendgrid.com/v3/mail/send',
-            data=body,
-            headers={
-                'Authorization': f'Bearer {sg_key}',
-                'Content-Type': 'application/json',
-            },
-            method='POST',
-        )
-        with _ur.urlopen(req, timeout=10):
-            pass
-        app.logger.info(f'IPN welcome email sent to {email}')
-    except Exception as exc:
-        app.logger.error(f'IPN welcome email failed: {exc}')
+    """Send a purchase confirmation / getting-started email via SMTP."""
+    body = (
+        f'Hi,\n\n'
+        f'Thank you for subscribing to CheapCAD Tools on the Autodesk App Store!\n\n'
+        f'Your subscription is now active. Restart Fusion 360 and the CheapCAD Tools '
+        f'panel will install automatically.\n\n'
+        f'Transaction ID: {txn_id}\n\n'
+        f'If you have any questions, reply to this email or visit '
+        f'https://cheapcadtools.com/contact/\n\n'
+        f'— CheapCAD Tools'
+    )
+    _smtp_send(email, 'Welcome to CheapCAD Tools — your subscription is active', body)
 
 
 @app.route('/api/woo-webhook', methods=['POST'])
