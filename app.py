@@ -408,37 +408,35 @@ def _increment_download_count(fmt=None, ip=None):
         _send_milestone_email(count)
 
 
-def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'info@cheapcadtools.com') -> bool:
-    """Send an email via the configured SMTP server (port 465 SSL).
+_WP_EMAIL_RELAY = 'https://cheapcadtools.com/wp-json/cct/v1/send-email'
+_WP_EMAIL_SECRET = 'WadaWadaBing3'   # same as PROVISION_SECRET — set once
 
-    Reads SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD from env.
-    Returns True on success, False on failure.
+
+def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'info@cheapcadtools.com'):
+    """Send email via the WordPress relay on cheapcadtools.com.
+
+    Returns (True, '') on success or (False, error_message) on failure.
     """
-    import smtplib
-    from email.mime.text import MIMEText
-
-    host     = os.environ.get('SMTP_HOST', '')
-    port     = int(os.environ.get('SMTP_PORT', '465'))
-    user     = os.environ.get('SMTP_USER', '')
-    password = os.environ.get('SMTP_PASSWORD', '')
-
-    if not (host and user and password):
-        app.logger.warning('SMTP not configured — email not sent')
-        return False
-
-    msg = MIMEText(body, 'plain', 'utf-8')
-    msg['Subject'] = subject
-    msg['From']    = f'CheapCAD Tools <{from_addr}>'
-    msg['To']      = to
-
+    import urllib.request as _ur
+    payload = json.dumps({
+        'secret':  _WP_EMAIL_SECRET,
+        'to':      to,
+        'subject': subject,
+        'body':    body,
+    }).encode()
     try:
-        with smtplib.SMTP_SSL(host, port, timeout=15) as s:
-            s.login(user, password)
-            s.sendmail(from_addr, [to], msg.as_string())
-        app.logger.info(f'SMTP email sent to {to}: {subject}')
-        return True, ''
+        req = _ur.Request(_WP_EMAIL_RELAY, data=payload,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+        with _ur.urlopen(req, timeout=20) as resp:
+            result = json.loads(resp.read())
+        if result.get('ok'):
+            app.logger.info(f'WP relay email sent to {to}: {subject}')
+            return True, ''
+        err = result.get('message', 'wp_mail failed')
+        app.logger.error(f'WP relay email failed to {to}: {err}')
+        return False, err
     except Exception as exc:
-        app.logger.error(f'SMTP email failed to {to}: {exc}')
+        app.logger.error(f'WP relay email error to {to}: {exc}')
         return False, str(exc)
 
 
