@@ -9,6 +9,12 @@ import os
 import sys
 import json
 import re
+from cct_metadata import (
+    embed_step as _lib_embed_step,
+    embed_stl  as _lib_embed_stl,
+    embed_dxf  as _lib_embed_dxf,
+    embed_svg  as _lib_embed_svg,
+)
 import subprocess
 import time
 import threading
@@ -1498,9 +1504,28 @@ def download_belt_svg():
         return f'Error generating belt SVG: {e}', 400
 
 
-def _cct_meta(args) -> dict:
-    """Build the CCT metadata dict from request args."""
-    return {'cct': dict(args), 'v': APP_VERSION, 'sv': CCT_SCHEMA_VERSION}
+def _embed_step(step_bytes: bytes, args) -> bytes:
+    return _lib_embed_step(step_bytes, dict(args),
+                           tool='pulleys', version=APP_VERSION,
+                           schema_version=CCT_SCHEMA_VERSION)
+
+
+def _embed_stl(stl_bytes: bytes, args) -> bytes:
+    return _lib_embed_stl(stl_bytes, dict(args),
+                          tool='pulleys', version=APP_VERSION,
+                          schema_version=CCT_SCHEMA_VERSION)
+
+
+def _embed_dxf(dxf_bytes: bytes, args) -> bytes:
+    return _lib_embed_dxf(dxf_bytes, dict(args),
+                          tool='pulleys', version=APP_VERSION,
+                          schema_version=CCT_SCHEMA_VERSION)
+
+
+def _embed_svg(svg_str: str, args) -> str:
+    return _lib_embed_svg(svg_str, dict(args),
+                          tool='pulleys', version=APP_VERSION,
+                          schema_version=CCT_SCHEMA_VERSION)
 
 
 def _safe_dl_name(name: str) -> str:
@@ -1562,61 +1587,6 @@ def _rename_step_product(step_bytes: bytes, product_name: str) -> bytes:
         return step_bytes
 
 
-def _embed_step(step_bytes: bytes, args) -> bytes:
-    """Inject CCT design params as a comment in the STEP header."""
-    try:
-        import re as _re2
-        blob = json.dumps(_cct_meta(args), separators=(',', ':'))
-        comment = f'/* CCT:{blob} */\n'
-        text = step_bytes.decode('utf-8', errors='replace')
-        # Insert after the HEADER ENDSEC line, before DATA
-        text = _re2.sub(r'(ENDSEC;\s*\n)(DATA;)', rf'\1{comment}\2', text, count=1)
-        return text.encode('utf-8')
-    except Exception:
-        return step_bytes
-
-
-def _embed_dxf(dxf_bytes: bytes, args) -> bytes:
-    """Store CCT design params as a group-code 999 comment before the DXF EOF marker."""
-    try:
-        blob    = json.dumps(_cct_meta(args), separators=(',', ':'))
-        comment = f'999\nCCT:{blob}\n'.encode('utf-8')
-        for eof_marker in (b'  0\r\nEOF\r\n', b'  0\nEOF\n', b'0\r\nEOF\r\n', b'0\nEOF\n'):
-            if eof_marker in dxf_bytes:
-                return dxf_bytes.replace(eof_marker, comment + eof_marker, 1)
-        return dxf_bytes + comment
-    except Exception:
-        return dxf_bytes
-
-
-def _embed_stl(stl_bytes: bytes, args) -> bytes:
-    """Append CCT design params as a text trailer after the last STL triangle.
-
-    Binary STL parsers stop after reading the declared triangle count, so the
-    trailing bytes are silently ignored by all standard CAD tools and slicers.
-    Read back with the same /* CCT:{...} */ regex used for STEP.
-    """
-    try:
-        blob    = json.dumps(_cct_meta(args), separators=(',', ':'))
-        trailer = f'\n/* CCT:{blob} */\n'.encode('utf-8')
-        return stl_bytes + trailer
-    except Exception:
-        return stl_bytes
-
-
-def _embed_svg(svg_str: str, args) -> str:
-    """Inject CCT design params as an SVG <metadata> element."""
-    try:
-        import re as _re3
-        blob = json.dumps(_cct_meta(args), separators=(',', ':'))
-        meta_tag = f'<metadata><cct>{blob}</cct></metadata>'
-        m = _re3.search(r'<svg\b[^>]*>', svg_str)
-        if m:
-            pos = m.end()
-            return svg_str[:pos] + '\n' + meta_tag + svg_str[pos:]
-    except Exception:
-        pass
-    return svg_str
 
 
 def _parse_stl_params(args, pulley='1'):
