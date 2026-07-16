@@ -1504,6 +1504,13 @@ def download_belt_svg():
         return f'Error generating belt SVG: {e}', 400
 
 
+def _cct_meta(args) -> dict:
+    """CCT metadata dict for this tool — delegates to cct_metadata.build_meta."""
+    from cct_metadata import build_meta
+    return build_meta(dict(args), tool='pulleys', version=APP_VERSION,
+                      schema_version=CCT_SCHEMA_VERSION)
+
+
 def _embed_step(step_bytes: bytes, args) -> bytes:
     return _lib_embed_step(step_bytes, dict(args),
                            tool='pulleys', version=APP_VERSION,
