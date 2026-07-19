@@ -3,7 +3,7 @@ build_release_ss.py — One-command Windows release builder for PulleyWebApp-ss.
 
 Pipeline:
   1. Clean previous build artefacts.
-  2. PyArmor obfuscates Python source (app.py, geometry/, exporters/).
+  2. PyArmor obfuscates Python source (app.py, geometry/, exporters/, cct_common/).
   3. Copy launcher_ss.py into the obfuscated output (not obfuscated — entry point).
   4. PyInstaller bundles everything into dist/PulleyApp/ using PulleyApp_ss.spec.
      small_step.exe is bundled automatically by the spec.
@@ -59,6 +59,8 @@ OBFUSCATE_TARGETS = [
     ROOT / 'app.py',
     ROOT / 'geometry',
     ROOT / 'exporters',
+    ROOT / 'cct_common',  # vendored (sync_cct_common.py) — protect it like our own code,
+                          # since it carries the desktop licence activation/verify logic
 ]
 
 LAUNCHER_SRC = ROOT / 'packaging' / 'launcher_ss.py'
