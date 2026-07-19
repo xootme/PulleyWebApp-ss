@@ -9,7 +9,7 @@ import os
 import sys
 import json
 import re
-from cct_metadata import (
+from cct_common import (
     embed_step as _lib_embed_step,
     embed_stl  as _lib_embed_stl,
     embed_dxf  as _lib_embed_dxf,
@@ -1505,8 +1505,8 @@ def download_belt_svg():
 
 
 def _cct_meta(args) -> dict:
-    """CCT metadata dict for this tool — delegates to cct_metadata.build_meta."""
-    from cct_metadata import build_meta
+    """CCT metadata dict for this tool — delegates to cct_common.build_meta."""
+    from cct_common import build_meta
     return build_meta(dict(args), tool='pulleys', version=APP_VERSION,
                       schema_version=CCT_SCHEMA_VERSION)
 
@@ -4753,6 +4753,12 @@ def api_download_stl():
 def queue_page():
     """Queue management UI page."""
     return render_template('queue.html')
+
+
+from cct_common.flask_shutdown import register_shutdown_route
+from cct_common.live_reload import register_live_reload
+register_shutdown_route(app)  # POST /api/shutdown — see cct_common/flask_shutdown.py
+register_live_reload(app)  # /api/_boot_id + /_cct_live_reload.js — see cct_common/live_reload.py
 
 
 if __name__ == '__main__':

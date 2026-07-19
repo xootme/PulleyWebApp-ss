@@ -410,3 +410,28 @@ def test_report_bug_default_type_is_bug(client):
     content = open(_LOG_FILE, encoding='utf-8').read()
     new_content = content[len(initial):]
     assert 'Bug Report' in new_content
+
+
+# ---------------------------------------------------------------------------
+# /api/shutdown (cct_common.flask_shutdown)
+# ---------------------------------------------------------------------------
+def test_shutdown_route_wired_to_shared_helper(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr('cct_common.flask_shutdown.os.kill',
+                        lambda pid, sig: calls.append((pid, sig)))
+    r = client.post('/api/shutdown')
+    assert r.status_code == 200
+    assert r.get_json() == {'ok': True}
+    assert len(calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# live reload (cct_common.live_reload)
+# ---------------------------------------------------------------------------
+def test_live_reload_route_wired_to_shared_helper(client):
+    r = client.get('/api/_boot_id')
+    assert r.status_code == 200
+    assert isinstance(r.get_json()['boot_id'], str)
+    r = client.get('/_cct_live_reload.js')
+    assert r.status_code == 200
+    assert r.mimetype == 'application/javascript'

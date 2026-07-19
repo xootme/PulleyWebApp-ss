@@ -178,6 +178,31 @@ Rust project (no deps). Build: `cargo +stable-x86_64-pc-windows-gnu build`
 - [x] **STL: embed CCT params by appending trailer after last triangle** (binary STL ignores
   trailing bytes; read back with same `/* CCT:{...} */` regex as STEP)
 
+### CAD addin update flow — use cct_common's shutdown/live-reload APIs (added 2026-07-19)
+`app.py` now registers two `cct_common` Flask helpers (same APIs added to
+EBoxDesigner/EBoxDesigner-ss in the same pass — see `cct_common/README.md`):
+- `POST /api/shutdown` (`cct_common.flask_shutdown`) — loopback-only, sends
+  `SIGINT` to the running server process so it exits cleanly.
+- `/api/_boot_id` + `/_cct_live_reload.js` (`cct_common.live_reload`) —
+  a page that includes the script auto-reloads itself once a new server
+  process is serving requests (already wired into `templates/index.html`).
+
+Neither is wired into the CAD addins' own update flow yet — right now an
+addin update presumably still kills the desktop server process by PID (or
+leaves it running as a stray). When that update flow is next touched:
+- [ ] **Fusion 360 addin:** before relaunching the desktop server as part
+  of an addin update, call `POST http://127.0.0.1:<port>/api/shutdown`
+  instead of killing the process by PID — avoids leaving the Werkzeug
+  debug reloader's child process as a zombie holding the port (see
+  EBoxDesigner's D036 for the failure mode this fixes).
+- [ ] **FreeCAD addin:** same change, wherever it currently manages the
+  desktop server's lifecycle.
+- [ ] Confirm the browser tab (if the desktop app's UI is left open across
+  an addin-triggered update) actually reloads via `/_cct_live_reload.js`
+  rather than showing a dead connection — this should already work since
+  the script is unconditionally included in `index.html`, but hasn't been
+  exercised through a real addin update yet.
+
 ### Packaging
 - [ ] PyArmor — machine-specific licence install
 - [ ] PyArmor — time-expiring licence install
