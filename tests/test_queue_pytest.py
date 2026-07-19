@@ -151,7 +151,8 @@ class TestSessionTimeouts:
 
     def test_idle_timeout_drops_active_session(self):
         """Active session with no heartbeat for >IDLE_TIMEOUT_SEC is dropped."""
-        from exporters.job_queue import IDLE_TIMEOUT_SEC
+        from cct_common.job_queue import idle_timeout_sec
+        IDLE_TIMEOUT_SEC = idle_timeout_sec()
         s1 = create()['session_id']
         s2 = create()['session_id']
         # Heartbeat s2 so it isn't evicted by stale-queue cleanup (30s threshold)
@@ -186,7 +187,8 @@ class TestSessionTimeouts:
 
     def test_heartbeat_prevents_idle_timeout(self):
         """Active session sending heartbeats survives past IDLE_TIMEOUT_SEC."""
-        from exporters.job_queue import IDLE_TIMEOUT_SEC
+        from cct_common.job_queue import idle_timeout_sec
+        IDLE_TIMEOUT_SEC = idle_timeout_sec()
         s = create()['session_id']
         stop = threading.Event()
         t = threading.Thread(target=heartbeat_thread, args=(s, stop, 5))
