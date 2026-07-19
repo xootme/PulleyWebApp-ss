@@ -21,6 +21,9 @@ from cct_common.text_utils import safe_float as _safe_float, safe_dl_name as _sa
 from cct_common.jsonl_log import append_jsonl as _append_jsonl, trim_jsonl as _trim_jsonl
 from cct_common.github_api import request as _github_api
 from cct_common.resend_email import send as _cc_send_email
+# Reused for the /api/admin/health bug_count stat, so it matches exactly
+# what the bug_report_admin dashboard itself counts.
+from cct_common.bug_report_admin import _parse_bug_reports as _cc_parse_bug_reports
 from cct_common.addin_mirror import mirror_to_addins as _cc_mirror_to_addins
 import subprocess
 import time
@@ -2775,6 +2778,26 @@ def _send_report_email(report_label, timestamp, label_seeing, label_should,
         pass  # email failure must never break the log write
 
 
+def _load_bug_issue_urls():
+    try:
+        with open(_BUG_ISSUE_URLS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_bug_issue_url(ts_id, url):
+    """Link a newly-filed GitHub issue to a report — used by /api/report-bug
+    below (the write side, kept local). The read/admin side
+    (cct_common.bug_report_admin) reads the same bug_issue_urls.json file."""
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    urls = _load_bug_issue_urls()
+    m = re.search(r'/issues/(\d+)$', url)
+    urls[ts_id] = {'url': url, 'number': int(m.group(1)) if m else None, 'state': 'open'}
+    with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(urls, f, indent=2)
+
+
 @app.route('/api/report-bug', methods=['POST'])
 def api_report_bug():
     """Save a bug report to logs/bug_reports.log and email a notification."""
@@ -3521,7 +3544,7 @@ def api_admin_health():
         dl_count = 0
 
     try:
-        bug_count = len(_parse_bug_reports())
+        bug_count = len(_cc_parse_bug_reports(_LOG_FILE, _BUG_COMMENTS_FILE, _BUG_ISSUE_URLS_FILE))
     except Exception:
         bug_count = 0
 
@@ -3566,287 +3589,14 @@ def api_admin_constraints():
     return jsonify({'hours': hours, 'count': len(rows), 'events': rows})
 
 
-def _load_bug_comments():
-    try:
-        with open(_BUG_COMMENTS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _save_bug_comments(data):
-    os.makedirs(_LOG_DIR, exist_ok=True)
-    with open(_BUG_COMMENTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2)
-
-
-def _load_bug_issue_urls():
-    try:
-        with open(_BUG_ISSUE_URLS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _normalize_issue_record(val):
-    """Upgrade a bare URL string to the structured {url, number, state} format."""
-    if isinstance(val, str):
-        m = re.search(r'/issues/(\d+)$', val)
-        return {'url': val, 'number': int(m.group(1)) if m else None, 'state': 'unknown'}
-    return val
-
-
-def _save_bug_issue_url(ts_id, url):
-    os.makedirs(_LOG_DIR, exist_ok=True)
-    urls = _load_bug_issue_urls()
-    m = re.search(r'/issues/(\d+)$', url)
-    urls[ts_id] = {'url': url, 'number': int(m.group(1)) if m else None, 'state': 'open'}
-    with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(urls, f, indent=2)
-
-
-def _parse_bug_reports():
-    """Parse bug_reports.log into a list of structured dicts."""
-    import re
-    try:
-        with open(_LOG_FILE, 'r', encoding='utf-8') as f:
-            raw = f.read()
-    except FileNotFoundError:
-        return []
-
-    sep = '=' * 60
-    parts = raw.split(sep)
-    reports = []
-    i = 0
-    while i < len(parts) - 1:
-        hdr = parts[i].strip()
-        if not (hdr.startswith('Bug Report') or hdr.startswith('Feature Request')):
-            i += 1
-            continue
-        body  = parts[i + 1] if i + 1 < len(parts) else ''
-        lines = hdr.split('\n')
-        title = lines[0]
-        ver_line = lines[1] if len(lines) > 1 else ''
-
-        m = re.match(r'(Bug Report|Feature Request) — (.+)', title)
-        rtype     = m.group(1) if m else 'Bug Report'
-        timestamp = m.group(2).strip() if m else ''
-        vm = re.match(r'App Version:\s*(\S+)\s+Build:\s*(.+)', ver_line)
-        version = vm.group(1).strip() if vm else ''
-        build   = vm.group(2).strip() if vm else ''
-
-        is_feature   = rtype == 'Feature Request'
-        lbl_seeing   = 'Would like to do:' if is_feature else 'Currently seeing:'
-        lbl_should   = "Why it's useful:"  if is_feature else 'Should be seeing:'
-
-        def extract(text, lbl, *stop_lbls):
-            pos = text.find(lbl)
-            if pos == -1:
-                return ''
-            start = pos + len(lbl)
-            end   = len(text)
-            for sl in stop_lbls:
-                p = text.find(sl, start)
-                if p != -1:
-                    end = min(end, p)
-            chunk = text[start:end].strip()
-            lines_ = [l[2:] if l.startswith('  ') else l for l in chunk.split('\n')]
-            return '\n'.join(lines_).strip()
-
-        seeing    = extract(body, lbl_seeing,   lbl_should, 'Contact email:', 'App state:')
-        should_see= extract(body, lbl_should,   'Contact email:', 'App state:')
-        email     = extract(body, 'Contact email:', 'App state:')
-
-        state = {}
-        sm = re.search(r'App state:\n(\{.*)\Z', body, re.DOTALL)
-        if sm:
-            try:
-                state = json.loads(sm.group(1))
-            except Exception:
-                pass
-
-        reports.append({
-            'id':         timestamp,
-            'type':       rtype,
-            'timestamp':  timestamp,
-            'version':    version,
-            'build':      build,
-            'seeing':     seeing,
-            'should_see': should_see,
-            'email':      email,
-            'state':      state,
-            'comment':    '',
-        })
-        i += 2
-
-    comments   = _load_bug_comments()
-    issue_urls = _load_bug_issue_urls()
-    for r in reports:
-        r['comment'] = comments.get(r['timestamp'], '')
-        raw = issue_urls.get(r['timestamp'])
-        if raw:
-            rec = _normalize_issue_record(raw)
-            r['issue_url']    = rec.get('url', '')
-            r['issue_number'] = rec.get('number')
-            r['issue_state']  = rec.get('state', 'unknown')
-        else:
-            r['issue_url']    = ''
-            r['issue_number'] = None
-            r['issue_state']  = None
-    return reports
-
-
-def _write_bug_log(reports):
-    """Rewrite bug_reports.log from a list of parsed report dicts."""
-    sep = '=' * 60
-    content = ''
-    for r in reports:
-        is_feature   = r['type'] == 'Feature Request'
-        lbl_seeing   = 'Would like to do' if is_feature else 'Currently seeing'
-        lbl_should   = "Why it's useful"  if is_feature else 'Should be seeing'
-        content += (
-            f'\n{sep}\n'
-            f'{r["type"]} — {r["timestamp"]}\n'
-            f'App Version: {r["version"]}   Build: {r["build"]}\n'
-            f'{sep}\n'
-            f'{lbl_seeing}:\n  {r["seeing"] or "(not provided)"}\n\n'
-            f'{lbl_should}:\n  {r["should_see"] or "(not provided)"}\n\n'
-            f'Contact email:\n  {r["email"] or "(not provided)"}\n\n'
-            f'App state:\n{json.dumps(r["state"], indent=2)}\n'
-        )
-    os.makedirs(_LOG_DIR, exist_ok=True)
-    with open(_LOG_FILE, 'w', encoding='utf-8') as f:
-        f.write(content)
-
-
-@app.route('/api/admin/bug-reports')
-def api_admin_bug_reports():
-    err = _admin_auth()
-    if err:
-        return err
-    reports = _parse_bug_reports()
-    return jsonify({'count': len(reports), 'reports': reports})
-
-
-def _bug_hash(ts_id):
-    """FNV-1a 32-bit hash matching dashboard JS bugHash() — uses ctypes for exact 32-bit multiply."""
-    import ctypes
-    h = 0x811c9dc5
-    for c in ts_id:
-        h ^= ord(c)
-        h = ctypes.c_uint32(h * 0x01000193).value
-    return format(h, '08X')
-
-
-@app.route('/api/admin/bug-reports/hash/<hash_id>')
-def api_admin_bug_by_hash(hash_id):
-    err = _admin_auth()
-    if err:
-        return err
-    hash_id = hash_id.upper()
-    for r in _parse_bug_reports():
-        if _bug_hash(r['id']) == hash_id:
-            return jsonify(r)
-    return jsonify({'error': f'No report found with hash {hash_id}'}), 404
-
-
-@app.route('/api/admin/bug-reports/<ts_id>', methods=['DELETE'])
-def api_admin_bug_delete(ts_id):
-    err = _admin_auth()
-    if err:
-        return err
-    reports = _parse_bug_reports()
-    kept = [r for r in reports if r['id'] != ts_id]
-    if len(kept) == len(reports):
-        return jsonify({'error': 'not found'}), 404
-    _write_bug_log(kept)
-    comments = _load_bug_comments()
-    comments.pop(ts_id, None)
-    _save_bug_comments(comments)
-    issue_urls = _load_bug_issue_urls()
-    if ts_id in issue_urls:
-        issue_urls.pop(ts_id)
-        with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(issue_urls, f, indent=2)
-    return jsonify({'ok': True, 'remaining': len(kept)})
-
-
-@app.route('/api/admin/bug-reports/<ts_id>/comment', methods=['POST'])
-def api_admin_bug_comment(ts_id):
-    err = _admin_auth()
-    if err:
-        return err
-    data    = request.get_json(silent=True) or {}
-    comment = str(data.get('comment', '')).strip()
-    comments = _load_bug_comments()
-    if comment:
-        comments[ts_id] = comment
-    else:
-        comments.pop(ts_id, None)
-    _save_bug_comments(comments)
-    return jsonify({'ok': True})
-
-
-
-
-@app.route('/api/admin/bug-reports/<ts_id>/github-close', methods=['POST'])
-def api_admin_bug_github_close(ts_id):
-    err = _admin_auth()
-    if err:
-        return err
-    pat  = os.environ.get('FEEDBACK_GITHUB_PAT', '').strip()
-    repo = os.environ.get('FEEDBACK_GITHUB_REPO', '').strip()
-    if not pat or not repo:
-        return jsonify({'error': 'GitHub not configured'}), 503
-    issue_urls = _load_bug_issue_urls()
-    raw = issue_urls.get(ts_id)
-    if not raw:
-        return jsonify({'error': 'No GitHub issue linked to this report'}), 404
-    rec    = _normalize_issue_record(raw)
-    number = rec.get('number')
-    if not number:
-        return jsonify({'error': 'Cannot determine issue number from URL'}), 400
-    data   = request.get_json(silent=True) or {}
-    target = 'closed' if data.get('state', 'closed') == 'closed' else 'open'
-    resp, status = _github_api('PATCH', f'/repos/{repo}/issues/{number}', pat, {'state': target})
-    if status not in (200, 201):
-        return jsonify({'error': resp.get('message', 'GitHub error'), 'status': status}), 502
-    rec['state'] = resp.get('state', target)
-    issue_urls[ts_id] = rec
-    with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(issue_urls, f, indent=2)
-    return jsonify({'ok': True, 'state': rec['state']})
-
-
-@app.route('/api/admin/github-sync', methods=['POST'])
-def api_admin_github_sync():
-    err = _admin_auth()
-    if err:
-        return err
-    pat  = os.environ.get('FEEDBACK_GITHUB_PAT', '').strip()
-    repo = os.environ.get('FEEDBACK_GITHUB_REPO', '').strip()
-    if not pat or not repo:
-        return jsonify({'ok': False, 'error': 'GitHub not configured', 'updated': {}})
-    issue_urls = _load_bug_issue_urls()
-    updated = {}
-    changed = False
-    for ts_id, raw in issue_urls.items():
-        rec    = _normalize_issue_record(raw)
-        number = rec.get('number')
-        if not number:
-            continue
-        resp, status = _github_api('GET', f'/repos/{repo}/issues/{number}', pat)
-        if status == 200:
-            new_state = resp.get('state', 'unknown')
-            if rec.get('state') != new_state:
-                rec['state'] = new_state
-                issue_urls[ts_id] = rec
-                changed = True
-            updated[ts_id] = new_state
-    if changed:
-        with open(_BUG_ISSUE_URLS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(issue_urls, f, indent=2)
-    return jsonify({'ok': True, 'updated': updated})
+# Bug-report admin dashboard (list/hash-lookup/delete/comment/github-close/
+# github-sync) is registered via cct_common.bug_report_admin below, once
+# _PROVISION_SECRET is defined — see register_bug_report_admin_routes() call
+# near the bottom of this file. It parses this file's own hand-rolled log
+# format directly (Build:, no Tool: line), so no local parsing code is
+# needed here anymore. The /api/report-bug write-side route stays local
+# (it has error_message/user_comment fields and the desktop-forward-to-
+# production fallback that cct_common.bug_report doesn't support).
 
 
 @app.route('/api/admin/downloads')
@@ -4632,8 +4382,13 @@ def queue_page():
 
 from cct_common.flask_shutdown import register_shutdown_route
 from cct_common.live_reload import register_live_reload
+from cct_common.bug_report_admin import register_bug_report_admin_routes
 register_shutdown_route(app)  # POST /api/shutdown — see cct_common/flask_shutdown.py
 register_live_reload(app)  # /api/_boot_id + /_cct_live_reload.js — see cct_common/live_reload.py
+register_bug_report_admin_routes(app, admin_secret=_PROVISION_SECRET, log_dir=_LOG_DIR)
+# list/hash-lookup/delete/comment/github-close/github-sync — see
+# cct_common/bug_report_admin.py. Parses this repo's own bug_reports.log
+# format (written by the local /api/report-bug route) directly.
 
 
 if __name__ == '__main__':
