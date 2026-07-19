@@ -11,7 +11,7 @@ from PulleyWebApp-ss/app.py's licensing routes, parameterized.
         app_version=..., app_changelog=..., runtime_url=..., runtime_version=...,
         licence_b64=os.environ.get("LICENCE_B64", ""),
         licence_expiry=os.environ.get("LICENCE_EXPIRY", ""),
-        licence_email_subject_prefix="Your CheapCAD Tools licence key",
+        licence_email_subject=my_subject_template,  # str, or callable(key, order_id, valid_until) -> str
         licence_email_body=my_licence_email_template,     # callable(key, order_id, valid_until) -> str
         purchase_welcome_email_body=my_welcome_template,   # callable(txn_id) -> str
         wc_webhook_secret=os.environ.get("WC_WEBHOOK_SECRET", ""),
@@ -80,7 +80,7 @@ def register_licensing_routes(
     licence_default_max_activations: int = 2,
     licence_default_valid_years: int = 1,
     email_sender=None,  # callable(to, subject, body) -> (ok, err); defaults to resend_email.send
-    licence_email_subject: str = "Your licence key",
+    licence_email_subject="Your licence key",  # str, or callable(key, order_id, valid_until) -> str
     licence_email_body=_default_licence_email_body,
     purchase_welcome_email_subject: str = "Welcome — your subscription is active",
     purchase_welcome_email_body=_default_welcome_email_body,
@@ -144,7 +144,9 @@ def register_licensing_routes(
         return None
 
     def _send_licence_email(email, key, order_id, valid_until):
-        return email_sender(email, licence_email_subject,
+        subject = (licence_email_subject(key, order_id, valid_until)
+                  if callable(licence_email_subject) else licence_email_subject)
+        return email_sender(email, subject,
                             licence_email_body(key, order_id, valid_until))
 
     def _send_welcome_email(email, txn_id):

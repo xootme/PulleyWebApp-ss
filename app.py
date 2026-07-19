@@ -2856,202 +2856,20 @@ def api_bug_report_file(filename):
 # Licence keys are sold via WooCommerce (cheapcadtools.com/shop).
 # On order completion WooCommerce calls /api/desktop/licence-import (Bearer PROVISION_SECRET).
 # The desktop app calls /api/desktop/activate on first run, then /api/desktop/verify
-# every DESKTOP_VERIFY_DAYS days. Offline grace: DESKTOP_GRACE_DAYS days.
-
-_DESKTOP_LICENCES_FILE  = os.path.join(_LOG_DIR, 'desktop_licences.json')
-_desktop_licences_lock  = threading.Lock()
-_DESKTOP_VERIFY_DAYS    = 7
-_DESKTOP_GRACE_DAYS     = 14   # allow offline this long before hard-blocking
+# periodically. All of this — desktop licence activation, WooCommerce/LMFWC
+# import, Autodesk App Store entitlement/IPN/webhook — is registered via
+# cct_common.licensing.register_licensing_routes() near the bottom of this
+# file, once all the env-var constants below are defined.
 _WC_WEBHOOK_SECRET      = os.environ.get('WC_WEBHOOK_SECRET', '')
 _LMFWC_SITE_URL         = os.environ.get('LMFWC_SITE_URL', 'https://cheapcadtools.com')
 _LMFWC_CONSUMER_KEY     = os.environ.get('LMFWC_CONSUMER_KEY', '')
 _LMFWC_CONSUMER_SECRET  = os.environ.get('LMFWC_CONSUMER_SECRET', '')
 
 
-def _load_desktop_licences():
-    try:
-        if os.path.exists(_DESKTOP_LICENCES_FILE):
-            with open(_DESKTOP_LICENCES_FILE) as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-
-def _save_desktop_licences(data):
-    os.makedirs(_LOG_DIR, exist_ok=True)
-    with open(_DESKTOP_LICENCES_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-
-@app.route('/api/desktop/licence-import', methods=['POST'])
-def api_desktop_licence_import():
-    """Admin/webhook: register a new licence key. Called by WooCommerce on order completion."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-    data       = request.get_json(silent=True) or {}
-    key        = data.get('licence_key', '').strip().upper()
-    email      = data.get('email', '').lower().strip()
-    order_id   = str(data.get('order_id', ''))
-    valid_years = max(1, int(data.get('valid_years', 1)))
-    if not key:
-        return jsonify({'error': 'licence_key required'}), 400
-    valid_until = (datetime.now() + timedelta(days=365 * valid_years)).isoformat()
-    with _desktop_licences_lock:
-        licences = _load_desktop_licences()
-        licences[key] = {
-            'email':           email,
-            'order_id':        order_id,
-            'created_at':      datetime.now().isoformat(),
-            'valid_until':     valid_until,
-            'activations':     [],
-            'max_activations': 2,
-        }
-        _save_desktop_licences(licences)
-    return jsonify({'ok': True, 'valid_until': valid_until})
-
-
-@app.route('/api/desktop/licence-import-wc', methods=['POST'])
-def api_desktop_licence_import_wc():
-    """WooCommerce 'Order updated' webhook — imports LMFWC licence keys for completed orders."""
-    import hmac as _hmac_mod
-    import hashlib as _hash_mod
-    import base64 as _b64_mod
-    import urllib.request as _ur
-
-    # Validate WooCommerce HMAC-SHA256 signature
-    sig = request.headers.get('X-WC-Webhook-Signature', '')
-    raw = request.get_data()
-    if _WC_WEBHOOK_SECRET:
-        expected = _b64_mod.b64encode(
-            _hmac_mod.new(_WC_WEBHOOK_SECRET.encode(), raw, _hash_mod.sha256).digest()
-        ).decode()
-        if not _hmac_mod.compare_digest(expected, sig):
-            return jsonify({'error': 'invalid signature'}), 401
-
-    order = request.get_json(silent=True) or {}
-
-    # Only process completed orders
-    if order.get('status') != 'completed':
-        return jsonify({'ok': True, 'skipped': 'not completed'}), 200
-
-    order_id = order.get('id')
-    email    = (order.get('billing', {}).get('email', '') or '').lower().strip()
-    if not order_id:
-        return jsonify({'error': 'missing order id'}), 400
-
-    # Fetch licence keys from LMFWC REST API
-    creds = _b64_mod.b64encode(
-        f'{_LMFWC_CONSUMER_KEY}:{_LMFWC_CONSUMER_SECRET}'.encode()
-    ).decode()
-    lmfwc_url = f'{_LMFWC_SITE_URL}/wp-json/lmfwc/v2/licenses?order_id={order_id}'
-    req = _ur.Request(lmfwc_url, headers={'Authorization': f'Basic {creds}'})
-    try:
-        with _ur.urlopen(req, timeout=10) as resp:
-            lmfwc_data = json.loads(resp.read())
-    except Exception as exc:
-        return jsonify({'error': f'LMFWC API error: {exc}'}), 502
-
-    licenses = lmfwc_data.get('data', [])
-    if not licenses:
-        return jsonify({'error': 'no licences found for this order'}), 404
-
-    imported = []
-    with _desktop_licences_lock:
-        db = _load_desktop_licences()
-        for lic in licenses:
-            key = (lic.get('licenseKey') or '').strip().upper()
-            if not key:
-                continue
-            expires = lic.get('expiresAt')
-            valid_until = expires if expires else (datetime.now() + timedelta(days=365)).isoformat()
-            db[key] = {
-                'email':           email,
-                'order_id':        str(order_id),
-                'created_at':      datetime.now().isoformat(),
-                'valid_until':     valid_until,
-                'activations':     [],
-                'max_activations': 2,
-            }
-            imported.append(key)
-        _save_desktop_licences(db)
-
-    return jsonify({'ok': True, 'imported': len(imported)})
-
-
-@app.route('/api/desktop/activate', methods=['POST'])
-def api_desktop_activate():
-    """Called by desktop app on first run: bind a licence key to this machine."""
-    data       = request.get_json(silent=True) or {}
-    key        = data.get('licence_key', '').strip().upper()
-    machine_id = data.get('machine_id', '').strip()
-    hostname   = (data.get('hostname', '') or '')[:64]
-    if not key or not machine_id:
-        return jsonify({'error': 'licence_key and machine_id required'}), 400
-    with _desktop_licences_lock:
-        licences = _load_desktop_licences()
-        rec = licences.get(key)
-        if not rec:
-            return jsonify({'error': 'Invalid licence key — check your order email.'}), 404
-        if datetime.fromisoformat(rec['valid_until']) < datetime.now():
-            return jsonify({'error': 'Licence expired — renew at cheapcadtools.com'}), 403
-        for act in rec['activations']:
-            if act['machine_id'] == machine_id:
-                return jsonify({'ok': True, 'valid_until': rec['valid_until']})
-        if len(rec['activations']) >= rec.get('max_activations', 2):
-            return jsonify({'error': 'Activation limit reached (2 computers max). Email support@cheapcadtools.com to reset.'}), 403
-        rec['activations'].append({
-            'machine_id':   machine_id,
-            'hostname':     hostname,
-            'activated_at': datetime.now().isoformat(),
-        })
-        _save_desktop_licences(licences)
-    return jsonify({'ok': True, 'valid_until': rec['valid_until'],
-                    'app_url': _APP_DOWNLOAD_URL or ''})
-
-
-@app.route('/api/desktop/verify', methods=['POST'])
-def api_desktop_verify():
-    """Called by desktop app on startup (every ~7 days) to confirm licence still valid."""
-    data       = request.get_json(silent=True) or {}
-    key        = data.get('licence_key', '').strip().upper()
-    machine_id = data.get('machine_id', '').strip()
-    if not key or not machine_id:
-        return jsonify({'error': 'licence_key and machine_id required'}), 400
-    with _desktop_licences_lock:
-        licences = _load_desktop_licences()
-        rec = licences.get(key)
-    if not rec:
-        return jsonify({'error': 'Invalid licence key'}), 404
-    if datetime.fromisoformat(rec['valid_until']) < datetime.now():
-        return jsonify({'error': 'Licence expired — renew at cheapcadtools.com'}), 403
-    if not any(act['machine_id'] == machine_id for act in rec['activations']):
-        return jsonify({'error': 'Machine not activated for this licence'}), 403
-    return jsonify({'ok': True, 'valid_until': rec['valid_until']})
-
-
-@app.route('/api/admin/licences', methods=['GET'])
-def api_admin_licences():
-    """List all desktop licence records with activation details."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-    with _desktop_licences_lock:
-        licences = _load_desktop_licences()
-    result = []
-    for key, rec in licences.items():
-        result.append({
-            'key':             key,
-            'email':           rec.get('email', ''),
-            'order_id':        rec.get('order_id', ''),
-            'valid_until':     rec.get('valid_until', ''),
-            'created_at':      rec.get('created_at', ''),
-            'max_activations': rec.get('max_activations', 1),
-            'activations':     rec.get('activations', []),
-        })
-    result.sort(key=lambda r: r['created_at'], reverse=True)
-    return jsonify(result)
+# /api/admin/licences (list/resend-email/reset) are registered via
+# cct_common.licensing below. The licence purchase confirmation email
+# template (formerly _send_licence_purchase_email) is now the
+# licence_email_body callable passed to register_licensing_routes().
 
 
 @app.route('/api/admin/test-smtp', methods=['POST'])
@@ -3063,70 +2881,6 @@ def api_admin_test_smtp():
     to = (request.get_json(silent=True) or {}).get('to', 'xootme@gmail.com')
     ok, err = _smtp_send(to, 'CCT SMTP test', 'This is a test email from pulleywebapp.onrender.com')
     return jsonify({'ok': ok, 'error': err})
-
-
-@app.route('/api/admin/licences/<key>/resend-email', methods=['POST'])
-def api_admin_licence_resend_email(key):
-    """Resend purchase confirmation email for a desktop licence key (admin only)."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-    key = key.strip().upper()
-    with _desktop_licences_lock:
-        licences = _load_desktop_licences()
-        rec = licences.get(key)
-    if not rec:
-        return jsonify({'error': 'key not found'}), 404
-    email      = rec.get('email', '')
-    order_id   = rec.get('order_id', '')
-    valid_until = rec.get('valid_until', '')[:10]
-    if not email:
-        return jsonify({'error': 'no email on record for this key'}), 400
-    ok, err = _send_licence_purchase_email(email, key, order_id, valid_until)
-    if not ok:
-        return jsonify({'error': f'Email failed: {err}'}), 502
-    return jsonify({'ok': True, 'email': email})
-
-
-def _send_licence_purchase_email(email, key, order_id, valid_until):
-    """Send a FreeCAD licence purchase confirmation email via SMTP."""
-    body = (
-        f'Hi,\n\n'
-        f'Thank you for purchasing CheapCAD Tools Timing Pulleys for FreeCAD!\n\n'
-        f'Your licence key is:\n\n'
-        f'    {key}\n\n'
-        f'Valid until: {valid_until}\n\n'
-        f'--- How to activate ---\n\n'
-        f'1. Open FreeCAD\n\n'
-        f'2. Go to Part Design menu → Timing Pulley (or use the toolbar)\n\n'
-        f'3. In the CCT panel, click "Paid Local App"\n\n'
-        f'4. Paste your licence key and click Activate\n\n'
-        f'5. The app will download and install automatically\n\n'
-        f'The key can be used on up to 2 computers. If you need to move\n'
-        f'to a new machine, contact support@cheapcadtools.com to reset.\n\n'
-        f'Order: #{order_id}\n\n'
-        f'If you have any questions, reply to this email or visit\n'
-        f'https://cheapcadtools.com/contact/\n\n'
-        f'— CheapCAD Tools'
-    )
-    return _smtp_send(email, f'Your CheapCAD Tools licence key — Order #{order_id}', body)
-
-
-@app.route('/api/admin/licences/<key>/reset', methods=['POST'])
-def api_admin_licence_reset(key):
-    """Reset all machine activations for a licence key (admin only)."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-    key = key.strip().upper()
-    with _desktop_licences_lock:
-        licences = _load_desktop_licences()
-        if key not in licences:
-            return jsonify({'error': 'key not found'}), 404
-        prev = len(licences[key].get('activations', []))
-        licences[key]['activations'] = []
-        _save_desktop_licences(licences)
-    return jsonify({'ok': True, 'key': key, 'activations_cleared': prev})
 
 
 # Environment variables (set in Render dashboard):
@@ -3146,9 +2900,18 @@ _APP_CHANGELOG      = os.environ.get('PULLEY_APP_CHANGELOG', '')
 _RUNTIME_URL        = os.environ.get('PULLEY_RUNTIME_URL', '')
 _RUNTIME_VERSION    = os.environ.get('PULLEY_RUNTIME_VERSION', '')
 _AUTODESK_APP_ID    = os.environ.get('AUTODESK_APP_ID', '')   # set after App Store registration
-_ENTITLEMENT_URL    = 'https://apps.autodesk.com/webservices/checkentitlement'
+# Placeholders for future marketplace listings — not yet implemented. Once
+# PulleyApp is listed on the OnShape App Store / SolidWorks App Store, each
+# needs its own IPN/webhook route (mirroring /api/autodesk-ipn) and
+# entitlement check, following the same pattern as _AUTODESK_APP_ID above.
+_ONSHAPE_APP_ID      = os.environ.get('ONSHAPE_APP_ID', '')
+_SOLIDWORKS_APP_ID   = os.environ.get('SOLIDWORKS_APP_ID', '')
+# subscribers.json / purchases.json are written by cct_common.licensing
+# (register_licensing_routes below), but still read directly here for the
+# admin dashboard's health/subscribers/sales endpoints, which have no
+# equivalent in cct_common.licensing's route set.
 _SUBSCRIBERS_FILE   = os.path.join(_LOG_DIR, 'subscribers.json')
-_PURCHASES_FILE     = os.path.join(_LOG_DIR, 'autodesk_purchases.json')
+_PURCHASES_FILE     = os.path.join(_LOG_DIR, 'purchases.json')
 _subscribers_lock   = threading.Lock()
 _purchases_lock     = threading.Lock()
 
@@ -3163,272 +2926,10 @@ def _load_subscribers():
     return {}
 
 
-def _save_subscribers(data):
-    os.makedirs(_LOG_DIR, exist_ok=True)
-    with open(_SUBSCRIBERS_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-
-def _verify_autodesk_entitlement(user_id):
-    """Return True if Autodesk confirms this user has an active App Store subscription."""
-    if not _AUTODESK_APP_ID or not user_id:
-        return False
-    try:
-        import urllib.request as _ur
-        url = f'{_ENTITLEMENT_URL}?userid={user_id}&appid={_AUTODESK_APP_ID}'
-        with _ur.urlopen(url, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            return bool(data.get('IsValid'))
-    except Exception:
-        return False
-
-
-@app.route('/api/provision', methods=['POST'])
-def api_provision():
-    """Called by the Fusion addin to verify subscription and receive install assets.
-
-    Verification order:
-      1. Autodesk Entitlement API (primary — used once AUTODESK_APP_ID is set).
-      2. Manual subscribers.json (fallback for beta users and pre-registration testing).
-    """
-    data    = request.get_json(silent=True) or {}
-    user_id = data.get('user_id', '').strip()
-    email   = data.get('email', '').lower().strip()
-
-    if not user_id and not email:
-        return jsonify({'error': 'user_id or email required'}), 400
-
-    # ── Dev backdoor (remove before public launch) ────────────────────────────
-    if data.get('backdoor_key') == 'xoot':
-        entitled = True
-    else:
-        # ── Primary: Autodesk Entitlement API ─────────────────────────────────
-        entitled = _verify_autodesk_entitlement(user_id)
-
-        # ── Fallback: manual subscriber list (beta / pre-App-Store) ───────────
-        if not entitled:
-            with _subscribers_lock:
-                subs = _load_subscribers()
-            record   = subs.get(user_id) or subs.get(email)
-            entitled = bool(record and record.get('active'))
-
-    if not entitled:
-        return jsonify({'error': 'No active subscription found for this account.'}), 403
-
-    if not _LICENCE_B64 or not _APP_DOWNLOAD_URL:
-        return jsonify({'error': 'Release not yet published — contact support.'}), 503
-
-    return jsonify({
-        'app_url':          _APP_DOWNLOAD_URL,
-        'app_version':      _APP_VERSION,
-        'app_changelog':    _APP_CHANGELOG,
-        'runtime_url':      _RUNTIME_URL,
-        'runtime_version':  _RUNTIME_VERSION,
-        'licence_b64':      _LICENCE_B64,
-        'licence_expiry':   _LICENCE_EXPIRY,
-    })
-
-
-@app.route('/api/autodesk-ipn', methods=['POST'])
-def api_autodesk_ipn():
-    """Instant Payment Notification from the Autodesk App Store.
-
-    Autodesk POSTs application/x-www-form-urlencoded with fields including:
-      buyer_adsk_account — buyer's Autodesk email
-      appId              — app identifier (matches AUTODESK_APP_ID once registered)
-      txn_id             — transaction ID
-      payment_status     — 'Completed', 'Refunded', 'Reversed', etc.
-      mc_gross           — amount (0.00 for free tier)
-      txn_type           — transaction type
-
-    We log every notification and send a welcome email on first Completed purchase.
-    """
-    payload = request.form.to_dict()
-    app.logger.info(f'Autodesk IPN received: {payload}')
-
-    status    = payload.get('payment_status', '').strip()
-    txn_id    = payload.get('txn_id', '').strip()
-    email     = payload.get('buyer_adsk_account', '').lower().strip()
-    app_id    = payload.get('appId', '').strip()
-    txn_type  = payload.get('txn_type', '').strip()
-    amount    = payload.get('mc_gross', '0.00').strip()
-
-    # Reject notifications for other apps if AUTODESK_APP_ID is configured
-    if _AUTODESK_APP_ID and app_id and app_id != _AUTODESK_APP_ID:
-        app.logger.warning(f'IPN appId mismatch: got {app_id}, expected {_AUTODESK_APP_ID}')
-        return '', 200  # always return 200 to Autodesk
-
-    record = {
-        'ts':           int(time.time()),
-        'txn_id':       txn_id,
-        'txn_type':     txn_type,
-        'status':       status,
-        'email':        email,
-        'app_id':       app_id,
-        'amount':       amount,
-        'raw':          payload,
-    }
-
-    # Persist to log
-    with _purchases_lock:
-        try:
-            purchases = []
-            if os.path.exists(_PURCHASES_FILE):
-                with open(_PURCHASES_FILE) as f:
-                    purchases = json.load(f)
-        except Exception:
-            purchases = []
-        purchases.append(record)
-        os.makedirs(_LOG_DIR, exist_ok=True)
-        with open(_PURCHASES_FILE, 'w') as f:
-            json.dump(purchases, f, indent=2)
-
-    # Send welcome email on first Completed purchase for this buyer
-    if status == 'Completed' and email:
-        already_welcomed = any(
-            p.get('email') == email and p.get('status') == 'Completed' and p.get('ts') != record['ts']
-            for p in purchases
-        )
-        if not already_welcomed:
-            _send_ipn_welcome_email(email, txn_id)
-
-    return '', 200
-
-
-def _send_ipn_welcome_email(email, txn_id):
-    """Send a purchase confirmation / getting-started email via SMTP."""
-    body = (
-        f'Hi,\n\n'
-        f'Thank you for subscribing to CheapCAD Tools on the Autodesk App Store!\n\n'
-        f'Your subscription is now active. Restart Fusion 360 and the CheapCAD Tools '
-        f'panel will install automatically.\n\n'
-        f'Transaction ID: {txn_id}\n\n'
-        f'If you have any questions, reply to this email or visit '
-        f'https://cheapcadtools.com/contact/\n\n'
-        f'— CheapCAD Tools'
-    )
-    return _smtp_send(email, 'Welcome to CheapCAD Tools — your subscription is active', body)
-
-
-@app.route('/api/woo-webhook', methods=['POST'])
-def api_woo_webhook():
-    """WooCommerce order webhook — logs purchases to the same file as Autodesk IPN.
-
-    Set up in WooCommerce → Settings → Advanced → Webhooks:
-      Topic:   Order updated  (or Order created)
-      URL:     https://pulleywebapp.onrender.com/api/woo-webhook
-      Secret:  WC_WEBHOOK_SECRET env var value
-    """
-    import hmac as _hmac
-    import hashlib as _hashlib
-    import base64 as _base64
-
-    raw_body = request.get_data()
-
-    # Verify HMAC-SHA256 signature when secret is configured
-    if _WC_WEBHOOK_SECRET:
-        sig_header = request.headers.get('X-WC-Webhook-Signature', '')
-        expected = _base64.b64encode(
-            _hmac.new(_WC_WEBHOOK_SECRET.encode(), raw_body, _hashlib.sha256).digest()
-        ).decode()
-        if not _hmac.compare_digest(sig_header, expected):
-            app.logger.warning('WooCommerce webhook signature mismatch')
-            return jsonify({'error': 'invalid signature'}), 401
-
-    try:
-        payload = json.loads(raw_body)
-    except Exception:
-        return jsonify({'error': 'invalid JSON'}), 400
-
-    woo_status = payload.get('status', '').lower()
-    status_map = {
-        'completed':  'Completed',
-        'refunded':   'Refunded',
-        'cancelled':  'Cancelled',
-        'processing': 'Processing',
-        'pending':    'Pending',
-        'on-hold':    'On-Hold',
-        'failed':     'Failed',
-    }
-    status  = status_map.get(woo_status, woo_status.capitalize())
-    txn_id  = str(payload.get('id', ''))
-    email   = (payload.get('billing', {}).get('email') or '').lower().strip()
-    amount  = str(payload.get('total', '0.00'))
-    items   = ', '.join(
-        li.get('name', '') for li in payload.get('line_items', []) if li.get('name')
-    )
-
-    record = {
-        'ts':       int(time.time()),
-        'txn_id':   txn_id,
-        'txn_type': 'WooCommerce',
-        'status':   status,
-        'email':    email,
-        'app_id':   items,
-        'amount':   amount,
-        'raw':      payload,
-    }
-
-    with _purchases_lock:
-        try:
-            purchases = json.load(open(_PURCHASES_FILE)) if os.path.exists(_PURCHASES_FILE) else []
-        except Exception:
-            purchases = []
-        purchases.append(record)
-        os.makedirs(_LOG_DIR, exist_ok=True)
-        with open(_PURCHASES_FILE, 'w') as f:
-            json.dump(purchases, f, indent=2)
-
-    app.logger.info(f'WooCommerce webhook: order {txn_id} {status} {email} ${amount}')
-    return '', 200
-
-
-@app.route('/api/subscribers/add', methods=['POST'])
-def api_subscribers_add():
-    """Admin endpoint — add or reactivate a subscriber after App Store purchase."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-
-    data    = request.get_json(silent=True) or {}
-    user_id = data.get('user_id', '').strip()
-    email   = data.get('email', '').lower().strip()
-    if not user_id and not email:
-        return jsonify({'error': 'user_id or email required'}), 400
-
-    with _subscribers_lock:
-        subs = _load_subscribers()
-        key  = user_id or email
-        subs[key] = {
-            'user_id':  user_id,
-            'email':    email,
-            'active':   True,
-            'added':    datetime.now().isoformat(),
-        }
-        _save_subscribers(subs)
-
-    return jsonify({'ok': True, 'key': key})
-
-
-@app.route('/api/subscribers/remove', methods=['POST'])
-def api_subscribers_remove():
-    """Admin endpoint — deactivate a subscriber on cancellation."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-
-    data = request.get_json(silent=True) or {}
-    key  = (data.get('user_id') or data.get('email') or '').strip()
-    if not key:
-        return jsonify({'error': 'user_id or email required'}), 400
-
-    with _subscribers_lock:
-        subs = _load_subscribers()
-        if key in subs:
-            subs[key]['active'] = False
-            _save_subscribers(subs)
-
-    return jsonify({'ok': True, 'key': key})
+# /api/provision, /api/autodesk-ipn, /api/woo-webhook, /api/subscribers/add,
+# /api/subscribers/remove are now registered via cct_common.licensing below
+# (register_licensing_routes). This also drops the dev backdoor
+# (backdoor_key == 'xoot') that used to bypass entitlement checks here.
 
 
 # ── Admin dashboard UI ───────────────────────────────────────────────────────
@@ -4277,6 +3778,7 @@ from cct_common.bug_report_admin import register_bug_report_admin_routes
 from cct_common.flask_caching import (
     register_etag_caching, register_admin_cors, register_download_signal,
 )
+from cct_common.licensing import register_licensing_routes
 register_shutdown_route(app)  # POST /api/shutdown — see cct_common/flask_shutdown.py
 register_live_reload(app)  # /api/_boot_id + /_cct_live_reload.js — see cct_common/live_reload.py
 register_bug_report_admin_routes(app, admin_secret=_PROVISION_SECRET, log_dir=_LOG_DIR)
@@ -4287,6 +3789,66 @@ register_etag_caching(app, cacheable_prefixes=_CACHEABLE_PREFIXES,
                       build_time=BUILD_TIME, max_age=_CACHE_MAX_AGE)
 register_admin_cors(app)  # defaults already match: /api/admin/, /api/subscribers/
 register_download_signal(app)  # default download_prefix='/download/' already matches
+
+
+def _licence_email_subject(key, order_id, valid_until):
+    return f'Your CheapCAD Tools licence key — Order #{order_id}'
+
+
+def _licence_email_body(key, order_id, valid_until):
+    return (
+        f'Hi,\n\n'
+        f'Thank you for purchasing CheapCAD Tools Timing Pulleys for FreeCAD!\n\n'
+        f'Your licence key is:\n\n'
+        f'    {key}\n\n'
+        f'Valid until: {valid_until}\n\n'
+        f'--- How to activate ---\n\n'
+        f'1. Open FreeCAD\n\n'
+        f'2. Go to Part Design menu → Timing Pulley (or use the toolbar)\n\n'
+        f'3. In the CCT panel, click "Paid Local App"\n\n'
+        f'4. Paste your licence key and click Activate\n\n'
+        f'5. The app will download and install automatically\n\n'
+        f'The key can be used on up to 2 computers. If you need to move\n'
+        f'to a new machine, contact support@cheapcadtools.com to reset.\n\n'
+        f'Order: #{order_id}\n\n'
+        f'If you have any questions, reply to this email or visit\n'
+        f'https://cheapcadtools.com/contact/\n\n'
+        f'— CheapCAD Tools'
+    )
+
+
+def _purchase_welcome_email_body(txn_id):
+    return (
+        f'Hi,\n\n'
+        f'Thank you for subscribing to CheapCAD Tools on the Autodesk App Store!\n\n'
+        f'Your subscription is now active. Restart Fusion 360 and the CheapCAD Tools '
+        f'panel will install automatically.\n\n'
+        f'Transaction ID: {txn_id}\n\n'
+        f'If you have any questions, reply to this email or visit '
+        f'https://cheapcadtools.com/contact/\n\n'
+        f'— CheapCAD Tools'
+    )
+
+
+register_licensing_routes(
+    app, admin_secret=_PROVISION_SECRET, log_dir=_LOG_DIR,
+    app_download_url=_APP_DOWNLOAD_URL, app_version=_APP_VERSION,
+    app_changelog=_APP_CHANGELOG, runtime_url=_RUNTIME_URL,
+    runtime_version=_RUNTIME_VERSION, licence_b64=_LICENCE_B64,
+    licence_expiry=_LICENCE_EXPIRY, email_sender=_smtp_send,
+    licence_email_subject=_licence_email_subject,
+    licence_email_body=_licence_email_body,
+    purchase_welcome_email_subject='Welcome to CheapCAD Tools — your subscription is active',
+    purchase_welcome_email_body=_purchase_welcome_email_body,
+    wc_webhook_secret=_WC_WEBHOOK_SECRET, lmfwc_site_url=_LMFWC_SITE_URL,
+    lmfwc_consumer_key=_LMFWC_CONSUMER_KEY, lmfwc_consumer_secret=_LMFWC_CONSUMER_SECRET,
+    autodesk_app_id=_AUTODESK_APP_ID,
+)
+# /api/desktop/{licence-import,licence-import-wc,activate,verify},
+# /api/admin/licences[/<key>/resend-email|reset], /api/provision,
+# /api/autodesk-ipn, /api/woo-webhook, /api/subscribers/{add,remove} — see
+# cct_common/licensing.py. Deliberately drops the old dev backdoor
+# (backdoor_key == 'xoot') that used to bypass entitlement checks.
 
 
 if __name__ == '__main__':
