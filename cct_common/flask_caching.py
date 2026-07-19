@@ -21,13 +21,19 @@ import time
 
 def register_etag_caching(app, cacheable_prefixes, build_time: str,
                           max_age: int = 3600, exempt_prefixes=("/download/",)):
-    """Return 304 Not Modified for GET requests whose ETag (derived from
-    path + sorted query params + build_time) matches the client's
-    If-None-Match header.
+    """Conditional-GET caching for GET requests under `cacheable_prefixes`,
+    keyed on an ETag derived from path + sorted query params + build_time.
 
-    `exempt_prefixes` are never 304'd even if also in `cacheable_prefixes`
-    — e.g. file downloads are served no-store, so the browser has no
-    stored body to fall back on; a 304 there yields an empty download.
+    Two halves, both needed — a `before_request` hook that 304s when the
+    client's `If-None-Match` already matches, and an `after_request` hook
+    that stamps the ETag + Cache-Control onto outgoing 200 responses (with
+    no ETag to receive, the client would never have anything to send back).
+
+    `exempt_prefixes` (e.g. file downloads) get `Cache-Control: no-store`
+    and no ETag instead, and are never 304'd even if also present in
+    `cacheable_prefixes` — a download response has no stored body for the
+    browser to fall back on, so a 304 there yields an empty ("Removed")
+    download.
     """
     from flask import Response, request
 
@@ -53,6 +59,22 @@ def register_etag_caching(app, cacheable_prefixes, build_time: str,
             return Response(status=304, headers={
                 "ETag": etag, "Cache-Control": f"public, max-age={max_age}",
             })
+
+    @app.after_request
+    def _stamp_cache_headers(response):
+        if response.status_code != 200 or request.method != "GET":
+            return response
+        if not any(request.path.startswith(p) for p in cacheable_prefixes):
+            return response
+        if any(request.path.startswith(p) for p in exempt_prefixes):
+            # No ETag alongside no-store — an ETag invites conditional
+            # revalidation that 304s into an empty download.
+            response.headers["Cache-Control"] = "no-store"
+            response.headers.pop("ETag", None)
+        else:
+            response.headers["ETag"] = _etag()
+            response.headers["Cache-Control"] = f"public, max-age={max_age}"
+        return response
 
 
 def register_admin_cors(app, prefixes=("/api/admin/", "/api/subscribers/")):

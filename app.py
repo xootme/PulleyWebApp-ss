@@ -517,72 +517,14 @@ _CACHEABLE_PREFIXES = (
 )
 _CACHE_MAX_AGE = 3600   # 1 hour; Cloudflare + browser cache
 
-
-def _params_etag():
-    """Stable ETag derived from the route path, query-string parameters, and
-    server build time. The path MUST be included: otherwise /download/step and
-    /download/stl with identical params produce the same ETag, and a cached
-    response for one format can satisfy a conditional request for the other."""
-    raw = (BUILD_TIME + '|' + request.path + '|'
-           + '|'.join(f'{k}={v}' for k, v in sorted(request.args.items())))
-    return '"' + hashlib.md5(raw.encode()).hexdigest() + '"'
+# Conditional-GET caching, admin CORS, and the download-signal cookie are
+# registered via cct_common.flask_caching below (see the register_*() calls
+# near the bottom of this file, after `app` is created).
 
 
 @app.before_request
 def _count_request():
     _increment_request_count()
-
-
-@app.before_request
-def _check_client_cache():
-    """Return 304 Not Modified when the client already has the current version."""
-    if request.method != 'GET':
-        return
-    # File downloads are served no-store (see after_request). Never 304 them:
-    # the browser has no stored body to fall back on, so a 304 yields an empty
-    # download that the browser reports as "Removed".
-    if request.path.startswith('/download/'):
-        return
-    if not any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
-        return
-    etag = _params_etag()
-    incoming = request.headers.get('If-None-Match', '')
-    # flask-compress appends ':gzip' inside the ETag quotes on compressed responses
-    # e.g. "abc123" → "abc123:gzip".  Strip it before comparing.
-    incoming_norm = incoming[:-6] + '"' if incoming.endswith(':gzip"') else incoming
-    if incoming_norm == etag:
-        return Response(
-            status=304,
-            headers={'ETag': etag,
-                     'Cache-Control': f'public, max-age={_CACHE_MAX_AGE}'},
-        )
-# ──────────────────────────────────────────
-
-
-@app.after_request
-def _signal_download(response):
-    """Set a short-lived cookie on every /download/ response so the client can
-    detect that a file download actually started (and its status). The browser
-    downloads files via a hidden iframe pointed at the real URL — there is no
-    JS-visible completion event for that, so this cookie is the signal. Value is
-    "<epoch_ms>-<status>"; it changes on every download so the client sees it
-    differ from the value it snapshotted before triggering the download.
-    """
-    if request.path.startswith('/download/'):
-        marker = f'{int(time.time() * 1000)}-{response.status_code}'
-        response.set_cookie('download_signal', marker, max_age=60,
-                            path='/', samesite='Lax')
-    return response
-
-
-@app.after_request
-def _admin_cors(response):
-    """Allow the local admin dashboard HTML file to call admin API endpoints."""
-    if request.path.startswith('/api/admin/') or request.path.startswith('/api/subscribers/'):
-        response.headers['Access-Control-Allow-Origin']  = '*'
-        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
-    return response
 
 
 @app.route('/api/admin/<path:_>', methods=['OPTIONS'])
@@ -606,7 +548,13 @@ def _subscribers_cors_preflight(_):
 
 @app.after_request
 def _track_download(response):
-    """Count every successful /download/* response and stamp cache headers."""
+    """Count every successful /download/* response.
+
+    Cache headers (ETag / Cache-Control / no-store) for this and the other
+    cacheable prefixes are now stamped by cct_common.flask_caching's
+    register_etag_caching — see its registration near the bottom of this
+    file — not here.
+    """
     if response.status_code == 200 and request.method == 'GET':
         if request.path.startswith('/download/'):
             _path = request.path.lower()
@@ -626,18 +574,6 @@ def _track_download(response):
                 or ''
             )
             _increment_download_count(_fmt, ip=_client_ip)
-        if any(request.path.startswith(p) for p in _CACHEABLE_PREFIXES):
-            # Downloads: no-store prevents all browser caching (Edge on 127.0.0.1
-            # ignores max-age=0 for downloads; no-store is the only reliable option).
-            # No ETag here — an ETag alongside no-store invites conditional
-            # revalidation that 304s into an empty ("Removed") download.
-            # API/preview routes: ETag + full max-age for performance.
-            if request.path.startswith('/download/'):
-                response.headers['Cache-Control'] = 'no-store'
-                response.headers.pop('ETag', None)
-            else:
-                response.headers['ETag'] = _params_etag()
-                response.headers['Cache-Control'] = f'public, max-age={_CACHE_MAX_AGE}'
     return response
 
 
@@ -4383,12 +4319,19 @@ def queue_page():
 from cct_common.flask_shutdown import register_shutdown_route
 from cct_common.live_reload import register_live_reload
 from cct_common.bug_report_admin import register_bug_report_admin_routes
+from cct_common.flask_caching import (
+    register_etag_caching, register_admin_cors, register_download_signal,
+)
 register_shutdown_route(app)  # POST /api/shutdown — see cct_common/flask_shutdown.py
 register_live_reload(app)  # /api/_boot_id + /_cct_live_reload.js — see cct_common/live_reload.py
 register_bug_report_admin_routes(app, admin_secret=_PROVISION_SECRET, log_dir=_LOG_DIR)
 # list/hash-lookup/delete/comment/github-close/github-sync — see
 # cct_common/bug_report_admin.py. Parses this repo's own bug_reports.log
 # format (written by the local /api/report-bug route) directly.
+register_etag_caching(app, cacheable_prefixes=_CACHEABLE_PREFIXES,
+                      build_time=BUILD_TIME, max_age=_CACHE_MAX_AGE)
+register_admin_cors(app)  # defaults already match: /api/admin/, /api/subscribers/
+register_download_signal(app)  # default download_prefix='/download/' already matches
 
 
 if __name__ == '__main__':
