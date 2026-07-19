@@ -15,6 +15,13 @@ from cct_common import (
     embed_dxf  as _lib_embed_dxf,
     embed_svg  as _lib_embed_svg,
 )
+# Phase A of the cct_common wiring plan: small generic utilities, aliased to
+# their old local names so call sites don't need to change.
+from cct_common.text_utils import safe_float as _safe_float, safe_dl_name as _safe_dl_name
+from cct_common.jsonl_log import append_jsonl as _append_jsonl, trim_jsonl as _trim_jsonl
+from cct_common.github_api import request as _github_api
+from cct_common.resend_email import send as _cc_send_email
+from cct_common.addin_mirror import mirror_to_addins as _cc_mirror_to_addins
 import subprocess
 import time
 import threading
@@ -230,7 +237,6 @@ _METRICS_RETENTION_DAYS  = 30
 _CPU_CONSTRAINT_THRESHOLD = 80.0
 _MEM_CONSTRAINT_THRESHOLD = 85.0
 _download_lock       = threading.Lock()   # in-process guard (dev / single-worker)
-_metrics_lock        = threading.Lock()
 
 # ── Error log (circular buffer, max 512 KB on disk) ───────────────────────────
 import logging as _logging
@@ -270,32 +276,6 @@ def _sample_and_reset_request_count():
     return val
 
 
-def _trim_jsonl(path, retention_days):
-    """Drop entries older than retention_days from a .jsonl file."""
-    cutoff = time.time() - retention_days * 86400
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        kept = []
-        for l in lines:
-            try:
-                if json.loads(l).get('ts', 0) >= cutoff:
-                    kept.append(l)
-            except Exception:
-                pass
-        if len(kept) < len(lines):
-            with open(path, 'w', encoding='utf-8') as f:
-                f.writelines(kept)
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-
-
-def _append_jsonl(path, obj):
-    with _metrics_lock:
-        with open(path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(obj) + '\n')
 
 
 def _metrics_sampler():
@@ -414,42 +394,16 @@ def _increment_download_count(fmt=None, ip=None):
         _send_milestone_email(count)
 
 
-_RESEND_API_KEY = 're_RUGQ65Ty_4jxjAZMoew8XmkqnJ4B6K9Aa'
-_RESEND_URL = 'https://api.resend.com/emails'
-
-
 def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCAD Tools <info@cheapcadtools.com>'):
-    """Send email via Resend API.
+    """Send email via Resend API — delegates to cct_common.resend_email.send.
 
     Returns (True, '') on success or (False, error_message) on failure.
+    Reads the API key from the RESEND_API_KEY environment variable (set in
+    Render) instead of the hardcoded key this used to carry — rotate that
+    key since it was committed to git history.
     """
-    import urllib.request as _ur
-    payload = json.dumps({
-        'from':    from_addr,
-        'to':      [to],
-        'subject': subject,
-        'text':    body,
-    }).encode()
-    try:
-        req = _ur.Request(_RESEND_URL, data=payload,
-                          headers={'Content-Type': 'application/json',
-                                   'Authorization': f'Bearer {_RESEND_API_KEY}',
-                                   'User-Agent': 'CCT-PulleyApp/1.0'}, method='POST')
-        with _ur.urlopen(req, timeout=20) as resp:
-            result = json.loads(resp.read())
-        if result.get('id'):
-            app.logger.info(f'Resend email sent to {to}: {subject}')
-            return True, ''
-        err = result.get('message', 'resend failed')
-        app.logger.error(f'Resend email failed to {to}: {err}')
-        return False, err
-    except _ur.HTTPError as exc:
-        body = exc.read(512).decode('utf-8', errors='replace')
-        app.logger.error(f'Resend email HTTP error to {to}: {exc} body={body}')
-        return False, f'{exc} body={body}'
-    except Exception as exc:
-        app.logger.error(f'Resend email error to {to}: {exc}')
-        return False, str(exc)
+    return _cc_send_email(to, subject, body, from_addr=from_addr,
+                          user_agent='CCT-PulleyApp/1.0', logger=app.logger)
 
 
 def _send_milestone_email(count):
@@ -502,65 +456,27 @@ from exporters.flange_exporter import (
 _base_dir = os.environ.get('PULLEY_BASE_DIR', os.path.dirname(os.path.abspath(__file__)))
 
 # ── Fusion 360 addin integration ──────────────────────────────────────────────
-_FUSION_CONFIG = os.path.join(
-    os.environ.get('APPDATA', os.path.expanduser('~')),
-    'CheapCADTools', 'config.json')
-
 # ── CAD addin mirroring ────────────────────────────────────────────────────────
 # Each desktop CAD addin (Fusion, SolidWorks, FreeCAD) writes its connection flag
 # and watch directory to the shared config file when it starts. Downloads are
 # mirrored into every connected addin's watch folder so the addin auto-imports
 # them — and so the client can skip the redundant browser download.
-_ADDIN_TARGETS = (
-    ('fusion_connected',     'fusion_watch_dir'),
-    ('solidworks_connected', 'solidworks_watch_dir'),
-    ('freecad_connected',    'freecad_watch_dir'),
-)
-
+# cct_common.addin_mirror's defaults (config path, target keys) already match
+# what this app used locally, so no overrides are needed here.
 
 def _mirror_to_addins(content: bytes, filename: str) -> bool:
-    """Copy a download into every connected CAD addin's watch folder.
+    """Copy a download into every connected CAD addin's watch folder — see
+    cct_common.addin_mirror.mirror_to_addins for the implementation.
 
-    Returns True if the file was written to at least one watch folder, so the
-    caller can suppress the browser download (avoids a duplicate landing in the
-    user's Downloads folder alongside the mirrored copy).
+    Automated tests must receive the real browser download — a CAD addin left
+    connected on the dev machine would otherwise turn /download/* into a 204
+    and fail the download/embedding tests. Skip mirroring under the test flag;
+    normal local dev (QUEUE_DISABLED, no TESTING) still mirrors so a connected
+    addin auto-imports the download.
     """
-    # Automated tests must receive the real browser download — a CAD addin left
-    # connected on the dev machine would otherwise turn /download/* into a 204
-    # and fail the download/embedding tests. Skip mirroring under the test flag;
-    # normal local dev (QUEUE_DISABLED, no TESTING) still mirrors so a connected
-    # addin auto-imports the download.
     from flask import current_app
-    if os.environ.get('PULLEY_TESTING') or current_app.config.get('TESTING'):
-        return False
-    try:
-        if not os.path.exists(_FUSION_CONFIG):
-            return False
-        with open(_FUSION_CONFIG) as f:
-            cfg = json.load(f)
-    except Exception as _cfg_err:
-        import logging as _lg
-        _lg.getLogger(__name__).error('mirror: could not read config: %s', _cfg_err)
-        return False
-
-    mirrored = False
-    for connected_key, dir_key in _ADDIN_TARGETS:
-        watch_dir = cfg.get(dir_key)
-        if not (cfg.get(connected_key) and watch_dir):
-            continue
-        try:
-            os.makedirs(watch_dir, exist_ok=True)
-            with open(os.path.join(watch_dir, filename), 'wb') as f:
-                f.write(content)
-            mirrored = True
-        except Exception as _mirror_err:
-            import traceback as _tb
-            import logging as _lg
-            _lg.getLogger(__name__).error(
-                'mirror to %s failed for %s: %s\n%s',
-                dir_key, filename, _mirror_err, _tb.format_exc()
-            )
-    return mirrored
+    skip = bool(os.environ.get('PULLEY_TESTING') or current_app.config.get('TESTING'))
+    return _cc_mirror_to_addins(content, filename, skip=skip)
 
 
 app = Flask(__name__,
@@ -1535,23 +1451,6 @@ def _embed_svg(svg_str: str, args) -> str:
                           schema_version=CCT_SCHEMA_VERSION)
 
 
-def _safe_dl_name(name: str) -> str:
-    """Sanitise a download filename for the Content-Disposition header.
-
-    A '+' in the filename caused Chromium to download the file and then
-    immediately mark it "Removed" (file never landed on disk) — belt/assembly
-    downloads, which have no '+', always worked. Replace '+' and whitespace
-    with '-' so the name only uses plainly-safe characters.
-    """
-    base, dot, ext = name.rpartition('.')
-    stem = base if dot else name
-    stem = stem.replace('+', '-').replace(' ', '-')
-    # collapse any doubled separators introduced by the replacement
-    while '--' in stem:
-        stem = stem.replace('--', '-')
-    return f'{stem}.{ext}' if dot else stem
-
-
 def _rename_step_product(step_bytes: bytes, product_name: str) -> bytes:
     """Replace PRODUCT names in a STEP file so the CAD app shows correct component names.
 
@@ -2490,14 +2389,6 @@ def api_validate_spoke_fillets():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-
-def _safe_float(val, default):
-    """Convert val to float, falling back to default on empty string or None."""
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return float(default)
 
 
 def _parse_flange_params(args, prefix=''):
@@ -3896,22 +3787,6 @@ def api_admin_bug_comment(ts_id):
     return jsonify({'ok': True})
 
 
-def _github_api(method, path, pat, body=None):
-    """Make a GitHub API call; returns (response_dict, status_code)."""
-    import urllib.request, urllib.error
-    url = f'https://api.github.com{path}'
-    data = json.dumps(body).encode() if body else None
-    req = urllib.request.Request(url, data=data, method=method, headers={
-        'Authorization':       f'Bearer {pat}',
-        'Accept':              'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type':        'application/json',
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read()), r.status
-    except urllib.error.HTTPError as e:
-        return json.loads(e.read() or b'{}'), e.code
 
 
 @app.route('/api/admin/bug-reports/<ts_id>/github-close', methods=['POST'])
