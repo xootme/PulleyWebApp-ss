@@ -1,4 +1,8 @@
 flask>=3.0
+# cct_common is vendored directly into this repo (see sync_cct_common.py) —
+# it's a private GitHub repo, so it can't be installed on Render via an
+# editable sibling path or a git URL. No requirements.txt line needed: a
+# package directory next to app.py is on sys.path by default.
 flask-compress>=1.14
 pillow>=10.0
 cairosvg>=2.7

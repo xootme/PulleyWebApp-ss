@@ -57,6 +57,10 @@ Before committing, ensure these files reflect every user-facing change:
 - [ ] Removed features or "coming soon" stubs cleared from help files
 - [ ] Minimum/maximum input values updated if limits changed
 - [ ] Download format options (SVG / DXF) accurate in all three help files
+- [ ] `cct_common` changed upstream (`C:\Users\cmyer\Documents\cct_common`)? Re-run
+      `py -3.14 sync_cct_common.py` and commit the refreshed `cct_common/` directory —
+      it's vendored, not installed, so it never updates on its own (see
+      `sync_cct_common.py`'s docstring for why)
 - [ ] `ToDo.md` Completed section updated
 
 ### Step 3 — Check CCT metadata schema
