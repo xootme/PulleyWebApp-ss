@@ -40,13 +40,20 @@ except ImportError:
     _HAVE_PSUTIL = False
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file, redirect
-from exporters.job_queue import (
+from cct_common.job_queue import (
     create_job, get_job, start_job, update_progress, finish_job, get_queue_status,
     create_session, get_session_status, heartbeat, release_session, get_queue_info,
-    register_trial_download, TRIAL_DOWNLOADS_PER_WEEK, clear_all_state,
-    clear_stale_on_startup,
-    check_web_download, record_web_download, WEB_DOWNLOADS_PER_WEEK,
+    register_trial_download, clear_all_state, clear_stale_on_startup,
+    check_web_download, record_web_download,
+    trial_downloads_per_week as _trial_downloads_per_week,
+    get_all_jobs as _cc_get_all_jobs,
+    get_full_queue_snapshot as _cc_get_full_queue_snapshot,
+    register_machine_id as _cc_register_machine_id,
+    configure as _cc_job_queue_configure,
+    start_background_threads as _cc_job_queue_start_threads,
 )
+# Reused for /api/trial/status (admin diagnostic); not part of the public API.
+from cct_common.job_queue import _load_trial_downloads as _cc_load_trial_downloads
 from functools import wraps
 import threading as _threading
 import uuid as _uuid_mod
@@ -502,6 +509,16 @@ app.config['COMPRESS_LEVEL']   = 6     # balanced speed vs ratio
 app.config['COMPRESS_MIN_SIZE'] = 512  # don't compress tiny responses
 Compress(app)
 # ──────────────────────────────────────────
+
+# ─── cct_common.job_queue: configure + start background threads ───────────────
+# log_dir matches exactly what exporters/job_queue.py used to resolve itself
+# (same PULLEY_LOG_DIR env var, same default). Background threads (queue
+# processor + session/job cleanup) are no longer started as an import side
+# effect — call explicitly, unconditionally, matching the original's
+# always-on behavior (it started them the moment anything imported the
+# module, tests included).
+_cc_job_queue_configure(log_dir=_LOG_DIR)
+_cc_job_queue_start_threads()
 
 # ─── Startup: clear any stale queue session left by a previous process ────────
 if not os.environ.get('PULLEY_TESTING'):
@@ -3752,81 +3769,20 @@ def api_download_step_async():
 @app.route('/api/admin/jobs')
 def api_admin_jobs():
     """Admin endpoint: view all active and queued jobs for debugging."""
-    from exporters.job_queue import _JOBS, _QUEUE, _ACTIVE
-
-    jobs_list = []
-    for job_id in sorted(_JOBS.keys()):
-        job = _JOBS.get(job_id)
-        if job:
-            jobs_list.append({
-                'id': job.id,
-                'status': job.status,
-                'type': job.type,
-                'progress': job.progress,
-                'created': job.created.isoformat() if job.created else None,
-                'started': job.started.isoformat() if job.started else None,
-                'finished': job.finished.isoformat() if job.finished else None,
-                'error': job.error,
-                'queue_position': _QUEUE.index(job.id) + 1 if job.id in _QUEUE else None,
-                'is_active': job.id in _ACTIVE,
-            })
-
-    return jsonify({
-        'jobs': jobs_list,
-        'queue_length': len(_QUEUE),
-        'active_count': len(_ACTIVE),
-        'max_concurrent': 2,
-        'timestamp': datetime.now().isoformat(),
-    })
+    snapshot = _cc_get_all_jobs()
+    snapshot['timestamp'] = datetime.now().isoformat()
+    # snapshot['max_concurrent'] is the real configured value (1) — the old
+    # inline version of this route hardcoded 2 here, which never matched
+    # actual enforcement; that display-only inconsistency is now fixed.
+    return jsonify(snapshot)
 
 
 @app.route('/api/admin/queue')
 def api_admin_queue():
     """Admin endpoint: full session-queue snapshot for the admin dashboard."""
-    from exporters.job_queue import _load_state, SESSION_TIMEOUT_SEC, IDLE_TIMEOUT_SEC, _LOCK
-    now = time.time()
-    with _LOCK:
-        active, sessions = _load_state()
-
-    active_out = None
-    if active:
-        elapsed = now - active['started_at']
-        idle    = now - active.get('last_heartbeat', active['started_at'])
-        active_out = {
-            'user_id':        active['user_id'],
-            'session_id':     active['session_id'][:8],
-            'started_at':     active['started_at'],
-            'last_heartbeat': active.get('last_heartbeat', active['started_at']),
-            'elapsed_sec':    round(elapsed),
-            'idle_sec':       round(idle),
-            'remaining_sec':  max(0, round(SESSION_TIMEOUT_SEC - elapsed)),
-        }
-
-    queue_out = []
-    for sid, s in sorted(sessions.items(), key=lambda x: x[1].get('seq', x[1]['created_at'])):
-        pos = sum(
-            1 for v in sessions.values()
-            if v.get('seq', v['created_at']) < s.get('seq', s['created_at'])
-        ) + 1
-        remaining_active = max(0, SESSION_TIMEOUT_SEC - (now - active['started_at'])) if active else 0
-        wait = remaining_active + (pos - 1) * (SESSION_TIMEOUT_SEC + 60)
-        queue_out.append({
-            'position':       pos,
-            'user_id':        s['user_id'],
-            'session_id':     sid[:8],
-            'created_at':     s['created_at'],
-            'last_heartbeat': s.get('last_heartbeat', s['created_at']),
-            'wait_sec':       round(wait),
-        })
-
-    return jsonify({
-        'active':           active_out,
-        'queue':            queue_out,
-        'queue_length':     len(sessions),
-        'timeout_sec':      SESSION_TIMEOUT_SEC,
-        'idle_timeout_sec': IDLE_TIMEOUT_SEC,
-        'timestamp':        datetime.now().isoformat(),
-    })
+    snapshot = _cc_get_full_queue_snapshot()
+    snapshot['timestamp'] = datetime.now().isoformat()
+    return jsonify(snapshot)
 
 
 @app.route('/api/download-status/<job_id>')
@@ -4085,10 +4041,9 @@ def api_trial_status():
     if not machine_id:
         return jsonify({'error': 'mid (machine_id) required'}), 400
 
-    from exporters.job_queue import _load_trial_downloads
     from datetime import datetime, timedelta
 
-    data = _load_trial_downloads()
+    data = _cc_load_trial_downloads()
     now = datetime.now()
     week_start = now - timedelta(days=now.weekday())
 
@@ -4102,16 +4057,20 @@ def api_trial_status():
 
     return jsonify({
         'count': count,
-        'limit': TRIAL_DOWNLOADS_PER_WEEK,
+        'limit': _trial_downloads_per_week(),
         'week_start': week_start.strftime('%Y-%m-%d'),
     })
 
 
 @app.route('/api/session/register-machine', methods=['POST'])
 def api_session_register_machine():
-    """Register machine_id with session for addin/CLI access."""
-    from exporters.job_queue import _SESSIONS, _LOCK
+    """Register machine_id with session for addin/CLI access.
 
+    Was broken before this route was wired onto cct_common.job_queue: it
+    referenced a module-level _SESSIONS dict that exporters/job_queue.py
+    never actually had (sessions are file-backed, not an in-memory dict),
+    so every call 500'd. register_machine_id() is the fix.
+    """
     data = request.json if request.is_json else {}
     session_id = data.get('session_id')
     machine_id = data.get('machine_id')
@@ -4119,12 +4078,8 @@ def api_session_register_machine():
     if not session_id or not machine_id:
         return jsonify({'error': 'Missing session_id or machine_id'}), 400
 
-    # Store machine_id in session
-    with _LOCK:
-        if session_id not in _SESSIONS:
-            return jsonify({'error': 'Session not found', 'code': 'SESSION_NOT_FOUND'}), 403
-
-        _SESSIONS[session_id]['machine_id'] = machine_id
+    if not _cc_register_machine_id(session_id, machine_id):
+        return jsonify({'error': 'Session not found', 'code': 'SESSION_NOT_FOUND'}), 403
 
     return jsonify({
         'success': True,
