@@ -46,7 +46,7 @@ Every tool is a self-contained Flask application in its own GitHub repo. The sam
 | `geometry/<tool>_geometry.py` | Core math — shared by all export formats |
 | `geometry/flange_geometry.py` | Flange cross-section profiles and inner-radius rules |
 | `exporters/` | Format-specific exporters (SVG, DXF, STL, STEP, PNG) |
-| `exporters/job_queue.py` | Session + queue state (disk-persisted); disabled by `QUEUE_DISABLED` |
+| `cct_common.job_queue` (vendored) | Session + queue state (disk-persisted); disabled by `QUEUE_DISABLED` |
 | `exporters/step_worker.py` | STEP subprocess worker — cadquery path (unexercised fallback) |
 | `exporters/step_worker_ss.py` | STEP subprocess worker — small_step Rust path (fast, no cadquery) |
 | `templates/index.html` | Full UI — all controls, JS, Three.js 3D viewer |
@@ -83,13 +83,7 @@ geometry/<tool>_geometry.py   ← 2D profile math, shared by all formats
 
 ### Embedded metadata
 
-Every exported file has CCT design parameters embedded as JSON so users can restore a design from a saved file:
-
-| Format | Location |
-|--------|----------|
-| STEP / STL | `/* CCT:{...} */` comment after the STEP header |
-| DXF | Group-code `999` comment before EOF |
-| SVG | `<metadata><cct>{...}</cct></metadata>` element |
+Every exported file has CCT design parameters embedded as JSON so users can restore a design from a saved file, via `cct_common`'s `embed_step`/`embed_stl`/`embed_dxf`/`embed_svg` — see [cct_common/README.md § Convention](../cct_common/README.md#convention) for the format table and JSON shape.
 
 The web app reads these back via a file-picker import button. The Fusion addin reads them on import to attach params to the Fusion component attributes.
 
@@ -107,7 +101,7 @@ The queue is only active in the **online/Render build**. The desktop build (and 
 
 | File | Role |
 |------|------|
-| `exporters/job_queue.py` | In-memory session + queue state, disk-persisted to `logs/session.json` and `logs/queue.json`. Background cleanup thread (10 s interval). |
+| `cct_common.job_queue` (vendored) | Session + queue state, disk-persisted to `logs/session.json` and `logs/queue.json`. Background cleanup thread (2 s interval). Generic across CCT tools — `configure(log_dir=...)` + `start_background_threads()` at app startup; see `cct_common/README.md`. |
 | `app.py` | `@require_active_session` decorator guards `/download/step` and other expensive routes. Session API routes below. |
 | `templates/queue.html` | Queue status UI — join, position counter, countdown, release button. Auto-refreshes every 5 s. |
 
@@ -151,7 +145,9 @@ Session expires / released:
 
 ### Configuration
 
-All timeouts in `exporters/job_queue.py`:
+Timeouts are set via `cct_common.job_queue.configure()` at startup and read
+back via `session_timeout_sec()`/`idle_timeout_sec()` (never read the
+module-private `_session_timeout_sec` etc. directly):
 ```python
 SESSION_TIMEOUT_SEC = 5 * 60  # 5 min base
 STEP_GRACE_SEC      = 60      # +1 min for STEP
@@ -214,21 +210,10 @@ A validation suite lives in `tests/`:
 
 ### Common backbone (all platforms)
 
-The provision server on Render is platform-agnostic. Every plugin calls the same endpoint regardless of CAD platform:
-
-```
-Plugin calls POST /api/provision  { user_id, email, [platform] }
-        │
-Render checks subscribers.json or calls platform entitlement API
-        │
-Returns:
-  - licence.lic  (base64, PyArmor time-limited — same file for all platforms)
-  - app_url      (GitHub Releases zip download URL)
-  - app_version  (YYYYMMDD build string)
-  - licence_expiry (YYYY-MM-DD)
-        │
-Plugin downloads app zip, writes licence.lic, stores expiry in config.json
-```
+The provision server on Render is platform-agnostic, implemented via
+`cct_common.licensing.register_licensing_routes()` — see
+[cct_common/README.md § licensing](../cct_common/README.md) for the generic
+flow diagram (this applies to every CCT tool, not just this one).
 
 **Licence mechanics (all platforms):**
 - `licence.lic` is a PyArmor file: `--period 7` (weekly online check) + `--expired <date>` (hard stop).
@@ -332,7 +317,7 @@ No platform identity API needed — email is the identity anchor.
 | `PULLEY_APP_URL` | GitHub Release download URL for app zip |
 | `PULLEY_APP_VERSION` | Build date string; addin compares to local version.txt |
 | `RENDER_API_KEY` | For admin dashboard proxy endpoints |
-| `RESEND_API_KEY` | Transactional email via Resend (hardcoded in app.py — `re_RUGQ65Ty_…`; domain `cheapcadtools.com` verified in Resend) |
+| `RESEND_API_KEY` | Transactional email via Resend — read from this env var by `cct_common.resend_email.send()`, never hardcoded; domain `cheapcadtools.com` verified in Resend |
 | `AUTODESK_APP_ID` | Set after Autodesk App Store registration; empty → subscribers.json fallback |
 | `ONSHAPE_CLIENT_ID` | OnShape OAuth app client ID (Mode B only) |
 | `ONSHAPE_CLIENT_SECRET` | OnShape OAuth app client secret (Mode B only) |
@@ -585,19 +570,19 @@ No CNAME record for `tools` is required. The Worker runs on the root domain prox
 | GreenGeeks | xootpro | SSH key `~/.ssh/id_ed25519_greengeeks`; paramiko for WordPress edits |
 | Cloudflare | — | Worker: `cct-tools-router`; route: `cheapcadtools.com/*`; WAF bypass rule for `/wp-json/cct/v1/send-email` |
 | Autodesk App Store | — | App ID set in `AUTODESK_APP_ID` env var after registration |
-| Resend | xootme@gmail.com | Transactional email API; domain `cheapcadtools.com` verified; key `CCT_Email` hardcoded in `app.py`; `User-Agent: CCT-PulleyApp/1.0` required to bypass Cloudflare on `api.resend.com` |
+| Resend | xootme@gmail.com | Transactional email API; domain `cheapcadtools.com` verified; key name `CCT_Email`, value in `RESEND_API_KEY` env var (never hardcoded — see `cct_common.resend_email`); `User-Agent: CCT-PulleyApp/1.0` required to bypass Cloudflare on `api.resend.com` |
 
 SSH to GreenGeeks: `ssh -i ~/.ssh/id_ed25519_greengeeks xootpro@chi203.greengeeks.net`
 
 ### Email architecture
 
-All transactional email (licence keys, welcome messages, milestone alerts) goes through the **Resend HTTP API**. Render's outbound SMTP ports (465/587) are blocked — HTTP is the only option.
+All transactional email (licence keys, welcome messages, milestone alerts) goes through the **Resend HTTP API** via `cct_common.resend_email.send()` (see its docstring for the Cloudflare-1010/User-Agent gotcha) — Render's outbound SMTP ports (465/587) are blocked, so HTTP is the only option.
 
 ```
-app.py  _smtp_send()
+app.py  _smtp_send()  →  cct_common.resend_email.send()
     └── POST https://api.resend.com/emails
-            Authorization: Bearer re_RUGQ65Ty_…   (key name: CCT_Email, hardcoded in app.py)
-            User-Agent: CCT-PulleyApp/1.0          ← required; Python-urllib UA triggers Cloudflare 1010
+            Authorization: Bearer <RESEND_API_KEY env var>   (key name: CCT_Email)
+            User-Agent: CCT-PulleyApp/1.0
             from: CheapCAD Tools <info@cheapcadtools.com>
             └── Resend delivers via cheapcadtools.com (domain verified in Resend dashboard)
 ```
