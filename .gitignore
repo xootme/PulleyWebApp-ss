@@ -25,6 +25,8 @@ build/
 htmlcov/
 # generated STEP/DXF/STL files from test runs
 test_output/
+# fuzz_pulley.py JSONL logs
+fuzz_results/
 # runtime metrics and subscriber data (lives on Render disk, not in repo)
 logs/
 
