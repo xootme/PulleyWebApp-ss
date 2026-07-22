@@ -411,9 +411,19 @@ def _spoke_void_segments(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
             wall_r_start = (rt_x, rt_y)
 
         # ── Right spoke wall (line) ───────────────────────────────────────────
-        if use_hub_base and base_r:
-            _, _, tl_x, tl_y, tc_x, tc_y, _ = base_r
-            wall_r_end = (tl_x, tl_y)
+        # Gate on use_hub_base the same way the base section below does: when
+        # use_hub_base is True, ll_base was already judged untrustworthy (its
+        # fillet centre dips inside the hub -- the two spoke walls are nearly
+        # perpendicular for a wide void on a low spoke count, so their RAY
+        # intersection, unlike the actual wall segments, can land far inside
+        # the hub). If the hub-tangent fillet (base_r) ALSO fails, fall back
+        # to the raw hub corner, never to the already-rejected ll_base.
+        if use_hub_base:
+            if base_r:
+                _, _, tl_x, tl_y, tc_x, tc_y, _ = base_r
+                wall_r_end = (tl_x, tl_y)
+            else:
+                wall_r_end = (rb_x, rb_y)
         elif ll_base and fillet_base_mm > 0.05:
             wall_r_end = (ll_base[2], ll_base[3])
         else:
