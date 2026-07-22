@@ -12,6 +12,12 @@ Reads the API key from the RESEND_API_KEY environment variable — never
 hardcode it in a caller. `send()` never raises; failures come back as
 (False, error_message) so a notification-email bug can never break the
 request that triggered it.
+
+Render's outbound SMTP ports (465/587) are blocked, which is why this
+goes over HTTP instead. Pass a real `user_agent` (e.g. "CCT-App/1.0")
+rather than leaving Python's default urllib UA — api.resend.com sits
+behind Cloudflare, and requests with no/generic User-Agent get blocked
+with a Cloudflare error 1010 before they ever reach Resend.
 """
 from __future__ import annotations
 
