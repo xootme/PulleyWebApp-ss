@@ -59,7 +59,11 @@ from cct_common.step_check import PersistentStepWorker, check_wire_order, valida
 
 _HERE = Path(__file__).parent
 _SFA_EXE = _HERE / "tools" / "sfa" / "sfa-cl.exe"
-_SS_BIN_DEFAULT = Path(r"C:\Users\cmyer\Documents\small_step\target\x86_64-pc-windows-gnu\debug\small_step.exe")
+# Matches app.py's own fallback default (release build) -- the debug build
+# under this same target dir was found (by fuzzing this fuzz tool itself) to
+# predate small_step's --version flag entirely, so it fails step_worker_ss.py's
+# _check_binary_version on every call.
+_SS_BIN_DEFAULT = Path(r"C:\Users\cmyer\Documents\small_step\target\x86_64-pc-windows-gnu\release\small_step.exe")
 
 # OCCT worker (sibling repo's venv — see cct_common.step_check's own docstring)
 _OCC_PY = Path(r"C:\Users\cmyer\Documents\PulleyWebApp\.venv312\Scripts\python.exe")
@@ -245,6 +249,17 @@ def _geometry_check(step_bytes: bytes, stl_volume: float | None,
 def run(iterations: int | None, duration: float | None, seed: int | None,
        out_dir: str = "fuzz_results") -> list[dict]:
     ss_bin = _get_ss_bin()
+    # Must happen before ANY "from app import ..." (including the one inside
+    # _make_config, called first each iteration below) -- app.py resolves its
+    # module-level _SS_BIN from this env var at first-import time only, and
+    # every later `from app import ...` just returns the cached module. Set
+    # after the fact, this line would silently do nothing: _make_config's own
+    # import would have already locked _SS_BIN onto app.py's own fallback
+    # default (a stale/different binary) before this function's caller ever
+    # sees it -- found by fuzzing this fuzz tool itself, when a run's actual
+    # binary turned out not to match the one this function's ss_bin/print
+    # implied it was using.
+    os.environ['SMALL_STEP_BIN'] = ss_bin
     seed = seed if seed is not None else int(datetime.now().strftime('%Y%m%d%H'))
     rng = random.Random(seed)
 
