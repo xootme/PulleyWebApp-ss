@@ -944,6 +944,15 @@ def generate_htd_groove(
     )
 
     bs = backlash / 2.0
+    # Floor half-width (X + bs) must stay positive -- a large-enough negative
+    # backlash (TIGHT preset on a low- or zero-X profile, e.g. GT, whose
+    # ranges all use X=0.0) would otherwise invert the floor line's
+    # endpoints (Point(-X-bs,...) -> Point(X+bs,...) swaps left/right),
+    # producing a self-intersecting groove profile that only sometimes
+    # trips an OCCT invalid-solid check depending on tooth rotation --
+    # found via fuzz_pulley.py. Mirrors the arc_rad_eff/root_rad_eff
+    # clamps above.
+    bs = max(bs, 1.0e-4 - X)
     container.add(Line(Point(-pitch/2,       od_y),  Point(-C2_x - bs,  od_y)))
     container.add(Arc( Point(-C2_x - bs,     C2_y),  root_rad_eff, math.pi/2,           theta,              cw=True))
     container.add(Line(Point(-T2_x - bs,     T2_y),  Point(-T1_x - bs,  T1_y)))
