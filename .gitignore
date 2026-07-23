@@ -27,6 +27,8 @@ htmlcov/
 test_output/
 # fuzz_pulley.py JSONL logs
 fuzz_results/
+# tests/run_tests.py failure summary from the most recent run
+tests/last_failures.txt
 # runtime metrics and subscriber data (lives on Render disk, not in repo)
 logs/
 

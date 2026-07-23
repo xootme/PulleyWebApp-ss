@@ -1135,7 +1135,27 @@ def main():
         p = sum(1 for t in _state['tests'] if t['status'] == 'passed')
         f = sum(1 for t in _state['tests'] if t['status'] == 'failed')
         s = sum(1 for t in _state['tests'] if t['status'] == 'skipped')
+        failed_tests = [t for t in _state['tests'] if t['status'] == 'failed']
     print(f'Results   : {p} passed  {f} failed  {s} skipped')
+
+    if failed_tests:
+        print('Failed    :')
+        lines = []
+        for t in failed_tests:
+            line = f"  {t['group']} :: {t['name']}"
+            print(line)
+            lines.append(line)
+            err = t.get('error')
+            if err:
+                first_line = err.splitlines()[0]
+                print(f'      {first_line}')
+                lines.append(f'    {first_line}')
+        fail_log = Path(__file__).parent / 'last_failures.txt'
+        fail_log.write_text(
+            f"Run at {datetime.now().isoformat()}\n" + '\n'.join(lines) + '\n',
+            encoding='utf-8',
+        )
+        print(f'Failed test names written to {fail_log}')
 
     if args.exit_when_done:
         proc.terminate()
