@@ -132,8 +132,25 @@ Results are appended to `Perf_History.csv` (committed alongside the code change)
 .venv314/Scripts/python concurrency_test.py --csv Perf_History.csv
 
 # Concurrency test — gunicorn multi-worker + heavy payloads
-# (auto-starts gunicorn; dev server does not need to be running)
-.venv314/Scripts/python concurrency_test.py --gunicorn --workers 2 --heavy --csv Perf_History.csv
+# gunicorn depends on fcntl (POSIX-only) and CANNOT run on Windows at all —
+# concurrency_test.py's own `--gunicorn` auto-start flag will fail here with
+# "ModuleNotFoundError: No module named 'fcntl'". Run gunicorn for real inside
+# WSL (Ubuntu distro, already installed) instead, then point the Windows-side
+# test harness at it — this is also the closer match to Render's actual Linux
+# runtime. WSL sees the repo directly at /mnt/c/..., no separate checkout needed.
+# One-time setup (only if ~/venvs/pulleywebapp-ss doesn't already exist):
+#   wsl -d ubuntu -- bash -lc "cd /mnt/c/Users/cmyer/Documents/PulleyWebApp-ss && \
+#     python3 -m venv ~/venvs/pulleywebapp-ss && \
+#     ~/venvs/pulleywebapp-ss/bin/pip install -r requirements.txt"
+# Each run:
+wsl -d ubuntu -- bash -lc "cd /mnt/c/Users/cmyer/Documents/PulleyWebApp-ss && chmod +x bin/small_step_linux && \
+  PULLEY_TESTING=1 WEB_CONCURRENCY=2 nohup ~/venvs/pulleywebapp-ss/bin/gunicorn \
+  --config=gunicorn.conf.py --bind 0.0.0.0:8001 app:app > /tmp/gunicorn_wsl.log 2>&1 &"
+# WSL2 auto-forwards localhost, so the Windows-side client reaches it at 127.0.0.1:8001:
+.venv314/Scripts/python concurrency_test.py --url http://127.0.0.1:8001 --csv Perf_History.csv
+.venv314/Scripts/python concurrency_test.py --heavy --url http://127.0.0.1:8001 --csv Perf_History.csv
+# Stop it afterward:
+wsl -d ubuntu -- bash -lc "pkill -f 'gunicorn.*app:app'"
 ```
 
 `record_benchmarks.py` prints a summary table (mean, p95, p99, max) and appends one row per test
@@ -153,7 +170,7 @@ investigating.
 - [ ] No test regressed more than ~30% vs the previous entry in `Perf_History.csv`
 - [ ] Dev server concurrency test ran without errors
 - [ ] No new `SERIALISED [!!]` flags on dev run that weren't present before
-- [ ] Gunicorn concurrency test ran without errors (`--gunicorn --workers 2`)
+- [ ] Gunicorn concurrency test ran without errors (via WSL, 2 workers)
 - [ ] Gunicorn ratios ≈1.0 at N=2 for all standard endpoints
 - [ ] Heavy payload tests passed without `[ERR]` flags (`--heavy`)
 - [ ] `Perf_History.csv` staged for commit
