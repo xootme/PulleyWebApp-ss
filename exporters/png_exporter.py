@@ -144,6 +144,57 @@ def _sv_line_line_fillet(rx0, ry0, rdx, rdy, lx0, ly0, ldx, ldy,
     return fcx, fcy, trx, try_, tlx, tly
 
 
+def _check_spoke_fillet_order(i, use_hub_base, ll_base, tip_l, tip_r, base_l, base_r,
+                               lb_x, lb_y, l_dx, l_dy, rb_x, rb_y, r_dx, r_dy):
+    """Raise ValueError if, on either flank, the base fillet's tangent point
+    (near the hub) isn't strictly closer to the hub than the tip fillet's own
+    tangent point (near the rim) -- both are measured as the same parametric
+    `s` along that flank's straight line (s=0 at the hub corner, s=1 at the
+    rim corner; `_sv_line_circle_fillet` already returns this as its last
+    tuple element). If base's s >= tip's s, the flank wall between them has
+    folded back on itself (zero/negative length), producing a self-crossing
+    "bowtie" void.
+
+    An earlier version of this check compared each fillet's absolute
+    distance from the pulley centre (full-circle extremes) instead of where
+    it actually meets the flank -- that overestimates a line-line base
+    fillet's reach whenever its tangent point sits well short of the full
+    circle's farthest point (common for wide, few-spoke voids), producing
+    false positives on genuinely valid spokes (confirmed via shapely
+    is_simple on the raw polygon: 5-spoke and fillet_base=2.0 variants of
+    the repro below were both simple/valid, not self-crossing, yet the
+    old check rejected them). The s-parameter comparison is exact because
+    it's the same coordinate the wall-building code itself already uses to
+    decide where the flank starts and ends.
+
+    Shared by _spoke_void_polygons (STL/preview) and _spoke_void_segments
+    (DXF/STEP) so both reject the same invalid spokes the same way. Found
+    via fuzz_pulley.py + a DXF render showing the crossing directly: a
+    7-spoke GT-2M-67T pulley with fillet_tip=0.7, fillet_base=3.2."""
+    def _tip_s(tip):
+        return tip[6] if tip else 1.0
+
+    def _base_s(hub_tangent, x0, y0, dx, dy, ll_tangent_pt):
+        if use_hub_base:
+            return hub_tangent[6] if hub_tangent else 0.0
+        if ll_base and ll_tangent_pt is not None:
+            _, _, s = _sv_project(ll_tangent_pt[0], ll_tangent_pt[1], x0, y0, dx, dy)
+            return s
+        return 0.0
+
+    ll_r = (ll_base[2], ll_base[3]) if ll_base else None
+    ll_l = (ll_base[4], ll_base[5]) if ll_base else None
+    left_s_tip, left_s_base = _tip_s(tip_l), _base_s(base_l, lb_x, lb_y, l_dx, l_dy, ll_l)
+    right_s_tip, right_s_base = _tip_s(tip_r), _base_s(base_r, rb_x, rb_y, r_dx, r_dy, ll_r)
+    if left_s_base >= left_s_tip - 1.0e-9 or right_s_base >= right_s_tip - 1.0e-9:
+        raise ValueError(
+            "invalid spoke: fillet_base's outer edge reaches past "
+            "fillet_tip's inner edge on at least one flank (spoke "
+            f"{i}) -- reduce fillet_base_mm/fillet_tip_mm or widen "
+            "the spoke."
+        )
+
+
 def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
                          fillet_tip_mm=0.0, fillet_base_mm=0.0, n_arc=16):
     """
@@ -241,6 +292,9 @@ def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
                                              True, in_rx, in_ry, prefer_high_t=False)
         else:
             base_l = base_r = None
+
+        _check_spoke_fillet_order(i, use_hub_base, ll_base, tip_l, tip_r, base_l, base_r,
+                                   lb_x, lb_y, l_dx, l_dy, rb_x, rb_y, r_dx, r_dy)
 
         # ── Build polygon point list ──────────────────────────────────────────
         pts = []
@@ -392,6 +446,9 @@ def _spoke_void_segments(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
                                              fillet_base_mm, True, in_rx, in_ry, prefer_high_t=False)
         else:
             base_l = base_r = None
+
+        _check_spoke_fillet_order(i, use_hub_base, ll_base, tip_l, tip_r, base_l, base_r,
+                                   lb_x, lb_y, l_dx, l_dy, rb_x, rb_y, r_dx, r_dy)
 
         segs = []
 
