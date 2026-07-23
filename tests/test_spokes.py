@@ -137,11 +137,14 @@ class TestSpokeVoidPolygonsGeometry:
         for poly in polys:
             assert len(poly) >= 4
 
-    def test_large_fillets_clamped_gracefully(self):
-        # Fillets larger than the available gap must not crash
-        polys = _spoke_void_polygons(R_HUB, R_RIM, N_SPOKES, SPOKE_W,
-                                     fillet_tip_mm=50.0, fillet_base_mm=50.0)
-        assert isinstance(polys, list)
+    def test_large_fillets_rejected_not_crashed(self):
+        # Fillets larger than the available gap (50mm on a 20mm hub-to-rim
+        # span) produce a self-crossing "bowtie" void -- must raise a clean,
+        # documented ValueError (not silently return bad geometry, and not
+        # crash with an unrelated exception). See _check_spoke_fillet_order.
+        with pytest.raises(ValueError, match="invalid spoke"):
+            _spoke_void_polygons(R_HUB, R_RIM, N_SPOKES, SPOKE_W,
+                                 fillet_tip_mm=50.0, fillet_base_mm=50.0)
 
     def test_narrow_spokes(self):
         polys = _spoke_void_polygons(R_HUB, R_RIM, N_SPOKES, spoke_width_mm=0.5)
