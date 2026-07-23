@@ -1135,7 +1135,8 @@ def main():
         p = sum(1 for t in _state['tests'] if t['status'] == 'passed')
         f = sum(1 for t in _state['tests'] if t['status'] == 'failed')
         s = sum(1 for t in _state['tests'] if t['status'] == 'skipped')
-        failed_tests = [t for t in _state['tests'] if t['status'] == 'failed']
+        failed_tests  = [t for t in _state['tests'] if t['status'] == 'failed']
+        skipped_tests = [t for t in _state['tests'] if t['status'] == 'skipped']
     print(f'Results   : {p} passed  {f} failed  {s} skipped')
 
     if failed_tests:
@@ -1156,6 +1157,15 @@ def main():
             encoding='utf-8',
         )
         print(f'Failed test names written to {fail_log}')
+
+    if skipped_tests:
+        lines = [f"  {t['group']} :: {t['name']}" for t in skipped_tests]
+        skip_log = Path(__file__).parent / 'last_skipped.txt'
+        skip_log.write_text(
+            f"Run at {datetime.now().isoformat()}\n" + '\n'.join(lines) + '\n',
+            encoding='utf-8',
+        )
+        print(f'Skipped test names written to {skip_log}')
 
     if args.exit_when_done:
         proc.terminate()
