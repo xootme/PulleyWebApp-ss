@@ -166,6 +166,16 @@ Rust project (no deps). Build: `cargo +stable-x86_64-pc-windows-gnu build`
 
   Validated OCCT-valid (0 invalid faces, 0 non-manifold edges) for the real "P2" (HTD-8M-75T, hub_od 15, rim_depth 10, 11 wide spokes) across fillet sizes 0..2 mm and spoke heights 3..6 mm, plus flange + nub sockets. Tests: `tests/test_nub_socket_merge.py` `partial_height_wide` / `partial_height_wide_nofillet` + `test_wide_spoke_partial_height_valid`. (Abandoned approaches removed: `inject_synthetic_hub_arc` synthetic hub arc, and per-spoke radial-cut sectors.)
 
+- [x] **RESOLVED (2026-07-22) — fuzz_pulley.py fuzz sweep found and fixed 6 geometry bugs.** New tool `fuzz_pulley.py` replaces `tests/test_ss_validators.py` (random pulley configs × wire-order/OCCT/NIST-SFA validation via `cct_common.step_check`). Fixes, full root-cause writeups in `small_step/STEP_SOLUTIONS.md` §9 (2026-07-22 entries):
+  - Spoke web-cap rim-side tangent arc had no split (only hub-side did) — generalized `split_island_hub_arc` → `split_island_arc_run`, applied to both ends (`small_step`).
+  - Spoke base-fillet fallback silently reused an already-rejected line-line fillet result on a wide/perpendicular void — gated correctly on `use_hub_base` (`png_exporter.py`).
+  - GT-family groove profiles (X=0 in every tooth-count range) self-intersect under negative (TIGHT) backlash — floor half-width clamped (`geometry/pulley_geometry.py`).
+  - A flange nub socket landing entirely inside `rim_radius` (the recessed pocket, open above the spoke web at every angle) is now refused with a clear error instead of emitting an impossible pocket (`small_step`).
+  - A keyway deeper than the hub's own outer radius (back wall reaching past the hub OD) is now refused instead of producing a self-crossing annular cap (`small_step`).
+  - **Spoke fillets where Fillet Base's outer edge reaches past Fillet Tip's inner edge** (self-crossing "bowtie" void) are now refused in both the STL and STEP generation paths — see `spokes_2d_help.html`'s Fillet Base note. `_check_spoke_fillet_order`, shared by `_spoke_void_polygons`/`_spoke_void_segments` (`png_exporter.py`).
+
+  Re-running the fuzz seed that originally found 36/100 failures now finds 0 real failures (100/100 either pass or correctly refuse an impossible input). **Known open issues, not yet fixed:** a wire-order `EDGE_LOOP` bug on a spoke+metal-flange STD-2M pulley (repro in `STEP_SOLUTIONS.md`), and a self-intersecting unfilleted void in the "hub overlap" regime (wide spoke width relative to hub radius, reproduces even with both fillets at 0).
+
 ### Design Metadata in Exported Files
 - [x] Embed CCT params as JSON in STEP (`/* CCT:{...} */` comment after HEADER)
 - [x] Embed CCT params as JSON in DXF (group-code 999 comment before EOF)

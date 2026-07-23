@@ -63,6 +63,10 @@ corner.</p>
 <h3>Fillet Base (mm)</h3>
 <p>Corner radius where the spoke meets the outer face of the hub boss. A larger fillet base is
 particularly important for load-bearing spokes — it distributes bending stress over a wider area.</p>
+<div class="warn">Fillet Base and Fillet Tip must leave a straight section of spoke wall between
+them. If Fillet Base is large enough to reach past where Fillet Tip ends, the spoke geometry
+becomes invalid and the export is rejected with an error — reduce one of the two fillet radii,
+or widen the spoke, to fix it.</div>
 
 <h3>Spoke Height (mm) <em>(3D only)</em></h3>
 <p>Axial height of the spoke web. This controls how far the spokes extend through the pulley body
