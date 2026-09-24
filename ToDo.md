@@ -55,10 +55,16 @@ off-server copy goes to Azure Blob Storage from there.
 - [ ] After the move to Postgres (Neon): turn on point-in-time restore and keep the off-server copies as a second line
 
 ### Charging exports
-- [ ] Charge only after a file is generated successfully; async STEP charges at job completion, not at request
-- [ ] Gate every download route — today the web `/download/svg`, `/dxf`, `/stl`, `/flange-stl`, belt/rim/all routes have no check at all
-- [ ] Add-in API routes (`/api/download/step|dxf|stl`): swap `register_trial_download(machine_id, fmt)` for a token spend
-- [ ] Clear "not enough tokens" response (HTTP 402 + JSON) and a buy-tokens link in the web UI and add-ins
+**Don't turn `TOKENS_ENABLED` on in production until the page is updated** (next item group) — today's page doesn't sign in, send `design_id`, or show 401/402 answers.
+- [x] `charging.py`: all 15 `/download/*` routes, the 3 add-in API routes and both async STEP jobs are charged (2D 1 / STL 2 / STEP 3); tokens taken before generating and refunded when the route answers with an error status or the job raises; an unaffordable async job is refused up front
+- [x] One identity per on-screen design: the page registers it (`POST /api/design`) and sends `design_id`; the server accepts it only if the download's own parameters belong to that design (flange aliases, `p2_` names, number formats), else prices the download as its own design — a made-up id unlocks nothing
+- [x] 401 `SIGN_IN_REQUIRED`, 402 `NOT_ENOUGH_TOKENS` (needed/balance), 503 when accounts are unhealthy; `X-CCT-Tokens-Charged` / `X-CCT-Tokens-Balance` headers on success
+- [x] Weekly trial limits (add-in `register_trial_download`, queue session limit, `/api/fp-token`) apply only while tokens are off
+- [x] 20 tests in `tests/test_charging.py` (negative controls: refund, design match, async charge)
+- [ ] **Async STEP result files** (`/download/<job_id>.step`): 8-hex job ids, served to anyone who has the id and never deleted — tie each file to the paying account, lengthen the id, delete after download/expiry (cct_common.job_queue)
+- [ ] Page: build the full on-screen design (every raw input, including disabled spoke/flange values), register it, send `design_id` with every download; browser test that every route's parameters match it
+- [ ] Page: handle 401/402 — downloads run in hidden iframes today, so an error body is never seen; check the price first or fetch the file, then show sign-in / buy-tokens
+- [ ] Add-ins: sign in (device token), send `Authorization: Bearer`, handle 401/402
 
 ### No local installs (ADR-008, decided 2026-09-24)
 Every export runs on the server; the add-ins use the hosted app.

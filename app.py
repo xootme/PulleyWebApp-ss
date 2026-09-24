@@ -55,6 +55,7 @@ from cct_common.job_queue import (
 # Reused for /api/trial/status (admin diagnostic); not part of the public API.
 from cct_common.job_queue import _load_trial_downloads as _cc_load_trial_downloads
 from functools import wraps
+from charging import charges  # token charging per export (ADR-008); off unless TOKENS_ENABLED=1
 import threading as _threading
 import uuid as _uuid_mod
 import time as _time_mod
@@ -159,8 +160,8 @@ def require_active_session(f):
                 'estimated_wait': status.get('estimated_wait_sec'),
             }), 403
 
-        # Check trial download limit
-        allowed = not status.get('limit_exceeded', False)
+        # Weekly trial limit — replaced by per-export tokens when they're on.
+        allowed = charges.enabled or not status.get('limit_exceeded', False)
 
         if not allowed:
             count = status.get('download_count', 0)
@@ -943,6 +944,7 @@ def api_preview():
 
 
 @app.route('/download/svg')
+@charges.charged('svg')
 def download_svg():
     """Return SVG file download."""
     _consume_web_token(request)
@@ -969,6 +971,7 @@ def download_svg():
 
 
 @app.route('/download/dxf')
+@charges.charged('dxf')
 def download_dxf():
     """Return DXF file download for pulley 1 or pulley 2."""
     _consume_web_token(request)
@@ -1029,6 +1032,7 @@ def download_dxf():
 
 
 @app.route('/download/svg-rim')
+@charges.charged('svg')
 def download_svg_rim():
     """Return rim-layer SVG: toothed profile + inner-rim, hub, bore circles."""
     try:
@@ -1075,6 +1079,7 @@ def download_svg_rim():
 
 
 @app.route('/download/dxf-rim')
+@charges.charged('dxf')
 def download_dxf_rim():
     """Return rim-layer DXF: toothed profile + inner-rim, hub, bore circles."""
     try:
@@ -1303,6 +1308,7 @@ def api_belt_preview():
 
 
 @app.route('/download/belt-svg')
+@charges.charged('svg')
 def download_belt_svg():
     """Return belt SVG download.
     In dual mode: two-pulley belt layout SVG.
@@ -1637,6 +1643,7 @@ def api_preview_stl():
 
 
 @app.route('/download/stl')
+@charges.charged('stl')
 def download_stl():
     """Return binary STL file download."""
     _consume_web_token(request)
@@ -1764,6 +1771,7 @@ def download_stl():
 
 
 @app.route('/download/step')
+@charges.charged('step')
 @require_active_session
 def download_step():
     _consume_web_token(request)
@@ -1843,6 +1851,7 @@ def download_step():
 
 
 @app.route('/download/belt-step')
+@charges.charged('step')
 def download_belt_step():
     """Two-pulley belt STEP export (cadquery, B-rep with true arcs + B-spline teeth)."""
     _consume_web_token(request)
@@ -1895,6 +1904,7 @@ def download_belt_step():
 
 
 @app.route('/download/all-step')
+@charges.charged('step')
 def download_all_step():
     """Multipart STEP with all pulleys and their flanges in one file.
     In dual mode (dual=true) includes P1 + P2; otherwise just P1.
@@ -1994,6 +2004,7 @@ def download_all_step():
 
 
 @app.route('/download/belt-stl')
+@charges.charged('stl')
 def download_belt_stl():
     """Return binary STL of the two-pulley belt body."""
     _consume_web_token(request)
@@ -2037,6 +2048,7 @@ def download_belt_stl():
         return f'Error generating belt STL: {e}\n{traceback.format_exc()}', 400
 
 @app.route('/download/belt-dxf')
+@charges.charged('dxf')
 def download_belt_dxf():
     """Return belt DXF download.
     In dual mode: two-pulley belt layout DXF.
@@ -2097,6 +2109,7 @@ def download_belt_dxf():
 
 
 @app.route('/download/all-dxf')
+@charges.charged('dxf')
 def download_all_dxf():
     """Combined layout DXF: P1 profile, P2 profile, belt outline in one file."""
     _consume_web_token(request)
@@ -2184,8 +2197,8 @@ def api_fp_token():
         ip   = (request.headers.get('X-Forwarded-For', request.remote_addr or '')
                 .split(',')[0].strip())
 
-        # Localhost / desktop build: no limit
-        if os.environ.get('QUEUE_DISABLED') or ip in ('127.0.0.1', '::1'):
+        # Localhost / desktop build, or tokens on (they replace this limit): no limit
+        if charges.enabled or os.environ.get('QUEUE_DISABLED') or ip in ('127.0.0.1', '::1'):
             return jsonify({'ok': True, 'token': None})
 
         if not fp or len(fp) > 64:
@@ -2372,6 +2385,7 @@ def _parse_flange_params(args, prefix=''):
 
 
 @app.route('/download/flange-stl')
+@charges.charged('stl')
 def download_flange_stl():
     """Return STL of a single flange plate.
 
@@ -2468,6 +2482,7 @@ def download_flange_stl():
 
 
 @app.route('/download/flange-step')
+@charges.charged('step')
 def download_flange_step():
     """Return STEP of a single flange plate (3D-print top with nubs, or metal top/bottom).
 
@@ -2555,6 +2570,7 @@ def download_flange_step():
 
 
 @app.route('/download/flange-assembly')
+@charges.charged('stl')
 def download_flange_assembly():
     """Return an assembly STL: pulley body + bottom flange + integrated top flange + support ribs.
 
@@ -3170,6 +3186,9 @@ def api_download_step_async():
     try:
         query_params = request.get_json() or {}
         _consume_web_token_from_body(query_params)
+        charge_ctx, refusal = charges.begin_async('step', query_params)
+        if refusal:
+            return refusal
         job = create_job('step', query_params)
 
         _app = app
@@ -3179,77 +3198,78 @@ def api_download_step_async():
             _ctx.push()
             start_job(job.id)
             try:
-                pulley = query_params.get('pulley', '1')
-                family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
-                    _parse_stl_params(query_params, pulley)
-                pfx = 'p2_' if pulley == '2' else ''
-                hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(query_params, pfx)
-                sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
-                    _parse_spoke_params(query_params, pfx)
-                eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
-                _fl_enabled = query_params.get(f'{pfx}flange_enabled') == '1'
-                fp = _parse_flange_params(query_params, pfx) if _fl_enabled else {}
+                with charges.charge_in_job(charge_ctx, '/api/download/step-async'):
+                    pulley = query_params.get('pulley', '1')
+                    family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+                        _parse_stl_params(query_params, pulley)
+                    pfx = 'p2_' if pulley == '2' else ''
+                    hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(query_params, pfx)
+                    sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
+                        _parse_spoke_params(query_params, pfx)
+                    eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+                    _fl_enabled = query_params.get(f'{pfx}flange_enabled') == '1'
+                    fp = _parse_flange_params(query_params, pfx) if _fl_enabled else {}
 
-                update_progress(job.id, 20)
+                    update_progress(job.id, 20)
 
-                kw = dict(
-                    family=family, pitch=pitch, num_teeth=num_teeth,
-                    bore_mm=bore_mm, belt_height_mm=belt_height,
-                    clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
-                    hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
-                    screw_dia_mm=sd, screw_count=sc,
-                    captured_nut=cn, flat_depth_mm=fd,
-                    keyway_w_mm=kw_w, keyway_h_mm=kw_h,
-                    spoke_count=sp_c if sp_en else 0,
-                    spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-                    rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
-                    spoke_height_mm=sp_h,
-                    flange_enabled       = _fl_enabled,
-                    flange_3dprint       = fp.get('flange_3dprint', True),
-                    flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
-                    flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
-                    flange_height_mm     = fp.get('flange_height_mm', 1.5),
-                    flange_top_separate  = fp.get('top_separate', True),
-                    nubs_enabled         = fp.get('nubs_enabled', False),
-                    nub_count            = fp.get('nub_count', 4),
-                    nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
-                    nub_height_mm        = fp.get('nub_height_mm', 2.0),
-                    nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
-                    plate_height_mm      = fp.get('plate_height_mm', 1.0),
-                    bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
-                )
+                    kw = dict(
+                        family=family, pitch=pitch, num_teeth=num_teeth,
+                        bore_mm=bore_mm, belt_height_mm=belt_height,
+                        clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+                        hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+                        screw_dia_mm=sd, screw_count=sc,
+                        captured_nut=cn, flat_depth_mm=fd,
+                        keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                        spoke_count=sp_c if sp_en else 0,
+                        spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                        rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+                        spoke_height_mm=sp_h,
+                        flange_enabled       = _fl_enabled,
+                        flange_3dprint       = fp.get('flange_3dprint', True),
+                        flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
+                        flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
+                        flange_height_mm     = fp.get('flange_height_mm', 1.5),
+                        flange_top_separate  = fp.get('top_separate', True),
+                        nubs_enabled         = fp.get('nubs_enabled', False),
+                        nub_count            = fp.get('nub_count', 4),
+                        nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
+                        nub_height_mm        = fp.get('nub_height_mm', 2.0),
+                        nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
+                        plate_height_mm      = fp.get('plate_height_mm', 1.0),
+                        bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
+                    )
 
-                update_progress(job.id, 30)
-                step_bytes = _run_ss_worker(dict(kw, export_type='pulley'), timeout=110)
-                update_progress(job.id, 80)
+                    update_progress(job.id, 30)
+                    step_bytes = _run_ss_worker(dict(kw, export_type='pulley'), timeout=110)
+                    update_progress(job.id, 80)
 
-                p2_sfx = '-P2' if pulley == '2' else ''
-                fl_sfx = '+flanges' if _fl_enabled else ''
-                fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
-                step_bytes = _rename_step_product(step_bytes, fname[:-5])
-                step_bytes = _embed_step(step_bytes, query_params)
+                    p2_sfx = '-P2' if pulley == '2' else ''
+                    fl_sfx = '+flanges' if _fl_enabled else ''
+                    fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
+                    step_bytes = _rename_step_product(step_bytes, fname[:-5])
+                    step_bytes = _embed_step(step_bytes, query_params)
 
-                output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
-                with open(output_path, 'wb') as f:
-                    f.write(step_bytes)
-                dl_name = _safe_dl_name(fname)
-                # Mirror with the RAW filename (keep any '+'): the CAD addins
-                # detect multi-body assemblies by a '+' in the name and must skip
-                # importToTarget for them. _safe_dl_name strips '+' for Chromium's
-                # benefit and is only needed for the browser download.
-                _mirrored = _mirror_to_addins(step_bytes, fname)
+                    output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
+                    with open(output_path, 'wb') as f:
+                        f.write(step_bytes)
+                    dl_name = _safe_dl_name(fname)
+                    # Mirror with the RAW filename (keep any '+'): the CAD addins
+                    # detect multi-body assemblies by a '+' in the name and must skip
+                    # importToTarget for them. _safe_dl_name strips '+' for Chromium's
+                    # benefit and is only needed for the browser download.
+                    _mirrored = _mirror_to_addins(step_bytes, fname)
 
-                # Stash the friendly filename on the job so the static route can
-                # serve it without a query string on the download URL. The
-                # mirrored flag tells the client to skip the browser download
-                # when a CAD addin already received the file.
-                _j = get_job(job.id)
-                if _j is not None:
-                    _j.output_name = dl_name
-                    _j.mirrored = _mirrored
+                    # Stash the friendly filename on the job so the static route can
+                    # serve it without a query string on the download URL. The
+                    # mirrored flag tells the client to skip the browser download
+                    # when a CAD addin already received the file.
+                    _j = get_job(job.id)
+                    if _j is not None:
+                        _j.output_name = dl_name
+                        _j.mirrored = _mirrored
 
-                update_progress(job.id, 100)
-                finish_job(job.id, output_file=f'/download/{job.id}.step')
+                    update_progress(job.id, 100)
+                    finish_job(job.id, output_file=f'/download/{job.id}.step')
             except Exception as e:
                 finish_job(job.id, error=str(e))
             finally:
@@ -3320,6 +3340,9 @@ def api_download_all_step_async():
         # Extract params from request JSON (convert from form params)
         query_params = request.get_json() or {}
         _consume_web_token_from_body(query_params)
+        charge_ctx, refusal = charges.begin_async('step', query_params)
+        if refusal:
+            return refusal
         job = create_job('all-step', query_params)
 
         _app = app
@@ -3334,100 +3357,101 @@ def api_download_all_step_async():
             _ctx.push()
             start_job(job.id)  # Move from queued to processing
             try:
-                import json as _json
-                import subprocess
-                import sys
+                with charges.charge_in_job(charge_ctx, '/api/download/all-step-async'):
+                    import json as _json
+                    import subprocess
+                    import sys
 
-                # Build keyword dicts same as sync route (download_all_step)
-                def _build_kw(pfx):
-                    family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
-                        _parse_stl_params(query_params, '2' if pfx == 'p2_' else '1')
-                    hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(query_params, pfx)
-                    sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
-                        _parse_spoke_params(query_params, pfx)
-                    eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
-                    _fl_en = query_params.get(f'{pfx}flange_enabled') == '1'
-                    fp = _parse_flange_params(query_params, pfx) if _fl_en else {}
-                    return dict(
-                        family=family, pitch=pitch, num_teeth=num_teeth,
-                        bore_mm=bore_mm, belt_height_mm=belt_height,
-                        clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
-                        hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
-                        screw_dia_mm=sd, screw_count=sc,
-                        captured_nut=cn, flat_depth_mm=fd,
-                        keyway_w_mm=kw_w, keyway_h_mm=kw_h,
-                        spoke_count=sp_c if sp_en else 0,
-                        spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-                        rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
-                        spoke_height_mm=sp_h,
-                        flange_enabled       = _fl_en,
-                        flange_3dprint       = fp.get('flange_3dprint', True),
-                        flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
-                        flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
-                        flange_height_mm     = fp.get('flange_height_mm', 1.5),
-                        flange_top_separate  = fp.get('top_separate', True),
-                        nubs_enabled         = fp.get('nubs_enabled', False),
-                        nub_count            = fp.get('nub_count', 4),
-                        nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
-                        nub_height_mm        = fp.get('nub_height_mm', 2.0),
-                        nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
-                        plate_height_mm      = fp.get('plate_height_mm', 1.0),
-                        bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
-                    )
+                    # Build keyword dicts same as sync route (download_all_step)
+                    def _build_kw(pfx):
+                        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+                            _parse_stl_params(query_params, '2' if pfx == 'p2_' else '1')
+                        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(query_params, pfx)
+                        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
+                            _parse_spoke_params(query_params, pfx)
+                        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+                        _fl_en = query_params.get(f'{pfx}flange_enabled') == '1'
+                        fp = _parse_flange_params(query_params, pfx) if _fl_en else {}
+                        return dict(
+                            family=family, pitch=pitch, num_teeth=num_teeth,
+                            bore_mm=bore_mm, belt_height_mm=belt_height,
+                            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+                            hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+                            screw_dia_mm=sd, screw_count=sc,
+                            captured_nut=cn, flat_depth_mm=fd,
+                            keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                            spoke_count=sp_c if sp_en else 0,
+                            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                            rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+                            spoke_height_mm=sp_h,
+                            flange_enabled       = _fl_en,
+                            flange_3dprint       = fp.get('flange_3dprint', True),
+                            flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
+                            flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
+                            flange_height_mm     = fp.get('flange_height_mm', 1.5),
+                            flange_top_separate  = fp.get('top_separate', True),
+                            nubs_enabled         = fp.get('nubs_enabled', False),
+                            nub_count            = fp.get('nub_count', 4),
+                            nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
+                            nub_height_mm        = fp.get('nub_height_mm', 2.0),
+                            nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
+                            plate_height_mm      = fp.get('plate_height_mm', 1.0),
+                            bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
+                        )
 
-                update_progress(job.id, 10)  # Parsing
-                dual = query_params.get('dual') == 'true'
-                kw1 = _build_kw('')
-                kw2 = _build_kw('p2_') if dual else None
+                    update_progress(job.id, 10)  # Parsing
+                    dual = query_params.get('dual') == 'true'
+                    kw1 = _build_kw('')
+                    kw2 = _build_kw('p2_') if dual else None
 
-                update_progress(job.id, 20)  # Building params
-                belt_kw = None
-                if dual:
-                    key   = _resolve_key(kw1['family'], kw1['pitch'])
-                    spec  = PULLEY_SPECS.get(key, {}) if key else {}
-                    pitch_mm   = spec.get('pitch', 5.0)
-                    _default_c = (kw1['num_teeth'] + kw2['num_teeth']) * pitch_mm / (2.0 * math.pi)
-                    center_dist = float(query_params.get('center_distance', _default_c))
-                    raw_belt_h  = max(1.0, float(query_params.get('belt_height', 10.0)))
-                    belt_kw = dict(
-                        family         = kw1['family'],
-                        pitch          = kw1['pitch'],
-                        num_teeth_left = kw1['num_teeth'],
-                        num_teeth_right= kw2['num_teeth'],
-                        center_dist_mm = center_dist,
-                        belt_height_mm = raw_belt_h,
-                        n_belt_teeth   = int(query_params.get('n_belt', 0)),
-                    )
+                    update_progress(job.id, 20)  # Building params
+                    belt_kw = None
+                    if dual:
+                        key   = _resolve_key(kw1['family'], kw1['pitch'])
+                        spec  = PULLEY_SPECS.get(key, {}) if key else {}
+                        pitch_mm   = spec.get('pitch', 5.0)
+                        _default_c = (kw1['num_teeth'] + kw2['num_teeth']) * pitch_mm / (2.0 * math.pi)
+                        center_dist = float(query_params.get('center_distance', _default_c))
+                        raw_belt_h  = max(1.0, float(query_params.get('belt_height', 10.0)))
+                        belt_kw = dict(
+                            family         = kw1['family'],
+                            pitch          = kw1['pitch'],
+                            num_teeth_left = kw1['num_teeth'],
+                            num_teeth_right= kw2['num_teeth'],
+                            center_dist_mm = center_dist,
+                            belt_height_mm = raw_belt_h,
+                            n_belt_teeth   = int(query_params.get('n_belt', 0)),
+                        )
 
-                update_progress(job.id, 30)  # Generating STEP
+                    update_progress(job.id, 30)  # Generating STEP
 
-                async_worker_kw = dict(kw1, export_type='all')
-                if kw2:
-                    async_worker_kw['kw2'] = kw2
-                if belt_kw:
-                    async_worker_kw['belt_kw'] = belt_kw
-                step_bytes = _run_ss_worker(async_worker_kw, timeout=110)
-                update_progress(job.id, 80)  # Writing file
-                # Embed the CCT signature so the CAD addins' watchers recognise
-                # the file and import it (they skip files without the marker).
-                step_bytes = _embed_step(step_bytes, query_params)
-                _t1 = kw1['num_teeth']
-                _fname = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all.step'
-                         if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all.step')
-                output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
-                with open(output_path, 'wb') as f:
-                    f.write(step_bytes)
-                dl_name = _safe_dl_name(_fname)
-                # Mirror with the RAW name (keep '+'): addins detect the '-all'
-                # assembly and '+' multi-body files to skip importToTarget.
-                _mirrored = _mirror_to_addins(step_bytes, _fname)
-                _j = get_job(job.id)
-                if _j is not None:
-                    _j.output_name = dl_name
-                    _j.mirrored = _mirrored
+                    async_worker_kw = dict(kw1, export_type='all')
+                    if kw2:
+                        async_worker_kw['kw2'] = kw2
+                    if belt_kw:
+                        async_worker_kw['belt_kw'] = belt_kw
+                    step_bytes = _run_ss_worker(async_worker_kw, timeout=110)
+                    update_progress(job.id, 80)  # Writing file
+                    # Embed the CCT signature so the CAD addins' watchers recognise
+                    # the file and import it (they skip files without the marker).
+                    step_bytes = _embed_step(step_bytes, query_params)
+                    _t1 = kw1['num_teeth']
+                    _fname = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all.step'
+                             if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all.step')
+                    output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
+                    with open(output_path, 'wb') as f:
+                        f.write(step_bytes)
+                    dl_name = _safe_dl_name(_fname)
+                    # Mirror with the RAW name (keep '+'): addins detect the '-all'
+                    # assembly and '+' multi-body files to skip importToTarget.
+                    _mirrored = _mirror_to_addins(step_bytes, _fname)
+                    _j = get_job(job.id)
+                    if _j is not None:
+                        _j.output_name = dl_name
+                        _j.mirrored = _mirrored
 
-                update_progress(job.id, 100)
-                finish_job(job.id, output_file=f'/download/{job.id}.step')
+                    update_progress(job.id, 100)
+                    finish_job(job.id, output_file=f'/download/{job.id}.step')
 
             except Exception as e:
                 finish_job(job.id, error=str(e))
@@ -3589,7 +3613,15 @@ def api_session_register_machine():
     }), 200
 
 
+def _addin_design_params(body: dict) -> dict:
+    """The design parameters of an add-in API request (they sit under
+    "params", next to machine_id) — what the token charge prices."""
+    params = body.get('params')
+    return params if isinstance(params, dict) else {}
+
+
 @app.route('/api/download/step', methods=['POST'])
+@charges.charged('step', params_from=_addin_design_params)
 def api_download_step():
     """API endpoint for addins to download STEP files.
 
@@ -3603,13 +3635,14 @@ def api_download_step():
     if not machine_id:
         return jsonify({'error': 'Missing machine_id'}), 400
 
-    # Check trial download limit
-    allowed, count, limit = register_trial_download(machine_id, 'step')
-    if not allowed:
-        return jsonify({
-            'error': f'Download limit reached: {count}/{limit} per week',
-            'code': 'DOWNLOAD_LIMIT_EXCEEDED'
-        }), 429
+    # Weekly trial limit — replaced by per-export tokens when they're on.
+    if not charges.enabled:
+        allowed, count, limit = register_trial_download(machine_id, 'step')
+        if not allowed:
+            return jsonify({
+                'error': f'Download limit reached: {count}/{limit} per week',
+                'code': 'DOWNLOAD_LIMIT_EXCEEDED'
+            }), 429
 
     try:
         pulley = params_dict.get('pulley', '1')
@@ -3667,6 +3700,7 @@ def api_download_step():
 
 
 @app.route('/api/download/dxf', methods=['POST'])
+@charges.charged('dxf', params_from=_addin_design_params)
 def api_download_dxf():
     """API endpoint for addins to download DXF files."""
     data = request.json if request.is_json else {}
@@ -3676,13 +3710,14 @@ def api_download_dxf():
     if not machine_id:
         return jsonify({'error': 'Missing machine_id'}), 400
 
-    # Check trial download limit
-    allowed, count, limit = register_trial_download(machine_id, 'dxf')
-    if not allowed:
-        return jsonify({
-            'error': f'Download limit reached: {count}/{limit} per week',
-            'code': 'DOWNLOAD_LIMIT_EXCEEDED'
-        }), 429
+    # Weekly trial limit — replaced by per-export tokens when they're on.
+    if not charges.enabled:
+        allowed, count, limit = register_trial_download(machine_id, 'dxf')
+        if not allowed:
+            return jsonify({
+                'error': f'Download limit reached: {count}/{limit} per week',
+                'code': 'DOWNLOAD_LIMIT_EXCEEDED'
+            }), 429
 
     try:
         pulley = params_dict.get('pulley', '1')
@@ -3713,6 +3748,7 @@ def api_download_dxf():
 
 
 @app.route('/api/download/stl', methods=['POST'])
+@charges.charged('stl', params_from=_addin_design_params)
 def api_download_stl():
     """API endpoint for addins to download STL files."""
     data = request.json if request.is_json else {}
@@ -3722,13 +3758,14 @@ def api_download_stl():
     if not machine_id:
         return jsonify({'error': 'Missing machine_id'}), 400
 
-    # Check trial download limit
-    allowed, count, limit = register_trial_download(machine_id, 'stl')
-    if not allowed:
-        return jsonify({
-            'error': f'Download limit reached: {count}/{limit} per week',
-            'code': 'DOWNLOAD_LIMIT_EXCEEDED'
-        }), 429
+    # Weekly trial limit — replaced by per-export tokens when they're on.
+    if not charges.enabled:
+        allowed, count, limit = register_trial_download(machine_id, 'stl')
+        if not allowed:
+            return jsonify({
+                'error': f'Download limit reached: {count}/{limit} per week',
+                'code': 'DOWNLOAD_LIMIT_EXCEEDED'
+            }), 429
 
     try:
         pulley = params_dict.get('pulley', '1')
@@ -3875,6 +3912,7 @@ _accounts_state = init_accounts(
         _accounts_email, alert_to=os.environ.get('BACKUP_ALERT_EMAIL', '').strip(),
         logger=app.logger),
 )
+charges.attach(app, _accounts_state)  # per-export token charging — see charging.py
 
 
 if __name__ == '__main__':
