@@ -25,7 +25,7 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 
 ### Accounts and ledger
 - [x] `cct_common.tokens` (canonical repo): SQLite ledger — tier pricing, 24 h unlocks, upgrades, refund-on-failure, idempotent credits, atomic spend; 29 tests in `tests/test_tokens.py`
-- [ ] Run `sync_cct_common.py` here to bring in cct_common 0.7.0 — wait until cct_common's unrelated uncommitted edits (bug_report, js_extract, editor2d) are committed or dropped, or the sync copies them in
+- [x] cct_common 0.7.0 synced here (`9638c58`); `sync_cct_common.py` now copies only cct_common's last commit
 - [ ] Postgres backend behind the same `TokenStore` interface (when hosting moves)
 - [x] `cct_common.accounts` + `cct_common.account_routes` (cct_common 0.7.0, `b8835e9`): linked identities, email sign-in links (15 min, single use, rate-limited, confirm-button page), hashed revocable sessions (web cookie 30 d, add-in device token 1 y), account page data/history, account deletion; 38 tests
 - [x] `cct_common.sqlite_db`: WAL + `synchronous=FULL`, `integrity_check()`, online `backup()`
