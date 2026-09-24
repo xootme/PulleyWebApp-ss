@@ -10,6 +10,12 @@ applies the same fix for cct_common: copy its package directory straight into
 this repo so both local dev and Render import the one vendored copy, with no
 install step (a package directory next to app.py is on sys.path by default).
 
+It copies the package as of cct_common's last COMMIT (git archive HEAD),
+never its working tree: uncommitted edits there — anyone's work in
+progress — must not ride into this repo and on to Render unreviewed, and
+the commit recorded in _VENDORED_FROM.txt must describe exactly what was
+copied. Uncommitted package files are listed as skipped.
+
 Run this whenever cct_common changes upstream, then commit the result:
 
     py -3.14 sync_cct_common.py
@@ -20,9 +26,12 @@ See web_provisioning.md Step 2 for the deploy-checklist entry.
 """
 from __future__ import annotations
 
+import io
+import re
 import shutil
 import subprocess
-import sys
+import tarfile
+import tempfile
 from pathlib import Path
 
 SOURCE_REPO = Path(r"C:\Users\cmyer\Documents\cct_common")
@@ -30,35 +39,36 @@ SOURCE_PKG = SOURCE_REPO / "cct_common"
 DEST_PKG = Path(__file__).resolve().parent / "cct_common"
 
 
-def _source_commit_hash() -> str:
-    try:
-        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=SOURCE_REPO,
-                             capture_output=True, text=True, check=True)
-        return out.stdout.strip()
-    except Exception:
-        return "unknown"
+def _git(*args: str) -> bytes:
+    return subprocess.run(["git", *args], cwd=SOURCE_REPO,
+                          capture_output=True, check=True).stdout
 
 
-def _source_version() -> str:
-    sys.path.insert(0, str(SOURCE_REPO))
-    try:
-        import cct_common as _cc
-        return _cc.__version__
-    finally:
-        sys.path.pop(0)
+def _uncommitted_package_files() -> list[str]:
+    out = _git("status", "--porcelain", "--", "cct_common").decode()
+    return [line[3:] for line in out.splitlines() if line.strip()]
 
 
 def main() -> None:
     if not SOURCE_PKG.is_dir():
         raise SystemExit(f"Source package not found: {SOURCE_PKG}")
 
-    if DEST_PKG.exists():
-        shutil.rmtree(DEST_PKG)
-    shutil.copytree(SOURCE_PKG, DEST_PKG,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    commit = _git("rev-parse", "HEAD").decode().strip()
+    archive = _git("archive", "--format=tar", "HEAD", "cct_common")
 
-    commit = _source_commit_hash()
-    version = _source_version()
+    with tempfile.TemporaryDirectory() as tmp:
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+            tar.extractall(tmp, filter="data")
+        committed_pkg = Path(tmp) / "cct_common"
+        init = (committed_pkg / "__init__.py").read_text(encoding="utf-8")
+        m = re.search(r'^__version__\s*=\s*"([^"]+)"', init, re.M)
+        version = m.group(1) if m else "unknown"
+
+        if DEST_PKG.exists():
+            shutil.rmtree(DEST_PKG)
+        shutil.copytree(committed_pkg, DEST_PKG,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+
     (DEST_PKG / "_VENDORED_FROM.txt").write_text(
         f"Vendored from {SOURCE_REPO}\n"
         f"cct_common version: {version}\n"
@@ -67,6 +77,11 @@ def main() -> None:
         encoding="utf-8",
     )
     print(f"Vendored cct_common {version} (commit {commit[:8]}) into {DEST_PKG}")
+    skipped = _uncommitted_package_files()
+    if skipped:
+        print("Skipped uncommitted changes in cct_common (only the commit was copied):")
+        for f in skipped:
+            print(f"  {f}")
 
 
 if __name__ == "__main__":

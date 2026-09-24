@@ -65,6 +65,22 @@ WooCommerce/LMFWC import, Autodesk App Store entitlement/IPN):
     # see cct_common/licensing.py's module docstring for the full
     # parameter list — it deliberately does NOT port the hardcoded dev
     # backdoor found in the original during this survey
+
+Pay-per-export token ledger (accounts, tier pricing, 24 h unlocks,
+refund-on-failure), SQLite-backed:
+
+    from cct_common.tokens import TokenStore, design_key, InsufficientTokens
+    store = TokenStore("/path/to/tokens.sqlite3")
+    with store.charge(account_id, design_key(params), "step"):
+        ...  # generate the file; an exception refunds the charge
+
+Accounts and email-link sign-in on the same database (linked identities,
+hashed revocable sessions, account deletion), plus its Flask routes:
+
+    from cct_common.accounts import AccountStore
+    from cct_common.account_routes import register_account_routes, current_account_id
+    accounts = AccountStore(store, signup_grant=10)
+    register_account_routes(app, accounts, email_sender=send_email)
 """
 from .core import build_meta, dump_blob, flatten_params, parse_meta
 from .dxf import embed_dxf, extract_dxf
@@ -80,4 +96,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.5.1"
+__version__ = "0.7.0"

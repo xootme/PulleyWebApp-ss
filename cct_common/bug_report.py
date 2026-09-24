@@ -1,10 +1,29 @@
 """
 bug_report.py — shared bug/feature-report endpoint for CCT Flask apps.
 
-Always logs to a local file. Optionally also files a GitHub issue and
-sends a SendGrid email notification — gated by an explicit mode, not by
-credential presence, so a stray FEEDBACK_GITHUB_PAT left in a dev shell
-can never cause a local test run to silently file real GitHub issues.
+Always logs to a local file. In live mode it also sends a SendGrid email
+— gated by an explicit mode, not by credential presence, so a stray key
+left in a dev shell can never cause a local test run to send anything.
+
+WHAT REACHES GITHUB, AND WHAT DOES NOT. An issue carries the tracking
+half of a report: when, which tool, which version, what the person said
+was wrong. It carries NO design and NO contact address.
+
+That split exists because the two halves have different owners. The
+description is written knowingly, by someone who can see it as they
+type. The `state` blob is not: it is the board they imported, every mark
+they drew, the standoff selection — their work, swept up automatically.
+Publishing it in a repository they never chose is not something an issue
+tracker should do, and closing an issue does not unpublish it: GitHub
+has already emailed the body to every watcher and kept it in the events
+API.
+
+The design goes to the LOG AND NOWHERE ELSE. Not the issue, not the
+notification email -- because an emailed design cannot be deleted, and
+the log can (bug_report_admin exposes DELETE). One store, one delete,
+and a promise that is true rather than meant. The reporter's address
+travels to the private inbox only, since they typed it to be contacted.
+See _issue_body() and _send_report_email().
 
     from cct_common.bug_report import register_bug_report_route
 
@@ -17,11 +36,10 @@ GitHub+email "live":
     - set the umbrella CCT_MODE=live (used when CCT_BUG_REPORT_MODE isn't set)
 Anything else (unset, "dev", or any other value) stays local-only.
 
-Live mode needs its own credentials per channel, exactly as before
-(each channel silently no-ops if its own credentials are absent — a
-failure in GitHub/email delivery must never break the log write or the
+Live mode needs its own credentials per channel (each silently no-ops
+without them — a delivery failure must never break the log write or the
 user-facing response):
-    - GitHub issue:  FEEDBACK_GITHUB_PAT, FEEDBACK_GITHUB_REPO (e.g. "xootme/cct-feedback")
+    - GitHub issue:  FEEDBACK_GITHUB_PAT, FEEDBACK_GITHUB_REPO
     - Email:         SENDGRID_API_KEY
 
 Flask (and, in live mode, the `sendgrid` package) are only imported
@@ -35,11 +53,58 @@ import os
 from datetime import datetime
 
 
-def _create_github_issue(report_label, timestamp, label_seeing, label_should,
-                         seeing, should_see, email, state, report_type,
+def _report_id(timestamp, seeing, should_see):
+    """A short, stable handle for one report.
+
+    The issue says it; the log and the email carry it. That is what lets
+    a public tracking entry point at a private record without repeating
+    any of it -- and what makes "we deleted our copy" a thing that can
+    actually be done to a named row.
+    """
+    import hashlib
+
+    raw = "|".join((timestamp, seeing or "", should_see or ""))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
+
+
+def _issue_body(report_id, timestamp, label_seeing, label_should,
+                seeing, should_see, tool_name, app_version):
+    """The public half of a report, and only that.
+
+    Everything here was typed by the reporter or is about the software.
+    No state, no board, no email address. Assembled in its own function
+    so that what is published is one readable list rather than something
+    to be reasoned about at a call site.
+    """
+    lines = [
+        "**Report:** `%s`" % report_id,
+        "**Tool:** %s %s" % (tool_name, app_version),
+        "**When:** %s" % timestamp,
+        "",
+        "**%s:**" % label_seeing,
+        seeing or "_(not provided)_",
+        "",
+        "**%s:**" % label_should,
+        should_see or "_(not provided)_",
+        "",
+        "---",
+        "_The reporter's design and contact details are not "
+        "included here. They are held privately against this "
+        "report id._",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _create_github_issue(report_id, report_label, timestamp, label_seeing,
+                         label_should, seeing, should_see, report_type,
                          tool_name, app_version):
-    """POST a GitHub issue in the feedback repo. Silently skips if PAT/repo
-    aren't configured; silently swallows any delivery failure."""
+    """File the tracking half of a report. Skips without credentials.
+
+    Note what this does NOT take: no `state`, no `email`. They are not
+    filtered out here -- they are not passed in, so a later edit cannot
+    reintroduce them by reaching for a variable that happens to be in
+    scope.
+    """
     pat = os.environ.get("FEEDBACK_GITHUB_PAT", "").strip()
     repo = os.environ.get("FEEDBACK_GITHUB_REPO", "").strip()
     if not pat or not repo:
@@ -47,35 +112,41 @@ def _create_github_issue(report_label, timestamp, label_seeing, label_should,
     try:
         from cct_common.github_api import request as gh_request
 
-        state_json = json.dumps(state, indent=2)
-        body = (
-            f"**Tool:** {tool_name}\n"
-            f"**Type:** {report_label}\n"
-            f"**Submitted:** {timestamp}\n"
-            f"**App Version:** {app_version}\n\n"
-            f"---\n\n"
-            f"**{label_seeing}:**\n{seeing or '_(not provided)_'}\n\n"
-            f"**{label_should}:**\n{should_see or '_(not provided)_'}\n\n"
-            f"**Contact email:** {email or '_(not provided)_'}\n\n"
-            f"---\n\n"
-            f"<details><summary>Full app state</summary>\n\n"
-            f"```json\n{state_json}\n```\n\n</details>\n"
-        )
-        title = f"[{tool_name}] [{report_label}] {(seeing or should_see or 'No description')[:80]}"
-        label = "feature-request" if report_type == "feature" else "bug"
-        resp, status = gh_request("POST", f"/repos/{repo}/issues", pat,
-                                  body={"title": title, "body": body, "labels": [label]})
+        title = f"[{tool_name}] {report_label}: " + (
+            (seeing or should_see or "no description")[:70])
+        resp, status = gh_request(
+            "POST", f"/repos/{repo}/issues", pat,
+            body={"title": title,
+                  "body": _issue_body(report_id, timestamp, label_seeing,
+                                      label_should, seeing, should_see,
+                                      tool_name, app_version),
+                  "labels": ["feature" if report_type == "feature" else "bug"]})
         if status >= 300:
             return None
-        return resp.get("html_url")
+        return (resp or {}).get("html_url")
     except Exception:
-        return None  # GitHub failure must never break the log write
+        return None  # a tracker failure must never break the log write
 
 
-def _send_report_email(report_label, timestamp, label_seeing, label_should,
-                       seeing, should_see, email, state, tool_name, app_version):
-    """Fire-and-forget SendGrid notification. Silently skips if key isn't
-    configured; silently swallows any delivery failure."""
+def _send_report_email(report_id, report_label, timestamp, label_seeing,
+                       label_should, seeing, should_see, email,
+                       tool_name, app_version):
+    """Fire-and-forget SendGrid notification. Skips without a key.
+
+    NO DESIGN. Like the issue, this does not TAKE `state` -- so it
+    cannot leak one, and a later edit cannot reintroduce it by
+    reaching for a variable in scope.
+
+    The reason is a promise rather than a rule of thumb: a design that
+    has been emailed cannot be deleted. It is in an inbox, a backup, a
+    phone and a search index, and no amount of intent gets it back. So
+    the design lives in exactly ONE place -- the log, which has a
+    DELETE endpoint (see bug_report_admin) -- and "we delete our copy"
+    becomes a thing that is true rather than meant.
+
+    The reporter's own address DOES travel: they typed it in order to
+    be contacted, and it goes to a private inbox, never to the issue.
+    """
     api_key = os.environ.get("SENDGRID_API_KEY", "").strip()
     if not api_key:
         return
@@ -83,24 +154,33 @@ def _send_report_email(report_label, timestamp, label_seeing, label_should,
         from sendgrid import SendGridAPIClient
         from sendgrid.helpers.mail import Mail
 
-        state_json = json.dumps(state, indent=2)
-        body = (
-            f"{report_label} — {timestamp}\n"
-            f"Tool: {tool_name}   App Version: {app_version}\n\n"
-            f'{label_seeing}:\n  {seeing or "(not provided)"}\n\n'
-            f'{label_should}:\n  {should_see or "(not provided)"}\n\n'
-            f'Contact email:\n  {email or "(not provided)"}\n\n'
-            f"App state:\n{state_json}\n"
-        )
+        lines = [
+            "%s - %s" % (report_label, timestamp),
+            "Report id: %s" % report_id,
+            "Tool: %s   App Version: %s" % (tool_name, app_version),
+            "",
+            "%s:" % label_seeing,
+            "  %s" % (seeing or "(not provided)"),
+            "",
+            "%s:" % label_should,
+            "  %s" % (should_see or "(not provided)"),
+            "",
+            "Contact email:",
+            "  %s" % (email or "(not provided)"),
+            "",
+            "The reporter's design is NOT attached. It is held only in",
+            "the report log, against the id above, and is deleted when",
+            "the bug is fixed.",
+        ]
         message = Mail(
             from_email="noreply@cheapcadtools.com",
             to_emails="info@cheapcadtools.com",
-            subject=f"[{tool_name}] {report_label}",
-            plain_text_content=body,
+            subject="[%s] %s %s" % (tool_name, report_label, report_id),
+            plain_text_content="\n".join(lines) + "\n",
         )
         SendGridAPIClient(api_key).send(message)
     except Exception:
-        pass  # email failure must never break the log write
+        pass  # a notification failure must never break the log write
 
 
 def _is_live_mode(mode):
@@ -115,8 +195,9 @@ def register_bug_report_route(app, tool_name: str, app_version: str,
 
     Always appends to `<log_dir>/bug_reports.log` (log_dir defaults to a
     `logs/` folder next to the calling app). In live mode (see module
-    docstring), also best-effort files a GitHub issue and emails a
-    notification.
+    docstring) it also files a GitHub issue and emails a notification,
+    best-effort. The ISSUE carries no design and no contact address --
+    see the module docstring.
     """
     from flask import jsonify, request
 
@@ -152,20 +233,24 @@ def register_bug_report_route(app, tool_name: str, app_version: str,
                 f'Contact email:\n  {email or "(not provided)"}\n\n'
                 f"App state:\n{json.dumps(state, indent=2)}\n"
             )
+            report_id = _report_id(timestamp, seeing, should_see)
+            entry = ("Report id:\n  %s\n\n" % report_id) + entry
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(entry)
 
             issue_url = None
             if _is_live_mode(mode):
                 issue_url = _create_github_issue(
-                    report_label, timestamp, label_seeing, label_should,
-                    seeing, should_see, email, state, report_type,
+                    report_id, report_label, timestamp, label_seeing,
+                    label_should, seeing, should_see, report_type,
                     tool_name, app_version)
                 _send_report_email(
-                    report_label, timestamp, label_seeing, label_should,
-                    seeing, should_see, email, state, tool_name, app_version)
+                    report_id, report_label, timestamp, label_seeing,
+                    label_should, seeing, should_see, email,
+                    tool_name, app_version)
 
-            return jsonify({"ok": True, "issue_url": issue_url})
+            return jsonify({"ok": True, "issue_url": issue_url,
+                            "report_id": report_id})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
