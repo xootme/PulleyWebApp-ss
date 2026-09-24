@@ -1,5 +1,64 @@
 # Architectural Decision Records
 
+## ADR-008 — Token model: free app, pay per export
+**Date:** 2026-09-24
+**Status:** Active (being implemented; supersedes ADR-005 once live)
+
+**Context:**
+ADR-005 sells a yearly subscription (licence.lic, Autodesk App Store, WooCommerce
+licence keys). The goal is to make the app free in every CAD program and charge
+only for the files people export, with one account that works across Fusion,
+FreeCAD, SolidWorks and the web.
+
+**Decision:**
+- **Tokens cost $0.10 each** and are sold in packs (card fees of ~30¢ + 2.9% exceed
+  a single 10¢ token). Pack sizes are decided with the purchase webhook.
+- **Priced by tier, and a tier includes every tier below it:**
+
+  | Tier | Formats | Tokens | Also unlocks |
+  |---|---|---|---|
+  | 2d | SVG, DXF | 1 | — |
+  | stl | STL | 2 | 2d |
+  | step | STEP | 3 | stl, 2d |
+
+  At download time a STEP purchase offers the included STL/SVG/DXF as checkboxes.
+- **One purchase unlocks the whole design on screen**, not a single part: a two-pulley
+  drive with its belt and flanges at STEP tier costs 3 tokens. The design is
+  identified by a hash of its parameters (`cct_common.tokens.design_key`).
+- **Unlocks last 24 hours.** Re-downloading any unlocked format of that design is
+  free in that time; moving up a tier costs only the difference (STL → STEP = 1).
+- **New accounts get signup tokens** (a one-time grant). No weekly free allowance;
+  the weekly trial limit (`register_trial_download`, `/api/fp-token`) is retired.
+- **Sign-in offers both an email link (via Resend) and OAuth** (Microsoft, Google and
+  GitHub; Apple deliberately left out — it needs a $99/year developer membership).
+  GitHub is plain OAuth 2 with no ID token: after sign-in the server calls GitHub's
+  API for the user id and reads the verified primary email from `/user/emails`
+  (scope `user:email`), since many users keep their email private. Add-ins get a long-lived device token for the same
+  account. Sign-in identities (provider + subject id) are linked to an account
+  rather than the account being keyed only by email, so one person can reach the
+  same tokens through several sign-in methods.
+- **Charge only for delivered files:** the charge is taken before generating and
+  refunded automatically if generation fails, so a failed export costs nothing.
+- **The balance is never stored.** It is the sum of an append-only ledger (signup,
+  purchase, spend, refund, adjust rows), so every change is auditable. The
+  check-and-spend runs inside one write transaction so two workers can't both
+  spend the last token.
+- **Built in `cct_common.tokens`** so EBoxDesigner can use the same ledger. SQLite
+  first (local, tests, single-instance deploy); a Postgres backend behind the same
+  interface when hosting moves off the Render disk (see ToDo.md "Hosting").
+- **Local (desktop) exports** will need a server-issued export ticket; STEP stays
+  server-side so the most valuable tier can't be generated offline.
+
+**Consequences:**
+- Every download route must be enforced server-side; today's web limit is only a
+  client-side check that fails open.
+- Charging is gated behind a setting until accounts, purchase and UI are done, so
+  the live app keeps working unchanged during the build.
+- `licence.lic`, `/api/provision`, `subscribers.json`, licence-key activation and the
+  dev backdoor are retired once tokens are live.
+
+---
+
 ## ADR-007 — STEP export via small_step (Rust) replacing cadquery
 **Date:** 2026-06-16
 **Status:** Active
