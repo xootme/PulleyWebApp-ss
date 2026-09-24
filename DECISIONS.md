@@ -46,6 +46,22 @@ FreeCAD, SolidWorks and the web.
 - **Built in `cct_common.tokens`** so EBoxDesigner can use the same ledger. SQLite
   first (local, tests, single-instance deploy); a Postgres backend behind the same
   interface when hosting moves off the Render disk (see ToDo.md "Hosting").
+- **Data kept, and how it's protected:** email, account id, linked sign-in identities,
+  sessions and the ledger — no passwords, no card data (the payment provider holds
+  it), no design files (only a parameter hash). Sign-in links, session cookies and
+  add-in device tokens are stored only as SHA-256 hashes; links last 15 min, work
+  once, are rate-limited, and are used by pressing a button on the page they open
+  (mail scanners pre-fetch links). Cookies are HttpOnly, Secure, SameSite=Lax.
+  Deleting an account strips email, identities and sessions; ledger rows remain as
+  financial records without personal data (a hash of the closed email blocks a
+  second signup grant).
+- **Corruption and loss:** WAL + `synchronous=FULL`; every spend in one transaction;
+  `integrity_check()` at startup, and charging is refused (503) if it fails rather
+  than acting on damaged data. Scheduled online `backup()` copies go **off the
+  server**. Recovery = restore the latest backup, then replay purchases from the
+  payment provider's orders (credits are idempotent on the order number, so a full
+  replay can't double-credit). Spends made after that backup are lost, which errs in
+  the customer's favour; sessions made after it need a fresh sign-in.
 - **Local (desktop) exports** will need a server-issued export ticket; STEP stays
   server-side so the most valuable tier can't be generated offline.
 

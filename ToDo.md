@@ -27,14 +27,32 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [x] `cct_common.tokens` (canonical repo): SQLite ledger — tier pricing, 24 h unlocks, upgrades, refund-on-failure, idempotent credits, atomic spend; 29 tests in `tests/test_tokens.py`
 - [ ] Commit `tokens.py` + `test_tokens.py` in cct_common, bump version, then `sync_cct_common.py` here (wait until cct_common's unrelated uncommitted edits are committed, or the sync copies them in)
 - [ ] Postgres backend behind the same `TokenStore` interface (when hosting moves)
-- [ ] Accounts and sign-in: email link (Resend) + OAuth (Microsoft, Google, GitHub); long-lived device tokens for add-ins
-- [ ] Link sign-in identities (provider + subject id) to accounts, so one person can use several sign-in methods
+- [x] `cct_common.accounts` + `cct_common.account_routes` (cct_common 0.7.0, `b8835e9`): linked identities, email sign-in links (15 min, single use, rate-limited, confirm-button page), hashed revocable sessions (web cookie 30 d, add-in device token 1 y), account page data/history, account deletion; 38 tests
+- [x] `cct_common.sqlite_db`: WAL + `synchronous=FULL`, `integrity_check()`, online `backup()`
+- [ ] Wire into `app.py` (after the sync): store at `logs/accounts.sqlite3`, `register_account_routes` with Resend, startup integrity check → 503 on token routes if it fails
+- [ ] Sign-in UI in the page (email box, account menu with balance, sign out)
+- [ ] OAuth sign-in (Microsoft, Google, GitHub) on `AccountStore.sign_in`
+- [ ] Add-in device sign-in (device-code flow: add-in shows a code, user approves in the browser, add-in receives a device token)
 - [ ] GitHub: no ID token — fetch the user from the API; request `user:email` and take the verified primary address from `/user/emails`
 - [ ] Register OAuth apps (owner action, all free): Microsoft Entra admin center; Google Cloud Console; GitHub → Settings → Developer settings → OAuth Apps
 - [ ] Charge-at-download checkboxes: a STEP purchase offers the included STL/SVG/DXF
 - [ ] WooCommerce pack purchase → webhook credits the account (reuse the HMAC-verified webhook pattern in `cct_common.licensing`)
 - [ ] Account page: balance, purchase history, per-export history
 - [ ] Admin dashboard: balances, grants/refunds, sales
+
+### Database backups (must be live before charging real money)
+Nothing is backed up today — the existing `logs/*.json` (subscribers, purchases, licences)
+sit only on the Render disk too. `SqliteDB.backup()` and `integrity_check()` exist; the rest doesn't.
+- [ ] Scheduled backup job: `backup()` of `accounts.sqlite3` hourly (the ledger is small), plus a daily copy
+- [ ] Copy every backup **off the server** (e.g. Azure Blob Storage or S3-compatible storage) — a backup on the same disk dies with it
+- [ ] Encrypt backups before upload (they contain emails) and keep the key outside the bucket
+- [ ] Retention: hourly for 7 days, daily for 90 days; delete older copies automatically
+- [ ] Verify each backup after writing it (`integrity_check()` on the copy) and alert (email) on any failure or a missed run
+- [ ] Also back up the remaining `logs/*.json` state until it moves into the database
+- [ ] Startup check in `app.py`: `integrity_check()`; if it fails, token routes return 503 and an alert is sent
+- [ ] Written restore procedure: restore latest backup → replay payment-provider orders (idempotent on order number) → check balances
+- [ ] Practise a restore from the off-server copy before launch, then quarterly
+- [ ] After the move to Postgres (Neon): turn on point-in-time restore and keep the off-server copies as a second line
 
 ### Charging exports
 - [ ] Charge only after a file is generated successfully; async STEP charges at job completion, not at request
