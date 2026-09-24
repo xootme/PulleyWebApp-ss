@@ -62,8 +62,12 @@ FreeCAD, SolidWorks and the web.
   payment provider's orders (credits are idempotent on the order number, so a full
   replay can't double-credit). Spends made after that backup are lost, which errs in
   the customer's favour; sessions made after it need a fresh sign-in.
-- **Local (desktop) exports** will need a server-issued export ticket; STEP stays
-  server-side so the most valuable tier can't be generated offline.
+- **No local installs (decided 2026-09-24).** Every export is generated on the server;
+  the add-ins use the hosted app. A discounted local-export option was considered and
+  rejected: server compute per export is ~$0.00005 against a 10–30¢ price, so a local
+  discount gives away revenue while saving almost nothing, and local generation is the
+  one path where the token check can be patched out. Once tokens are live the desktop
+  build (PyInstaller/PyArmor, `licence.lic`, the launcher) is retired.
 
 **Consequences:**
 - Every download route must be enforced server-side; today's web limit is only a

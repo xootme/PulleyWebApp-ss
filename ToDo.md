@@ -60,12 +60,13 @@ sit only on the Render disk too. `SqliteDB.backup()` and `integrity_check()` exi
 - [ ] Add-in API routes (`/api/download/step|dxf|stl`): swap `register_trial_download(machine_id, fmt)` for a token spend
 - [ ] Clear "not enough tokens" response (HTTP 402 + JSON) and a buy-tokens link in the web UI and add-ins
 
-### Running locally (desktop app)
-- [ ] Local app requests a one-time **export ticket** from the server (server deducts tokens) before writing a file
-- [ ] Keep the small_step binary server-only so STEP (3 tokens) can only come from the server; 2D/STL may run locally
-- [ ] Accept that local enforcement can be bypassed; PyArmor only raises the bar
+### No local installs (ADR-008, decided 2026-09-24)
+Every export runs on the server; the add-ins use the hosted app.
+- [ ] Point the Fusion and FreeCAD add-ins at the hosted app instead of launching the local desktop app (port 5154)
+- [ ] Add-in sign-in via device token (see Accounts and ledger)
 
 ### Retire once tokens are live
+- [ ] Desktop build: `build_release*.py`, `prepare_release.py`, PyInstaller specs, launchers, `releases/`
 - [ ] `licence.lic` / PyArmor licence flow, `/api/provision`, `subscribers.json`, the desktop licence-key activation routes
 - [ ] Weekly trial download limit (`register_trial_download`)
 - [ ] Dev backdoor (see Before Public Launch) — goes with the launcher licence check
@@ -161,6 +162,12 @@ not community posting — bulk auto-posting breaks most sites' rules.
 - [ ] AlternativeTo, Product Hunt launch, GitHub awesome-lists (3D printing / CAD), FreeCAD Addon Manager, Autodesk App Store listing keywords
 
 ---
+
+## Bug reports → GitHub (do before adding the token to Render)
+Production files no GitHub issues today: Render has no `FEEDBACK_GITHUB_PAT`.
+- [ ] **Before** adding it: this app's own `/api/report-bug` (`app.py` `_create_github_issue` / `_send_report_email`, ~2654–2806) still puts the user's design state and email into the issue and email. Switch it to `cct_common.bug_report` (issue = report id + description only; design and email stay in the private log) — keeping the desktop build's forward-to-production path while the desktop app exists
+- [ ] Then on Render: `FEEDBACK_GITHUB_PAT` (fine-grained, Issues read/write on `xootme/cct-feedback` only) and `FEEDBACK_GITHUB_REPO=xootme/cct-feedback`
+- [x] cct_common's bug reporter verified live 2026-09-24: a report from E-Box Designer became xootme/cct-feedback#1 with no design or email in it
 
 ## Before Public Launch
 - [ ] **Remove dev backdoor password `'xoot'`** — the server side is already gone (dropped by `cct_common.licensing`). Still present in:
