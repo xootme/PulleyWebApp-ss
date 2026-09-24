@@ -43,6 +43,9 @@ FreeCAD, SolidWorks and the web.
   purchase, spend, refund, adjust rows), so every change is auditable. The
   check-and-spend runs inside one write transaction so two workers can't both
   spend the last token.
+- **Hosting moves to Azure Container Apps (decided 2026-09-24),** billed per second of
+  use and scaling to zero, so cost follows token sales. Off-server backups go to Azure
+  Blob Storage. Render-side backups are not pursued; Render is left behind with the move.
 - **Built in `cct_common.tokens`** so EBoxDesigner can use the same ledger. SQLite
   first (local, tests, single-instance deploy); a Postgres backend behind the same
   interface when hosting moves off the Render disk (see ToDo.md "Hosting").

@@ -3,12 +3,14 @@ accounts_setup.py). The accounts/tokens logic itself is tested in
 cct_common; these check how this app switches it on, guards it, and
 sends its sign-in email."""
 import logging
+import os
 import re
+import threading
 
 import flask
 import pytest
 
-from accounts_setup import init_accounts, make_email_sender
+from accounts_setup import init_accounts, make_backup_alert, make_email_sender
 
 
 def _fresh_app(tmp_path, *, enabled=True, live=False, sender=None, grant=10):
@@ -126,3 +128,67 @@ def test_sender_live_without_key_fails_instead_of_pretending():
                              has_key=False, logger=logging.getLogger('t'))
     ok, err = send('a@example.com', 's', 'b')
     assert ok is False and 'RESEND_API_KEY' in err
+
+
+# ── scheduled backups ─────────────────────────────────────────────────────
+
+def test_backups_run_when_enabled(tmp_path):
+    app = flask.Flask(__name__)
+    uploaded, done = [], threading.Event()
+
+    def upload(path):
+        uploaded.append(path)
+        done.set()
+
+    state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                          email_sender=lambda *a: (True, ''),
+                          backup_dir=str(tmp_path / 'backups'),
+                          backup_upload=upload, backup_first_delay_s=0)
+    try:
+        assert done.wait(10)
+    finally:
+        state.backup_stop.set()
+    hourly = os.listdir(tmp_path / 'backups' / 'hourly')
+    assert len(hourly) == 1 and hourly[0].startswith('accounts-')
+
+
+def test_no_backups_without_a_backup_dir(tmp_path):
+    _, state, _ = _fresh_app(tmp_path)
+    assert state.healthy and state.backup_stop is None
+
+
+def test_no_backups_of_a_damaged_database(tmp_path):
+    (tmp_path / 'accounts.sqlite3').write_bytes(b'not a database' * 500)
+    app = flask.Flask(__name__)
+    state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                          email_sender=lambda *a: (True, ''),
+                          backup_dir=str(tmp_path / 'backups'), backup_first_delay_s=0)
+    assert not state.healthy and state.backup_stop is None
+    assert not (tmp_path / 'backups').exists()
+
+
+def test_damaged_database_sends_an_alert(tmp_path):
+    (tmp_path / 'accounts.sqlite3').write_bytes(b'not a database' * 500)
+    alerts = []
+    init_accounts(flask.Flask(__name__), log_dir=str(tmp_path), enabled=True, live=False,
+                  email_sender=lambda *a: (True, ''), backup_alert=alerts.append)
+    assert len(alerts) == 1 and 'integrity check' in alerts[0] and '503' in alerts[0]
+
+
+def test_backup_alert_logs_and_emails_when_address_set(caplog):
+    sent = []
+    alert = make_backup_alert(lambda *a: sent.append(a) or (True, ''),
+                              alert_to='ops@example.com', logger=logging.getLogger('t'))
+    with caplog.at_level(logging.ERROR):
+        alert('No database backup in the last 7200 s')
+    assert 'No database backup' in caplog.text
+    assert sent == [('ops@example.com', 'CheapCAD Tools: database backup problem',
+                     'No database backup in the last 7200 s')]
+
+
+def test_backup_alert_without_address_only_logs(caplog):
+    alert = make_backup_alert(lambda *a: pytest.fail('must not email'),
+                              alert_to='', logger=logging.getLogger('t'))
+    with caplog.at_level(logging.ERROR):
+        alert('backup failed: disk full')
+    assert 'disk full' in caplog.text

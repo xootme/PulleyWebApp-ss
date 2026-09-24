@@ -84,6 +84,10 @@ class SqliteDB:
             dst = sqlite3.connect(tmp)
             try:
                 src.backup(dst)
+                # The copy inherits WAL mode from the live file, and a WAL
+                # database grows -wal/-shm side files whenever it's opened.
+                # A backup should be one self-contained file.
+                dst.execute("PRAGMA journal_mode=DELETE")
             finally:
                 dst.close()
         finally:

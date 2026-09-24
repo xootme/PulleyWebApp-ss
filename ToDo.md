@@ -42,15 +42,14 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] Admin dashboard: balances, grants/refunds, sales
 
 ### Database backups (must be live before charging real money)
-Nothing is backed up today — the existing `logs/*.json` (subscribers, purchases, licences)
-sit only on the Render disk too. `SqliteDB.backup()` and `integrity_check()` exist; the rest doesn't.
-- [ ] Scheduled backup job: `backup()` of `accounts.sqlite3` hourly (the ledger is small), plus a daily copy
-- [ ] Copy every backup **off the server** (e.g. Azure Blob Storage or S3-compatible storage) — a backup on the same disk dies with it
-- [ ] Encrypt backups before upload (they contain emails) and keep the key outside the bucket
-- [ ] Retention: hourly for 7 days, daily for 90 days; delete older copies automatically
-- [ ] Verify each backup after writing it (`integrity_check()` on the copy) and alert (email) on any failure or a missed run
-- [ ] Also back up the remaining `logs/*.json` state until it moves into the database
-- [ ] Startup check in `app.py`: `integrity_check()`; if it fails, token routes return 503 and an alert is sent
+Render-era backups are out of scope — hosting moves to Azure (see Hosting), and the
+off-server copy goes to Azure Blob Storage from there.
+- [x] `cct_common.db_backup` (0.8.0): hourly online backup of `accounts.sqlite3` into `logs/backups/hourly`, first of each day kept in `logs/backups/daily`, pruned to 7 days / 90 days, each copy verified with `integrity_check()` (deleted if bad) and stored as one self-contained file; a failed or missing (>2 h) backup alerts; safe with several gunicorn workers
+- [x] Wired in `accounts_setup.py` whenever accounts are on (not under `PULLEY_TESTING`); alerts go to the error log and to `BACKUP_ALERT_EMAIL` if set
+- [x] Startup `integrity_check()`: on failure the account routes answer 503, the file is left as found, and the same alert fires
+- [ ] Off-server copy: Azure Blob Storage upload as `backup_upload` (private container, managed identity rather than a key in env)
+- [ ] Encrypt before upload (the files contain emails), key held in Azure Key Vault, not beside the blobs
+- [ ] Set `BACKUP_ALERT_EMAIL` in production
 - [ ] Written restore procedure: restore latest backup → replay payment-provider orders (idempotent on order number) → check balances
 - [ ] Practise a restore from the off-server copy before launch, then quarterly
 - [ ] After the move to Postgres (Neon): turn on point-in-time restore and keep the off-server copies as a second line
@@ -72,16 +71,11 @@ Every export runs on the server; the add-ins use the hosted app.
 - [ ] Weekly trial download limit (`register_trial_download`)
 - [ ] Dev backdoor (see Before Public Launch) — goes with the launcher licence check
 
-### Hosting (move off the Render disk)
+### Hosting: moving to Azure (decided 2026-09-24)
 Render can't scale while a disk is attached (only one instance allowed), and every state
 file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
+- [x] Host chosen: **Azure Container Apps (Consumption)** — ~$0.000024/vCPU-s, monthly free grant 180k vCPU-s / 360k GiB-s / 2M requests, scales to zero; uses the existing Microsoft account. (Also priced 2026-09-23: Cloud Run, Railway, Render Pro; AWS App Runner closed to new customers.)
 - [ ] Move all state to Postgres (ledger, accounts, queue sessions) — no disk
-- [ ] Pick host. Prices checked 2026-09-23:
-  - **Azure Container Apps (Consumption)** — ~$0.000024/vCPU-s, monthly free grant 180k vCPU-s / 360k GiB-s / 2M requests; scales to zero. Existing Microsoft account.
-  - **Google Cloud Run** — same free grant and similar rates.
-  - **Railway** — $5/$20 plans with that much usage included; closest to Render.
-  - **Render Pro** — $25/mo workspace + $7–25 per instance; autoscaling needs Pro and no disk.
-  - Not a fit: AWS App Runner (closed to new customers 2026-04-30), Lambda (would need the queue/async-job design rewritten).
 - [ ] Database: **Neon** Postgres (free tier, scales to zero, ~$0.106/CU-hour) works with any host
 - [ ] Dockerfile: Python + deps + Linux small_step binary
 - [ ] One request per instance (exports are CPU-bound); max instances as a cost cap; decide min instances (cold start vs idle cost)

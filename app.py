@@ -3854,19 +3854,26 @@ register_licensing_routes(
 # ── Accounts and tokens (ADR-008) ─────────────────────────────────────────────
 # Off unless TOKENS_ENABLED=1 — the live site is unchanged until accounts,
 # charging and the UI are all done. See accounts_setup.py.
-from accounts_setup import init_accounts, make_email_sender
+from accounts_setup import init_accounts, make_backup_alert, make_email_sender
 from cct_common.deploy_mode import is_live as _cc_is_live
 
 _ACCOUNTS_LIVE = _cc_is_live('CCT_ACCOUNTS_MODE')
+_accounts_email = make_email_sender(
+    _smtp_send, live=_ACCOUNTS_LIVE,
+    has_key=bool(os.environ.get('RESEND_API_KEY', '').strip()),
+    logger=app.logger)
 _accounts_state = init_accounts(
     app, log_dir=_LOG_DIR,
     enabled=os.environ.get('TOKENS_ENABLED') == '1',
     live=_ACCOUNTS_LIVE,
-    email_sender=make_email_sender(
-        _smtp_send, live=_ACCOUNTS_LIVE,
-        has_key=bool(os.environ.get('RESEND_API_KEY', '').strip()),
-        logger=app.logger),
+    email_sender=_accounts_email,
     signup_grant=int(os.environ.get('TOKENS_SIGNUP_GRANT', '10')),
+    # Hourly verified backups (cct_common.db_backup); none under the test
+    # harness. The off-server copy (Azure Blob) plugs in as backup_upload.
+    backup_dir=None if os.environ.get('PULLEY_TESTING') else os.path.join(_LOG_DIR, 'backups'),
+    backup_alert=make_backup_alert(
+        _accounts_email, alert_to=os.environ.get('BACKUP_ALERT_EMAIL', '').strip(),
+        logger=app.logger),
 )
 
 

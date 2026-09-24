@@ -81,6 +81,12 @@ hashed revocable sessions, account deletion), plus its Flask routes:
     from cct_common.account_routes import register_account_routes, current_account_id
     accounts = AccountStore(store, signup_grant=10)
     register_account_routes(app, accounts, email_sender=send_email)
+
+Scheduled, verified backups of such a store (hourly + daily, pruned,
+with a hook for the off-server copy and alerts on failure):
+
+    from cct_common.db_backup import start_backup_thread
+    start_backup_thread(store, "/path/to/backups", on_failure=alert)
 """
 from .core import build_meta, dump_blob, flatten_params, parse_meta
 from .dxf import embed_dxf, extract_dxf
@@ -96,4 +102,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"

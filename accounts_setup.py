@@ -27,6 +27,7 @@ class AccountsState:
     tokens: object = None      # cct_common.tokens.TokenStore
     accounts: object = None    # cct_common.accounts.AccountStore
     problems: tuple = ()
+    backup_stop: object = None  # threading.Event; set() stops the backup thread
 
 
 def make_email_sender(send: Callable, *, live: bool, has_key: bool, logger):
@@ -45,9 +46,27 @@ def make_email_sender(send: Callable, *, live: bool, has_key: bool, logger):
     return sender
 
 
+def make_backup_alert(email_sender: Callable, *, alert_to: str, logger):
+    """A backup problem always goes to the error log; it's also emailed
+    when an alert address is configured (BACKUP_ALERT_EMAIL)."""
+    def alert(message: str):
+        logger.error(message)
+        if alert_to:
+            email_sender(alert_to, "CheapCAD Tools: database backup problem", message)
+    return alert
+
+
 def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   email_sender: Callable, signup_grant: int = 10,
-                  app_name: str = "CheapCAD Tools") -> AccountsState:
+                  app_name: str = "CheapCAD Tools",
+                  backup_dir: str | None = None,
+                  backup_alert: Callable[[str], None] | None = None,
+                  backup_upload: Callable[[str], None] | None = None,
+                  backup_interval_s: float = 3600,
+                  backup_first_delay_s: float = 30) -> AccountsState:
+    """backup_dir=None means no scheduled backups (tests). backup_upload
+    is the off-server copy — the Azure Blob Storage upload once hosting
+    moves (ADR-008)."""
     state = AccountsState(enabled=enabled)
     app.extensions["pulley_accounts"] = state
     if not enabled:
@@ -67,8 +86,9 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
 
     if problems:
         state.problems = problems
-        app.logger.error("Accounts database failed its integrity check (%s): %s",
-                         db_path, "; ".join(problems))
+        message = (f"Accounts database failed its integrity check ({db_path}): "
+                   + "; ".join(problems) + ". Account routes answer 503 until it is restored.")
+        (backup_alert or app.logger.error)(message)
 
         @app.before_request
         def _accounts_unavailable():
@@ -82,4 +102,11 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
     register_account_routes(app, accounts, email_sender=email_sender,
                             app_name=app_name, secure_cookies=live)
     state.tokens, state.accounts, state.healthy = tokens, accounts, True
+
+    if backup_dir:
+        from cct_common.db_backup import start_backup_thread
+        state.backup_stop = start_backup_thread(
+            tokens, backup_dir, name="accounts", interval_s=backup_interval_s,
+            first_delay_s=backup_first_delay_s,
+            on_failure=backup_alert or app.logger.error, upload=backup_upload)
     return state
