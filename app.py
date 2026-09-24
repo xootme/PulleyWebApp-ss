@@ -3851,6 +3851,25 @@ register_licensing_routes(
 # (backdoor_key == 'xoot') that used to bypass entitlement checks.
 
 
+# ── Accounts and tokens (ADR-008) ─────────────────────────────────────────────
+# Off unless TOKENS_ENABLED=1 — the live site is unchanged until accounts,
+# charging and the UI are all done. See accounts_setup.py.
+from accounts_setup import init_accounts, make_email_sender
+from cct_common.deploy_mode import is_live as _cc_is_live
+
+_ACCOUNTS_LIVE = _cc_is_live('CCT_ACCOUNTS_MODE')
+_accounts_state = init_accounts(
+    app, log_dir=_LOG_DIR,
+    enabled=os.environ.get('TOKENS_ENABLED') == '1',
+    live=_ACCOUNTS_LIVE,
+    email_sender=make_email_sender(
+        _smtp_send, live=_ACCOUNTS_LIVE,
+        has_key=bool(os.environ.get('RESEND_API_KEY', '').strip()),
+        logger=app.logger),
+    signup_grant=int(os.environ.get('TOKENS_SIGNUP_GRANT', '10')),
+)
+
+
 if __name__ == '__main__':
     import argparse as _ap
     _p = _ap.ArgumentParser()

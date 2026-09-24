@@ -29,7 +29,8 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] Postgres backend behind the same `TokenStore` interface (when hosting moves)
 - [x] `cct_common.accounts` + `cct_common.account_routes` (cct_common 0.7.0, `b8835e9`): linked identities, email sign-in links (15 min, single use, rate-limited, confirm-button page), hashed revocable sessions (web cookie 30 d, add-in device token 1 y), account page data/history, account deletion; 38 tests
 - [x] `cct_common.sqlite_db`: WAL + `synchronous=FULL`, `integrity_check()`, online `backup()`
-- [ ] Wire into `app.py` (after the sync): store at `logs/accounts.sqlite3`, `register_account_routes` with Resend, startup integrity check → 503 on token routes if it fails
+- [x] Wired into `app.py` via `accounts_setup.py`, **off unless `TOKENS_ENABLED=1`**: store at `logs/accounts.sqlite3`, email-link sign-in through Resend (dev without a key logs the link to `logs/server_errors.log`), startup integrity check → 503 on account routes if it fails, signup grant from `TOKENS_SIGNUP_GRANT`; 11 tests in `tests/test_accounts_setup.py`
+- [ ] When switching it on in production: set `TOKENS_ENABLED=1`, `CCT_ACCOUNTS_MODE=live` (Secure cookies; never logs sign-in links) and `RESEND_API_KEY` together
 - [ ] Sign-in UI in the page (email box, account menu with balance, sign out)
 - [ ] OAuth sign-in (Microsoft, Google, GitHub) on `AccountStore.sign_in`
 - [ ] Add-in device sign-in (device-code flow: add-in shows a code, user approves in the browser, add-in receives a device token)
