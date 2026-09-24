@@ -183,3 +183,57 @@ def test_off_by_default_leaves_routes_as_they_were(client):
     # With charging off (conftest's app), downloads need no sign-in.
     assert charges.enabled is False
     assert client.get(f'/download/svg?{Q}').status_code == 200
+
+
+# ── price check (/api/tokens/quote) and design registration (/api/design) ──
+
+@pytest.fixture
+def mini(tmp_path):
+    """A small app with its own Charges, so attach() can add its routes."""
+    import flask
+    from accounts_setup import init_accounts
+    from charging import Charges
+
+    ch = Charges()
+    app = flask.Flask(__name__)
+
+    @app.route('/download/stl')
+    @ch.charged('stl')
+    def download_stl():
+        return 'solid x'
+
+    state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                          email_sender=lambda *a: (True, ''))
+    ch.attach(app, state, buy_url='https://shop.example/tokens')
+    acct = state.accounts.sign_in('email', 'a@example.com', 'a@example.com', email_verified=True)
+    auth = {'Authorization': f'Bearer {state.accounts.create_session(acct, kind="device")}'}
+    return SimpleNamespace(c=app.test_client(), auth=auth, tokens=state.tokens, acct=acct)
+
+
+def test_quote_prices_a_download_exactly_as_the_download_does(mini):
+    did = mini.c.post('/api/design', headers=mini.auth, json={'design': DESIGN}).get_json()['design_id']
+    params = {'family': 'HTD', 'pitch': '5M', 'teeth': '20', 'bore': '8', 'design_id': did}
+    q = mini.c.post('/api/tokens/quote', headers=mini.auth,
+                    json={'path': '/download/stl', 'params': params}).get_json()
+    assert (q['cost'], q['tier'], q['balance'], q['held_tier']) == (2, 'stl', 10, None)
+    assert q['buy_url'] == 'https://shop.example/tokens'
+    qs = '&'.join(f'{k}={v}' for k, v in params.items())
+    assert mini.c.get(f'/download/stl?{qs}', headers=mini.auth).headers['X-CCT-Tokens-Charged'] == '2'
+    q = mini.c.post('/api/tokens/quote', headers=mini.auth,
+                    json={'path': '/download/stl', 'params': params}).get_json()
+    assert (q['cost'], q['held_tier'], q['balance']) == (0, 'stl', 8)
+
+
+def test_quote_and_design_need_sign_in_and_a_charged_route(mini):
+    assert mini.c.post('/api/tokens/quote', json={'path': '/download/stl'}).status_code == 401
+    assert mini.c.post('/api/design', json={'design': DESIGN}).status_code == 401
+    r = mini.c.post('/api/tokens/quote', headers=mini.auth, json={'path': '/not/a/download', 'params': {}})
+    assert r.status_code == 400
+    assert mini.c.post('/api/design', headers=mini.auth, json={'design': {}}).status_code == 400
+    assert mini.c.post('/api/design', headers=mini.auth, json={'design': 'x'}).status_code == 400
+
+
+def test_402_carries_the_buy_link(mini):
+    mini.tokens.credit(mini.acct, -9, kind='adjust')
+    r = mini.c.get('/download/stl?family=HTD&pitch=5M&teeth=20&bore=8', headers=mini.auth)
+    assert r.status_code == 402 and r.get_json()['buy_url'] == 'https://shop.example/tokens'

@@ -142,13 +142,19 @@ class Charges:
     def __init__(self):
         self.state = None
         self.designs = None
+        self.buy_url = ""
+        # endpoint name -> export format, filled in by charged() and
+        # begin_async() users, so a price check can find a route's format
+        self.formats = {"api_download_step_async": "step",
+                        "api_download_all_step_async": "step"}
 
     @property
     def enabled(self) -> bool:
         return bool(self.state and self.state.enabled)
 
-    def attach(self, app, state) -> None:
+    def attach(self, app, state, *, buy_url: str = "") -> None:
         self.state = state
+        self.buy_url = buy_url
         if not (state.enabled and state.healthy):
             return
         self.designs = DesignStore(state.tokens.path)
@@ -167,7 +173,33 @@ class Charges:
                 return jsonify({"error": "design must be a non-empty object"}), 400
             return jsonify({"design_id": self.designs.register(acct, design)})
 
+        def quote():
+            """What a download would cost right now — priced exactly as the
+            download itself will be. Downloads run in hidden iframes, whose
+            answer the page can't read, so it asks here first.
+            Body: {"path": "/download/stl", "params": {...query or body...}}"""
+            acct = current_account_id()
+            if not acct:
+                return jsonify({"error": "sign in required", "code": "SIGN_IN_REQUIRED"}), 401
+            data = request.get_json(silent=True) or {}
+            params = data.get("params") if isinstance(data.get("params"), dict) else {}
+            try:
+                endpoint, _ = app.url_map.bind("localhost").match(
+                    str(data.get("path", "")),
+                    method="POST" if str(data.get("path", "")).startswith("/api/") else "GET")
+            except Exception:
+                endpoint = None
+            fmt = self.formats.get(endpoint)
+            if not fmt:
+                return jsonify({"error": "not a charged download"}), 400
+            q = self.state.tokens.quote(acct, self.design_key_for(params), fmt)
+            return jsonify({"fmt": q.fmt, "tier": q.tier, "cost": q.cost,
+                            "held_tier": q.held_tier, "unlocked_until": q.unlocked_until,
+                            "balance": self.state.tokens.balance(acct),
+                            "buy_url": self.buy_url})
+
         app.add_url_rule("/api/design", view_func=register_design, methods=["POST"])
+        app.add_url_rule("/api/tokens/quote", view_func=quote, methods=["POST"])
 
     # ── the parts every charge needs ──────────────────────────────────────
 
@@ -194,12 +226,11 @@ class Charges:
                 return str(did)
         return design_key(params, ignore=TRANSIENT_KEYS | ROUTE_ONLY_KEYS)
 
-    @staticmethod
-    def _short_of_tokens(e: InsufficientTokens):
+    def _short_of_tokens(self, e: InsufficientTokens):
         from flask import jsonify
         return jsonify({"error": f"This download needs {e.needed} tokens; you have {e.balance}.",
                         "code": "NOT_ENOUGH_TOKENS", "needed": e.needed,
-                        "balance": e.balance}), 402
+                        "balance": e.balance, "buy_url": self.buy_url}), 402
 
     @staticmethod
     def _request_params() -> dict:
@@ -216,6 +247,8 @@ class Charges:
         params_from(request_params) picks the design parameters out of the
         request when they aren't the top level (the add-in API routes)."""
         def deco(view):
+            self.formats[view.__name__] = fmt
+
             @wraps(view)
             def wrapped(*args, **kwargs):
                 if not self.enabled:

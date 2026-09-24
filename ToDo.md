@@ -31,12 +31,12 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [x] `cct_common.sqlite_db`: WAL + `synchronous=FULL`, `integrity_check()`, online `backup()`
 - [x] Wired into `app.py` via `accounts_setup.py`, **off unless `TOKENS_ENABLED=1`**: store at `logs/accounts.sqlite3`, email-link sign-in through Resend (dev without a key logs the link to `logs/server_errors.log`), startup integrity check → 503 on account routes if it fails, signup grant from `TOKENS_SIGNUP_GRANT`; 11 tests in `tests/test_accounts_setup.py`
 - [ ] When switching it on in production: set `TOKENS_ENABLED=1`, `CCT_ACCOUNTS_MODE=live` (Secure cookies; never logs sign-in links) and `RESEND_API_KEY` together
-- [ ] Sign-in UI in the page (email box, account menu with balance, sign out)
+- [x] Sign-in UI in the page (email box, account box with balance, sign out) — see Charging exports
 - [ ] OAuth sign-in (Microsoft, Google, GitHub) on `AccountStore.sign_in`
 - [ ] Add-in device sign-in (device-code flow: add-in shows a code, user approves in the browser, add-in receives a device token)
 - [ ] GitHub: no ID token — fetch the user from the API; request `user:email` and take the verified primary address from `/user/emails`
 - [ ] Register OAuth apps (owner action, all free): Microsoft Entra admin center; Google Cloud Console; GitHub → Settings → Developer settings → OAuth Apps
-- [ ] Charge-at-download checkboxes: a STEP purchase offers the included STL/SVG/DXF
+- [x] Charge-at-download checkboxes: a STEP purchase offers the included STL/SVG/DXF
 - [ ] WooCommerce pack purchase → webhook credits the account (reuse the HMAC-verified webhook pattern in `cct_common.licensing`)
 - [ ] Account page: balance, purchase history, per-export history
 - [ ] Admin dashboard: balances, grants/refunds, sales
@@ -55,15 +55,15 @@ off-server copy goes to Azure Blob Storage from there.
 - [ ] After the move to Postgres (Neon): turn on point-in-time restore and keep the off-server copies as a second line
 
 ### Charging exports
-**Don't turn `TOKENS_ENABLED` on in production until the page is updated** (next item group) — today's page doesn't sign in, send `design_id`, or show 401/402 answers.
+**Before turning `TOKENS_ENABLED` on in production:** the async-file fix below, a way to buy tokens (`TOKENS_BUY_URL` + purchase webhook), the add-ins, and the production settings (`CCT_ACCOUNTS_MODE=live`, `RESEND_API_KEY`).
 - [x] `charging.py`: all 15 `/download/*` routes, the 3 add-in API routes and both async STEP jobs are charged (2D 1 / STL 2 / STEP 3); tokens taken before generating and refunded when the route answers with an error status or the job raises; an unaffordable async job is refused up front
 - [x] One identity per on-screen design: the page registers it (`POST /api/design`) and sends `design_id`; the server accepts it only if the download's own parameters belong to that design (flange aliases, `p2_` names, number formats), else prices the download as its own design — a made-up id unlocks nothing
 - [x] 401 `SIGN_IN_REQUIRED`, 402 `NOT_ENOUGH_TOKENS` (needed/balance), 503 when accounts are unhealthy; `X-CCT-Tokens-Charged` / `X-CCT-Tokens-Balance` headers on success
 - [x] Weekly trial limits (add-in `register_trial_download`, queue session limit, `/api/fp-token`) apply only while tokens are off
 - [x] 20 tests in `tests/test_charging.py` (negative controls: refund, design match, async charge)
 - [ ] **Async STEP result files** (`/download/<job_id>.step`): 8-hex job ids, served to anyone who has the id and never deleted — tie each file to the paying account, lengthen the id, delete after download/expiry (cct_common.job_queue)
-- [ ] Page: build the full on-screen design (every raw input, including disabled spoke/flange values), register it, send `design_id` with every download; browser test that every route's parameters match it
-- [ ] Page: handle 401/402 — downloads run in hidden iframes today, so an error body is never seen; check the price first or fetch the file, then show sign-in / buy-tokens
+- [x] Page (`static/tokens.js` + hooks in `index.html`): header account box (sign in / email, balance, sign out); sign-in dialog; the full on-screen design registered and `design_id` added to every download; each download priced first (`POST /api/tokens/quote`, since hidden-iframe downloads can't read their answer) with a confirm dialog offering the included formats as ticked checkboxes; included downloads run only once the paid one is answered (`download_signal` cookie) or its STEP job is done, so they can't beat the charge; buy dialog (`TOKENS_BUY_URL`); tokens off = the old page
+- [x] Browser test `tests/browser/tokens_ui.js` (27 checks, all pass; negative control: without `design_id` the included downloads get charged and it fails) + tokens-off check (2/2)
 - [ ] Add-ins: sign in (device token), send `Authorization: Bearer`, handle 401/402
 
 ### No local installs (ADR-008, decided 2026-09-24)

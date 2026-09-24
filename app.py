@@ -3912,7 +3912,8 @@ _accounts_state = init_accounts(
         _accounts_email, alert_to=os.environ.get('BACKUP_ALERT_EMAIL', '').strip(),
         logger=app.logger),
 )
-charges.attach(app, _accounts_state)  # per-export token charging — see charging.py
+charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
+               buy_url=os.environ.get('TOKENS_BUY_URL', '').strip())
 
 
 if __name__ == '__main__':

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=22">
+  <link rel="stylesheet" href="/static/style.css?v=23">
 </head>
 <body>
 
@@ -22,6 +22,7 @@
       <span class="header-title">Timing Pulley Generator</span>
       <span class="header-version">Ver. {{ app_version }}</span>
     </div>
+    <div id="cct-account" class="cct-account" hidden></div>
     <div id="session-timer-box" style="display: none; margin-left: auto; background: #dc3545; border-radius: 6px; padding: 8px 16px; min-width: 140px;">
       <div style="text-align: center; font-size: 11px; color: white; margin-bottom: 4px; font-weight: 500;">
         <span id="queue-waiting-msg" style="display: none;">⏳ Users waiting:</span>
@@ -1037,6 +1038,7 @@
   &nbsp;|&nbsp; v{{ app_version }} &nbsp;<span class="footer-build">build {{ build_time }}</span>
 </footer>
 
+<script src="/static/tokens.js?v=1"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -2511,9 +2513,89 @@ function _cctAppendToken(url, token) {
   return url + (url.includes('?') ? '&' : '?') + '_fpt=' + token;
 }
 
-async function _cctGuardedDownload(url) {
+// ── Tokens (ADR-008) — see static/tokens.js. Off unless the server has
+// TOKENS_ENABLED; then every download is priced first and the formats a
+// purchase includes are offered as checkboxes.
+
+async function _cctTokensOn() {
+  return !!(window.cctTokens && await cctTokens.isEnabled());
+}
+
+// Every raw input on screen, under the names the download routes use, so
+// every format of this design is priced as one purchase. The server only
+// honours the design_id if a download's own parameters belong to it.
+function cctFullDesign() {
+  const d = Object.assign({}, buildParams());
+  d.belt_height = document.getElementById('belt_height').value;
+  d.n_belt      = document.getElementById('belt_teeth').value || 0;
+  d.dual        = document.getElementById('dual_enable').checked ? 'true' : '';
+  for (const n of [1, 2]) {
+    const pfx = n === 2 ? 'p2_' : '';
+    let fp = {};
+    try { fp = _flangeParams(n); } catch (e) { /* pulley 2 inputs absent */ }
+    for (const [k, v] of Object.entries(fp)) {
+      const key = (n === 2 && !k.startsWith('p2_')) ? pfx + k : k;
+      if (!(key in d)) d[key] = v;
+    }
+    for (const f of ['width', 'fillet_tip', 'fillet_base', 'count', 'height', 'hub_od', 'rim_depth']) {
+      const el = document.getElementById(`spokes${n}_${f}`);
+      if (el) d[`${pfx}spokes_${f}`] = el.value;
+    }
+    const sp = document.getElementById(`spokes${n}_enabled`);
+    if (sp) d[`${pfx}spokes_enabled`] = sp.checked ? '1' : '0';
+    const fl = document.getElementById(`flange${n}_enabled`);
+    if (fl) d[`${pfx}flange_enabled`] = fl.checked ? '1' : '0';
+  }
+  return d;
+}
+window.cctFullDesign = cctFullDesign;
+
+// The formats a purchase includes, offered as "also download" checkboxes.
+function _cctExtras(path, params) {
+  const n = params.pulley === '2' ? 2 : 1;
+  const x = (label, run) => ({ label, run });
+  switch (path) {
+    case '/api/download/step-async':
+      return [x('STL', () => downloadSTL(n)), x('SVG', () => downloadSVG(n)), x('DXF', () => downloadDXF(n))];
+    case '/api/download/all-step-async':
+      return [x('All parts DXF', () => downloadAllDXF()), x('All parts SVG', () => downloadAllSVG())];
+    case '/download/stl':
+      return [x('SVG', () => downloadSVG(n)), x('DXF', () => downloadDXF(n))];
+    case '/download/belt-step':
+      return [x('Belt STL', () => downloadBeltSTL()), x('Belt SVG', () => downloadBeltSVG()),
+              x('Belt DXF', () => downloadBeltDXF())];
+    case '/download/belt-stl':
+      return [x('Belt SVG', () => downloadBeltSVG()), x('Belt DXF', () => downloadBeltDXF())];
+    case '/download/svg':        return [x('DXF', () => downloadDXF(n))];
+    case '/download/dxf':        return [x('SVG', () => downloadSVG(n, true))];
+    case '/download/belt-svg':   return [x('Belt DXF', () => downloadBeltDXF())];
+    case '/download/belt-dxf':   return [x('Belt SVG', () => downloadBeltSVG())];
+    case '/download/all-dxf':    return [x('All parts SVG', () => downloadAllSVG())];
+    default:                     return [];
+  }
+}
+
+// A priced download: prepare (sign in / price / confirm), start, then wait
+// for its answer before running the included downloads.
+async function _cctTokenDownload(url, start, alsoAfter) {
+  const u = new URL(url, location.origin);
+  const params = Object.fromEntries(u.searchParams);
+  const go = await cctTokens.prepare({
+    path: u.pathname, params,
+    extras: _cctExtras(u.pathname, params).concat((alsoAfter || []).map(run => ({ run, always: true }))),
+  });
+  if (!go) return false;
+  const prev = cctTokens.signal();
+  start(url);
+  cctTokens.watch(prev, go.extras);
+  return true;
+}
+
+async function _cctGuardedDownload(url, alsoAfter) {
   // Wraps _triggerDownload / window.location with a limit check.
-  // Returns false if denied, true otherwise.
+  // Returns false if denied, true otherwise. `alsoAfter` runs once the
+  // download is through (with tokens on; otherwise the caller runs it).
+  if (await _cctTokensOn()) return _cctTokenDownload(url, _triggerDownload, alsoAfter);
   const tok = await _cctGetToken();
   if (tok && tok.ok === false) { _cctLimitMsg(tok.count, tok.limit); return false; }
   _triggerDownload(_cctAppendToken(url, tok && tok.token));
@@ -2521,6 +2603,7 @@ async function _cctGuardedDownload(url) {
 }
 
 async function _cctGuardedProgress(url, filename) {
+  if (await _cctTokensOn()) return _cctTokenDownload(url, u => downloadWithProgress(u, filename));
   const tok = await _cctGetToken();
   if (tok && tok.ok === false) { _cctLimitMsg(tok.count, tok.limit); return false; }
   downloadWithProgress(_cctAppendToken(url, tok && tok.token), filename);
@@ -2532,19 +2615,23 @@ async function downloadSVG(n, includeData = true) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
   params.include_data = includeData ? '1' : '0';
-  const ok = await _cctGuardedDownload(_dlUrl('/download/svg?' + new URLSearchParams(params)));
-  if (ok && document.getElementById(`rim_layer${n}_enabled`)?.checked) {
-    setTimeout(() => _triggerDownload(_dlUrl('/download/svg-rim?' + new URLSearchParams(params))), 400);
-  }
+  const rim = document.getElementById(`rim_layer${n}_enabled`)?.checked
+    ? () => _triggerDownload(_dlUrl('/download/svg-rim?' + new URLSearchParams(params))) : null;
+  const tokensOn = await _cctTokensOn();
+  const ok = await _cctGuardedDownload(_dlUrl('/download/svg?' + new URLSearchParams(params)),
+                                       rim ? [rim] : []);
+  if (ok && rim && !tokensOn) setTimeout(rim, 400);
 }
 
 async function downloadDXF(n) {
   const params = buildParams();
   if (n === 2) params.pulley = '2';
-  const ok = await _cctGuardedDownload(_dlUrl('/download/dxf?' + new URLSearchParams(params)));
-  if (ok && document.getElementById(`rim_layer${n}_enabled`)?.checked) {
-    setTimeout(() => _triggerDownload(_dlUrl('/download/dxf-rim?' + new URLSearchParams(params))), 400);
-  }
+  const rim = document.getElementById(`rim_layer${n}_enabled`)?.checked
+    ? () => _triggerDownload(_dlUrl('/download/dxf-rim?' + new URLSearchParams(params))) : null;
+  const tokensOn = await _cctTokensOn();
+  const ok = await _cctGuardedDownload(_dlUrl('/download/dxf?' + new URLSearchParams(params)),
+                                       rim ? [rim] : []);
+  if (ok && rim && !tokensOn) setTimeout(rim, 400);
 }
 
 async function downloadBeltSVG() {
@@ -3036,7 +3123,7 @@ function downloadWithProgress(url, defaultFilename) {
   // (The blob:-URL approach this replaced was being marked "Removed" by Chrome
   // and never written to disk on some setups.)
   const prevSignal = _readCookie('download_signal');
-  window.location = url;
+  window.location = window.cctTokens ? cctTokens.withDesign(url) : url;
 
   // The server bumps the `download_signal` cookie ("<ms>-<status>") on every
   // /download/ response, so we know the download started once it changes.
@@ -3091,9 +3178,16 @@ async function downloadSTEP(n) {
   // Generate to a file first, then navigate to the static result — the same
   // reliable mechanism "Download All" uses. A direct window.location to the
   // slow /download/step route was being dropped ("Removed") by Chromium.
-  const _stepTok = await _cctGetToken();
-  if (_stepTok && _stepTok.ok === false) { _cctLimitMsg(_stepTok.count, _stepTok.limit); return; }
-  if (_stepTok && _stepTok.token) params._fpt = _stepTok.token;
+  if (await _cctTokensOn()) {
+    const go = await cctTokens.prepare({ path: '/api/download/step-async', params,
+                                         extras: _cctExtras('/api/download/step-async', params) });
+    if (!go) return;
+    _cctJobExtras = go.extras;
+  } else {
+    const _stepTok = await _cctGetToken();
+    if (_stepTok && _stepTok.ok === false) { _cctLimitMsg(_stepTok.count, _stepTok.limit); return; }
+    if (_stepTok && _stepTok.token) params._fpt = _stepTok.token;
+  }
   _startAsyncJob('/api/download/step-async', params, () => downloadSTEP(n));
 }
 
@@ -3862,7 +3956,7 @@ function onFilletChange(n, changed) {
 
 function _triggerDownload(url) {
   const a = document.createElement('a');
-  a.href = url;
+  a.href = window.cctTokens ? cctTokens.withDesign(url) : url;
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
@@ -4026,8 +4120,13 @@ function _startAsyncJob(endpoint, params, retryFn) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   })
-  .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+  .then(async r => {
+    if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
+    if (!r.ok) throw new Error(`Server returned ${r.status}`);
+    return r.json();
+  })
   .then(data => {
+    if (!data) return;
     _currentJobId = data.job_id;
     _jobStartTime = Date.now();
     showProgressModal();
@@ -4126,24 +4225,32 @@ async function startAsyncDownload(type) {
     params.session_id = sessionId;
   }
 
-  // Download-limit token (fails open — limit not enforced if token unavailable)
-  const _asyncTok = await _cctGetToken();
-  if (_asyncTok && _asyncTok.ok === false) {
-    _cctLimitMsg(_asyncTok.count, _asyncTok.limit);
-    return;
+  if (await _cctTokensOn()) {
+    const go = await cctTokens.prepare({ path: endpoint, params, extras: _cctExtras(endpoint, params) });
+    if (!go) return;
+    _cctJobExtras = go.extras;
+  } else {
+    // Download-limit token (fails open — limit not enforced if token unavailable)
+    const _asyncTok = await _cctGetToken();
+    if (_asyncTok && _asyncTok.ok === false) {
+      _cctLimitMsg(_asyncTok.count, _asyncTok.limit);
+      return;
+    }
+    if (_asyncTok && _asyncTok.token) params._fpt = _asyncTok.token;
   }
-  if (_asyncTok && _asyncTok.token) params._fpt = _asyncTok.token;
 
   fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   })
-  .then(r => {
+  .then(async r => {
+    if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
     if (!r.ok) throw new Error(`Server returned ${r.status}`);
     return r.json();
   })
   .then(data => {
+    if (!data) return;
     _currentJobId = data.job_id;
     _jobStartTime = Date.now();
     showProgressModal();
@@ -4157,6 +4264,8 @@ async function startAsyncDownload(type) {
   });
 }
 
+let _cctJobExtras = [];   // included downloads to run when the STEP job is done
+
 function pollJobStatus() {
   if (!_currentJobId) return;
 
@@ -4168,6 +4277,8 @@ function pollJobStatus() {
       // If done or failed, stop polling and handle completion
       if (job.status === 'done') {
         hideProgressModal();
+        if (window.cctTokens) { cctTokens.runExtras(_cctJobExtras); cctTokens.refresh(); }
+        _cctJobExtras = [];
         if (job.mirrored) {
           // A connected CAD addin (Fusion/SolidWorks/FreeCAD) already received
           // the file via the watch folder — skip the browser download so it
@@ -4186,6 +4297,8 @@ function pollJobStatus() {
         }
       } else if (job.status === 'failed') {
         hideProgressModal();
+        _cctJobExtras = [];                // failed jobs are refunded; nothing rides along
+        if (window.cctTokens) cctTokens.refresh();
         showErrorModalWithRetry(
           `Generation failed: ${job.error}`,
           _retryDownload || (() => startAsyncDownload('all-step'))
