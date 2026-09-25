@@ -3153,34 +3153,13 @@ def api_admin_render_deploys():
 
 # ── Async Download with Job Queue ───────────────────────────────────────────
 
-@app.route('/download/<job_id>.step')
-def download_async_step(job_id):
-    """Serve generated STEP file from async download job.
-
-    Optional ?name= overrides the download filename (single-part async
-    downloads pass the friendly name, e.g. HTD-3M-40T+flanges.step)."""
-    file_path = os.path.join(_LOG_DIR, f'{job_id}.step')
-    if not os.path.exists(file_path):
-        return 'File not found', 404
-    # Friendly download name is stored on the job (set by the async generator),
-    # NOT passed as a query string — a clean extension-terminated URL is what the
-    # browser reliably saves; query strings on the download URL were being dropped.
-    job = get_job(job_id)
-    dl_name = getattr(job, 'output_name', None) if job else None
-    dl_name = os.path.basename(dl_name) if dl_name else f'{job_id}.step'
-    if not dl_name.lower().endswith('.step'):
-        dl_name += '.step'
-    return send_file(file_path, mimetype='application/step',
-                     as_attachment=True, download_name=dl_name)
-
-
 @app.route('/api/download/step-async', methods=['POST'])
 @require_active_session
 def api_download_step_async():
     """Start async STEP generation for a single pulley (P1 or P2).
 
     Mirrors the reliable all-step path: generate to a file on disk, then the
-    client navigates to /download/<job_id>.step (a static file, instant
+    client navigates to its /download/result/... link (a static file, instant
     response). A direct window.location to the slow /download/step route was
     being dropped ("Removed") by Chromium on some setups; serving a
     pre-generated static file avoids the multi-second navigation entirely.
@@ -3251,27 +3230,22 @@ def api_download_step_async():
                     step_bytes = _rename_step_product(step_bytes, fname[:-5])
                     step_bytes = _embed_step(step_bytes, query_params)
 
-                    output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
-                    with open(output_path, 'wb') as f:
-                        f.write(step_bytes)
                     dl_name = _safe_dl_name(fname)
+                    result_url = save_result(_LOG_DIR, step_bytes, dl_name)
                     # Mirror with the RAW filename (keep any '+'): the CAD addins
                     # detect multi-body assemblies by a '+' in the name and must skip
                     # importToTarget for them. _safe_dl_name strips '+' for Chromium's
                     # benefit and is only needed for the browser download.
                     _mirrored = _mirror_to_addins(step_bytes, fname)
 
-                    # Stash the friendly filename on the job so the static route can
-                    # serve it without a query string on the download URL. The
-                    # mirrored flag tells the client to skip the browser download
-                    # when a CAD addin already received the file.
+                    # The mirrored flag tells the client to skip the browser
+                    # download when a CAD addin already received the file.
                     _j = get_job(job.id)
                     if _j is not None:
-                        _j.output_name = dl_name
                         _j.mirrored = _mirrored
 
                     update_progress(job.id, 100)
-                    finish_job(job.id, output_file=f'/download/{job.id}.step')
+                    finish_job(job.id, output_file=result_url)
             except Exception as e:
                 finish_job(job.id, error=str(e))
             finally:
@@ -3440,20 +3414,17 @@ def api_download_all_step_async():
                     _t1 = kw1['num_teeth']
                     _fname = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all.step'
                              if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all.step')
-                    output_path = os.path.join(_LOG_DIR, f'{job.id}.step')
-                    with open(output_path, 'wb') as f:
-                        f.write(step_bytes)
                     dl_name = _safe_dl_name(_fname)
+                    result_url = save_result(_LOG_DIR, step_bytes, dl_name)
                     # Mirror with the RAW name (keep '+'): addins detect the '-all'
                     # assembly and '+' multi-body files to skip importToTarget.
                     _mirrored = _mirror_to_addins(step_bytes, _fname)
                     _j = get_job(job.id)
                     if _j is not None:
-                        _j.output_name = dl_name
                         _j.mirrored = _mirrored
 
                     update_progress(job.id, 100)
-                    finish_job(job.id, output_file=f'/download/{job.id}.step')
+                    finish_job(job.id, output_file=result_url)
 
             except Exception as e:
                 finish_job(job.id, error=str(e))
@@ -3916,6 +3887,11 @@ _accounts_state = init_accounts(
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
                buy_url=os.environ.get('TOKENS_BUY_URL', '').strip())
+
+# Finished background downloads live at unguessable, expiring links —
+# see results.py (replaces the old /download/<job_id>.step).
+from results import register_result_routes, save_result
+register_result_routes(app, log_dir=_LOG_DIR)
 
 # The download window's zip: every ticked file for every part shown, one
 # charge for the whole design — see bundles.py.

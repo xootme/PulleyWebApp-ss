@@ -8,7 +8,7 @@ design at the highest tier ticked.
          "files": [{"path": "/download/step", "params": {...}}, ...],
          "_fpt": "..."}                       (tokens off: the weekly trial token)
         -> {"job_id", "status_url"}; the job's output_file is the zip.
-    GET  /download/bundle/<token>/<name>.zip
+    The zip is served from its results.py link (/download/result/...).
 
 The files are made by the existing download routes, called in-process with
 charges.internal_secret, so every file is exactly what that route would
@@ -19,25 +19,22 @@ registered design. Every file's parameters must belong to that design
 the one paid for. If any file fails, the job fails and the charge is
 refunded.
 
-The zip's link carries a random 192-bit token, so it can't be guessed the
-way the 8-hex async job ids can; zips are deleted after an hour.
+The zip is stored through results.py: a random 192-bit link, deleted
+after an hour.
 """
 from __future__ import annotations
 
 import io
 import os
 import re
-import secrets
-import shutil
 import threading
-import time
 import zipfile
 
 from cct_common.tokens import FORMAT_TIER, TIER_PRICE, InsufficientTokens
 
 from charging import charges, design_matches
+from results import save_result
 
-BUNDLE_TTL_S = 3600
 MAX_FILES = 40
 _SAFE = re.compile(r"[^A-Za-z0-9._+-]+")
 
@@ -58,21 +55,7 @@ def register_bundle_routes(app, *, log_dir: str, record_trial, create_job, start
     """record_trial(body) consumes the weekly-trial token when tokens are off;
     run_inline() says whether to run the job in the request (tests, desktop);
     guard wraps the start route (the app's queue-session check)."""
-    from flask import jsonify, request, send_file
-
-    root = os.path.join(log_dir, "bundles")
-
-    def _purge_old():
-        if not os.path.isdir(root):
-            return
-        cutoff = time.time() - BUNDLE_TTL_S
-        for d in os.listdir(root):
-            p = os.path.join(root, d)
-            try:
-                if os.path.getmtime(p) < cutoff:
-                    shutil.rmtree(p, ignore_errors=True)
-            except OSError:
-                pass
+    from flask import jsonify, request
 
     def start_bundle():
         body = request.get_json(silent=True) or {}
@@ -147,13 +130,8 @@ def register_bundle_routes(app, *, log_dir: str, record_trial, create_job, start
                             seen.add(fname)
                             z.writestr(fname, r.get_data())
                             update_progress(job.id, int(100 * (i + 1) / (len(planned) + 1)))
-                    _purge_old()
-                    token = secrets.token_urlsafe(24)
-                    folder = os.path.join(root, token)
-                    os.makedirs(folder, exist_ok=True)
-                    with open(os.path.join(folder, name + ".zip"), "wb") as fh:
-                        fh.write(buf.getvalue())
-                finish_job(job.id, output_file=f"/download/bundle/{token}/{name}.zip")
+                    url = save_result(log_dir, buf.getvalue(), name + ".zip")
+                finish_job(job.id, output_file=url)
             except InsufficientTokens as e:
                 finish_job(job.id, error=f"Not enough tokens: needs {e.needed}, you have {e.balance}.")
             except Exception as e:
@@ -167,15 +145,5 @@ def register_bundle_routes(app, *, log_dir: str, record_trial, create_job, start
             threading.Thread(target=build, daemon=True).start()
         return jsonify({"job_id": job.id, "status_url": f"/api/download-status/{job.id}"})
 
-    def fetch_bundle(token, name):
-        if not re.fullmatch(r"[A-Za-z0-9_-]{20,64}", token):
-            return "Not found", 404
-        path = os.path.join(root, token, os.path.basename(name) + ".zip")
-        if not os.path.isfile(path):
-            return "This download has expired — download it again from the page.", 404
-        return send_file(path, mimetype="application/zip", as_attachment=True,
-                         download_name=os.path.basename(name) + ".zip")
-
     app.add_url_rule("/api/download/bundle", endpoint="api_download_bundle",
                      view_func=guard(start_bundle), methods=["POST"])
-    app.add_url_rule("/download/bundle/<token>/<name>.zip", view_func=fetch_bundle)

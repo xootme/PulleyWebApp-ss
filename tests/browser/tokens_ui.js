@@ -35,7 +35,7 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
 function newestZip() {
   const out = execFileSync(PY, ['-c', `
 import glob, os, zipfile, json
-zs = sorted(glob.glob(os.path.join(r"${LOGDIR}", "bundles", "*", "*.zip")), key=os.path.getmtime)
+zs = sorted(glob.glob(os.path.join(r"${LOGDIR}", "results", "*", "*.zip")), key=os.path.getmtime)
 print(json.dumps(sorted(zipfile.ZipFile(zs[-1]).namelist()) if zs else []))`]).toString();
   return JSON.parse(out);
 }
