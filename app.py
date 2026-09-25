@@ -3866,6 +3866,7 @@ register_licensing_routes(
 # charging and the UI are all done. See accounts_setup.py.
 from accounts_setup import (
     init_accounts, make_backup_alert, make_email_sender, make_inactivity_notify,
+    make_limit_notify,
 )
 from cct_common.deploy_mode import is_live as _cc_is_live
 
@@ -3891,9 +3892,14 @@ _accounts_state = init_accounts(
     inactivity_notify=None if os.environ.get('PULLEY_TESTING') else make_inactivity_notify(
         _accounts_email, app_name='CheapCAD Tools',
         site_url=os.environ.get('SITE_URL', 'https://cheapcadtools.com/tools/pulleys')),
+    # Daily token limit on each add-in/agent token (blank: no limit by default).
+    device_daily_budget=(int(os.environ['TOKENS_DEVICE_DAILY_BUDGET'])
+                         if os.environ.get('TOKENS_DEVICE_DAILY_BUDGET', '').strip()
+                         else 100),
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
-               buy_url=os.environ.get('TOKENS_BUY_URL', '').strip())
+               buy_url=os.environ.get('TOKENS_BUY_URL', '').strip(),
+               limit_notify=make_limit_notify(_accounts_email, app_name='CheapCAD Tools'))
 
 # Finished background downloads live at unguessable, expiring links —
 # see results.py (replaces the old /download/<job_id>.step).

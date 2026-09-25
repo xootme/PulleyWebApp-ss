@@ -322,3 +322,57 @@ def test_bundle_with_tokens_off_needs_no_sign_in(client, monkeypatch):
     status = client.get(r.get_json()['status_url']).get_json()
     assert status['status'] == 'done'
     assert _zip_names(client, status)[0].endswith('.svg')
+
+
+# ── daily limits on add-in/agent tokens ───────────────────────────────────
+
+@pytest.fixture
+def agent(paid, monkeypatch):
+    """A device token with a daily limit of 4, and a record of limit emails."""
+    accounts = charges.state.accounts
+    token = accounts.create_session(paid.acct, kind='device', label='Claude MCP', daily_budget=4)
+    emails = []
+    monkeypatch.setattr(charges, 'limit_notify', lambda *a: emails.append(a) or True)
+    paid.agent = {'Authorization': f'Bearer {token}'}
+    paid.emails = emails
+    return paid
+
+
+def test_agent_stops_at_its_daily_limit_and_emails_once(agent):
+    ok = agent.client.get(f'/download/step?{Q}', headers=agent.agent)
+    assert ok.status_code == 200 and ok.headers['X-CCT-Tokens-Charged'] == '3'
+    r = agent.client.get('/download/stl?family=HTD&pitch=5M&teeth=30&bore=8&belt_height=10',
+                         headers=agent.agent)
+    body = r.get_json()
+    assert r.status_code == 429 and body['code'] == 'DAILY_LIMIT_REACHED'
+    assert (body['budget'], body['spent'], body['needed']) == (4, 3, 2)
+    assert body['settings_url'].endswith('/account/devices')
+    assert agent.balance() == 7                                   # nothing charged
+    agent.client.get('/download/stl?family=HTD&pitch=5M&teeth=31&bore=8&belt_height=10',
+                     headers=agent.agent)
+    assert len(agent.emails) == 1                                 # one email, not one per refusal
+    email, label, budget, url = agent.emails[0]
+    assert (email, label, budget) == ('a@example.com', 'Claude MCP', 4)
+
+
+def test_browser_session_has_no_limit(agent):
+    web = charges.state.accounts.create_session(agent.acct, kind='web')
+    c = agent.client.application.test_client()
+    c.set_cookie('cct_session', web)
+    for teeth in (20, 21, 22):                                    # 9 tokens, past any agent limit of 4
+        r = c.get(f'/download/step?family=HTD&pitch=5M&teeth={teeth}&bore=8&belt_height=10')
+        assert r.status_code == 200
+    assert agent.balance() == 1
+
+
+def test_agent_limit_refuses_background_jobs_and_zips_up_front(agent, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    agent.client.get(f'/download/step?{Q}', headers=agent.agent)  # 3 of 4 used
+    r = agent.client.post('/api/download/step-async', headers=agent.agent,
+                          json={'family': 'HTD', 'pitch': '5M', 'teeth': '33', 'bore': '8'})
+    assert r.status_code == 429 and 'job_id' not in r.get_json()
+    did = charges.designs.register(agent.acct, dict(DESIGN, teeth='34'))
+    r = agent.client.post('/api/download/bundle', headers=agent.agent, json={
+        'design_id': did, 'name': 'x',
+        'files': [{'path': '/download/step', 'params': dict(P, teeth='34')}]})
+    assert r.status_code == 429

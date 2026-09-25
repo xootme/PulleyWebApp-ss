@@ -64,6 +64,18 @@ FREE_KINDS = frozenset({"signup", "referral", "promo"})
 _CONSUMING_KINDS = ("spend", "refund", "expire")
 
 
+BUDGET_WINDOW_S = 24 * 60 * 60     # a device token's daily limit is over a rolling 24 h
+
+
+class BudgetReached(Exception):
+    """Raised by TokenStore.charge when a device token's daily limit would be
+    passed. The customer sets the limit; it stops that token only."""
+
+    def __init__(self, budget: int, spent: int, needed: int):
+        super().__init__(f"daily limit {budget} reached ({spent} spent, {needed} more needed)")
+        self.budget, self.spent, self.needed = budget, spent, needed
+
+
 class InsufficientTokens(Exception):
     """Raised by TokenStore.charge when the balance can't cover the cost."""
 
@@ -143,6 +155,9 @@ class TokenStore(SqliteDB):
         self._clock = clock
         self.unlock_window_s = unlock_window_s
         super().__init__(path, _SCHEMA)
+        # Which session (browser or add-in/agent token) made a spend — for
+        # per-token spending and daily limits. Older databases lack it.
+        self._ensure_columns("ledger", {"session_id": "INTEGER"})
 
     @staticmethod
     def _balance(db, account_id: str) -> int:
@@ -280,27 +295,51 @@ class TokenStore(SqliteDB):
         with self._read() as db:
             return self._quote(db, account_id, key, fmt, self._clock())
 
+    @staticmethod
+    def _session_spent(db, session_id: int, now: float) -> int:
+        row = db.execute(
+            """SELECT COALESCE(SUM(amount), 0) FROM ledger
+               WHERE session_id = ? AND kind IN ('spend', 'refund') AND ts > ?""",
+            (session_id, now - BUDGET_WINDOW_S)).fetchone()
+        return -int(row[0])
+
+    def spent_by_session(self, session_id: int) -> int:
+        """Tokens a session spent in the last 24 hours, net of refunds."""
+        with self._read() as db:
+            return self._session_spent(db, session_id, self._clock())
+
     @contextmanager
     def charge(self, account_id: str, key: str, fmt: str, *,
-               detail: Optional[str] = None) -> Iterator[Quote]:
+               detail: Optional[str] = None, session_id: Optional[int] = None,
+               daily_budget: Optional[int] = None) -> Iterator[Quote]:
         """Charge for one download around the code that generates it.
 
         Takes the tokens up front (raising InsufficientTokens, with nothing
         recorded, if the balance can't cover it), then refunds them if the
         body raises — so a failed export is free and doesn't unlock the
         design. A download that's already unlocked costs 0 and is logged
-        only once it succeeds."""
+        only once it succeeds.
+
+        session_id records which session spent; with daily_budget (a device
+        token's limit) the charge raises BudgetReached instead of taking the
+        session past that many tokens in 24 hours. Checked inside the same
+        write lock as the spend, so parallel requests can't slip past it."""
         with self._write() as db:
-            q = self._quote(db, account_id, key, fmt, self._clock())
+            now = self._clock()
+            q = self._quote(db, account_id, key, fmt, now)
             spend_id = None
             if q.cost:
+                if daily_budget is not None and session_id is not None:
+                    spent = self._session_spent(db, session_id, now)
+                    if spent + q.cost > daily_budget:
+                        raise BudgetReached(daily_budget, spent, q.cost)
                 bal = self._balance(db, account_id)
                 if bal < q.cost:
                     raise InsufficientTokens(q.cost, bal)
                 cur = db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail)
-                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?)""",
-                    (account_id, self._clock(), -q.cost, key, q.tier, q.fmt, detail))
+                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id)
+                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?, ?)""",
+                    (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id))
                 spend_id = cur.lastrowid
         try:
             yield q
@@ -311,9 +350,9 @@ class TokenStore(SqliteDB):
         if spend_id is None:
             with self._write() as db:
                 db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail)
-                       VALUES (?, ?, 'download', 0, ?, ?, ?, ?)""",
-                    (account_id, self._clock(), key, q.tier, q.fmt, detail))
+                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id)
+                       VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?)""",
+                    (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id))
 
     def refund(self, spend_id: int, *, detail: Optional[str] = None) -> bool:
         """Reverse one spend: returns its tokens and removes the unlock it
@@ -325,10 +364,10 @@ class TokenStore(SqliteDB):
                 raise KeyError(spend_id)
             try:
                 db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, ref, design_key, tier, fmt, detail)
-                       VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO ledger (account_id, ts, kind, amount, ref, design_key, tier, fmt, detail, session_id)
+                       VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?)""",
                     (row["account_id"], self._clock(), -row["amount"], f"spend:{spend_id}",
-                     row["design_key"], row["tier"], row["fmt"], detail))
+                     row["design_key"], row["tier"], row["fmt"], detail, row["session_id"]))
             except sqlite3.IntegrityError:
                 return False
         return True

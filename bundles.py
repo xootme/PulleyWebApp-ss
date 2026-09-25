@@ -30,7 +30,7 @@ import re
 import threading
 import zipfile
 
-from cct_common.tokens import FORMAT_TIER, TIER_PRICE, InsufficientTokens
+from cct_common.tokens import FORMAT_TIER, TIER_PRICE, BudgetReached, InsufficientTokens
 
 from charging import charges, design_matches
 from results import save_result
@@ -94,11 +94,9 @@ def register_bundle_routes(app, *, log_dir: str, record_trial, create_job, start
             for path, params in planned:
                 if not design_matches(params, design):
                     return jsonify({"error": f"{path} isn't part of this design"}), 400
-            quote = charges.state.tokens.quote(acct, did, top)
-            balance = charges.state.tokens.balance(acct)
-            if quote.cost > balance:
-                return charges._short_of_tokens(InsufficientTokens(quote.cost, balance))
-            context = (acct, did, top)
+            context, refusal = charges.begin_design(did, top)
+            if refusal:
+                return refusal
         else:
             record_trial(body)
 
@@ -134,6 +132,8 @@ def register_bundle_routes(app, *, log_dir: str, record_trial, create_job, start
                 finish_job(job.id, output_file=url)
             except InsufficientTokens as e:
                 finish_job(job.id, error=f"Not enough tokens: needs {e.needed}, you have {e.balance}.")
+            except BudgetReached as e:
+                finish_job(job.id, error=f"This add-in reached its daily limit of {e.budget} tokens.")
             except Exception as e:
                 finish_job(job.id, error=str(e))
             finally:

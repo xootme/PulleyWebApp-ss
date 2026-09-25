@@ -61,6 +61,15 @@ class SqliteDB:
         finally:
             db.close()
 
+    def _ensure_columns(self, table: str, columns: dict) -> None:
+        """Add columns that a newer version of a schema introduced to a
+        database created by an older one ({name: "TYPE ..."})."""
+        with self._write() as db:
+            have = {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}
+            for name, decl in columns.items():
+                if name not in have:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
     def integrity_check(self) -> list[str]:
         """Problems SQLite finds in the file; an empty list means healthy.
         Run at startup and refuse to charge if it isn't empty."""

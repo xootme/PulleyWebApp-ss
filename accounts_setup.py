@@ -81,6 +81,25 @@ def make_inactivity_notify(email_sender: Callable, *, app_name: str, site_url: s
     return notify
 
 
+def make_limit_notify(email_sender: Callable, *, app_name: str):
+    """The email when an add-in/agent token reaches its daily limit — says
+    what happened and exactly how to change or remove the limit."""
+    def notify(email: str, label: str, budget: int, settings_url: str) -> bool:
+        subject = f"{label} reached its daily limit on {app_name}"
+        body = (f"Hi,\n\n\"{label}\" has spent {budget} tokens in the last 24 hours, which is the "
+                f"daily limit set for it, so its downloads are paused until its spending over the "
+                f"last 24 hours drops below the limit. Downloads you make in the browser aren't "
+                f"affected.\n\n"
+                f"To raise the limit or turn it off:\n"
+                f"  1. Open {settings_url} and sign in if asked.\n"
+                f"  2. Find \"{label}\" in the list of connected add-ins.\n"
+                f"  3. Choose a new daily limit, or \"No limit\", and press Save.\n\n"
+                f"If you don't recognise this add-in, press Disconnect on that page instead.\n")
+        ok, _ = email_sender(email, subject, body)
+        return bool(ok)
+    return notify
+
+
 def start_housekeeping(accounts, notify, logger, *, interval_s: float = 24 * 3600,
                        first_delay_s: float = 120) -> threading.Event:
     """Run accounts.housekeeping(notify) daily in a daemon thread. A failure
@@ -112,7 +131,8 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   backup_upload: Callable[[str], None] | None = None,
                   backup_interval_s: float = 3600,
                   backup_first_delay_s: float = 30,
-                  inactivity_notify: Callable | None = None) -> AccountsState:
+                  inactivity_notify: Callable | None = None,
+                  device_daily_budget: int | None = 100) -> AccountsState:
     """backup_dir=None means no scheduled backups (tests). backup_upload
     is the off-server copy — the Azure Blob Storage upload once hosting
     moves (ADR-008). inactivity_notify starts the daily inactivity run
@@ -149,7 +169,8 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                                 "code": "ACCOUNTS_UNAVAILABLE"}), 503
         return state
 
-    accounts = AccountStore(tokens, signup_grant=signup_grant)
+    accounts = AccountStore(tokens, signup_grant=signup_grant,
+                            device_daily_budget=device_daily_budget)
     register_account_routes(app, accounts, email_sender=email_sender,
                             app_name=app_name, secure_cookies=live)
     state.tokens, state.accounts, state.healthy = tokens, accounts, True

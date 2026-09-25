@@ -43,6 +43,15 @@ FreeCAD, SolidWorks and the web.
   purchase, spend, refund, adjust rows), so every change is auditable. The
   check-and-spend runs inside one write transaction so two workers can't both
   spend the last token.
+- **Add-ins and AI agents sign in by device code (decided 2026-09-25):** the add-in or
+  agent shows a short code, the person approves it on `/account/device` in a signed-in
+  browser, and the add-in receives its own labelled, revocable device token once.
+  **Each device token has a daily token limit, on by default (100 tokens per rolling
+  24 hours, `TOKENS_DEVICE_DAILY_BUDGET`)**, chosen at approval and changed on
+  `/account/devices`. Reaching it stops only that token (429 `DAILY_LIMIT_REACHED`) and
+  emails the owner once a day with how to raise or remove it. Browser sessions have no
+  limit, so heavy users clicking in the page are never slowed. Rationale: a runaway agent
+  is contained to a known amount, without rate-limiting anyone who wants many pulleys.
 - **Inactivity (decided 2026-09-25) — cleaning up dead accounts without taking paid value.**
   Purchased tokens never expire: paid prepaid value can fall under gift-card rules
   (federal minimum 5 years; some states, e.g. California, bar expiry) and state

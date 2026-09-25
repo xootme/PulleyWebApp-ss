@@ -25,6 +25,12 @@ design (design_matches); otherwise — or with no id at all — the download
 is priced as a design of its own. A made-up id therefore can't unlock
 anything: the parameters that shape the file must match what was paid for.
 
+DAILY LIMITS. An add-in or agent signs in with its own device token, which
+carries a daily token limit (100 by default, set by the customer on the
+approval page or /account/devices). Past it, that token's downloads get a
+429 DAILY_LIMIT_REACHED and the owner gets one email a day saying how to
+change the limit. Browser sessions have none.
+
 CHARGE, THEN REFUND ON FAILURE. The tokens are taken before generating and
 given back if the route answers with an error status — the routes catch
 their own exceptions and return error responses, so the status code, not
@@ -40,7 +46,9 @@ from contextlib import nullcontext
 from functools import wraps
 
 from cct_common.sqlite_db import SqliteDB
-from cct_common.tokens import FORMAT_TIER, TRANSIENT_KEYS, InsufficientTokens, design_key
+from cct_common.tokens import (
+    FORMAT_TIER, TRANSIENT_KEYS, BudgetReached, InsufficientTokens, design_key,
+)
 
 DESIGN_TTL_S = 30 * 24 * 3600
 
@@ -144,6 +152,7 @@ class Charges:
         self.state = None
         self.designs = None
         self.buy_url = ""
+        self.limit_notify = None   # limit_notify(email, label, budget, settings_url)
         # endpoint name -> export format, filled in by charged() and
         # begin_async() users, so a price check can find a route's format
         self.formats = {"api_download_step_async": "step",
@@ -163,9 +172,10 @@ class Charges:
     def enabled(self) -> bool:
         return bool(self.state and self.state.enabled)
 
-    def attach(self, app, state, *, buy_url: str = "") -> None:
+    def attach(self, app, state, *, buy_url: str = "", limit_notify=None) -> None:
         self.state = state
         self.buy_url = buy_url
+        self.limit_notify = limit_notify
         if not (state.enabled and state.healthy):
             return
         self.designs = DesignStore(state.tokens.path)
@@ -238,6 +248,54 @@ class Charges:
                                    "code": "SIGN_IN_REQUIRED"}), 401)
         return acct, None
 
+    @staticmethod
+    def _session() -> tuple:
+        """(session_id, daily_budget) of the signed-in session."""
+        from cct_common.account_routes import current_session
+        s = current_session() or {}
+        return s.get("id"), s.get("daily_budget")
+
+    def _limit_reached(self, e: BudgetReached, session_id):
+        """429 for a token past its daily limit — and, once a day per token,
+        an email to the owner saying how to change it."""
+        from flask import jsonify, request
+        from cct_common.account_routes import current_session
+        settings_url = f"{request.host_url}account/devices"
+        if self.limit_notify and session_id is not None:
+            try:
+                if self.state.accounts.claim_budget_notice(session_id):
+                    s = current_session() or {}
+                    email = self.state.tokens.account_email(s.get("account_id"))
+                    self.limit_notify(email, s.get("label") or "Your add-in", e.budget, settings_url)
+            except Exception:
+                pass                     # a missed email must never break the answer
+        return jsonify({"error": f"This add-in has reached its daily limit of {e.budget} tokens.",
+                        "code": "DAILY_LIMIT_REACHED", "budget": e.budget, "spent": e.spent,
+                        "needed": e.needed, "settings_url": settings_url}), 429
+
+    def _begin(self, key: str, fmt: str):
+        """The checks before a background charge: signed in, can afford it,
+        within the token's daily limit. (context, None) or (None, response)."""
+        acct, refusal = self._refusal()
+        if refusal:
+            return None, refusal
+        sid, budget = self._session()
+        tokens = self.state.tokens
+        quote = tokens.quote(acct, key, fmt)
+        if budget is not None and quote.cost:
+            spent = tokens.spent_by_session(sid)
+            if spent + quote.cost > budget:
+                return None, self._limit_reached(BudgetReached(budget, spent, quote.cost), sid)
+        balance = tokens.balance(acct)
+        if quote.cost > balance:
+            return None, self._short_of_tokens(InsufficientTokens(quote.cost, balance))
+        return (acct, key, fmt, sid, budget), None
+
+    def begin_design(self, design_id: str, fmt: str):
+        """begin_async for a whole registered design at one tier (the
+        download window's zip)."""
+        return self._begin(design_id, fmt)
+
     def design_key_for(self, params: dict) -> str:
         """The key this download is priced under — the registered design
         when the download's own parameters belong to it, else its own."""
@@ -285,13 +343,17 @@ class Charges:
                     params = dict(params, design_id=raw["design_id"])
                 key = self.design_key_for(params)
                 tokens = self.state.tokens
+                sid, budget = self._session()
                 try:
-                    with tokens.charge(acct, key, fmt, detail=request.path) as quote:
+                    with tokens.charge(acct, key, fmt, detail=request.path,
+                                       session_id=sid, daily_budget=budget) as quote:
                         resp = make_response(view(*args, **kwargs))
                         if resp.status_code >= 400:
                             raise _ExportFailed(resp)
                 except _ExportFailed as failed:
                     return failed.response          # charge already refunded
+                except BudgetReached as e:
+                    return self._limit_reached(e, sid)
                 except InsufficientTokens as e:
                     return self._short_of_tokens(e)
                 resp.headers["X-CCT-Tokens-Charged"] = str(quote.cost)
@@ -309,23 +371,16 @@ class Charges:
         front so an unaffordable job never starts)."""
         if not self.enabled:
             return None, None
-        acct, refusal = self._refusal()
-        if refusal:
-            return None, refusal
-        key = self.design_key_for(params)
-        quote = self.state.tokens.quote(acct, key, fmt)
-        balance = self.state.tokens.balance(acct)
-        if quote.cost > balance:
-            return None, self._short_of_tokens(InsufficientTokens(quote.cost, balance))
-        return (acct, key, fmt), None
+        return self._begin(self.design_key_for(params), fmt)
 
     def charge_in_job(self, context, detail: str):
         """Context manager around the job's generation: charges when it
         starts, refunds if it raises. A no-op when charging is off."""
         if context is None:
             return nullcontext()
-        acct, key, fmt = context
-        return self.state.tokens.charge(acct, key, fmt, detail=detail)
+        acct, key, fmt, sid, budget = context
+        return self.state.tokens.charge(acct, key, fmt, detail=detail,
+                                        session_id=sid, daily_budget=budget)
 
 
 charges = Charges()

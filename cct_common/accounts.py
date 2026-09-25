@@ -30,6 +30,13 @@ Security choices:
   Only a hash of the closed email is kept, so re-registering the same
   address doesn't earn the signup tokens a second time.
 
+CAD add-ins sign in with a device code (start_device_login and friends):
+the add-in shows a short code, the person approves it in a signed-in
+browser, and the add-in's polling then receives a device session token,
+once. Codes last 10 minutes; the add-in's polling secret is stored only
+as a hash; user codes use consonants only (no 0/O or 1/I mix-ups, no
+accidental words).
+
 Inactivity (housekeeping(), run daily) — a way to clear out dead accounts
 without ever taking anything a customer paid for:
 - Free tokens (signup grant, promos) expire after 2 years without a sign-in.
@@ -58,6 +65,11 @@ _YEAR_S = int(365.25 * 24 * 60 * 60)
 FREE_TOKEN_IDLE_S = 2 * _YEAR_S       # free tokens expire after this without a sign-in
 DEAD_ACCOUNT_IDLE_S = 5 * _YEAR_S     # an account with nothing bought is removed after this
 REMINDER_LEAD_S = 30 * 24 * 60 * 60   # reminder email this long before either
+DEFAULT_DEVICE_DAILY_BUDGET = 100   # tokens per rolling 24 h per add-in/agent token
+DEVICE_CODE_TTL_S = 10 * 60
+DEVICE_POLL_INTERVAL_S = 5
+DEVICE_STARTS_PER_IP_PER_HOUR = 20
+_USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ"
 PROVIDERS = frozenset({"email", "microsoft", "google", "github"})
 
 _SCHEMA = """
@@ -97,6 +109,20 @@ CREATE TABLE IF NOT EXISTS closed_emails (
     email_hash  TEXT PRIMARY KEY,
     closed_at   REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS device_codes (
+    device_hash   TEXT PRIMARY KEY,
+    user_code     TEXT NOT NULL UNIQUE,
+    label         TEXT,
+    ip            TEXT,
+    created_at    REAL NOT NULL,
+    expires_at    REAL NOT NULL,
+    last_poll_at  REAL,
+    account_id    TEXT REFERENCES accounts(id),
+    approved_at   REAL,
+    denied_at     REAL,
+    issued_at     REAL
+);
+CREATE INDEX IF NOT EXISTS device_codes_ip ON device_codes(ip, created_at);
 CREATE TABLE IF NOT EXISTS reminders (
     account_id  TEXT NOT NULL,
     kind        TEXT NOT NULL,
@@ -105,6 +131,9 @@ CREATE TABLE IF NOT EXISTS reminders (
     PRIMARY KEY (account_id, kind, idle_since)
 );
 """
+
+
+_DEFAULT = object()   # "use the store's default" (None means no limit)
 
 
 class RateLimited(Exception):
@@ -129,11 +158,20 @@ def normalize_email(email: str) -> str:
 
 class AccountStore(SqliteDB):
     def __init__(self, tokens: TokenStore, *, signup_grant: int = 0,
-                 clock: Optional[Callable[[], float]] = None):
+                 clock: Optional[Callable[[], float]] = None,
+                 device_daily_budget: Optional[int] = DEFAULT_DEVICE_DAILY_BUDGET):
+        """device_daily_budget: the daily token limit a new add-in/agent
+        token gets unless the person picks another (None: no limit)."""
         self.tokens = tokens
         self.signup_grant = signup_grant
+        self.device_daily_budget = device_daily_budget
         self._clock = clock or tokens._clock
         super().__init__(tokens.path, _SCHEMA)
+        # Daily limits on add-in/agent tokens. Older databases lack these.
+        self._ensure_columns("sessions", {"daily_budget": "INTEGER",
+                                          "budget_notified_at": "REAL"})
+        self._ensure_columns("device_codes", {"daily_budget": "INTEGER",
+                                              "budget_chosen": "INTEGER NOT NULL DEFAULT 0"})
 
     # ── identities ────────────────────────────────────────────────────────
 
@@ -239,31 +277,69 @@ class AccountStore(SqliteDB):
     # ── sessions (browser cookies and add-in device tokens) ───────────────
 
     def create_session(self, account_id: str, *, kind: str = "web",
-                       label: Optional[str] = None) -> str:
+                       label: Optional[str] = None, daily_budget=_DEFAULT) -> str:
+        """daily_budget applies to device sessions only (add-ins, agents):
+        the store's default unless given; None means no limit. Browser
+        sessions never have one."""
         if kind not in SESSION_TTL_S:
             raise ValueError(f"unknown session kind: {kind!r}")
+        budget = None
+        if kind == "device":
+            budget = self.device_daily_budget if daily_budget is _DEFAULT else daily_budget
         token = secrets.token_urlsafe(32)
         now = self._clock()
         with self._write() as db:
             db.execute(
-                """INSERT INTO sessions (token_hash, account_id, kind, label, created_at, last_used_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO sessions (token_hash, account_id, kind, label, created_at, last_used_at,
+                                         expires_at, daily_budget)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (_hash(token), account_id, kind, (label or "")[:80], now, now,
-                 now + SESSION_TTL_S[kind]))
+                 now + SESSION_TTL_S[kind], budget))
         return token
 
-    def session_account(self, token: Optional[str]) -> Optional[str]:
-        """Account id for a live session token, else None."""
+    def session_info(self, token: Optional[str]) -> Optional[dict]:
+        """The live session for a token — id, account_id, kind, label,
+        daily_budget — else None. Marks it used."""
         if not token:
             return None
         now = self._clock()
         with self._write() as db:
-            row = db.execute("SELECT id, account_id, expires_at, revoked_at FROM sessions WHERE token_hash = ?",
-                             (_hash(token),)).fetchone()
+            row = db.execute(
+                """SELECT id, account_id, kind, label, daily_budget, expires_at, revoked_at
+                   FROM sessions WHERE token_hash = ?""", (_hash(token),)).fetchone()
             if not row or row["revoked_at"] is not None or row["expires_at"] < now:
                 return None
             db.execute("UPDATE sessions SET last_used_at = ? WHERE id = ?", (now, row["id"]))
-            return row["account_id"]
+        return {k: row[k] for k in ("id", "account_id", "kind", "label", "daily_budget")}
+
+    def session_account(self, token: Optional[str]) -> Optional[str]:
+        """Account id for a live session token, else None."""
+        info = self.session_info(token)
+        return info["account_id"] if info else None
+
+    def set_session_budget(self, account_id: str, session_id: int, budget: Optional[int]) -> bool:
+        """Change (or, with None, remove) the daily limit of one of this
+        account's add-in/agent tokens. False if it isn't theirs or is gone."""
+        if budget is not None and budget < 0:
+            raise ValueError("a daily limit can't be negative")
+        with self._write() as db:
+            cur = db.execute(
+                """UPDATE sessions SET daily_budget = ?, budget_notified_at = NULL
+                   WHERE id = ? AND account_id = ? AND kind = 'device' AND revoked_at IS NULL""",
+                (budget, session_id, account_id))
+            return cur.rowcount == 1
+
+    def claim_budget_notice(self, session_id: int) -> bool:
+        """True once per 24 hours per token: whether to email the owner that
+        the token hit its daily limit (so a busy agent sends one email, not
+        one per refused request)."""
+        now = self._clock()
+        with self._write() as db:
+            cur = db.execute(
+                """UPDATE sessions SET budget_notified_at = ?
+                   WHERE id = ? AND (budget_notified_at IS NULL OR budget_notified_at < ?)""",
+                (now, session_id, now - 24 * 3600))
+            return cur.rowcount == 1
 
     def session_id(self, token: str) -> Optional[int]:
         with self._read() as db:
@@ -288,10 +364,15 @@ class AccountStore(SqliteDB):
         now = self._clock()
         with self._read() as db:
             rows = db.execute(
-                """SELECT id, kind, label, created_at, last_used_at, expires_at FROM sessions
+                """SELECT id, kind, label, created_at, last_used_at, expires_at, daily_budget FROM sessions
                    WHERE account_id = ? AND revoked_at IS NULL AND expires_at > ?
                    ORDER BY last_used_at DESC""", (account_id, now)).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["spent_24h"] = self.tokens.spent_by_session(d["id"])
+            out.append(d)
+        return out
 
     # ── inactivity ────────────────────────────────────────────────────────
 
@@ -371,6 +452,106 @@ class AccountStore(SqliteDB):
                              (a["id"], kind, a["last"])).fetchone()
         return bool(row) and self._clock() - row["sent_at"] >= REMINDER_LEAD_S
 
+    # ── add-in sign-in (device code) ──────────────────────────────────────
+
+    @staticmethod
+    def normalize_user_code(code: str) -> str:
+        """'bcdf ghjk', 'BCDF-GHJK' -> 'BCDF-GHJK' (as shown to the person)."""
+        c = "".join(ch for ch in (code or "").upper() if ch in _USER_CODE_ALPHABET)
+        return f"{c[:4]}-{c[4:]}" if len(c) == 8 else ""
+
+    def start_device_login(self, *, label: str = "", ip: Optional[str] = None) -> dict:
+        """Begin an add-in sign-in. Returns the add-in's secret device_code
+        (poll with it) and the user_code to show the person. Raises
+        RateLimited past DEVICE_STARTS_PER_IP_PER_HOUR."""
+        now = self._clock()
+        device_code = secrets.token_urlsafe(32)
+        with self._write() as db:
+            if ip and db.execute("SELECT COUNT(*) FROM device_codes WHERE ip = ? AND created_at > ?",
+                                 (ip, now - 3600)).fetchone()[0] >= DEVICE_STARTS_PER_IP_PER_HOUR:
+                raise RateLimited()
+            while True:
+                raw = "".join(secrets.choice(_USER_CODE_ALPHABET) for _ in range(8))
+                user_code = f"{raw[:4]}-{raw[4:]}"
+                if not db.execute("SELECT 1 FROM device_codes WHERE user_code = ?", (user_code,)).fetchone():
+                    break
+            db.execute(
+                """INSERT INTO device_codes (device_hash, user_code, label, ip, created_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (_hash(device_code), user_code, (label or "CAD add-in")[:80], ip, now,
+                 now + DEVICE_CODE_TTL_S))
+        return {"device_code": device_code, "user_code": user_code,
+                "expires_in": DEVICE_CODE_TTL_S, "interval": DEVICE_POLL_INTERVAL_S}
+
+    def device_request(self, user_code: str) -> Optional[dict]:
+        """What the approval page shows for a code: its label and state
+        ("pending", "approved", "denied", "expired"). None if unknown."""
+        code = self.normalize_user_code(user_code)
+        if not code:
+            return None
+        with self._read() as db:
+            row = db.execute("SELECT * FROM device_codes WHERE user_code = ?", (code,)).fetchone()
+        if not row:
+            return None
+        return {"user_code": code, "label": row["label"], "state": self._device_state(row)}
+
+    def _device_state(self, row) -> str:
+        if row["denied_at"] is not None:
+            return "denied"
+        if row["approved_at"] is not None:
+            return "approved"
+        if row["expires_at"] < self._clock():
+            return "expired"
+        return "pending"
+
+    def decide_device(self, user_code: str, account_id: str, *, approve: bool,
+                      daily_budget=_DEFAULT) -> bool:
+        """The signed-in person approves (or denies) a pending code, and may
+        pick the token's daily limit (None: no limit; default: the store's).
+        False if the code is unknown, expired or already decided."""
+        code = self.normalize_user_code(user_code)
+        now = self._clock()
+        with self._write() as db:
+            row = db.execute("SELECT * FROM device_codes WHERE user_code = ?", (code,)).fetchone()
+            if not row or self._device_state(row) != "pending":
+                return False
+            if approve:
+                chosen = daily_budget is not _DEFAULT
+                db.execute(
+                    """UPDATE device_codes SET account_id = ?, approved_at = ?, daily_budget = ?,
+                                               budget_chosen = ? WHERE user_code = ?""",
+                    (account_id, now, daily_budget if chosen else None, 1 if chosen else 0, code))
+            else:
+                db.execute("UPDATE device_codes SET denied_at = ? WHERE user_code = ?", (now, code))
+        return True
+
+    def poll_device(self, device_code: str) -> tuple[str, Optional[str]]:
+        """The add-in's poll. Returns (status, token): "pending", "slow_down"
+        (polled faster than the interval), "denied", "expired", "invalid",
+        or "approved" with the device session token — handed out once; the
+        code is spent after that."""
+        now = self._clock()
+        with self._write() as db:
+            row = db.execute("SELECT * FROM device_codes WHERE device_hash = ?",
+                             (_hash(device_code or ""),)).fetchone()
+            if not row or row["issued_at"] is not None:
+                return "invalid", None
+            state = self._device_state(row)
+            if state == "pending":
+                too_fast = (row["last_poll_at"] is not None
+                            and now - row["last_poll_at"] < DEVICE_POLL_INTERVAL_S - 0.5)
+                db.execute("UPDATE device_codes SET last_poll_at = ? WHERE device_hash = ?",
+                           (now, row["device_hash"]))
+                return ("slow_down" if too_fast else "pending"), None
+            if state != "approved":
+                return state, None
+            db.execute("UPDATE device_codes SET issued_at = ? WHERE device_hash = ?",
+                       (now, row["device_hash"]))
+            account_id, label = row["account_id"], row["label"]
+            budget = row["daily_budget"] if row["budget_chosen"] else _DEFAULT
+        return "approved", self.create_session(account_id, kind="device", label=label,
+                                               daily_budget=budget)
+
     # ── deletion and housekeeping ─────────────────────────────────────────
 
     def delete_account(self, account_id: str) -> None:
@@ -396,5 +577,6 @@ class AccountStore(SqliteDB):
         now = self._clock()
         with self._write() as db:
             db.execute("DELETE FROM login_links WHERE created_at < ?", (now - 24 * 3600,))
+            db.execute("DELETE FROM device_codes WHERE created_at < ?", (now - 24 * 3600,))
             db.execute("DELETE FROM sessions WHERE expires_at < ? OR revoked_at < ?",
                        (now - 30 * 24 * 3600, now - 30 * 24 * 3600))

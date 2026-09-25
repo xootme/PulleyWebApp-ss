@@ -33,11 +33,20 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] When switching it on in production: set `TOKENS_ENABLED=1`, `CCT_ACCOUNTS_MODE=live` (Secure cookies; never logs sign-in links) and `RESEND_API_KEY` together
 - [x] Sign-in UI in the page (email box, account box with balance, sign out) — see Charging exports
 - [ ] OAuth sign-in (Microsoft, Google, GitHub) on `AccountStore.sign_in`
-- [ ] Add-in device sign-in (device-code flow: add-in shows a code, user approves in the browser, add-in receives a device token)
+- [x] Add-in / AI-agent device sign-in (cct_common 0.10.0, `ea50d87`): `POST /api/account/device/start` + `/poll`, approval page `/account/device` (signs in by email first if needed); 10-minute consonant-only codes, polling secret hashed, token issued once, slow-down on fast polling, per-IP rate limit
+- [x] Daily token limit per device token, on by default (100 / rolling 24 h, `TOKENS_DEVICE_DAILY_BUDGET`): chosen at approval, changed or removed on `/account/devices` (which also shows each token's 24-h spend and disconnects it); past it that token gets 429 `DAILY_LIMIT_REACHED` and the owner one email a day saying how to change it; browser sessions unlimited
+- [ ] Fusion/FreeCAD add-ins: with the hosted app the server can't copy files into `Downloads/CCT_Import` — have the add-ins watch the Downloads folder for CCT-marked files and unpack the download window's zips (test in Fusion)
+- [ ] AI agents: headless API + OpenAPI (see Agent / Headless API Access), then an MCP server using device-code sign-in; list it in MCP registries
 - [ ] GitHub: no ID token — fetch the user from the API; request `user:email` and take the verified primary address from `/user/emails`
 - [ ] Register OAuth apps (owner action, all free): Microsoft Entra admin center; Google Cloud Console; GitHub → Settings → Developer settings → OAuth Apps
 - [x] Charge-at-download checkboxes: a STEP purchase offers the included STL/SVG/DXF
 - [ ] WooCommerce pack purchase → webhook credits the account (reuse the HMAC-verified webhook pattern in `cct_common.licensing`)
+- [ ] **PayPal Micropayments for packs of $5 and under** (decided 2026-09-25; business PayPal account already exists). Rate 4.99% + 9¢ vs standard 2.9%/3.49% + 30–49¢ — on a $5 pack about 34¢ instead of 45–66¢
+  - [ ] Owner: apply for Micropayments pricing on the business account (it's opt-in and must be approved)
+  - [ ] Owner: check whether the rate applies to *every* payment on that account — it's worse than standard above ~$12, so larger packs may need a second PayPal account or to go through Stripe/standard PayPal
+  - [ ] PayPal Checkout (JS SDK buttons + Orders API) on the buy page for the small packs; larger packs through the other processor
+  - [ ] Webhook `PAYMENT.CAPTURE.COMPLETED` → verify PayPal's webhook signature → `TokenStore.credit(kind="purchase", ref="paypal:<capture id>")` (idempotent, so a retried webhook can't credit twice); refunds/chargebacks → negative `adjust`
+  - [ ] Test end to end in the PayPal sandbox before going live; set `TOKENS_BUY_URL` to the buy page
 - [ ] Account page: balance, purchase history, per-export history
 - [ ] Admin dashboard: balances, grants/refunds, sales
 - [x] Inactivity (ADR-008, cct_common 0.9.0, `6647737`): free tokens expire after 2 years without a sign-in (spent first; purchased never expire); accounts with no purchased tokens close after 5 years; 30-day reminder emails first; any sign-in resets; daily run in `accounts_setup.py`; notice in the sign-in and buy dialogs and on the balance
