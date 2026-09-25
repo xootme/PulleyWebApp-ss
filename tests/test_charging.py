@@ -237,3 +237,88 @@ def test_402_carries_the_buy_link(mini):
     mini.tokens.credit(mini.acct, -9, kind='adjust')
     r = mini.c.get('/download/stl?family=HTD&pitch=5M&teeth=20&bore=8', headers=mini.auth)
     assert r.status_code == 402 and r.get_json()['buy_url'] == 'https://shop.example/tokens'
+
+
+# ── the download window's zip (bundles.py) ────────────────────────────────
+
+P = {'family': 'HTD', 'pitch': '5M', 'teeth': '20', 'bore': '8', 'belt_height': '10'}
+
+
+def _bundle(paid, files, design_id=None):
+    return paid.client.post('/api/download/bundle', headers=paid.auth, json={
+        'design_id': design_id or paid.design_id, 'name': 'HTD-5M-20T', 'files': files})
+
+
+def _zip_names(client, status):
+    import io
+    import zipfile
+    r = client.get(status['output_file'])
+    assert r.status_code == 200 and r.mimetype == 'application/zip'
+    return sorted(zipfile.ZipFile(io.BytesIO(r.data)).namelist())
+
+
+def test_bundle_is_one_charge_at_the_highest_tier(paid, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    r = _bundle(paid, [{'path': '/download/step', 'params': P},
+                       {'path': '/download/stl', 'params': P},
+                       {'path': '/download/svg', 'params': dict(P, include_data='1')}])
+    assert r.status_code == 200, r.data[:300]
+    status = paid.client.get(r.get_json()['status_url']).get_json()
+    assert status['status'] == 'done', status
+    names = _zip_names(paid.client, status)
+    assert [n.rsplit('.', 1)[1] for n in names] == ['step', 'stl', 'svg']
+    spends = [h for h in paid.tokens.history(paid.acct) if h['kind'] == 'spend']
+    assert [(s['amount'], s['fmt']) for s in spends] == [(-3, 'step')]
+    assert paid.balance() == 7
+
+
+def test_bundle_of_drawings_costs_one(paid, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    r = _bundle(paid, [{'path': '/download/svg', 'params': P}, {'path': '/download/dxf', 'params': P}])
+    assert paid.client.get(r.get_json()['status_url']).get_json()['status'] == 'done'
+    assert paid.balance() == 9
+
+
+def test_bundle_refuses_files_from_another_design(paid, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    r = _bundle(paid, [{'path': '/download/svg', 'params': dict(P, teeth='30')}])
+    assert r.status_code == 400 and paid.balance() == 10
+
+
+def test_bundle_refuses_non_downloads_and_unknown_designs(paid):
+    assert _bundle(paid, [{'path': '/api/account', 'params': {}}]).status_code == 400
+    assert _bundle(paid, []).status_code == 400
+    assert _bundle(paid, [{'path': '/download/svg', 'params': P}], design_id='0' * 32).status_code == 400
+
+
+def test_bundle_refused_up_front_when_unaffordable(paid, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    paid.tokens.credit(paid.acct, -8, kind='adjust')     # balance 2
+    r = _bundle(paid, [{'path': '/download/step', 'params': P}])
+    assert r.status_code == 402 and 'job_id' not in r.get_json()
+
+
+def test_bundle_failure_refunds_everything(paid, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    bad = dict(P, family='BOGUS')
+    paid.designs = charges.designs
+    did = charges.designs.register(paid.acct, dict(DESIGN, family='BOGUS'))
+    r = _bundle(paid, [{'path': '/download/svg', 'params': dict(P, family='BOGUS')},
+                       {'path': '/download/step', 'params': bad}], design_id=did)
+    status = paid.client.get(r.get_json()['status_url']).get_json()
+    assert status['status'] == 'failed'
+    assert paid.balance() == 10
+
+
+def test_forged_internal_header_gets_no_free_download(paid):
+    r = paid.client.get(f'/download/svg?{Q}', headers={'X-CCT-Internal': 'guess'})
+    assert r.status_code == 401
+
+
+def test_bundle_with_tokens_off_needs_no_sign_in(client, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    r = client.post('/api/download/bundle', json={
+        'name': 'x', 'files': [{'path': '/download/svg', 'params': P}]})
+    status = client.get(r.get_json()['status_url']).get_json()
+    assert status['status'] == 'done'
+    assert _zip_names(client, status)[0].endswith('.svg')

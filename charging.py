@@ -34,12 +34,13 @@ from __future__ import annotations
 
 import json
 import math
+import secrets
 import time
 from contextlib import nullcontext
 from functools import wraps
 
 from cct_common.sqlite_db import SqliteDB
-from cct_common.tokens import TRANSIENT_KEYS, InsufficientTokens, design_key
+from cct_common.tokens import FORMAT_TIER, TRANSIENT_KEYS, InsufficientTokens, design_key
 
 DESIGN_TTL_S = 30 * 24 * 3600
 
@@ -147,6 +148,16 @@ class Charges:
         # begin_async() users, so a price check can find a route's format
         self.formats = {"api_download_step_async": "step",
                         "api_download_all_step_async": "step"}
+        # Marks the zip job's own calls to the download routes (bundles.py):
+        # they are part of one already-charged purchase, so they skip the
+        # per-route charge, the queue-session check and add-in mirroring.
+        # Random per process and never sent to a browser.
+        self.internal_secret = secrets.token_hex(32)
+
+    def is_internal(self) -> bool:
+        from flask import has_request_context, request
+        return has_request_context() and secrets.compare_digest(
+            request.headers.get("X-CCT-Internal", ""), self.internal_secret)
 
     @property
     def enabled(self) -> bool:
@@ -182,6 +193,17 @@ class Charges:
             if not acct:
                 return jsonify({"error": "sign in required", "code": "SIGN_IN_REQUIRED"}), 401
             data = request.get_json(silent=True) or {}
+            if data.get("fmt"):
+                # A whole-design price (the download window's zip): the
+                # registered design at the highest tier ticked.
+                did = str(data.get("design_id") or "")
+                if data["fmt"] not in FORMAT_TIER or not self.designs.get(did):
+                    return jsonify({"error": "unknown design or format"}), 400
+                q = self.state.tokens.quote(acct, did, data["fmt"])
+                return jsonify({"fmt": q.fmt, "tier": q.tier, "cost": q.cost,
+                                "held_tier": q.held_tier, "unlocked_until": q.unlocked_until,
+                                "balance": self.state.tokens.balance(acct),
+                                "buy_url": self.buy_url})
             params = data.get("params") if isinstance(data.get("params"), dict) else {}
             try:
                 endpoint, _ = app.url_map.bind("localhost").match(
@@ -251,7 +273,7 @@ class Charges:
 
             @wraps(view)
             def wrapped(*args, **kwargs):
-                if not self.enabled:
+                if not self.enabled or self.is_internal():
                     return view(*args, **kwargs)
                 from flask import make_response, request
                 acct, refusal = self._refusal()

@@ -208,6 +208,27 @@
     return T.designId;
   }
 
+  // Price of the whole registered design at one format's tier — the
+  // download window's zip. null when signed out or the check fails.
+  async function quoteDesign(fmt) {
+    if (!T.enabled || !T.signedIn) return null;
+    const did = await ensureDesign();
+    if (!did) return null;
+    let r;
+    try {
+      r = await fetch('/api/tokens/quote', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ design_id: did, fmt }),
+      });
+    } catch (e) { return null; }
+    if (r.status === 401) { await refresh(); return null; }
+    if (!r.ok) return null;
+    const q = await r.json();
+    T.balance = q.balance; T.buyUrl = q.buy_url || ''; render();
+    return q;
+  }
+
   function withDesign(url) {
     if (!T.enabled || !T.designId || /[?&]design_id=/.test(url)) return url;
     return url + (url.includes('?') ? '&' : '?') + 'design_id=' + encodeURIComponent(T.designId);
@@ -216,6 +237,7 @@
   // ── one download ──────────────────────────────────────────────────────────
 
   const LABEL = { '2d': '2D file', stl: 'STL', step: 'STEP' };
+  const HELD = { '2d': 'the 2D files', stl: 'the STL', step: 'the STEP' };
 
   // Resolves to {extras: [...]} to go ahead (the extras to run once the
   // download is through), or null to stop. `extras` offered here are
@@ -260,7 +282,7 @@
       `Balance: ${q.balance} → ${q.balance - q.cost}.`));
     if (q.held_tier) {
       body.append(el('p', 'cct-dialog-note',
-        `You already paid for ${LABEL[q.held_tier]} of this design, so this is only the difference.`));
+        `You already paid for ${HELD[q.held_tier]} of this design, so this is only the difference.`));
     }
     const boxes = [];
     if (offered.length) {
@@ -330,6 +352,11 @@
     ready,
     isEnabled: async () => { await ready; return T.enabled; },
     get enabled() { return T.enabled; },
+    get signedIn() { return T.signedIn; },
+    get unavailable() { return T.unavailable; },
+    get balance() { return T.balance; },
+    get buyUrl() { return T.buyUrl; },
     refresh, signIn, prepare, withDesign, signal, watch, runExtras, handleRefusal,
+    ensureDesign, quoteDesign, buyDialog, message,
   };
 })();

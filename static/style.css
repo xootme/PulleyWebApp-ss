@@ -990,3 +990,18 @@ body:not(.feature-build) .fb-3d { display: none !important; }
                         border: 1px solid #c8c8c8; border-radius: 4px; }
 .cct-check            { display: block; margin: 4px 0 4px 4px; font-size: 14px; cursor: pointer; }
 .cct-dialog-buttons   { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ── Download window (index.html openDownloadWindow) ── */
+.cct-dl               { max-width: 440px; }
+.cct-dl-parts         { margin: 6px 0 4px; }
+.cct-dl-head          { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: #555; letter-spacing: 0.04em; text-transform: uppercase; }
+.cct-dl-note          { color: #777; font-size: 12px; }
+.cct-tier             { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px;
+                        font-size: 12px; font-weight: 600; color: #0078d4; white-space: nowrap; }
+.cct-tier::before,
+.cct-tier::after      { content: ""; flex: 1; border-top: 1px solid #d9d9d9; }
+.cct-tier::before     { flex: 0 0 12px; }
+.cct-formats          { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+.cct-formats .cct-check { display: inline-block; }
+.cct-dl-status        { min-height: 1.3em; margin: 16px 0 0; font-size: 13px; color: #555; }
+.cct-btn[disabled]    { opacity: 0.55; cursor: default; }

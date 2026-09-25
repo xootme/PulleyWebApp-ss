@@ -131,7 +131,8 @@ def require_active_session(f):
     def decorated_function(*args, **kwargs):
         # Skip checks in no-queue mode (local/desktop) or during testing
         from flask import current_app
-        if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING') or current_app.config.get('TESTING'):
+        if (os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING')
+                or current_app.config.get('TESTING') or charges.is_internal()):
             return f(*args, **kwargs)
 
         # Get session_id from URL params, form data, or JSON body
@@ -486,7 +487,8 @@ def _mirror_to_addins(content: bytes, filename: str) -> bool:
     addin auto-imports the download.
     """
     from flask import current_app
-    skip = bool(os.environ.get('PULLEY_TESTING') or current_app.config.get('TESTING'))
+    skip = bool(os.environ.get('PULLEY_TESTING') or current_app.config.get('TESTING')
+                or charges.is_internal())   # a file headed into a download-window zip
     return _cc_mirror_to_addins(content, filename, skip=skip)
 
 
@@ -3914,6 +3916,16 @@ _accounts_state = init_accounts(
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
                buy_url=os.environ.get('TOKENS_BUY_URL', '').strip())
+
+# The download window's zip: every ticked file for every part shown, one
+# charge for the whole design — see bundles.py.
+from bundles import register_bundle_routes
+register_bundle_routes(
+    app, log_dir=_LOG_DIR, record_trial=_consume_web_token_from_body,
+    create_job=create_job, start_job=start_job, update_progress=update_progress,
+    finish_job=finish_job, guard=require_active_session,
+    run_inline=lambda: bool(os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING')),
+)
 
 
 if __name__ == '__main__':

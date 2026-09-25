@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=23">
+  <link rel="stylesheet" href="/static/style.css?v=24">
 </head>
 <body>
 
@@ -449,56 +449,11 @@
 
     <section class="card download-card">
       <h2>Download</h2>
-      <div class="dl-wrap">
-        <button class="btn-download" onclick="toggleDlMenu('dl-p1-pulley', event)">⬇ Download Pulley</button>
-        <div class="dl-menu hidden" id="dl-p1-pulley">
-          <button class="dl-item fb-2d" onclick="downloadSVG(1,true); closeDlMenus()">SVG + Data</button>
-          <button class="dl-item fb-2d" onclick="downloadSVG(1,false); closeDlMenus()">SVG Drawing</button>
-          <button class="dl-item fb-2d" onclick="downloadDXF(1); closeDlMenus()">DXF</button>
-          <button class="dl-item fb-3d" onclick="downloadSTEP(1); closeDlMenus()">STEP</button>
-          <button class="dl-item fb-3d" onclick="downloadSTL(1); closeDlMenus()">STL</button>
-        </div>
-      </div>
+      <button class="btn-download" onclick="openDownloadWindow()">⬇ Download</button>
       <label class="fb-2d" id="rim-layer1-wrap" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="rim_layer1_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
         Gen. Rim Layer
       </label>
-      <!-- Flange download buttons (fb-3d, shown only when flanges enabled) -->
-      <div id="flange1_dl_wrap" class="fb-3d" style="display:none;margin-top:6px;">
-        <div class="dl-wrap">
-          <button class="btn-download" style="font-size:12px;" onclick="toggleDlMenu('dl-p1-flange', event)">⬇ Download Flanges</button>
-          <div class="dl-menu hidden" id="dl-p1-flange">
-            <button class="dl-item" id="flange1_dl_both_stl" onclick="downloadFlange(1,'both'); closeDlMenus()" style="display:none">Flanges STL</button>
-            <button class="dl-item" id="flange1_dl_top_stl" onclick="downloadFlange(1,'top'); closeDlMenus()">Upper Flange STL</button>
-            <button class="dl-item" id="flange1_dl_bottom_stl" onclick="downloadFlange(1,'bottom'); closeDlMenus()">Lower Flange STL</button>
-          </div>
-        </div>
-      </div>
-      <div id="flange1_asm_wrap" class="fb-3d" style="display:none;margin-top:6px;">
-        <button class="btn-download" style="font-size:12px;" onclick="downloadFlangeAssembly(1)">⬇ Assembly STL (w/ Supports)</button>
-      </div>
-      <div class="dl-wrap" id="belt-svg-wrap">
-        <button class="btn-download" style="background:#0f766e;border:3px solid #064e3b;"
-                onclick="toggleDlMenu('dl-p1-belt', event)">⬇ Download Belt</button>
-        <div class="dl-menu hidden" id="dl-p1-belt">
-          <button class="dl-item fb-2d" onclick="downloadBeltSVG(); closeDlMenus()">SVG</button>
-          <button class="dl-item fb-2d" onclick="downloadBeltDXF(); closeDlMenus()">DXF</button>
-          <button class="dl-item fb-3d" onclick="downloadBeltSTEP(); closeDlMenus()">STEP</button>
-          <button class="dl-item fb-3d" onclick="downloadBeltSTL(); closeDlMenus()">STL</button>
-        </div>
-      </div>
-      <div class="dl-wrap fb-3d" id="dl-all-step-wrap" style="display:none;margin-top:6px;">
-        <button class="btn-download" style="background:#7c3aed;border:3px solid #4c1d95;"
-                onclick="downloadAllSTEP()">⬇ Download All (STEP)</button>
-      </div>
-      <div class="dl-wrap fb-2d" id="dl-all-2d-wrap" style="display:none;margin-top:6px;">
-        <button class="btn-download" style="background:#7c3aed;border:3px solid #4c1d95;"
-                onclick="toggleDlMenu('dl-all-2d', event)">⬇ Download All</button>
-        <div class="dl-menu hidden" id="dl-all-2d">
-          <button class="dl-item" onclick="downloadAllSVG(); closeDlMenus()">SVG</button>
-          <button class="dl-item" onclick="downloadAllDXF(); closeDlMenus()">DXF</button>
-        </div>
-      </div>
     </section>
 
   </aside>
@@ -868,33 +823,11 @@
 
     <section class="card download-card">
       <h2>Download</h2>
-      <div class="dl-wrap">
-        <button class="btn-download-p2" onclick="toggleDlMenu('dl-p2-pulley', event)">⬇ Download Pulley</button>
-        <div class="dl-menu hidden" id="dl-p2-pulley">
-          <button class="dl-item fb-2d" onclick="downloadSVG(2,true); closeDlMenus()">SVG + Data</button>
-          <button class="dl-item fb-2d" onclick="downloadSVG(2,false); closeDlMenus()">SVG Drawing</button>
-          <button class="dl-item fb-2d" onclick="downloadDXF(2); closeDlMenus()">DXF</button>
-          <button class="dl-item fb-3d" onclick="downloadSTEP(2); closeDlMenus()">STEP</button>
-          <button class="dl-item fb-3d" onclick="downloadSTL(2); closeDlMenus()">STL</button>
-        </div>
-      </div>
+      <button class="btn-download-p2" onclick="openDownloadWindow()">⬇ Download</button>
       <label class="fb-2d" id="rim-layer2-wrap" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="rim_layer2_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
         Gen. Rim Layer
       </label>
-      <div id="flange2_dl_wrap" class="fb-3d" style="display:none;margin-top:6px;">
-        <div class="dl-wrap">
-          <button class="btn-download-p2" style="font-size:12px;" onclick="toggleDlMenu('dl-p2-flange', event)">⬇ Download Flanges</button>
-          <div class="dl-menu hidden" id="dl-p2-flange">
-            <button class="dl-item" id="flange2_dl_both_stl" onclick="downloadFlange(2,'both'); closeDlMenus()" style="display:none">Flanges STL</button>
-            <button class="dl-item" id="flange2_dl_top_stl" onclick="downloadFlange(2,'top'); closeDlMenus()">Upper Flange STL</button>
-            <button class="dl-item" id="flange2_dl_bottom_stl" onclick="downloadFlange(2,'bottom'); closeDlMenus()">Lower Flange STL</button>
-          </div>
-        </div>
-      </div>
-      <div id="flange2_asm_wrap" class="fb-3d" style="display:none;margin-top:6px;">
-        <button class="btn-download-p2" style="font-size:12px;" onclick="downloadFlangeAssembly(2)">⬇ Assembly STL (w/ Supports)</button>
-      </div>
     </section>
 
   </aside>
@@ -1038,7 +971,7 @@
   &nbsp;|&nbsp; v{{ app_version }} &nbsp;<span class="footer-build">build {{ build_time }}</span>
 </footer>
 
-<script src="/static/tokens.js?v=1"></script>
+<script src="/static/tokens.js?v=3"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -2591,6 +2524,228 @@ async function _cctTokenDownload(url, start, alsoAfter) {
   return true;
 }
 
+// ── Download window (ADR-008) ─────────────────────────────────────────────
+// One window, one zip: every part shown, in the formats ticked. In the 3D
+// view the tiers are STEP (3 tokens), STL (2) and 2D drawings (1); in the 2D
+// view only the drawings. The zip is one purchase of the whole design at the
+// highest tier ticked, so the button shows what the ticks cost as they change.
+
+const _DL_TIERS_3D = [
+  { tokens: 3, label: 'CAD shape',         fmts: [['step', 'STEP']] },
+  { tokens: 2, label: '3D printing shape', fmts: [['stl', 'STL']] },
+  { tokens: 1, label: '2D drawings',       fmts: [['svg', 'SVG'], ['dxf', 'DXF']] },
+];
+const _DL_TIERS_2D = [_DL_TIERS_3D[2]];
+const _DL_RANK = { step: 3, stl: 2, svg: 1, dxf: 1 };
+
+// Flange STLs that exist as parts of their own for pulley n (upper flange when
+// 3D-printed separate; the supported assembly when integrated with supports).
+function _flangeFiles(n) {
+  const on = id => !!document.getElementById(id)?.checked;
+  if (!on(`flange${n}_enabled`) || !on(`flange${n}_3dprint`)) return [];
+  if (on(`flange${n}_top_separate`)) {
+    return [{ path: '/download/flange-stl', params: Object.assign(_flangeParams(n), { flange_which: 'top' }) }];
+  }
+  if (on(`flange${n}_supports_enabled`)) {
+    return [{ path: '/download/flange-assembly', params: _flangeAsmParams(n) }];
+  }
+  return [];
+}
+
+function _dlParts(threeD) {
+  const dual    = document.getElementById('dual_enable').checked;
+  const hasBelt = BELT_FAMILIES.has(document.getElementById('family').value);
+  const teeth   = n => document.getElementById(n === 1 ? 'teeth' : 'p2_teeth')?.value;
+  const parts = [{ id: 'p1', label: `Pulley 1 · ${teeth(1)}T` }];
+  if (dual) parts.push({ id: 'p2', label: `Pulley 2 · ${teeth(2)}T` });
+  if (hasBelt) parts.push({ id: 'belt', label: 'Belt' });
+  if (threeD) {
+    for (const n of dual ? [1, 2] : [1]) {
+      if (_flangeFiles(n).length) parts.push({ id: `fl${n}`, label: `Pulley ${n} flanges`, only: 'stl', note: 'STL only' });
+    }
+  } else if (dual && hasBelt) {
+    parts.push({ id: 'drive', label: 'Whole drive drawing', only: 'dxf', note: 'DXF only' });
+  }
+  return parts;
+}
+
+// The requests one part needs in one format — the same routes and parameters
+// the per-part buttons used.
+function _dlFiles(part, fmt) {
+  const q = (path, params) => ({ path, params });
+  const beltH = () => document.getElementById('belt_height').value;
+  if (part === 'p1' || part === 'p2') {
+    const n = part === 'p2' ? 2 : 1;
+    const base = () => { const p = buildParams(); if (n === 2) p.pulley = '2'; return p; };
+    const rimWrap = document.getElementById(`rim-layer${n}-wrap`);
+    const rim = rimWrap && rimWrap.style.display !== 'none'
+                && document.getElementById(`rim_layer${n}_enabled`).checked;
+    if (fmt === 'step') return [q('/download/step', _stepParams(n))];
+    if (fmt === 'stl')  { const p = base(); p.belt_height = beltH(); return [q('/download/stl', p)]; }
+    if (fmt === 'svg')  { const p = base(); p.include_data = '1';
+                          return [q('/download/svg', p)].concat(rim ? [q('/download/svg-rim', p)] : []); }
+    if (fmt === 'dxf')  { const p = base();
+                          return [q('/download/dxf', p)].concat(rim ? [q('/download/dxf-rim', p)] : []); }
+  }
+  if (part === 'belt') {
+    const p = buildBeltParams();
+    if (fmt === 'step' || fmt === 'stl') p.belt_height = beltH();
+    return [q(`/download/belt-${fmt}`, p)];
+  }
+  if (part.startsWith('fl') && fmt === 'stl') return _flangeFiles(Number(part.slice(2)));
+  if (part === 'drive' && fmt === 'dxf') return [q('/download/all-dxf', buildBeltParams())];
+  return [];
+}
+
+function _dlZipName() {
+  const v = id => document.getElementById(id)?.value || '';
+  let name = `${v('family')}-${v('pitch')}-${v('teeth')}T`;
+  if (document.getElementById('dual_enable').checked) name += `-${v('p2_teeth')}T`;
+  return name;
+}
+
+async function openDownloadWindow() {
+  closeDlMenus();
+  const threeD   = document.getElementById('feature_build').checked;
+  const tokensOn = await _cctTokensOn();
+  const tiers    = threeD ? _DL_TIERS_3D : _DL_TIERS_2D;
+  const parts    = _dlParts(threeD);
+  const el = (tag, cls, text) => { const e = document.createElement(tag);
+    if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const box = (id, text, note) => {
+    const lab = el('label', 'cct-check');
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = true; cb.id = id;
+    lab.append(cb, document.createTextNode(' ' + text));
+    if (note) lab.append(el('span', 'cct-dl-note', ' ' + note));
+    return lab;
+  };
+
+  const overlay = el('div', 'cct-dialog-overlay');
+  const dlg = el('div', 'cct-dialog cct-dl');
+  dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
+  dlg.append(el('h3', 'cct-dialog-title', 'Download'),
+             el('p', 'cct-dialog-note', threeD
+               ? 'Every part ticked goes into one zip.'
+               : '2D view: drawings only. Every part ticked goes into one zip.'));
+
+  const partsBox = el('div', 'cct-dl-parts');
+  partsBox.append(el('p', 'cct-dl-head', 'Parts'));
+  for (const pt of parts) partsBox.append(box(`cct-part-${pt.id}`, pt.label, pt.note));
+  dlg.append(partsBox);
+
+  for (const t of tiers) {
+    const head = el('div', 'cct-tier');
+    head.append(el('span', null, tokensOn
+      ? `${t.tokens} token${t.tokens === 1 ? '' : 's'} · ${t.label}` : t.label));
+    const row = el('div', 'cct-formats');
+    for (const [fmt, label] of t.fmts) row.append(box(`cct-fmt-${fmt}`, label));
+    dlg.append(head, row);
+  }
+
+  const status = el('p', 'cct-dl-status');
+  const cancel = el('button', 'cct-btn', 'Cancel'); cancel.type = 'button';
+  const go = el('button', 'cct-btn cct-btn-primary', 'Download zip'); go.type = 'button';
+  const row = el('div', 'cct-dialog-buttons'); row.append(cancel, go);
+  dlg.append(status, row);
+  overlay.append(dlg);
+
+  const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
+  cancel.addEventListener('click', close);
+  document.body.append(overlay);
+
+  const ticked = id => document.getElementById(id)?.checked;
+  const selection = () => {
+    const fmts = tiers.flatMap(t => t.fmts.map(([f]) => f)).filter(f => ticked(`cct-fmt-${f}`));
+    const files = [];
+    for (const pt of parts) {
+      if (!ticked(`cct-part-${pt.id}`)) continue;
+      for (const f of fmts) if (!pt.only || pt.only === f) files.push(..._dlFiles(pt.id, f));
+    }
+    const top = fmts.reduce((a, f) => (!a || _DL_RANK[f] > _DL_RANK[a]) ? f : a, null);
+    return { files, top };
+  };
+
+  let seq = 0;
+  let quote = null;
+  const update = async () => {
+    const mine = ++seq;
+    const { files, top } = selection();
+    quote = null;
+    if (!files.length) {
+      go.disabled = true; go.textContent = 'Nothing to download'; status.textContent = ''; return;
+    }
+    go.disabled = false;
+    if (!tokensOn) { go.textContent = `Download zip (${files.length} file${files.length === 1 ? '' : 's'})`; return; }
+    if (cctTokens.unavailable) { go.textContent = 'Download zip'; status.textContent = 'Accounts are temporarily unavailable.'; return; }
+    if (!cctTokens.signedIn) { go.textContent = 'Sign in to download'; status.textContent = ''; return; }
+    go.textContent = 'Download zip …';
+    const q = await cctTokens.quoteDesign(top);
+    if (mine !== seq) return;                       // a newer tick is already pricing
+    quote = q;
+    if (!q) { go.textContent = 'Download zip'; status.textContent = ''; return; }
+    if (q.cost === 0) {
+      go.textContent = 'Download zip (already paid)';
+      status.textContent = 'Already unlocked for this design — no tokens used.';
+    } else {
+      go.textContent = `Download zip (${q.cost} token${q.cost === 1 ? '' : 's'})`;
+      status.textContent = q.cost > q.balance
+        ? `You have ${q.balance} token${q.balance === 1 ? '' : 's'}.`
+        : `Balance: ${q.balance} → ${q.balance - q.cost}.`;
+    }
+  };
+  dlg.addEventListener('change', update);
+  update();
+
+  go.addEventListener('click', async () => {
+    const { files } = selection();
+    if (!files.length) return;
+    const body = { name: _dlZipName(), files };
+    if (tokensOn) {
+      if (cctTokens.unavailable) return;
+      if (!cctTokens.signedIn) { close(); cctTokens.signIn(); return; }
+      await update();
+      if (!quote) return;
+      if (quote.cost > quote.balance) { close(); cctTokens.buyDialog(quote.cost, quote.balance, quote.buy_url); return; }
+      body.design_id = await cctTokens.ensureDesign();
+    } else {
+      const tok = await _cctGetToken();
+      if (tok && tok.ok === false) { close(); _cctLimitMsg(tok.count, tok.limit); return; }
+      if (tok && tok.token) body._fpt = tok.token;
+    }
+    const sessionId = new URLSearchParams(window.location.search).get('session_id');
+    if (sessionId) body.session_id = sessionId;
+    close();
+    const title = document.querySelector('#progress-modal-overlay h3');
+    if (title) title.textContent = 'Preparing your download';
+    _retryDownload = () => openDownloadWindow();
+    fetch('/api/download/bundle', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    .then(async r => {
+      if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || `Server returned ${r.status}`);
+      }
+      return r.json();
+    })
+    .then(data => {
+      if (!data) return;
+      _currentJobId = data.job_id;
+      _jobStartTime = Date.now();
+      showProgressModal();
+      pollJobStatus();
+    })
+    .catch(err => showErrorModalWithRetry(`Couldn't start the download: ${err.message}`,
+                                          () => openDownloadWindow()));
+  });
+}
+
 async function _cctGuardedDownload(url, alsoAfter) {
   // Wraps _triggerDownload / window.location with a limit check.
   // Returns false if denied, true otherwise. `alsoAfter` runs once the
@@ -2671,11 +2826,13 @@ function updateBeltBtn() {
   const family    = document.getElementById('family').value;
   const hasBelt   = BELT_FAMILIES.has(family);
   const dual      = document.getElementById('dual_enable').checked;
-  document.getElementById('belt-svg-wrap').classList.toggle('hidden', !hasBelt);
+  document.getElementById('belt-svg-wrap')?.classList.toggle('hidden', !hasBelt);
   document.getElementById('tab-belt')    .classList.toggle('hidden', !hasBelt);
   const showAll = hasBelt && dual;
-  document.getElementById('dl-all-step-wrap').style.display = showAll ? '' : 'none';
-  document.getElementById('dl-all-2d-wrap').style.display   = showAll ? '' : 'none';
+  const _allStep = document.getElementById('dl-all-step-wrap');
+  const _all2d   = document.getElementById('dl-all-2d-wrap');
+  if (_allStep) _allStep.style.display = showAll ? '' : 'none';
+  if (_all2d)   _all2d.style.display   = showAll ? '' : 'none';
   // If switching away from a belt-only family, reset to pulley tab
   if (!hasBelt && previewTab === 'belt') {
     previewTab = 'pulley';
@@ -3149,7 +3306,8 @@ function downloadWithProgress(url, defaultFilename) {
   }, 300);
 }
 
-async function downloadSTEP(n) {
+// The /download/step parameters for pulley n (flanges included when on).
+function _stepParams(n) {
   const params = buildParams();
   params.belt_height = document.getElementById('belt_height').value;
   if (n === 2) params.pulley = '2';
@@ -3175,6 +3333,11 @@ async function downloadSTEP(n) {
     params[`${pfx}flange_support_max_spacing`]  = document.getElementById(`flange${fn}_support_max_spacing`).value;
     params[`${pfx}flange_support_air_gap`]      = document.getElementById(`flange${fn}_support_air_gap`).value;
   }
+  return params;
+}
+
+async function downloadSTEP(n) {
+  const params = _stepParams(n);
   // Generate to a file first, then navigate to the static result — the same
   // reliable mechanism "Download All" uses. A direct window.location to the
   // slow /download/step route was being dropped ("Removed") by Chromium.
@@ -3896,7 +4059,8 @@ async function downloadFlange(n, which) {
   await _cctGuardedDownload(_dlUrl('/download/flange-stl?' + new URLSearchParams(fp)));
 }
 
-async function downloadFlangeAssembly(n) {
+// The /download/flange-assembly parameters for pulley n.
+function _flangeAsmParams(n) {
   const fp = _flangeParams(n);
   // Add hub geometry params needed by generate_pulley_stl
   const prefix = n === 2 ? 'p2_' : '';
@@ -3916,6 +4080,11 @@ async function downloadFlangeAssembly(n) {
   fp.spokes_height     = document.getElementById(`spokes${n}_height`).value;
   fp.backlash_preset   = n === 2 ? (p.p2_backlash_preset || 'STANDARD') : (p.backlash_preset || 'STANDARD');
   fp.backlash_custom   = n === 2 ? (p.p2_backlash_custom || 0)           : (p.backlash_custom  || 0);
+  return fp;
+}
+
+async function downloadFlangeAssembly(n) {
+  const fp = _flangeAsmParams(n);
   await _cctGuardedProgress(_dlUrl('/download/flange-assembly?' + new URLSearchParams(fp)),
                             `${fp.family}${fp.pitch}-${fp.teeth}T-Assembly.stl`);
 }
