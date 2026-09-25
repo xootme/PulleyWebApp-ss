@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=24">
+  <link rel="stylesheet" href="/static/style.css?v=25">
 </head>
 <body>
 
@@ -2616,7 +2616,7 @@ async function openDownloadWindow() {
     const lab = el('label', 'cct-check');
     const cb = el('input'); cb.type = 'checkbox'; cb.checked = true; cb.id = id;
     lab.append(cb, document.createTextNode(' ' + text));
-    if (note) lab.append(el('span', 'cct-dl-note', ' ' + note));
+    if (note) { const n = el('span', 'cct-dl-note', ' ' + note); n.dataset.note = note; lab.append(n); }
     return lab;
   };
 
@@ -2670,8 +2670,24 @@ async function openDownloadWindow() {
 
   let seq = 0;
   let quote = null;
+  // A part that comes in one format only (flanges: STL; whole drive: DXF)
+  // has nothing to add while that format is unticked — grey it out and say
+  // what would bring it back, rather than leave a tick that does nothing.
+  const syncParts = () => {
+    for (const pt of parts) {
+      if (!pt.only) continue;
+      const cb = document.getElementById(`cct-part-${pt.id}`);
+      const usable = !!ticked(`cct-fmt-${pt.only}`);
+      cb.disabled = !usable;
+      cb.closest('label').classList.toggle('cct-check-off', !usable);
+      const note = cb.closest('label').querySelector('.cct-dl-note');
+      if (note) note.textContent = ' ' + (usable ? note.dataset.note : `tick ${pt.only.toUpperCase()} to include`);
+    }
+  };
+
   const update = async () => {
     const mine = ++seq;
+    syncParts();
     const { files, top } = selection();
     quote = null;
     if (!files.length) {

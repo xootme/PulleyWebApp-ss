@@ -149,6 +149,15 @@ async function main() {
   check('untick STEP: 2 tokens', (await labelSettles()) === 'Download zip (2 tokens)');
   await tick('cct-fmt-stl', false);
   check('untick STL: 1 token', (await labelSettles()) === 'Download zip (1 token)');
+  check('untick STL: flange row greyed, says how to include it', await js(`(() => {
+    const cb = document.getElementById('cct-part-fl1');
+    return cb.disabled && cb.closest('label').classList.contains('cct-check-off')
+      && cb.closest('label').textContent.includes('tick STL to include'); })()`));
+  await tick('cct-fmt-stl', true); await labelSettles();
+  check('re-tick STL: flange row back, still ticked', await js(`(() => {
+    const cb = document.getElementById('cct-part-fl1');
+    return !cb.disabled && cb.checked && cb.closest('label').textContent.includes('STL only'); })()`));
+  await tick('cct-fmt-stl', false); await labelSettles();
   await tick('cct-fmt-svg', false); await tick('cct-fmt-dxf', false);
   check('untick all: nothing to download, disabled', (await labelSettles()) === 'Nothing to download' &&
         await js("document.querySelector('.cct-dl .cct-btn-primary').disabled"));

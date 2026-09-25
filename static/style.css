@@ -1005,3 +1005,4 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 .cct-formats .cct-check { display: inline-block; }
 .cct-dl-status        { min-height: 1.3em; margin: 16px 0 0; font-size: 13px; color: #555; }
 .cct-btn[disabled]    { opacity: 0.55; cursor: default; }
+.cct-check-off        { opacity: 0.45; cursor: default; }
