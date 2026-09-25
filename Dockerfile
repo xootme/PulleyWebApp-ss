@@ -26,7 +26,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN chmod +x bin/small_step_linux && bin/small_step_linux --version
 
+# QUEUE_DISABLED: Cloud Run scales by adding servers (one request each), so
+# no session queue — and exports run inside their request, because CPU is
+# throttled once a response has been sent (a background thread would crawl).
 ENV SMALL_STEP_BIN=/app/bin/small_step_linux \
+    QUEUE_DISABLED=1 \
     PYTHONUNBUFFERED=1 \
     PULLEY_LOG_DIR=/tmp/pulley-logs \
     PORT=8080

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import threading
 import time
 import uuid
@@ -211,7 +212,10 @@ def _save_and_unlock(fh, active_session, sessions):
 
 class Job:
     def __init__(self, job_type="job", params=None):
-        self.id = str(uuid.uuid4())[:8]
+        # 144 random bits: the status route hands back the finished file's
+        # link, so a guessable id (this was 8 hex digits) would make every
+        # paid download guessable too.
+        self.id = secrets.token_urlsafe(18)
         self.type = job_type
         self.status = "queued"
         self.created = datetime.now()

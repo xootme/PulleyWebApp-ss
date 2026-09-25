@@ -3245,9 +3245,9 @@ def api_download_step_async():
                         _j.mirrored = _mirrored
 
                     update_progress(job.id, 100)
-                    finish_job(job.id, output_file=result_url)
+                    _finish_job(job.id, output_file=result_url)
             except Exception as e:
-                finish_job(job.id, error=str(e))
+                _finish_job(job.id, error=str(e))
             finally:
                 _ctx.pop()
 
@@ -3299,6 +3299,10 @@ def api_download_status(job_id):
     """
     job = get_job(job_id)
     if not job:
+        # Finished on another server (Cloud Run) — see shared_jobs.py.
+        shared = _shared_jobs.get(job_id) if _shared_jobs is not None else None
+        if shared is not None:
+            return jsonify(shared)
         return jsonify({'error': 'Job not found'}), 404
     return jsonify(job.to_dict())
 
@@ -3424,10 +3428,10 @@ def api_download_all_step_async():
                         _j.mirrored = _mirrored
 
                     update_progress(job.id, 100)
-                    finish_job(job.id, output_file=result_url)
+                    _finish_job(job.id, output_file=result_url)
 
             except Exception as e:
-                finish_job(job.id, error=str(e))
+                _finish_job(job.id, error=str(e))
             finally:
                 _ctx.pop()
 
@@ -3904,9 +3908,28 @@ charges.attach(app, _accounts_state,  # per-export token charging — see chargi
                limit_notify=make_limit_notify(_accounts_email, app_name='CheapCAD Tools'))
 
 # Finished background downloads live at unguessable, expiring links —
-# see results.py (replaces the old /download/<job_id>.step).
+# see results.py (replaces the old /download/<job_id>.step). RESULTS_BUCKET
+# (Cloud Run) keeps them in Cloud Storage so any server can serve them.
+import results as _results
 from results import register_result_routes, save_result
+_results.configure(bucket=os.environ.get('RESULTS_BUCKET', '').strip() or None)
 register_result_routes(app, log_dir=_LOG_DIR)
+
+# Finished jobs' status in the database too, for status polls that land on
+# another server (Cloud Run) — see shared_jobs.py. Only with DATABASE_URL:
+# a single server (local, Render) answers from memory.
+from shared_jobs import SharedJobs
+_shared_jobs = (SharedJobs(os.environ['DATABASE_URL'].strip())
+                if os.environ.get('DATABASE_URL', '').strip() else None)
+
+
+def _finish_job(job_id, **kw):
+    finish_job(job_id, **kw)
+    if _shared_jobs is not None:
+        try:
+            _shared_jobs.publish(get_job(job_id))
+        except Exception:
+            app.logger.exception('Could not publish job %s to the shared store', job_id)
 
 # The download window's zip: every ticked file for every part shown, one
 # charge for the whole design — see bundles.py.
@@ -3914,7 +3937,7 @@ from bundles import register_bundle_routes
 register_bundle_routes(
     app, log_dir=_LOG_DIR, record_trial=_consume_web_token_from_body,
     create_job=create_job, start_job=start_job, update_progress=update_progress,
-    finish_job=finish_job, guard=require_active_session,
+    finish_job=_finish_job, guard=require_active_session,
     run_inline=lambda: bool(os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING')),
 )
 

@@ -101,7 +101,9 @@ file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
 - [ ] Secrets (Resend key, PayPal/Stripe keys, OAuth client secrets) in Secret Manager, mounted as env vars — not in the repo or plain env
 - [ ] Google OAuth app registered in the same project's console
 - [x] Ledger, accounts and registered designs on Postgres when `DATABASE_URL` is set
-- [ ] The rest of the per-server state before running more than one instance: zip/STEP result files (`results.py`) → Cloud Storage; async STEP job status; queue sessions and trial counts (or drop the queue — see below)
+- [x] Result files (zips, async STEP) in Cloud Storage when `RESULTS_BUCKET` is set; finished jobs' status in the database when `DATABASE_URL` is set, so a status poll on another server finds it; exports run inside their request (`QUEUE_DISABLED=1` in the image — Cloud Run throttles CPU after the response). Job ids are 144-bit (were 8 hex digits, and the status answer carries the file link). Two containers sharing one Postgres: started on A, polled on B — works
+- [ ] Create the results bucket `gs://cheapcadtools-results` (lifecycle: delete after 1 day) and give the Cloud Run service account Storage Object Admin on it
+- [ ] Queue sessions and trial counts stay per-server — fine on Cloud Run with the queue off and tokens on (trial limits only apply with tokens off)
 - [ ] Database: **Neon** Postgres (free tier, scales to zero, ~$0.106/CU-hour) works with any host
 - [x] Dockerfile (python:3.14-slim + Cairo, non-root user, `PORT` from Cloud Run) and an allow-list `.dockerignore` — image 695 MB; the full suite passes inside it (1293 passed, 30 skipped)
 - [x] `bin/small_step_linux` rebuilt from small_step 0.3.0 (static musl, `7c21b7e`): the committed Linux binary was still 0.2.0 from June, so Render has been serving STEP without the July geometry fixes — RELEASE.md's "rebuild on every push" step was missed
