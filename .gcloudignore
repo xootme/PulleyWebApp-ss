@@ -1,0 +1,32 @@
+# What `gcloud run deploy --source .` uploads to Cloud Build. gcloud reads
+# this file, not .dockerignore — without it the whole repo (~1.4 GB of venvs,
+# releases and archives) is uploaded on every deploy. Same allow-list as
+# .dockerignore, plus the two files the build itself needs; gitignore rules,
+# so a folder needs "dir/**" to bring its contents back.
+# tests/test_deploy_files.py keeps the two lists in step.
+*
+!Dockerfile
+!.dockerignore
+!app.py
+!accounts_setup.py
+!bundles.py
+!charging.py
+!results.py
+!shared_jobs.py
+!gunicorn.conf.py
+!requirements.txt
+!admin_dashboard.html
+!bin/
+!bin/small_step_linux
+!cct_common/
+!cct_common/**
+!exporters/
+!exporters/**
+!geometry/
+!geometry/**
+!static/
+!static/**
+!templates/
+!templates/**
+**/__pycache__
+**/*.pyc

@@ -110,28 +110,39 @@ class _PgConnection:
         return self._conn.execute(_pg_sql(sql, bool(params)), params or None)
 
 
+# One pool per (process, URL). gunicorn's preload_app imports the app — and
+# so opens the pool — in the master, then forks the workers: a pool the
+# child inherited shares its sockets with every other worker, and its
+# maintenance threads didn't survive the fork. So a child ignores any pool
+# it didn't open itself.
 _POOLS: dict = {}
 _POOLS_LOCK = threading.Lock()
 
 
 def _pool(url: str):
+    from psycopg_pool import ConnectionPool
+    key = (os.getpid(), url)
     with _POOLS_LOCK:
-        pool = _POOLS.get(url)
+        pool = _POOLS.get(key)
         if pool is None:
-            from psycopg_pool import ConnectionPool
             pool = ConnectionPool(
                 url, min_size=1, max_size=int(os.environ.get("CCT_DB_POOL_MAX", "8")),
                 max_idle=300, open=True,
+                # Checked (a round trip) before each use: a hosted database
+                # closes idle connections and suspends when quiet (Neon, after
+                # 5 minutes), so a pooled connection may be dead by the time
+                # it's handed out. A dead one is replaced, not returned.
+                check=ConnectionPool.check_connection,
                 kwargs={"autocommit": True, "row_factory": _row_factory,
                         "prepare_threshold": None})
-            _POOLS[url] = pool
+            _POOLS[key] = pool
         return pool
 
 
 def close_pool(url: str) -> None:
-    """Close the connection pool for a database URL (tests, shutdown)."""
+    """Close this process's connection pool for a database URL (tests, shutdown)."""
     with _POOLS_LOCK:
-        pool = _POOLS.pop(url, None)
+        pool = _POOLS.pop((os.getpid(), url), None)
     if pool is not None:
         pool.close()
 

@@ -266,6 +266,14 @@ try:
     ))
     _logging.getLogger().addHandler(_err_handler)        # root → catches everything
     _logging.getLogger('werkzeug').addHandler(_err_handler)
+    # Cloud Run (it sets K_SERVICE): a server's disk vanishes with it, and
+    # there are several — so warnings and errors also go to stderr, which
+    # Cloud Logging collects from every server.
+    if os.environ.get('K_SERVICE'):
+        _stderr_handler = _logging.StreamHandler()
+        _stderr_handler.setLevel(_logging.WARNING)
+        _stderr_handler.setFormatter(_logging.Formatter('%(levelname)s %(name)s: %(message)s'))
+        _logging.getLogger().addHandler(_stderr_handler)
 except Exception:
     pass  # never crash on log setup failure
 
