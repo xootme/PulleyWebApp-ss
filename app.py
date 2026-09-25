@@ -3882,7 +3882,7 @@ _accounts_state = init_accounts(
     email_sender=_accounts_email,
     signup_grant=int(os.environ.get('TOKENS_SIGNUP_GRANT', '10')),
     # Hourly verified backups (cct_common.db_backup); none under the test
-    # harness. The off-server copy (Azure Blob) plugs in as backup_upload.
+    # harness. The off-server copy (Cloud Storage) plugs in as backup_upload.
     backup_dir=None if os.environ.get('PULLEY_TESTING') else os.path.join(_LOG_DIR, 'backups'),
     backup_alert=make_backup_alert(
         _accounts_email, alert_to=os.environ.get('BACKUP_ALERT_EMAIL', '').strip(),

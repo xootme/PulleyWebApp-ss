@@ -134,8 +134,8 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   inactivity_notify: Callable | None = None,
                   device_daily_budget: int | None = 100) -> AccountsState:
     """backup_dir=None means no scheduled backups (tests). backup_upload
-    is the off-server copy — the Azure Blob Storage upload once hosting
-    moves (ADR-008). inactivity_notify starts the daily inactivity run
+    is the off-server copy — the Cloud Storage upload once hosting moves
+    to Google Cloud Run (ADR-008). inactivity_notify starts the daily inactivity run
     (free tokens after 2 idle years, empty dead accounts after 5); None
     (tests) leaves it off."""
     state = AccountsState(enabled=enabled)

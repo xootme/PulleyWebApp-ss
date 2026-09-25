@@ -54,13 +54,13 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] Optional: refund the unused purchased balance when a customer asks to close their account
 
 ### Database backups (must be live before charging real money)
-Render-era backups are out of scope — hosting moves to Azure (see Hosting), and the
-off-server copy goes to Azure Blob Storage from there.
+Render-era backups are out of scope — hosting moves to Google Cloud Run (see Hosting),
+and the off-server copy goes to Cloud Storage from there.
 - [x] `cct_common.db_backup` (0.8.0): hourly online backup of `accounts.sqlite3` into `logs/backups/hourly`, first of each day kept in `logs/backups/daily`, pruned to 7 days / 90 days, each copy verified with `integrity_check()` (deleted if bad) and stored as one self-contained file; a failed or missing (>2 h) backup alerts; safe with several gunicorn workers
 - [x] Wired in `accounts_setup.py` whenever accounts are on (not under `PULLEY_TESTING`); alerts go to the error log and to `BACKUP_ALERT_EMAIL` if set
 - [x] Startup `integrity_check()`: on failure the account routes answer 503, the file is left as found, and the same alert fires
-- [ ] Off-server copy: Azure Blob Storage upload as `backup_upload` (private container, managed identity rather than a key in env)
-- [ ] Encrypt before upload (the files contain emails), key held in Azure Key Vault, not beside the blobs
+- [ ] Off-server copy: Cloud Storage upload as `backup_upload` (private bucket, the Cloud Run service account's own identity rather than a key in env; a bucket retention/lifecycle rule matching 7 / 90 days)
+- [ ] Encrypt before upload (the files contain emails), key held in Secret Manager (or Cloud KMS), not beside the backups
 - [ ] Set `BACKUP_ALERT_EMAIL` in production
 - [ ] Written restore procedure: restore latest backup → replay payment-provider orders (idempotent on order number) → check balances
 - [ ] Practise a restore from the off-server copy before launch, then quarterly
@@ -91,10 +91,14 @@ Every export runs on the server; the add-ins use the hosted app.
 - [ ] Weekly trial download limit (`register_trial_download`)
 - [ ] Dev backdoor (see Before Public Launch) — goes with the launcher licence check
 
-### Hosting: moving to Azure (decided 2026-09-24)
+### Hosting: moving to Google Cloud Run (decided 2026-09-25)
 Render can't scale while a disk is attached (only one instance allowed), and every state
 file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
-- [x] Host chosen: **Azure Container Apps (Consumption)** — ~$0.000024/vCPU-s, monthly free grant 180k vCPU-s / 360k GiB-s / 2M requests, scales to zero; uses the existing Microsoft account. (Also priced 2026-09-23: Cloud Run, Railway, Render Pro; AWS App Runner closed to new customers.)
+- [x] Host chosen: **Google Cloud Run** — billed only while handling requests (~$0.000024/vCPU-s), monthly free grant 180k vCPU-s / 360k GiB-s / 2M requests, scales to zero. (Azure Container Apps was chosen 2026-09-24 and dropped: the Microsoft account is Microsoft 365, not Azure. Also priced 2026-09-23: Railway, Render Pro; AWS App Runner closed to new customers.)
+- [ ] Owner: create a Google Cloud project with billing (card), and enable Cloud Run, Artifact Registry, Cloud Storage and Secret Manager
+- [ ] Deploy with `gcloud run deploy --source .` (builds from the Dockerfile); custom domain for cheapcadtools.com's tool path
+- [ ] Secrets (Resend key, PayPal/Stripe keys, OAuth client secrets) in Secret Manager, mounted as env vars — not in the repo or plain env
+- [ ] Google OAuth app registered in the same project's console
 - [ ] Move all state to Postgres (ledger, accounts, queue sessions) — no disk
 - [ ] Database: **Neon** Postgres (free tier, scales to zero, ~$0.106/CU-hour) works with any host
 - [ ] Dockerfile: Python + deps + Linux small_step binary

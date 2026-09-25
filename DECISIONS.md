@@ -62,9 +62,14 @@ FreeCAD, SolidWorks and the web.
   reminder email sent at least 30 days ahead, and any sign-in resets both clocks. The
   page states the rule wherever tokens are bought or signed in to. Not legal advice —
   confirm the wording with whoever writes the terms.
-- **Hosting moves to Azure Container Apps (decided 2026-09-24),** billed per second of
-  use and scaling to zero, so cost follows token sales. Off-server backups go to Azure
-  Blob Storage. Render-side backups are not pursued; Render is left behind with the move.
+- **Hosting moves to Google Cloud Run (decided 2026-09-25),** billed only while handling
+  requests and scaling to zero, so cost follows token sales. (Azure Container Apps was
+  picked on 2026-09-24, then dropped: the existing Microsoft account is Microsoft 365, not
+  Azure, and Cloud Run is the simpler move for one person — one-command deploys from the
+  Dockerfile, one request per instance, a max-instances cost cap, no Log Analytics bill.)
+  Database: Neon Postgres. Off-server backups go to a private Cloud Storage bucket,
+  encrypted with a key from Secret Manager, accessed through the service's own identity.
+  Render-side backups are not pursued; Render is left behind with the move.
 - **Built in `cct_common.tokens`** so EBoxDesigner can use the same ledger. SQLite
   first (local, tests, single-instance deploy); a Postgres backend behind the same
   interface when hosting moves off the Render disk (see ToDo.md "Hosting").
