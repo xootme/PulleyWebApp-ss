@@ -1,0 +1,20 @@
+# Allow-list: the image gets only what the running app needs. Everything
+# else (venvs, desktop builds, releases, tools, test output, the small_step
+# archive, logs) stays out — about 1.4 GB of this repo isn't app code.
+*
+!app.py
+!accounts_setup.py
+!bundles.py
+!charging.py
+!results.py
+!gunicorn.conf.py
+!requirements.txt
+!admin_dashboard.html
+!bin/small_step_linux
+!cct_common/
+!exporters/
+!geometry/
+!static/
+!templates/
+**/__pycache__
+**/*.pyc

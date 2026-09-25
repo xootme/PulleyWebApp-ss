@@ -102,7 +102,9 @@ file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
 - [ ] Google OAuth app registered in the same project's console
 - [ ] Move all state to Postgres (ledger, accounts, queue sessions) — no disk
 - [ ] Database: **Neon** Postgres (free tier, scales to zero, ~$0.106/CU-hour) works with any host
-- [ ] Dockerfile: Python + deps + Linux small_step binary
+- [x] Dockerfile (python:3.14-slim + Cairo, non-root user, `PORT` from Cloud Run) and an allow-list `.dockerignore` — image 695 MB; the full suite passes inside it (1293 passed, 30 skipped)
+- [x] `bin/small_step_linux` rebuilt from small_step 0.3.0 (static musl, `7c21b7e`): the committed Linux binary was still 0.2.0 from June, so Render has been serving STEP without the July geometry fixes — RELEASE.md's "rebuild on every push" step was missed
+- [ ] Production (Render, `main`) still runs the 0.2.0 binary — ship the 0.3.0 binary to `main` when you next deploy
 - [ ] One request per instance (exports are CPU-bound); max instances as a cost cap; decide min instances (cold start vs idle cost)
 - [ ] Re-evaluate whether the session queue is still needed once autoscaling is in place
 - [ ] Update `gunicorn.conf.py` comment — Render Standard is 2 GB now, not 1 GB
