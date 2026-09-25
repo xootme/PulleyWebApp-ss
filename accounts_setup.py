@@ -1,7 +1,13 @@
 """
 accounts_setup.py — wires the token model's accounts into a Flask app
-(ADR-008): the SQLite ledger + accounts store, email-link sign-in routes,
-and the startup integrity check.
+(ADR-008): the ledger + accounts store, email-link sign-in routes, and
+the startup integrity check.
+
+Where the store lives: DATABASE_URL (Postgres — Cloud Run, where there is no
+disk and several servers share one ledger) or, when that is unset, a SQLite
+file in the log directory (local runs, tests). Scheduled backups are for the
+SQLite file; a Postgres database is backed up by its provider (Neon's
+point-in-time restore).
 
 Kept out of app.py so tests can run it against a fresh Flask app and a
 temporary database. app.py calls init_accounts() once at import time.
@@ -13,7 +19,6 @@ the sign-in routes don't exist, so nobody can use them to send email.
 from __future__ import annotations
 
 import os
-import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,6 +36,30 @@ class AccountsState:
     problems: tuple = ()
     backup_stop: object = None  # threading.Event; set() stops the backup thread
     housekeeping_stop: object = None  # threading.Event for the daily inactivity run
+
+
+def describe_db(path: str) -> str:
+    """The database's name for logs and alert emails. A Postgres URL carries
+    its password, so only the host and database name are shown."""
+    from urllib.parse import urlsplit
+    from cct_common.sqlite_db import is_postgres
+    if not is_postgres(path):
+        return path
+    u = urlsplit(path)
+    return f"Postgres {u.hostname or '?'}{u.path or ''}"
+
+
+def _redact(text: str, path: str) -> str:
+    """Driver errors can quote the connection string; never pass its
+    password on to a log or an email."""
+    from urllib.parse import urlsplit
+    from cct_common.sqlite_db import is_postgres
+    if is_postgres(path):
+        text = text.replace(path, describe_db(path))
+        pw = urlsplit(path).password
+        if pw:
+            text = text.replace(pw, "***")
+    return text
 
 
 def make_email_sender(send: Callable, *, live: bool, has_key: bool, logger):
@@ -132,12 +161,15 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   backup_interval_s: float = 3600,
                   backup_first_delay_s: float = 30,
                   inactivity_notify: Callable | None = None,
-                  device_daily_budget: int | None = 100) -> AccountsState:
+                  device_daily_budget: int | None = 100,
+                  database_url: str | None = None) -> AccountsState:
     """backup_dir=None means no scheduled backups (tests). backup_upload
     is the off-server copy — the Cloud Storage upload once hosting moves
     to Google Cloud Run (ADR-008). inactivity_notify starts the daily inactivity run
     (free tokens after 2 idle years, empty dead accounts after 5); None
-    (tests) leaves it off."""
+    (tests) leaves it off. database_url: a postgresql:// URL to keep the
+    store in Postgres instead of the SQLite file (no scheduled backups
+    then — see the module docstring)."""
     state = AccountsState(enabled=enabled)
     app.extensions["pulley_accounts"] = state
     if not enabled:
@@ -146,18 +178,19 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
     from flask import jsonify, request
     from cct_common.account_routes import register_account_routes
     from cct_common.accounts import AccountStore
+    from cct_common.sqlite_db import DB_ERRORS, is_postgres
     from cct_common.tokens import TokenStore
 
-    db_path = os.path.join(log_dir, "accounts.sqlite3")
+    db_path = database_url or os.path.join(log_dir, "accounts.sqlite3")
     try:
         tokens = TokenStore(db_path)
         problems = tuple(tokens.integrity_check())
-    except sqlite3.DatabaseError as e:  # unreadable file: schema setup itself fails
-        tokens, problems = None, (str(e),)
+    except DB_ERRORS as e:  # unreadable file / unreachable server: setup itself fails
+        tokens, problems = None, (_redact(str(e), db_path),)
 
     if problems:
         state.problems = problems
-        message = (f"Accounts database failed its integrity check ({db_path}): "
+        message = (f"Accounts database failed its integrity check ({describe_db(db_path)}): "
                    + "; ".join(problems) + ". Account routes answer 503 until it is restored.")
         (backup_alert or app.logger.error)(message)
 
@@ -175,7 +208,7 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                             app_name=app_name, secure_cookies=live)
     state.tokens, state.accounts, state.healthy = tokens, accounts, True
 
-    if backup_dir:
+    if backup_dir and not is_postgres(db_path):
         from cct_common.db_backup import start_backup_thread
         state.backup_stop = start_backup_thread(
             tokens, backup_dir, name="accounts", interval_s=backup_interval_s,

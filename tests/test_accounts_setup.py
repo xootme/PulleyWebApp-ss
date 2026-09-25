@@ -10,7 +10,9 @@ import threading
 import flask
 import pytest
 
-from accounts_setup import init_accounts, make_backup_alert, make_email_sender
+import uuid
+
+from accounts_setup import _redact, describe_db, init_accounts, make_backup_alert, make_email_sender
 
 
 def _fresh_app(tmp_path, *, enabled=True, live=False, sender=None, grant=10):
@@ -264,3 +266,71 @@ def test_inactivity_run_with_the_real_store_sends_this_apps_email(tmp_path):
     clock.t += REMINDER_LEAD_S
     accounts.housekeeping(notify)
     assert tokens.balance(acct) == 5                  # only the bought tokens remain
+
+
+# ── Postgres (DATABASE_URL, Cloud Run) ────────────────────────────────────
+
+def test_describe_db_never_shows_a_postgres_password():
+    url = 'postgresql://app:s3cret-pw@ep-x.neon.tech/cct?sslmode=require'
+    assert describe_db(url) == 'Postgres ep-x.neon.tech/cct'
+    assert describe_db('/data/accounts.sqlite3') == '/data/accounts.sqlite3'
+
+
+def test_driver_errors_are_redacted_before_logging():
+    url = 'postgresql://app:s3cret-pw@ep-x.neon.tech/cct'
+    text = _redact(f'connection to {url} failed; password "s3cret-pw" rejected', url)
+    assert 's3cret-pw' not in text and 'Postgres ep-x.neon.tech/cct' in text
+    # a SQLite path is left alone
+    assert _redact('bad file /a/b.sqlite3', '/a/b.sqlite3') == 'bad file /a/b.sqlite3'
+
+
+PG = os.environ.get('CCT_TEST_POSTGRES', '').strip()
+
+
+@pytest.fixture
+def pg_url():
+    """A Postgres URL on a schema made for this test alone (skipped unless
+    CCT_TEST_POSTGRES points at a server, e.g. the local cct-pg container)."""
+    if not PG:
+        pytest.skip('CCT_TEST_POSTGRES not set')
+    import psycopg
+    from cct_common.sqlite_db import close_pool
+    schema = 't_' + uuid.uuid4().hex[:12]
+    with psycopg.connect(PG, autocommit=True) as conn:
+        conn.execute(f'CREATE SCHEMA {schema}')
+    url = f"{PG}{'&' if '?' in PG else '?'}options=-csearch_path%3D{schema}"
+    try:
+        yield url
+    finally:
+        close_pool(url)
+        with psycopg.connect(PG, autocommit=True) as conn:
+            conn.execute(f'DROP SCHEMA {schema} CASCADE')
+
+
+def test_database_url_keeps_the_ledger_in_postgres(tmp_path, pg_url):
+    app = flask.Flask(__name__)
+    sent = []
+    state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                          email_sender=lambda *a: sent.append(a) or (True, ''),
+                          signup_grant=7, database_url=pg_url,
+                          backup_dir=str(tmp_path / 'backups'), backup_first_delay_s=0)
+    assert state.healthy and state.tokens.is_postgres
+    assert not (tmp_path / 'accounts.sqlite3').exists()      # nothing on local disk
+    assert state.backup_stop is None and not (tmp_path / 'backups').exists()
+    c = app.test_client()
+    c.post('/api/account/login-link', json={'email': 'a@example.com'})
+    c.post('/account/login', data={'token': _token_from(sent[-1][2])})
+    assert c.get('/api/account').get_json()['balance'] == 7
+
+
+def test_designs_register_in_postgres(pg_url):
+    from charging import DesignStore
+    from cct_common.tokens import TokenStore
+    TokenStore(pg_url)
+    designs = DesignStore(pg_url)
+    design = {'teeth': 20, 'pitch': 'GT2', 'bore': 5}
+    did = designs.register('acct1', design)
+    assert designs.register('acct1', dict(design)) == did      # INSERT OR IGNORE on Postgres
+    assert designs.get(did) is not None and designs.get('nope') is None
+    designs.purge()
+    assert designs.get(did) is not None                         # fresh: kept

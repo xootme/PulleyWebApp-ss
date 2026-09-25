@@ -33,14 +33,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable, Iterator, Optional
 
-from .sqlite_db import SqliteDB
+from .sqlite_db import INTEGRITY_ERRORS, SqliteDB
 
 TOKEN_PRICE_CENTS = 10
 UNLOCK_WINDOW_S = 24 * 60 * 60
@@ -246,7 +245,7 @@ class TokenStore(SqliteDB):
                 db.execute(
                     "INSERT INTO ledger (account_id, ts, kind, amount, ref, detail) VALUES (?, ?, ?, ?, ?, ?)",
                     (account_id, self._clock(), kind, amount, ref, detail))
-            except sqlite3.IntegrityError:
+            except INTEGRITY_ERRORS:
                 return False
         return True
 
@@ -336,11 +335,10 @@ class TokenStore(SqliteDB):
                 bal = self._balance(db, account_id)
                 if bal < q.cost:
                     raise InsufficientTokens(q.cost, bal)
-                cur = db.execute(
+                spend_id = db.execute(
                     """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id)
-                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?, ?)""",
-                    (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id))
-                spend_id = cur.lastrowid
+                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?, ?) RETURNING id""",
+                    (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id)).fetchone()[0]
         try:
             yield q
         except BaseException:
@@ -368,7 +366,7 @@ class TokenStore(SqliteDB):
                        VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?)""",
                     (row["account_id"], self._clock(), -row["amount"], f"spend:{spend_id}",
                      row["design_key"], row["tier"], row["fmt"], detail, row["session_id"]))
-            except sqlite3.IntegrityError:
+            except INTEGRITY_ERRORS:
                 return False
         return True
 

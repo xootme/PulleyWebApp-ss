@@ -26,7 +26,7 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 ### Accounts and ledger
 - [x] `cct_common.tokens` (canonical repo): SQLite ledger — tier pricing, 24 h unlocks, upgrades, refund-on-failure, idempotent credits, atomic spend; 29 tests in `tests/test_tokens.py`
 - [x] cct_common 0.7.0 synced here (`9638c58`); `sync_cct_common.py` now copies only cct_common's last commit
-- [ ] Postgres backend behind the same `TokenStore` interface (when hosting moves)
+- [x] Postgres backend behind the same `TokenStore` interface (cct_common 0.11.0): `DATABASE_URL` set = Postgres, unset = the SQLite file; writes serialise on an advisory lock, so two servers can't both spend the last token. Tests run on both (`CCT_TEST_POSTGRES=...`); container smoke-tested against a local Postgres
 - [x] `cct_common.accounts` + `cct_common.account_routes` (cct_common 0.7.0, `b8835e9`): linked identities, email sign-in links (15 min, single use, rate-limited, confirm-button page), hashed revocable sessions (web cookie 30 d, add-in device token 1 y), account page data/history, account deletion; 38 tests
 - [x] `cct_common.sqlite_db`: WAL + `synchronous=FULL`, `integrity_check()`, online `backup()`
 - [x] Wired into `app.py` via `accounts_setup.py`, **off unless `TOKENS_ENABLED=1`**: store at `logs/accounts.sqlite3`, email-link sign-in through Resend (dev without a key logs the link to `logs/server_errors.log`), startup integrity check → 503 on account routes if it fails, signup grant from `TOKENS_SIGNUP_GRANT`; 11 tests in `tests/test_accounts_setup.py`
@@ -100,7 +100,8 @@ file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
 - [ ] Deploy with `gcloud run deploy --source .` (builds from the Dockerfile); custom domain for cheapcadtools.com's tool path
 - [ ] Secrets (Resend key, PayPal/Stripe keys, OAuth client secrets) in Secret Manager, mounted as env vars — not in the repo or plain env
 - [ ] Google OAuth app registered in the same project's console
-- [ ] Move all state to Postgres (ledger, accounts, queue sessions) — no disk
+- [x] Ledger, accounts and registered designs on Postgres when `DATABASE_URL` is set
+- [ ] The rest of the per-server state before running more than one instance: zip/STEP result files (`results.py`) → Cloud Storage; async STEP job status; queue sessions and trial counts (or drop the queue — see below)
 - [ ] Database: **Neon** Postgres (free tier, scales to zero, ~$0.106/CU-hour) works with any host
 - [x] Dockerfile (python:3.14-slim + Cairo, non-root user, `PORT` from Cloud Run) and an allow-list `.dockerignore` — image 695 MB; the full suite passes inside it (1293 passed, 30 skipped)
 - [x] `bin/small_step_linux` rebuilt from small_step 0.3.0 (static musl, `7c21b7e`): the committed Linux binary was still 0.2.0 from June, so Render has been serving STEP without the July geometry fixes — RELEASE.md's "rebuild on every push" step was missed

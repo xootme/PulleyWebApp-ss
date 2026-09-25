@@ -17,3 +17,7 @@ sendgrid>=6.9
 pytest-benchmark>=4.0
 psutil>=5.9
 requests>=2.31
+# The accounts/token ledger on Postgres when DATABASE_URL is set (Cloud Run);
+# unused with the local SQLite file. [binary] bundles libpq.
+psycopg[binary]>=3.2
+psycopg-pool>=3.2

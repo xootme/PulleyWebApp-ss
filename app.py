@@ -3896,6 +3896,8 @@ _accounts_state = init_accounts(
     device_daily_budget=(int(os.environ['TOKENS_DEVICE_DAILY_BUDGET'])
                          if os.environ.get('TOKENS_DEVICE_DAILY_BUDGET', '').strip()
                          else 100),
+    # Postgres on Cloud Run (a Secret Manager secret); unset = the SQLite file.
+    database_url=os.environ.get('DATABASE_URL', '').strip() or None,
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
                buy_url=os.environ.get('TOKENS_BUY_URL', '').strip(),
