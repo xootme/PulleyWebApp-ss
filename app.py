@@ -505,7 +505,13 @@ app = Flask(__name__,
             static_folder=os.path.join(_base_dir, 'static'))
 # ─── Cloudflare Worker proxy support ──────
 from werkzeug.middleware.proxy_fix import ProxyFix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1, x_host=1)
+# PROXY_HOPS: how many proxies in front of the app append to X-Forwarded-For.
+# request.remote_addr is then the visitor's real IP, which the per-IP limits
+# (sign-in links, new accounts) rely on — the header's leading entries are
+# whatever the visitor sent. Cloud Run's own address: 1 (Google appends the
+# client). Add one for each proxy placed in front of that (e.g. Cloudflare).
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=int(os.environ.get('PROXY_HOPS', '1')),
+                        x_prefix=1, x_host=1)
 # ──────────────────────────────────────────
 
 # ─── Gzip compression ─────────────────────
@@ -3910,6 +3916,9 @@ _accounts_state = init_accounts(
                          else 100),
     # Postgres on Cloud Run (a Secret Manager secret); unset = the SQLite file.
     database_url=os.environ.get('DATABASE_URL', '').strip() or None,
+    # New accounts per IP per day — stops signup tokens being farmed with
+    # throwaway addresses. Blank or 0: no limit.
+    signups_per_ip_per_day=int(os.environ.get('TOKENS_SIGNUPS_PER_IP_PER_DAY', '2') or 0) or None,
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
                buy_url=os.environ.get('TOKENS_BUY_URL', '').strip(),

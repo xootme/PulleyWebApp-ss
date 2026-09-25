@@ -334,3 +334,39 @@ def test_designs_register_in_postgres(pg_url):
     assert designs.get(did) is not None and designs.get('nope') is None
     designs.purge()
     assert designs.get(did) is not None                         # fresh: kept
+
+
+# ── new accounts per IP per day ───────────────────────────────────────────
+
+def test_signups_are_limited_per_ip(tmp_path):
+    app = flask.Flask(__name__)
+    app.config['TESTING'] = True
+    sent = []
+    init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                  email_sender=lambda *a: sent.append(a) or (True, ''),
+                  signups_per_ip_per_day=2)
+    c = app.test_client()
+    env = {'REMOTE_ADDR': '203.0.113.7'}
+
+    def signup(email):
+        c.post('/api/account/login-link', json={'email': email}, environ_overrides=env)
+        return c.post('/account/login', data={'token': _token_from(sent[-1][2])},
+                      environ_overrides=env)
+
+    assert signup('a@example.com').status_code == 303
+    assert signup('b@example.com').status_code == 303
+    third = signup('c@example.com')
+    assert third.status_code == 429 and b'Too many new accounts' in third.data
+    assert signup('a@example.com').status_code == 303       # existing accounts still sign in
+
+
+def test_real_app_limits_two_signups_and_trusts_one_proxy_hop():
+    # The per-IP limits read request.remote_addr, which ProxyFix sets from
+    # the X-Forwarded-For entry the nearest PROXY_HOPS proxies appended —
+    # never the visitor-controlled leading entries.
+    import app as app_module
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    assert isinstance(app_module.app.wsgi_app, ProxyFix)
+    assert app_module.app.wsgi_app.x_for == int(os.environ.get('PROXY_HOPS', '1'))
+    src = open(app_module.__file__, encoding='utf-8').read()
+    assert "os.environ.get('TOKENS_SIGNUPS_PER_IP_PER_DAY', '2')" in src

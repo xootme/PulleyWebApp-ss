@@ -52,7 +52,7 @@ import html
 from typing import Optional
 from urllib.parse import quote
 
-from .accounts import AccountStore, RateLimited, normalize_email
+from .accounts import AccountStore, RateLimited, SignupLimitReached, normalize_email
 
 BUDGET_CHOICES = (25, 50, 100, 250, 1000)   # offered on the pages; None = no limit
 
@@ -131,8 +131,11 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     body_fn = email_body or (lambda link: _default_email_body(app_name, link))
 
     def _client_ip():
-        return (request.headers.get("X-Forwarded-For", request.remote_addr or "")
-                .split(",")[0].strip()) or None
+        # remote_addr, never the raw X-Forwarded-For header: its first entry
+        # is whatever the visitor chose to send, so per-IP limits keyed on it
+        # could be dodged at will. Behind a proxy, the app sets remote_addr
+        # from the entries its own proxies added (werkzeug's ProxyFix).
+        return request.remote_addr or None
 
     def _page(title: str, inner: str, status: int = 200) -> Response:
         doc = (
@@ -190,7 +193,16 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "<button type='submit'>Sign in</button></form>"))
 
     def login_submit():
-        account_id = accounts.redeem_login_link(request.form.get("token", ""))
+        try:
+            account_id = accounts.redeem_login_link(request.form.get("token", ""),
+                                                    ip=_client_ip())
+        except SignupLimitReached:
+            return _page("Too many new accounts", (
+                "<p>Too many new accounts have been made from this network today, "
+                "so this one wasn't created.</p>"
+                "<p>Please try again tomorrow. If you already have an account, "
+                "sign in with its email address.</p>"
+                "<p><a href='/'>Back</a></p>"), status=429)
         if not account_id:
             return _page("Link expired", (
                 "<p>This sign-in link has expired or was already used. "
