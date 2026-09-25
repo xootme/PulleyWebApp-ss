@@ -102,9 +102,11 @@ file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
 - [ ] Google OAuth app registered in the same project's console
 - [x] Ledger, accounts and registered designs on Postgres when `DATABASE_URL` is set
 - [x] Result files (zips, async STEP) in Cloud Storage when `RESULTS_BUCKET` is set; finished jobs' status in the database when `DATABASE_URL` is set, so a status poll on another server finds it; exports run inside their request (`QUEUE_DISABLED=1` in the image — Cloud Run throttles CPU after the response). Job ids are 144-bit (were 8 hex digits, and the status answer carries the file link). Two containers sharing one Postgres: started on A, polled on B — works
-- [ ] Create the results bucket `gs://cheapcadtools-results` (lifecycle: delete after 1 day) and give the Cloud Run service account Storage Object Admin on it
+- [x] Results bucket `gs://cheapcadtools-results` (us-central1, public access prevented, no soft delete, lifecycle: delete after 1 day); service account `pulley-run@cheapcadtools.iam.gserviceaccount.com` for Cloud Run with Storage Object Admin on that bucket only
 - [ ] Queue sessions and trial counts stay per-server — fine on Cloud Run with the queue off and tokens on (trial limits only apply with tokens off)
-- [ ] Database: **Neon** Postgres (free tier, scales to zero, ~$0.106/CU-hour) works with any host
+- [x] Database: **Neon** Postgres project `cheapcadtools` (AWS US East 2, Postgres 17, database `neondb`), pooled connection string in Secret Manager as `DATABASE_URL`; `pulley-run` can read it. Checked through the pooler (advisory lock in a transaction, no prepared statements) and the full TokenStore on the direct host
+- [ ] Neon: move to the paid plan (7-day restore window) before real purchases are in the ledger — check the free plan's restore window
+- [ ] Neon's pooler rejects the `options=-csearch_path` startup parameter — fine for the app (it never sets one), but tests against Neon must use the direct host
 - [x] Dockerfile (python:3.14-slim + Cairo, non-root user, `PORT` from Cloud Run) and an allow-list `.dockerignore` — image 695 MB; the full suite passes inside it (1293 passed, 30 skipped)
 - [x] `bin/small_step_linux` rebuilt from small_step 0.3.0 (static musl, `7c21b7e`): the committed Linux binary was still 0.2.0 from June, so Render has been serving STEP without the July geometry fixes — RELEASE.md's "rebuild on every push" step was missed
 - [ ] Production (Render, `main`) still runs the 0.2.0 binary — ship the 0.3.0 binary to `main` when you next deploy
