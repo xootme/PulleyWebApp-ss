@@ -95,7 +95,8 @@ Every export runs on the server; the add-ins use the hosted app.
 Render can't scale while a disk is attached (only one instance allowed), and every state
 file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
 - [x] Host chosen: **Google Cloud Run** — billed only while handling requests (~$0.000024/vCPU-s), monthly free grant 180k vCPU-s / 360k GiB-s / 2M requests, scales to zero. (Azure Container Apps was chosen 2026-09-24 and dropped: the Microsoft account is Microsoft 365, not Azure. Also priced 2026-09-23: Railway, Render Pro; AWS App Runner closed to new customers.)
-- [ ] Owner: create a Google Cloud project with billing (card), and enable Cloud Run, Artifact Registry, Cloud Storage and Secret Manager
+- [x] Google Cloud set up (2026-09-25): project `cheapcadtools` (number 925396938485, no organization), billing active, **$20/month budget alert**; Cloud Run, Cloud Build, Artifact Registry, Secret Manager and Cloud Storage enabled; backup bucket `gs://cheapcadtools-backups` (US multi-region, Standard, public access prevented, uniform access, lifecycle: delete after 90 days); `gcloud` on the dev PC signed in as xootme@gmail.com under its own named configuration `cheapcadtools` (Cloud Run region us-central1) — the default configuration used by the GA4 MCP project `ga4-mcp-495711` is untouched
+- [ ] Optional later: Cloud Identity Free on cheapcadtools.com → an organization to own the project (move it in without redeploying)
 - [ ] Deploy with `gcloud run deploy --source .` (builds from the Dockerfile); custom domain for cheapcadtools.com's tool path
 - [ ] Secrets (Resend key, PayPal/Stripe keys, OAuth client secrets) in Secret Manager, mounted as env vars — not in the repo or plain env
 - [ ] Google OAuth app registered in the same project's console
