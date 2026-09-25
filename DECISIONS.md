@@ -43,6 +43,16 @@ FreeCAD, SolidWorks and the web.
   purchase, spend, refund, adjust rows), so every change is auditable. The
   check-and-spend runs inside one write transaction so two workers can't both
   spend the last token.
+- **Inactivity (decided 2026-09-25) — cleaning up dead accounts without taking paid value.**
+  Purchased tokens never expire: paid prepaid value can fall under gift-card rules
+  (federal minimum 5 years; some states, e.g. California, bar expiry) and state
+  unclaimed-property law. Instead: *free* tokens (signup, referral, promo) expire after
+  **2 years without a sign-in**; free tokens are counted as spent first. An account with
+  **no purchased tokens** left is closed after **5 years without a sign-in**
+  (`delete_account`: personal data removed, ledger kept). Each happens only after a
+  reminder email sent at least 30 days ahead, and any sign-in resets both clocks. The
+  page states the rule wherever tokens are bought or signed in to. Not legal advice —
+  confirm the wording with whoever writes the terms.
 - **Hosting moves to Azure Container Apps (decided 2026-09-24),** billed per second of
   use and scaling to zero, so cost follows token sales. Off-server backups go to Azure
   Blob Storage. Render-side backups are not pursued; Render is left behind with the move.

@@ -3864,7 +3864,9 @@ register_licensing_routes(
 # ── Accounts and tokens (ADR-008) ─────────────────────────────────────────────
 # Off unless TOKENS_ENABLED=1 — the live site is unchanged until accounts,
 # charging and the UI are all done. See accounts_setup.py.
-from accounts_setup import init_accounts, make_backup_alert, make_email_sender
+from accounts_setup import (
+    init_accounts, make_backup_alert, make_email_sender, make_inactivity_notify,
+)
 from cct_common.deploy_mode import is_live as _cc_is_live
 
 _ACCOUNTS_LIVE = _cc_is_live('CCT_ACCOUNTS_MODE')
@@ -3884,6 +3886,11 @@ _accounts_state = init_accounts(
     backup_alert=make_backup_alert(
         _accounts_email, alert_to=os.environ.get('BACKUP_ALERT_EMAIL', '').strip(),
         logger=app.logger),
+    # Daily: free tokens expire after 2 years without a sign-in, accounts with
+    # nothing bought close after 5 — each after a reminder email. Not in tests.
+    inactivity_notify=None if os.environ.get('PULLEY_TESTING') else make_inactivity_notify(
+        _accounts_email, app_name='CheapCAD Tools',
+        site_url=os.environ.get('SITE_URL', 'https://cheapcadtools.com/tools/pulleys')),
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
                buy_url=os.environ.get('TOKENS_BUY_URL', '').strip())

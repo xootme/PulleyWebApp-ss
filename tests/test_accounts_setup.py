@@ -192,3 +192,75 @@ def test_backup_alert_without_address_only_logs(caplog):
     with caplog.at_level(logging.ERROR):
         alert('backup failed: disk full')
     assert 'disk full' in caplog.text
+
+
+# ── inactivity: reminder emails and the daily run ─────────────────────────
+
+def test_free_token_reminder_email():
+    from accounts_setup import make_inactivity_notify
+    sent = []
+    notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
+                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+    assert notify('a@example.com', 'free_tokens', 1_893_456_000, 7) is True
+    to, subject, body = sent[0]
+    assert to == 'a@example.com' and '7 free' in subject and 'expire' in subject
+    assert 'https://example.com/p' in body and 'Tokens you bought never expire.' in body
+
+
+def test_account_closing_reminder_email_and_failed_send():
+    from accounts_setup import make_inactivity_notify
+    sent = []
+    notify = make_inactivity_notify(lambda *a: sent.append(a) or (False, 'down'),
+                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+    assert notify('a@example.com', 'account', 1_893_456_000, 0) is False   # not sent -> nothing happens
+    assert 'will be closed' in sent[0][1] and 'no purchased tokens' in sent[0][2]
+
+
+def test_daily_run_survives_a_failure(caplog):
+    from accounts_setup import start_housekeeping
+    runs, done = [], threading.Event()
+
+    class Accounts:
+        def housekeeping(self, notify):
+            runs.append(notify)
+            if len(runs) == 1:
+                raise RuntimeError('db locked')
+            done.set()
+            return {'reminded': 1}
+
+    stop = start_housekeeping(Accounts(), 'NOTIFY', logging.getLogger('t'),
+                              interval_s=0.05, first_delay_s=0)
+    try:
+        assert done.wait(5)
+    finally:
+        stop.set()
+    assert runs[:2] == ['NOTIFY', 'NOTIFY']
+    assert 'db locked' in caplog.text
+
+
+def test_inactivity_run_with_the_real_store_sends_this_apps_email(tmp_path):
+    """cct_common's housekeeping() driving this app's reminder email: after
+    ~2 idle years the reminder goes out, 30 days later the free tokens go."""
+    from accounts_setup import make_inactivity_notify
+    from cct_common.accounts import FREE_TOKEN_IDLE_S, REMINDER_LEAD_S, AccountStore
+    from cct_common.tokens import TokenStore
+
+    class Clock:
+        t = 1_000_000.0
+        def __call__(self):
+            return self.t
+
+    clock = Clock()
+    tokens = TokenStore(str(tmp_path / 'a.sqlite3'), clock=clock)
+    accounts = AccountStore(tokens, signup_grant=10)
+    acct = accounts.sign_in('email', 'a@example.com', 'a@example.com', email_verified=True)
+    tokens.credit(acct, 5, ref='order:1')
+    sent = []
+    notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
+                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+    clock.t += FREE_TOKEN_IDLE_S - REMINDER_LEAD_S + 1
+    accounts.housekeeping(notify)
+    assert len(sent) == 1 and '10 free CheapCAD Tools tokens expire' in sent[0][1]
+    clock.t += REMINDER_LEAD_S
+    accounts.housekeeping(notify)
+    assert tokens.balance(acct) == 5                  # only the bought tokens remain

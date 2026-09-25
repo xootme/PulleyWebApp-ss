@@ -40,6 +40,9 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] WooCommerce pack purchase → webhook credits the account (reuse the HMAC-verified webhook pattern in `cct_common.licensing`)
 - [ ] Account page: balance, purchase history, per-export history
 - [ ] Admin dashboard: balances, grants/refunds, sales
+- [x] Inactivity (ADR-008, cct_common 0.9.0, `6647737`): free tokens expire after 2 years without a sign-in (spent first; purchased never expire); accounts with no purchased tokens close after 5 years; 30-day reminder emails first; any sign-in resets; daily run in `accounts_setup.py`; notice in the sign-in and buy dialogs and on the balance
+- [ ] Have the terms of service state the inactivity rule (and check it against the states you sell into)
+- [ ] Optional: refund the unused purchased balance when a customer asks to close their account
 
 ### Database backups (must be live before charging real money)
 Render-era backups are out of scope — hosting moves to Azure (see Hosting), and the

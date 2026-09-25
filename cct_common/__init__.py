@@ -81,6 +81,8 @@ hashed revocable sessions, account deletion), plus its Flask routes:
     from cct_common.account_routes import register_account_routes, current_account_id
     accounts = AccountStore(store, signup_grant=10)
     register_account_routes(app, accounts, email_sender=send_email)
+    accounts.housekeeping(notify)   # daily: free tokens expire after 2 idle
+                                    # years, empty dead accounts go after 5
 
 Scheduled, verified backups of such a store (hourly + daily, pruned,
 with a hook for the off-server copy and alerts on failure):
@@ -102,4 +104,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"

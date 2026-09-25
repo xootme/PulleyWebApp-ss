@@ -54,6 +54,9 @@
     render();
   }
 
+  const EXPIRY_NOTE = 'Free tokens expire after 2 years without a sign-in; ' +
+                      'tokens you buy never expire. Signing in resets the clock.';
+
   function render() {
     const box = document.getElementById('cct-account');
     if (!box) return;
@@ -71,6 +74,7 @@
       box.append(el('span', 'cct-account-email', T.email));
       const bal = el('span', 'cct-account-balance', `${T.balance} token${T.balance === 1 ? '' : 's'}`);
       bal.id = 'cct-balance';
+      bal.title = EXPIRY_NOTE;
       box.append(bal);
       const out = el('button', 'cct-btn cct-btn-link', 'Sign out');
       out.type = 'button';
@@ -133,7 +137,7 @@
     input.placeholder = 'you@example.com';
     input.autocomplete = 'email';
     const status = el('p', 'cct-dialog-status');
-    body.append(input, status);
+    body.append(input, status, el('p', 'cct-dialog-note', EXPIRY_NOTE));
     const send = async (close, box) => {
       const email = input.value.trim();
       if (!email) { status.textContent = 'Enter your email address.'; return; }
@@ -183,7 +187,9 @@
       ? `You don't have enough tokens for this download (balance: ${balance}).`
       : `This download needs ${needed} token${needed === 1 ? '' : 's'}; you have ${balance}.`;
     if (!buyUrl) return message('Not enough tokens', text + ' Buying tokens isn\'t open yet.');
-    return dialog('Not enough tokens', el('p', 'cct-dialog-text', text), [
+    const body = el('div');
+    body.append(el('p', 'cct-dialog-text', text), el('p', 'cct-dialog-note', EXPIRY_NOTE));
+    return dialog('Not enough tokens', body, [
       { label: 'Cancel', value: null },
       { label: 'Buy tokens', primary: true,
         onClick: close => { window.open(buyUrl, '_blank', 'noopener'); close(true); } },

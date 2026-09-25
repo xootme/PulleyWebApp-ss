@@ -29,6 +29,17 @@ Security choices:
   rows stay as financial records with no personal data left on them.
   Only a hash of the closed email is kept, so re-registering the same
   address doesn't earn the signup tokens a second time.
+
+Inactivity (housekeeping(), run daily) — a way to clear out dead accounts
+without ever taking anything a customer paid for:
+- Free tokens (signup grant, promos) expire after 2 years without a sign-in.
+  Purchased tokens never expire.
+- After 5 years without a sign-in, an account holding no purchased tokens
+  has its personal data deleted (delete_account; the ledger stays).
+- Each is preceded by a reminder email at least 30 days ahead, and happens
+  only once that reminder has gone out. Every sign-in resets both clocks:
+  it stamps the identity's last_used_at, which idle time is measured from,
+  and a new idle period needs a new reminder.
 """
 from __future__ import annotations
 
@@ -43,6 +54,10 @@ LOGIN_LINK_TTL_S = 15 * 60
 LINKS_PER_EMAIL_PER_HOUR = 5
 LINKS_PER_IP_PER_HOUR = 20
 SESSION_TTL_S = {"web": 30 * 24 * 60 * 60, "device": 365 * 24 * 60 * 60}
+_YEAR_S = int(365.25 * 24 * 60 * 60)
+FREE_TOKEN_IDLE_S = 2 * _YEAR_S       # free tokens expire after this without a sign-in
+DEAD_ACCOUNT_IDLE_S = 5 * _YEAR_S     # an account with nothing bought is removed after this
+REMINDER_LEAD_S = 30 * 24 * 60 * 60   # reminder email this long before either
 PROVIDERS = frozenset({"email", "microsoft", "google", "github"})
 
 _SCHEMA = """
@@ -81,6 +96,13 @@ CREATE INDEX IF NOT EXISTS sessions_account ON sessions(account_id);
 CREATE TABLE IF NOT EXISTS closed_emails (
     email_hash  TEXT PRIMARY KEY,
     closed_at   REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reminders (
+    account_id  TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    idle_since  REAL NOT NULL,
+    sent_at     REAL NOT NULL,
+    PRIMARY KEY (account_id, kind, idle_since)
 );
 """
 
@@ -270,6 +292,84 @@ class AccountStore(SqliteDB):
                    WHERE account_id = ? AND revoked_at IS NULL AND expires_at > ?
                    ORDER BY last_used_at DESC""", (account_id, now)).fetchall()
         return [dict(r) for r in rows]
+
+    # ── inactivity ────────────────────────────────────────────────────────
+
+    _LAST_SIGN_IN_SQL = """COALESCE(
+        (SELECT MAX(COALESCE(i.last_used_at, i.created_at))
+         FROM identities i WHERE i.account_id = a.id),
+        a.created_at)"""
+
+    def last_sign_in(self, account_id: str) -> Optional[float]:
+        """When this account last signed in by any method (its creation if
+        it never has); None for an unknown account."""
+        with self._read() as db:
+            row = db.execute(f"SELECT {self._LAST_SIGN_IN_SQL} AS t FROM accounts a WHERE a.id = ?",
+                             (account_id,)).fetchone()
+        return row["t"] if row else None
+
+    def housekeeping(self, notify=None) -> dict:
+        """The daily inactivity run (see the module docstring). notify(email,
+        kind, deadline, tokens) -> bool sends a reminder: kind "free_tokens"
+        (tokens = free tokens that will expire) or "account" (tokens = 0).
+        Nothing expires or is deleted without a reminder sent at least
+        REMINDER_LEAD_S earlier in the same idle period, so with no notify
+        this only tidies up. Returns counts of what it did."""
+        now = self._clock()
+        done = {"reminded": 0, "free_expired": 0, "accounts_deleted": 0}
+        with self._read() as db:
+            accounts = [dict(r) for r in db.execute(
+                f"SELECT a.id, a.email, {self._LAST_SIGN_IN_SQL} AS last FROM accounts a "
+                f"WHERE a.email NOT LIKE 'deleted:%' AND {self._LAST_SIGN_IN_SQL} < ?",
+                (now - FREE_TOKEN_IDLE_S + REMINDER_LEAD_S,)).fetchall()]
+
+        for a in accounts:
+            idle = now - a["last"]
+            free = self.tokens.free_remaining(a["id"])
+            if free > 0:
+                deadline = a["last"] + FREE_TOKEN_IDLE_S
+                if self._remind(a, "free_tokens", deadline, free, notify, now):
+                    done["reminded"] += 1
+                if idle >= FREE_TOKEN_IDLE_S and self._reminded_early(a, "free_tokens", deadline):
+                    if self.tokens.expire_free(a["id"], detail="no sign-in for 2 years"):
+                        done["free_expired"] += 1
+            if idle >= DEAD_ACCOUNT_IDLE_S - REMINDER_LEAD_S and self.tokens.purchased_remaining(a["id"]) == 0:
+                deadline = a["last"] + DEAD_ACCOUNT_IDLE_S
+                if self._remind(a, "account", deadline, 0, notify, now):
+                    done["reminded"] += 1
+                if idle >= DEAD_ACCOUNT_IDLE_S and self._reminded_early(a, "account", deadline):
+                    self.tokens.expire_free(a["id"], detail="account closed after 5 years without a sign-in")
+                    self.delete_account(a["id"])
+                    done["accounts_deleted"] += 1
+        self.purge_expired()
+        return done
+
+    def _remind(self, a, kind, deadline, tokens, notify, now) -> bool:
+        """Send this idle period's reminder once, when inside the lead time."""
+        if notify is None or now < deadline - REMINDER_LEAD_S:
+            return False
+        with self._read() as db:
+            if db.execute("SELECT 1 FROM reminders WHERE account_id = ? AND kind = ? AND idle_since = ?",
+                          (a["id"], kind, a["last"])).fetchone():
+                return False
+        try:
+            sent = notify(a["email"], kind, deadline, tokens)
+        except Exception:
+            sent = False
+        if not sent:
+            return False                 # try again tomorrow; nothing happens without it
+        with self._write() as db:
+            db.execute("INSERT OR IGNORE INTO reminders (account_id, kind, idle_since, sent_at) "
+                       "VALUES (?, ?, ?, ?)", (a["id"], kind, a["last"], now))
+        return True
+
+    def _reminded_early(self, a, kind, deadline) -> bool:
+        """A reminder for this idle period went out at least the lead time
+        before the deadline (or, if sent late, that long ago)."""
+        with self._read() as db:
+            row = db.execute("SELECT sent_at FROM reminders WHERE account_id = ? AND kind = ? AND idle_since = ?",
+                             (a["id"], kind, a["last"])).fetchone()
+        return bool(row) and self._clock() - row["sent_at"] >= REMINDER_LEAD_S
 
     # ── deletion and housekeeping ─────────────────────────────────────────
 

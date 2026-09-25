@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable
 
 ACCOUNT_PATH_PREFIXES = ("/api/account", "/account/")
@@ -28,6 +30,7 @@ class AccountsState:
     accounts: object = None    # cct_common.accounts.AccountStore
     problems: tuple = ()
     backup_stop: object = None  # threading.Event; set() stops the backup thread
+    housekeeping_stop: object = None  # threading.Event for the daily inactivity run
 
 
 def make_email_sender(send: Callable, *, live: bool, has_key: bool, logger):
@@ -56,6 +59,51 @@ def make_backup_alert(email_sender: Callable, *, alert_to: str, logger):
     return alert
 
 
+def make_inactivity_notify(email_sender: Callable, *, app_name: str, site_url: str):
+    """The reminder emails for cct_common.accounts housekeeping: free tokens
+    about to expire, or an account with nothing bought about to be closed.
+    Returns True only when the email was sent — nothing expires otherwise."""
+    def notify(email: str, kind: str, deadline: float, tokens: int) -> bool:
+        when = datetime.fromtimestamp(deadline).strftime("%d %B %Y")
+        sign_in = f"Signing in to {app_name} before then ({site_url}) keeps them."
+        if kind == "free_tokens":
+            subject = f"Your {tokens} free {app_name} tokens expire on {when}"
+            body = (f"Hi,\n\nYour account hasn't been signed in to for almost 2 years, so its "
+                    f"{tokens} free token{'s' if tokens != 1 else ''} will expire on {when}. "
+                    f"{sign_in}\n\nTokens you bought never expire.\n")
+        else:
+            subject = f"Your {app_name} account will be closed on {when}"
+            body = (f"Hi,\n\nYour account hasn't been signed in to for almost 5 years and holds "
+                    f"no purchased tokens, so it will be closed on {when} and your email "
+                    f"address removed. Signing in before then ({site_url}) keeps it open.\n")
+        ok, _ = email_sender(email, subject, body)
+        return bool(ok)
+    return notify
+
+
+def start_housekeeping(accounts, notify, logger, *, interval_s: float = 24 * 3600,
+                       first_delay_s: float = 120) -> threading.Event:
+    """Run accounts.housekeeping(notify) daily in a daemon thread. A failure
+    is logged and never reaches the app. Returns an Event; set() stops it."""
+    stop = threading.Event()
+
+    def loop():
+        if stop.wait(first_delay_s):
+            return
+        while True:
+            try:
+                done = accounts.housekeeping(notify)
+                if any(done.values()):
+                    logger.info("Account housekeeping: %s", done)
+            except Exception as e:
+                logger.error("Account housekeeping failed: %s", e)
+            if stop.wait(interval_s):
+                return
+
+    threading.Thread(target=loop, name="cct-account-housekeeping", daemon=True).start()
+    return stop
+
+
 def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   email_sender: Callable, signup_grant: int = 10,
                   app_name: str = "CheapCAD Tools",
@@ -63,10 +111,13 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   backup_alert: Callable[[str], None] | None = None,
                   backup_upload: Callable[[str], None] | None = None,
                   backup_interval_s: float = 3600,
-                  backup_first_delay_s: float = 30) -> AccountsState:
+                  backup_first_delay_s: float = 30,
+                  inactivity_notify: Callable | None = None) -> AccountsState:
     """backup_dir=None means no scheduled backups (tests). backup_upload
     is the off-server copy — the Azure Blob Storage upload once hosting
-    moves (ADR-008)."""
+    moves (ADR-008). inactivity_notify starts the daily inactivity run
+    (free tokens after 2 idle years, empty dead accounts after 5); None
+    (tests) leaves it off."""
     state = AccountsState(enabled=enabled)
     app.extensions["pulley_accounts"] = state
     if not enabled:
@@ -109,4 +160,6 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
             tokens, backup_dir, name="accounts", interval_s=backup_interval_s,
             first_delay_s=backup_first_delay_s,
             on_failure=backup_alert or app.logger.error, upload=backup_upload)
+    if inactivity_notify is not None:
+        state.housekeeping_stop = start_housekeeping(accounts, inactivity_notify, app.logger)
     return state

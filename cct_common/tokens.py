@@ -55,7 +55,13 @@ TRANSIENT_KEYS = frozenset({
     "which", "format", "fmt", "account_token",
 })
 
-CREDIT_KINDS = frozenset({"signup", "purchase", "referral", "adjust"})
+CREDIT_KINDS = frozenset({"signup", "purchase", "referral", "promo", "adjust"})
+
+# Tokens given away rather than bought. Only these can ever expire (see
+# free_remaining / expire_free): purchased tokens never do.
+FREE_KINDS = frozenset({"signup", "referral", "promo"})
+# Ledger rows that use tokens up. Free tokens are counted as used first.
+_CONSUMING_KINDS = ("spend", "refund", "expire")
 
 
 class InsufficientTokens(Exception):
@@ -123,9 +129,14 @@ class TokenStore(SqliteDB):
 
     Ledger kinds: ``signup``/``purchase``/``referral`` (credits),
     ``adjust`` (admin, either sign), ``spend`` (a paid download, negative),
-    ``refund`` (reverses one spend; ``ref`` is ``spend:<id>``) and
+    ``refund`` (reverses one spend; ``ref`` is ``spend:<id>``),
     ``download`` (a free download of an already-unlocked design, amount 0,
-    kept only for history)."""
+    kept only for history) and ``expire`` (free tokens removed after long
+    inactivity — see expire_free).
+
+    Free tokens (FREE_KINDS: signup, referral, promo) are spent before
+    purchased ones, so what's left of them is simply what was given minus
+    everything used, never below 0. Purchased tokens never expire."""
 
     def __init__(self, path: str, *, clock: Callable[[], float] = time.time,
                  unlock_window_s: int = UNLOCK_WINDOW_S):
@@ -223,6 +234,44 @@ class TokenStore(SqliteDB):
             except sqlite3.IntegrityError:
                 return False
         return True
+
+    # ── free vs purchased ─────────────────────────────────────────────────
+
+    def _free_remaining(self, db, account_id: str) -> int:
+        given = db.execute(
+            f"SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE account_id = ? "
+            f"AND kind IN ({','.join('?' * len(FREE_KINDS))})",
+            (account_id, *sorted(FREE_KINDS))).fetchone()[0]
+        # Everything that used tokens up, net of refunds; negative admin
+        # adjustments count too (the customer-friendly side: less expires).
+        used = -db.execute(
+            f"SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE account_id = ? "
+            f"AND (kind IN ({','.join('?' * len(_CONSUMING_KINDS))}) OR (kind = 'adjust' AND amount < 0))",
+            (account_id, *_CONSUMING_KINDS)).fetchone()[0]
+        return max(0, min(self._balance(db, account_id), int(given) - int(used)))
+
+    def free_remaining(self, account_id: str) -> int:
+        """Free (given, not bought) tokens still unspent."""
+        with self._read() as db:
+            return self._free_remaining(db, account_id)
+
+    def purchased_remaining(self, account_id: str) -> int:
+        """Bought tokens still unspent — these never expire."""
+        with self._read() as db:
+            return self._balance(db, account_id) - self._free_remaining(db, account_id)
+
+    def expire_free(self, account_id: str, *, detail: str = "free tokens expired") -> int:
+        """Remove the account's unspent free tokens as one ``expire`` row,
+        leaving purchased tokens untouched. Returns how many were removed;
+        0, with nothing written, if none were left."""
+        with self._write() as db:
+            n = self._free_remaining(db, account_id)
+            if n <= 0:
+                return 0
+            db.execute(
+                "INSERT INTO ledger (account_id, ts, kind, amount, detail) VALUES (?, ?, 'expire', ?, ?)",
+                (account_id, self._clock(), -n, detail))
+        return n
 
     # ── charging ──────────────────────────────────────────────────────────
 
