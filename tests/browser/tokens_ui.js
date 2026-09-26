@@ -168,14 +168,15 @@ async function main() {
   // 2. the 3D window
   let label = await openWindow();
   check('3D: three tier sections with token labels', JSON.stringify(await tiers()) ===
-        JSON.stringify(['6 tokens · CAD shape', '4 tokens · 3D printing shape', '2 tokens · 2D drawings']), await tiers());
+        JSON.stringify(['4 tokens · CAD shape', '3 tokens · 3D printing shape', '2 tokens · 2D drawings']), await tiers());
   const p3 = await parts();
   check('3D: parts list has both pulleys, belt and flanges', p3.some(p => p.startsWith('Pulley 1')) && p3.some(p => p.startsWith('Pulley 2')) && p3.includes('Belt') && p3.some(p => p.startsWith('Pulley 1 flanges')), p3);
   check('3D: everything ticked by default', await allTicked());
-  check('3D: button shows 6 tokens', label === 'Download zip (6 tokens)', label);
-  check('3D: balance line 20 → 14', (await js("document.querySelector('.cct-dl-status').textContent")) === 'Balance: 20 → 14.');
+  check('3D: red note above the prices', await js("(() => { const n = document.querySelector('.cct-dl .cct-dl-costnote'); const t = document.querySelector('.cct-dl .cct-tier'); return !!n && n.textContent === 'Adding more complicated output files increases the token cost.' && getComputedStyle(n).color === 'rgb(192, 57, 43)' && !!(n.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING); })()"));
+  check('3D: button shows 4 tokens', label === 'Download zip (4 tokens)', label);
+  check('3D: balance line 20 → 16', (await js("document.querySelector('.cct-dl-status').textContent")) === 'Balance: 20 → 16.');
   await tick('cct-fmt-step', false);
-  check('untick STEP: 4 tokens', (await labelSettles()) === 'Download zip (4 tokens)');
+  check('untick STEP: 3 tokens', (await labelSettles()) === 'Download zip (3 tokens)');
   await tick('cct-fmt-stl', false);
   check('untick STL: 2 tokens', (await labelSettles()) === 'Download zip (2 tokens)');
   check('untick STL: flange row greyed, says how to include it', await js(`(() => {
@@ -191,21 +192,23 @@ async function main() {
   check('untick all: nothing to download, disabled', (await labelSettles()) === 'Nothing to download' &&
         await js("document.querySelector('.cct-dl .cct-btn-primary').disabled"));
   for (const f of ['step', 'stl', 'svg', 'dxf']) await tick(`cct-fmt-${f}`, true);
-  check('re-tick: 6 tokens again', (await labelSettles()) === 'Download zip (6 tokens)');
+  check('re-tick: 4 tokens again', (await labelSettles()) === 'Download zip (4 tokens)');
 
   // 3. download: one zip, one charge
   let before = (await history()).length;
   await js("document.querySelector('.cct-dl .cct-btn-primary').click()");
+  check('zip: a spinner shows while the files are built',
+        await waitFor("document.getElementById('loading-overlay').style.display === 'flex' && document.getElementById('loading-text').textContent.startsWith('Building your files')", 3000));
   await waitJob();
   const h = (await history()).slice(0, (await history()).length - before);
-  check('zip: exactly one spend of 6 for STEP', h.length === 1 && h[0].kind === 'spend' && h[0].amount === -6 && h[0].fmt === 'step', h);
-  check('balance 14', (await balance()) === 14);
+  check('zip: exactly one spend of 4 for STEP', h.length === 1 && h[0].kind === 'spend' && h[0].amount === -4 && h[0].fmt === 'step', h);
+  check('balance 16', (await balance()) === 16);
   const names = newestZip();
   const ext = countExt(names);
   check('zip: STEP for both pulleys and the belt', ext.step === 3, names);
   check('zip: STL for both pulleys, belt and flange', ext.stl >= 4, names);
   check('zip: SVG and DXF for both pulleys and belt', ext.svg >= 3 && ext.dxf >= 3, names);
-  check('header shows 14 tokens', await waitFor("document.getElementById('cct-balance')?.textContent === '14 tokens'", 5000));
+  check('header shows 16 tokens', await waitFor("document.getElementById('cct-balance')?.textContent === '16 tokens'", 5000));
 
   label = await openWindow();
   check('same design again: already paid', label === 'Download zip (already paid)', label);
@@ -215,6 +218,7 @@ async function main() {
   await setMode3D(false); await sleep(2000);
   label = await openWindow();
   check('2D: only the drawings tier', JSON.stringify(await tiers()) === JSON.stringify(['2 tokens · 2D drawings']), await tiers());
+  check('2D: no cost note with a single tier', await js("!document.querySelector('.cct-dl .cct-dl-costnote')"));
   const p2 = await parts();
   check('2D: parts include the whole-drive drawing', p2.some(p => p.startsWith('Whole drive drawing')), p2);
   check('2D: already paid through the STEP purchase', label === 'Download zip (already paid)', label);

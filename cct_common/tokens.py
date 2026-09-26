@@ -44,8 +44,8 @@ from .sqlite_db import INTEGRITY_ERRORS, SqliteDB
 TOKEN_PRICE_CENTS = 10
 UNLOCK_WINDOW_S = 24 * 60 * 60
 
-# 1 token = 5 cents (was 10 until 2026-09-26: counts doubled, prices unchanged).
-TIER_PRICE = {"2d": 2, "stl": 4, "step": 6}
+# 1 token = 5 cents. 2D 10c, STL 15c, STEP 20c: each tier adds one token.
+TIER_PRICE = {"2d": 2, "stl": 3, "step": 4}
 FORMAT_TIER = {"svg": "2d", "dxf": "2d", "stl": "stl", "step": "step"}
 
 # Query/body keys that change how a file is delivered, not what the design

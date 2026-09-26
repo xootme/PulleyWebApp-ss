@@ -377,7 +377,7 @@ def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
         body = [f"<h1>Buy {html.escape(app_name)} tokens</h1>",
                 f"<p>Signed in as <b>{html.escape(email)}</b> · balance "
                 f"<b id='bal'>{tokens.balance(acct)}</b> tokens</p>",
-                "<p class='note'>2D drawing 2 tokens · 3D-print (STL) 4 · CAD (STEP) 6. "
+                "<p class='note'>2D drawing 2 tokens · 3D-print (STL) 3 · CAD (STEP) 4. "
                 "Tokens last as long as you sign in at least once every 5 years."
                 "</p><p id='msg' role='status'></p>"]
         if pp:

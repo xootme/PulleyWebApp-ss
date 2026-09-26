@@ -1057,6 +1057,7 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 .cct-account-balance:focus-visible { background: rgba(255,255,255,0.32); outline: none; }
 .cct-token-count      { margin: 0 0 6px; font-size: 34px; font-weight: 700; color: #0078d4; line-height: 1.1; }
 .cct-token-count span { font-size: 16px; font-weight: 600; color: #333; }
+.cct-dl-costnote      { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: #c0392b; }
 .cct-token-expiry     { margin: 8px 0 6px; font-size: 14px; font-weight: 600; }
 .cct-dialog-offer     { margin: 10px 0 4px; font-size: 14px; font-weight: 700; color: #0078d4; }
 .cct-account-note     { opacity: 0.8; font-style: italic; }
@@ -1104,3 +1105,10 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 .cct-dl-status        { min-height: 1.3em; margin: 16px 0 0; font-size: 13px; color: #555; }
 .cct-btn[disabled]    { opacity: 0.55; cursor: default; }
 .cct-check-off        { opacity: 0.45; cursor: default; }
+
+/* Preview area while the first preview loads (a cold server can take a few seconds). */
+.preview-spinner {
+  display: inline-block; width: 18px; height: 18px; margin-right: 10px; vertical-align: -4px;
+  border: 3px solid #d0dae6; border-top-color: #0078d4; border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=31">
+  <link rel="stylesheet" href="/static/style.css?v=32">
 </head>
 <body>
 
@@ -492,7 +492,7 @@
     </div>
     <div class="preview-box" id="preview-box">
       <img id="preview-img" src="" alt="" style="display:none;">
-      <div class="preview-placeholder" id="preview-placeholder">Select a profile to preview</div>
+      <div class="preview-placeholder" id="preview-placeholder"><span class="preview-spinner"></span>Loading preview…</div>
       <canvas id="three-canvas" style="display:none;"></canvas>
     </div>
     <div class="preview-footer" id="preview-footer"></div>
@@ -2532,13 +2532,13 @@ async function _cctTokenDownload(url, start, alsoAfter) {
 
 // ── Download window (ADR-008) ─────────────────────────────────────────────
 // One window, one zip: every part shown, in the formats ticked. In the 3D
-// view the tiers are STEP (6 tokens), STL (4) and 2D drawings (2); in the 2D
+// view the tiers are STEP (4 tokens), STL (3) and 2D drawings (2); in the 2D
 // view only the drawings. The zip is one purchase of the whole design at the
 // highest tier ticked, so the button shows what the ticks cost as they change.
 
 const _DL_TIERS_3D = [
-  { tokens: 6, label: 'CAD shape',         fmts: [['step', 'STEP']] },     // 1 token = 5 cents
-  { tokens: 4, label: '3D printing shape', fmts: [['stl', 'STL']] },
+  { tokens: 4, label: 'CAD shape',         fmts: [['step', 'STEP']] },     // 1 token = 5 cents
+  { tokens: 3, label: '3D printing shape', fmts: [['stl', 'STL']] },
   { tokens: 2, label: '2D drawings',       fmts: [['svg', 'SVG'], ['dxf', 'DXF']] },
 ];
 const _DL_TIERS_2D = [_DL_TIERS_3D[2]];
@@ -2639,6 +2639,10 @@ async function openDownloadWindow() {
   for (const pt of parts) partsBox.append(box(`cct-part-${pt.id}`, pt.label, pt.note));
   dlg.append(partsBox);
 
+  if (tokensOn && tiers.length > 1) {
+    dlg.append(el('p', 'cct-dl-costnote',
+                  'Adding more complicated output files increases the token cost.'));
+  }
   for (const t of tiers) {
     const head = el('div', 'cct-tier');
     head.append(el('span', null, tokensOn
@@ -2743,12 +2747,14 @@ async function openDownloadWindow() {
     const title = document.querySelector('#progress-modal-overlay h3');
     if (title) title.textContent = 'Preparing your download';
     _retryDownload = () => openDownloadWindow();
+    const done = _busy('Building your files…');
     fetch('/api/download/bundle', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
     .then(async r => {
+      done();
       if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -2763,8 +2769,8 @@ async function openDownloadWindow() {
       showProgressModal();
       pollJobStatus();
     })
-    .catch(err => showErrorModalWithRetry(`Couldn't start the download: ${err.message}`,
-                                          () => openDownloadWindow()));
+    .catch(err => { done(); showErrorModalWithRetry(`Couldn't start the download: ${err.message}`,
+                                                    () => openDownloadWindow()); });
   });
 }
 
@@ -4306,12 +4312,14 @@ function _startAsyncJob(endpoint, params, retryFn) {
   _retryDownload = retryFn || null;
   const sessionId = new URLSearchParams(window.location.search).get('session_id');
   if (sessionId) params.session_id = sessionId;
+  const done = _busy('Generating your file…');
   fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   })
   .then(async r => {
+    done();
     if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
     if (!r.ok) throw new Error(`Server returned ${r.status}`);
     return r.json();
@@ -4324,9 +4332,28 @@ function _startAsyncJob(endpoint, params, retryFn) {
     pollJobStatus();
   })
   .catch(err => {
+    done();
     showErrorModalWithRetry(`Failed to start download: ${err.message}`,
                             retryFn || (() => {}));
   });
+}
+
+// The full-screen spinner with a message and a running seconds count, for
+// work that happens before the server answers (on Cloud Run a download job
+// runs inside its request, so the progress box only appears once it's done).
+// Returns the function that hides it.
+function _busy(message) {
+  const overlay = document.getElementById('loading-overlay');
+  const text = document.getElementById('loading-text');
+  const started = Date.now();
+  const show = () => {
+    const secs = Math.floor((Date.now() - started) / 1000);
+    text.textContent = secs >= 2 ? `${message} ${secs} s` : message;
+  };
+  show();
+  overlay.style.display = 'flex';
+  const timer = setInterval(show, 500);
+  return () => { clearInterval(timer); overlay.style.display = 'none'; };
 }
 
 function showProgressModal() {
