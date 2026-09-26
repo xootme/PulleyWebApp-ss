@@ -16,7 +16,8 @@ Routes:
     GET    /account/login?token=...  confirmation page (a button, see below)
     POST   /account/login            uses the link, sets the session cookie
     POST   /api/account/logout
-    GET    /api/account              email, balance, sign-in methods, sessions
+    GET    /api/account              email, balance (free / bought), expiry dates, buy page,
+                                     sign-in methods, sessions
     GET    /api/account/history      ledger rows, newest first
     DELETE /api/account/sessions/<id>   revoke one session (e.g. a lost laptop)
     POST   /api/account/delete       {confirm_email}  delete the account
@@ -54,7 +55,8 @@ import html
 from typing import Optional
 from urllib.parse import quote
 
-from .accounts import AccountStore, RateLimited, normalize_email
+from .accounts import (DEAD_ACCOUNT_IDLE_S, FREE_TOKEN_IDLE_S, AccountStore, RateLimited,
+                       normalize_email)
 
 BUDGET_CHOICES = (25, 50, 100, 250, 1000)   # offered on the pages; None = no limit
 
@@ -244,9 +246,21 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         sessions = accounts.list_sessions(acct)
         for s in sessions:
             s["current"] = s["id"] == current
+        # When tokens go (accounts.py, inactivity): free ones after 2 years
+        # without a sign-in, everything left when the account closes after 5.
+        # Both count from the last sign-in, so signing in pushes them out.
+        last = accounts.last_sign_in(acct)
+        free = tokens.free_remaining(acct)
+        from flask import current_app
         return jsonify({
             "email": tokens.account_email(acct),
             "balance": tokens.balance(acct),
+            "free": free,
+            "purchased": tokens.purchased_remaining(acct),
+            "last_sign_in": last,
+            "free_expires": (last + FREE_TOKEN_IDLE_S) if free > 0 else None,
+            "account_expires": last + DEAD_ACCOUNT_IDLE_S,
+            "buy_url": current_app.extensions[_EXT_KEY].get("buy_url", ""),
             "identities": accounts.identities(acct),
             "sessions": sessions,
         })

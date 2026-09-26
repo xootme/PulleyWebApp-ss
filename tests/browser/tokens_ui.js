@@ -140,6 +140,21 @@ async function main() {
   await sleep(1500); await waitFor("document.readyState === 'complete'"); await js('window.cctTokens.ready'); await sleep(1000);
   check('signed in: header shows email and 10 tokens',
         await js("document.querySelector('.cct-account-email')?.textContent === 'ui-test@example.com' && document.getElementById('cct-balance')?.textContent === '10 tokens'"));
+  // Clicking the balance opens the token dialog: count, expiry dates, the
+  // sign-in note. No payment provider in this run, so no Buy button.
+  await js("document.getElementById('cct-balance').click()");
+  await waitFor("document.querySelector('.cct-dialog-title')?.textContent === 'Your tokens'");
+  check('balance click: token dialog shows the count',
+        await js("document.querySelector('.cct-token-count')?.textContent.trim() === '10 tokens'"));
+  check('balance click: both expiry dates listed',
+        await js(`(() => { const t = document.querySelector('.cct-token-dates')?.textContent || '';
+          return /Tokens you bought: kept until \\w+ \\d+, \\d{4}/.test(t) && /Free tokens: expire \\w+ \\d+, \\d{4}/.test(t); })()`));
+  check('balance click: says sign-ins push the dates out',
+        await js("[...document.querySelectorAll('.cct-dialog .cct-dialog-note')].some(n => n.textContent.includes('move out every time you sign in') && n.textContent.includes('5 years'))"));
+  check('balance click: no Buy button without a payment provider',
+        await js("![...document.querySelectorAll('.cct-dialog .cct-btn')].some(b => b.textContent === 'Buy tokens')"));
+  await js("[...document.querySelectorAll('.cct-dialog .cct-btn')].find(b => b.textContent === 'Close').click()");
+  await sleep(300);
   await js(`(() => { const on = id => { const e = document.getElementById(id); if (e && !e.checked) e.click(); };
     on('feature_build'); on('dual_enable'); on('spokes1_enabled'); on('flange1_enabled');
     on('flange1_3dprint'); on('flange1_top_separate'); })()`);  // separate top flange: a part of its own

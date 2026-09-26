@@ -176,6 +176,8 @@ class Charges:
         self.state = state
         self.buy_url = buy_url
         self.limit_notify = limit_notify
+        if "cct_accounts" in app.extensions:        # /api/account offers it too (balance dialog)
+            app.extensions["cct_accounts"]["buy_url"] = buy_url
         if not (state.enabled and state.healthy):
             return
         self.designs = DesignStore(state.tokens.path)

@@ -423,3 +423,24 @@ def test_real_app_buy_url_waits_for_a_provider():
         assert charges.buy_url == ''
     src = open(app_module.__file__, encoding='utf-8').read()
     assert "or ('/account/buy' if _accounts_state.payment_providers else '')" in src
+
+
+def test_account_info_offers_the_buy_page_once_a_provider_is_set(tmp_path):
+    # The balance dialog's Buy button comes from /api/account's buy_url,
+    # which charges.attach() fills in.
+    from cct_common.payments import DEFAULT_PACKS, PayPalConfig, StripeConfig
+    from charging import Charges
+    app = flask.Flask(__name__)
+    app.config['TESTING'] = True
+    sent = []
+    state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                          email_sender=lambda *a: sent.append(a) or (True, ''),
+                          payments={'packs': DEFAULT_PACKS, 'paypal': PayPalConfig('id', 'secret'),
+                                    'stripe': StripeConfig('')})
+    Charges().attach(app, state, buy_url='/account/buy')
+    c = app.test_client()
+    c.post('/api/account/login-link', json={'email': 'a@example.com'})
+    c.post('/account/login', data={'token': _token_from(sent[-1][2])})
+    info = c.get('/api/account').get_json()
+    assert info['buy_url'] == '/account/buy'
+    assert info['free'] == 10 and info['purchased'] == 0 and info['account_expires'] > info['free_expires']

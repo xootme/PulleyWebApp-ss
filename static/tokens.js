@@ -50,6 +50,11 @@
       const d = await r.json();
       T.enabled = true; T.unavailable = false; T.signedIn = true;
       T.email = d.email; T.balance = d.balance;
+      // For the balance dialog: free vs bought, and when each goes (both
+      // count from the last sign-in — cct_common.accounts inactivity rules).
+      T.free = d.free || 0; T.purchased = d.purchased || 0;
+      T.freeExpires = d.free_expires || null; T.accountExpires = d.account_expires || null;
+      if (d.buy_url !== undefined) T.buyUrl = d.buy_url || '';
     }
     render();
   }
@@ -73,9 +78,13 @@
       box.append(b);
     } else {
       box.append(el('span', 'cct-account-email', T.email));
-      const bal = el('span', 'cct-account-balance', `${T.balance} token${T.balance === 1 ? '' : 's'}`);
+      // The balance is a button: it opens the token dialog (balance, when
+      // the tokens expire, buy more).
+      const bal = el('button', 'cct-account-balance', `${T.balance} token${T.balance === 1 ? '' : 's'}`);
+      bal.type = 'button';
       bal.id = 'cct-balance';
-      bal.title = EXPIRY_NOTE;
+      bal.title = 'Your tokens — balance, expiry dates, buy more';
+      bal.addEventListener('click', () => tokenDialog());
       box.append(bal);
       const out = el('button', 'cct-btn cct-btn-link', 'Sign out');
       out.type = 'button';
@@ -201,6 +210,40 @@
       { label: 'Cancel', value: null },
       { label: 'Email me a link', primary: true, onClick: send },
     ]);
+  }
+
+  const _fmtDate = secs => new Date(secs * 1000).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // The token dialog, from the balance in the header: how many, when they
+  // expire (pushed out by every sign-in), and a way to buy more.
+  async function tokenDialog() {
+    await refresh();                                  // fresh balance and dates
+    const body = el('div');
+    const big = el('p', 'cct-token-count', `${T.balance}`);
+    big.append(el('span', null, ` token${T.balance === 1 ? '' : 's'}`));
+    body.append(big);
+    if (T.free && T.purchased) {
+      body.append(el('p', 'cct-dialog-text', `${T.purchased} bought · ${T.free} free (free tokens are used first)`));
+    }
+    const dates = el('ul', 'cct-token-dates');
+    if (T.accountExpires) {
+      dates.append(el('li', null, `Tokens you bought: kept until ${_fmtDate(T.accountExpires)}`));
+    }
+    if (T.free && T.freeExpires) {
+      dates.append(el('li', null, `Free tokens: expire ${_fmtDate(T.freeExpires)}`));
+    }
+    body.append(dates);
+    body.append(el('p', 'cct-dialog-note',
+      'These dates move out every time you sign in: bought tokens are kept for 5 years ' +
+      'from your latest sign-in, free ones for 2 years.'));
+    if (!T.buyUrl) body.append(el('p', 'cct-dialog-note', 'Buying tokens isn\'t open yet.'));
+    const buttons = [{ label: 'Close', value: null }];
+    if (T.buyUrl) {
+      buttons.push({ label: 'Buy tokens', primary: true,
+        onClick: close => { window.open(T.buyUrl, '_blank', 'noopener'); close(true); } });
+    }
+    return dialog('Your tokens', body, buttons);
   }
 
   async function signOut() {
@@ -388,7 +431,7 @@
     get unavailable() { return T.unavailable; },
     get balance() { return T.balance; },
     get buyUrl() { return T.buyUrl; },
-    refresh, signIn, prepare, withDesign, signal, watch, runExtras, handleRefusal,
+    refresh, signIn, tokenDialog, prepare, withDesign, signal, watch, runExtras, handleRefusal,
     ensureDesign, quoteDesign, buyDialog, message,
   };
 })();
