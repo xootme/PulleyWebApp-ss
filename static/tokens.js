@@ -53,15 +53,17 @@
       // For the balance dialog: free vs bought, and when each goes (both
       // count from the last sign-in — cct_common.accounts inactivity rules).
       T.free = d.free || 0; T.purchased = d.purchased || 0;
-      T.freeExpires = d.free_expires || null; T.accountExpires = d.account_expires || null;
+      T.accountExpires = d.account_expires || null;
       if (d.buy_url !== undefined) T.buyUrl = d.buy_url || '';
     }
     render();
   }
 
-  const EXPIRY_NOTE = 'Free tokens expire after 2 years without a sign-in; tokens you buy ' +
-                      'last as long as you sign in at least once every 5 years. ' +
-                      'Signing in resets the clock.';
+  // One expiry rule for every token (cct_common.accounts): they end with the
+  // account after 5 years without a sign-in, and each sign-in resets that.
+  const EXPIRY_NOTE = 'Unused tokens expire after 5 years without a sign-in — ' +
+                      'each time you sign in, the clock resets.';
+  const SIGNUP_OFFER = 'Get 20 free tokens when you sign up.';
 
   function render() {
     const box = document.getElementById('cct-account');
@@ -172,7 +174,8 @@
     input.placeholder = 'you@example.com';
     input.autocomplete = 'email';
     const status = el('p', 'cct-dialog-status');
-    body.append(input, status, el('p', 'cct-dialog-note', EXPIRY_NOTE));
+    body.append(input, status, el('p', 'cct-dialog-offer', SIGNUP_OFFER),
+                el('p', 'cct-dialog-note', EXPIRY_NOTE));
     const send = async (close, box) => {
       const email = input.value.trim();
       if (!email) { status.textContent = 'Enter your email address.'; return; }
@@ -223,20 +226,16 @@
     const big = el('p', 'cct-token-count', `${T.balance}`);
     big.append(el('span', null, ` token${T.balance === 1 ? '' : 's'}`));
     body.append(big);
-    if (T.free && T.purchased) {
-      body.append(el('p', 'cct-dialog-text', `${T.purchased} bought · ${T.free} free (free tokens are used first)`));
-    }
-    const dates = el('ul', 'cct-token-dates');
     if (T.accountExpires) {
-      dates.append(el('li', null, `Tokens you bought: kept until ${_fmtDate(T.accountExpires)}`));
+      body.append(el('p', 'cct-token-expiry', `Unused tokens expire ${_fmtDate(T.accountExpires)}`));
     }
-    if (T.free && T.freeExpires) {
-      dates.append(el('li', null, `Free tokens: expire ${_fmtDate(T.freeExpires)}`));
-    }
-    body.append(dates);
     body.append(el('p', 'cct-dialog-note',
-      'These dates move out every time you sign in: bought tokens are kept for 5 years ' +
-      'from your latest sign-in, free ones for 2 years.'));
+      'That date moves out every time you sign in — to 5 years from your latest sign-in.'));
+    if (T.free) {
+      body.append(el('p', 'cct-dialog-note',
+        `${T.free} of your tokens ${T.free === 1 ? 'is' : 'are'} free ones: they're used first, ` +
+        'and free tokens can\'t be refunded.'));
+    }
     if (!T.buyUrl) body.append(el('p', 'cct-dialog-note', 'Buying tokens isn\'t open yet.'));
     const buttons = [{ label: 'Close', value: null }];
     if (T.buyUrl) {

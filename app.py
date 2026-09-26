@@ -3832,7 +3832,7 @@ _accounts_state = init_accounts(
     enabled=os.environ.get('TOKENS_ENABLED') == '1',
     live=_ACCOUNTS_LIVE,
     email_sender=_accounts_email,
-    signup_grant=int(os.environ.get('TOKENS_SIGNUP_GRANT', '10')),
+    signup_grant=int(os.environ.get('TOKENS_SIGNUP_GRANT', '20')),   # 20 x 5 cents = $1
     # Hourly verified backups (cct_common.db_backup); none under the test
     # harness. The off-server copy (Cloud Storage) plugs in as backup_upload.
     backup_dir=None if os.environ.get('PULLEY_TESTING') else os.path.join(_LOG_DIR, 'backups'),

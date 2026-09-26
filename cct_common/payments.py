@@ -62,10 +62,10 @@ class Pack:
 
 
 # PayPal (micropayments rate) for the small packs, Stripe from $5 up; the $5
-# pack is offered by both. Flat 10¢ a token. Override with packs=... .
+# pack is offered by both. Flat 5¢ a token. Override with packs=... .
 DEFAULT_PACKS = (
-    Pack("paypal", 200, 20), Pack("paypal", 500, 50),
-    Pack("stripe", 500, 50), Pack("stripe", 1000, 100), Pack("stripe", 2500, 250),
+    Pack("paypal", 200, 40), Pack("paypal", 500, 100),
+    Pack("stripe", 500, 100), Pack("stripe", 1000, 200), Pack("stripe", 2500, 500),
 )
 
 
@@ -377,8 +377,8 @@ def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
         body = [f"<h1>Buy {html.escape(app_name)} tokens</h1>",
                 f"<p>Signed in as <b>{html.escape(email)}</b> · balance "
                 f"<b id='bal'>{tokens.balance(acct)}</b> tokens</p>",
-                "<p class='note'>2D drawing 1 token · 3D-print (STL) 2 · CAD (STEP) 3. "
-                "Tokens you buy last as long as you sign in at least once every 5 years."
+                "<p class='note'>2D drawing 2 tokens · 3D-print (STL) 4 · CAD (STEP) 6. "
+                "Tokens last as long as you sign in at least once every 5 years."
                 "</p><p id='msg' role='status'></p>"]
         if pp:
             body.append("<h2>Pay with PayPal</h2><div class='packs' id='pp-packs'>" + "".join(

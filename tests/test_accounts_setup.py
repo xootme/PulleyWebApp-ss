@@ -198,15 +198,14 @@ def test_backup_alert_without_address_only_logs(caplog):
 
 # ── inactivity: reminder emails and the daily run ─────────────────────────
 
-def test_free_token_reminder_email():
+def test_there_is_no_separate_free_token_reminder_any_more():
+    # One expiry rule for every token (2026-09-26): only the account reminder.
     from accounts_setup import make_inactivity_notify
     sent = []
     notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
                                     app_name='CheapCAD Tools', site_url='https://example.com/p')
-    assert notify('a@example.com', 'free_tokens', 1_893_456_000, 7) is True
-    to, subject, body = sent[0]
-    assert to == 'a@example.com' and '7 free' in subject and 'expire' in subject
-    assert 'https://example.com/p' in body and 'at least once every 5 years' in body
+    assert notify('a@example.com', 'free_tokens', 1_893_456_000, 7) is False
+    assert sent == []
 
 
 def test_account_closing_reminder_email_and_failed_send():
@@ -226,7 +225,8 @@ def test_account_closing_reminder_names_the_tokens_at_stake():
     assert notify('a@example.com', 'account', 1_893_456_000, 57) is True
     body = sent[0][2]
     assert 'the 57 tokens left in it will expire' in body
-    assert 'refund of unused purchased tokens' in body and 'https://example.com/p' in body
+    assert 'refund of the unused tokens you bought' in body and 'https://example.com/p' in body
+    assert "free tokens can't be refunded" in body
 
 
 def test_daily_run_survives_a_failure(caplog):
@@ -253,9 +253,10 @@ def test_daily_run_survives_a_failure(caplog):
 
 def test_inactivity_run_with_the_real_store_sends_this_apps_email(tmp_path):
     """cct_common's housekeeping() driving this app's reminder email: after
-    ~2 idle years the reminder goes out, 30 days later the free tokens go."""
+    ~5 idle years the reminder goes out naming every token at stake; 30 days
+    later the account closes and they all expire, bought ones included."""
     from accounts_setup import make_inactivity_notify
-    from cct_common.accounts import FREE_TOKEN_IDLE_S, REMINDER_LEAD_S, AccountStore
+    from cct_common.accounts import DEAD_ACCOUNT_IDLE_S, REMINDER_LEAD_S, AccountStore
     from cct_common.tokens import TokenStore
 
     class Clock:
@@ -265,18 +266,22 @@ def test_inactivity_run_with_the_real_store_sends_this_apps_email(tmp_path):
 
     clock = Clock()
     tokens = TokenStore(str(tmp_path / 'a.sqlite3'), clock=clock)
-    accounts = AccountStore(tokens, signup_grant=10)
+    accounts = AccountStore(tokens, signup_grant=20)
     acct = accounts.sign_in('email', 'a@example.com', 'a@example.com', email_verified=True)
-    tokens.credit(acct, 5, ref='order:1')
+    tokens.credit(acct, 40, ref='order:1')
     sent = []
     notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
                                     app_name='CheapCAD Tools', site_url='https://example.com/p')
-    clock.t += FREE_TOKEN_IDLE_S - REMINDER_LEAD_S + 1
+    clock.t += 3 * 365 * 24 * 3600                   # the old free-token rule would have fired
     accounts.housekeeping(notify)
-    assert len(sent) == 1 and '10 free CheapCAD Tools tokens expire' in sent[0][1]
+    assert sent == [] and tokens.balance(acct) == 60
+    clock.t = 1_000_000.0 + DEAD_ACCOUNT_IDLE_S - REMINDER_LEAD_S + 1
+    accounts.housekeeping(notify)
+    assert len(sent) == 1 and 'will be closed' in sent[0][1]
+    assert 'the 60 tokens left in it will expire' in sent[0][2]
     clock.t += REMINDER_LEAD_S
     accounts.housekeeping(notify)
-    assert tokens.balance(acct) == 5                  # only the bought tokens remain
+    assert tokens.balance(acct) == 0
 
 
 # ── Postgres (DATABASE_URL, Cloud Run) ────────────────────────────────────
@@ -443,4 +448,5 @@ def test_account_info_offers_the_buy_page_once_a_provider_is_set(tmp_path):
     c.post('/account/login', data={'token': _token_from(sent[-1][2])})
     info = c.get('/api/account').get_json()
     assert info['buy_url'] == '/account/buy'
-    assert info['free'] == 10 and info['purchased'] == 0 and info['account_expires'] > info['free_expires']
+    assert info['free'] == 20 and info['purchased'] == 0 and 'free_expires' not in info
+    assert info['account_expires'] > info['last_sign_in']

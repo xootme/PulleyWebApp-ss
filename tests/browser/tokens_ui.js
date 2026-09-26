@@ -3,7 +3,7 @@
 // needed; Node's built-in WebSocket speaks CDP directly.
 //
 // Needs a running app. With tokens on, a fresh log dir (the test expects a
-// new account with the 10-token signup grant) and no Resend key, so the
+// new account with the 20-token signup grant) and no Resend key, so the
 // sign-in link lands in <log dir>/server_errors.log:
 //
 //   TOKENS_ENABLED=1 PULLEY_LOG_DIR=<tmp> QUEUE_DISABLED=1 \
@@ -127,6 +127,10 @@ async function main() {
         await js(`(() => { const b = [...document.querySelectorAll('.cct-dialog .cct-oauth-btn')];
           return b.length === 1 && b[0].textContent === 'Continue with Google'
             && b[0].getAttribute('href').startsWith('/account/oauth/google/start?next=%2F'); })()`));
+  check('sign-in dialog: offers 20 free tokens',
+        await js("document.querySelector('.cct-dialog .cct-dialog-offer')?.textContent === 'Get 20 free tokens when you sign up.'"));
+  check('sign-in dialog: one expiry rule, reset by signing in',
+        await js("[...document.querySelectorAll('.cct-dialog .cct-dialog-note')].some(n => n.textContent.includes('expire after 5 years without a sign-in') && n.textContent.includes('clock resets'))"));
   check('sign-in dialog: "or" before the email field',
         await js("!!document.querySelector('.cct-dialog .cct-oauth-or + .cct-dialog-text')"));
   await js("document.querySelector('.cct-input').value = 'ui-test@example.com'");
@@ -138,19 +142,20 @@ async function main() {
   await load(link[1]);
   await js("document.querySelector('button[type=submit]').click()");
   await sleep(1500); await waitFor("document.readyState === 'complete'"); await js('window.cctTokens.ready'); await sleep(1000);
-  check('signed in: header shows email and 10 tokens',
-        await js("document.querySelector('.cct-account-email')?.textContent === 'ui-test@example.com' && document.getElementById('cct-balance')?.textContent === '10 tokens'"));
+  check('signed in: header shows email and 20 tokens',
+        await js("document.querySelector('.cct-account-email')?.textContent === 'ui-test@example.com' && document.getElementById('cct-balance')?.textContent === '20 tokens'"));
   // Clicking the balance opens the token dialog: count, expiry dates, the
   // sign-in note. No payment provider in this run, so no Buy button.
   await js("document.getElementById('cct-balance').click()");
   await waitFor("document.querySelector('.cct-dialog-title')?.textContent === 'Your tokens'");
   check('balance click: token dialog shows the count',
-        await js("document.querySelector('.cct-token-count')?.textContent.trim() === '10 tokens'"));
-  check('balance click: both expiry dates listed',
-        await js(`(() => { const t = document.querySelector('.cct-token-dates')?.textContent || '';
-          return /Tokens you bought: kept until \\w+ \\d+, \\d{4}/.test(t) && /Free tokens: expire \\w+ \\d+, \\d{4}/.test(t); })()`));
-  check('balance click: says sign-ins push the dates out',
-        await js("[...document.querySelectorAll('.cct-dialog .cct-dialog-note')].some(n => n.textContent.includes('move out every time you sign in') && n.textContent.includes('5 years'))"));
+        await js("document.querySelector('.cct-token-count')?.textContent.trim() === '20 tokens'"));
+  check('balance click: one expiry date',
+        await js("/^Unused tokens expire \\w+ \\d+, \\d{4}$/.test(document.querySelector('.cct-token-expiry')?.textContent || '')"));
+  check('balance click: says sign-ins push the date out',
+        await js("[...document.querySelectorAll('.cct-dialog .cct-dialog-note')].some(n => n.textContent.includes('moves out every time you sign in') && n.textContent.includes('5 years'))"));
+  check('balance click: free tokens are marked non-refundable',
+        await js("[...document.querySelectorAll('.cct-dialog .cct-dialog-note')].some(n => n.textContent.includes('20 of your tokens are free ones') && n.textContent.includes(\"can't be refunded\"))"));
   check('balance click: no Buy button without a payment provider',
         await js("![...document.querySelectorAll('.cct-dialog .cct-btn')].some(b => b.textContent === 'Buy tokens')"));
   await js("[...document.querySelectorAll('.cct-dialog .cct-btn')].find(b => b.textContent === 'Close').click()");
@@ -163,16 +168,16 @@ async function main() {
   // 2. the 3D window
   let label = await openWindow();
   check('3D: three tier sections with token labels', JSON.stringify(await tiers()) ===
-        JSON.stringify(['3 tokens · CAD shape', '2 tokens · 3D printing shape', '1 token · 2D drawings']), await tiers());
+        JSON.stringify(['6 tokens · CAD shape', '4 tokens · 3D printing shape', '2 tokens · 2D drawings']), await tiers());
   const p3 = await parts();
   check('3D: parts list has both pulleys, belt and flanges', p3.some(p => p.startsWith('Pulley 1')) && p3.some(p => p.startsWith('Pulley 2')) && p3.includes('Belt') && p3.some(p => p.startsWith('Pulley 1 flanges')), p3);
   check('3D: everything ticked by default', await allTicked());
-  check('3D: button shows 3 tokens', label === 'Download zip (3 tokens)', label);
-  check('3D: balance line 10 → 7', (await js("document.querySelector('.cct-dl-status').textContent")) === 'Balance: 10 → 7.');
+  check('3D: button shows 6 tokens', label === 'Download zip (6 tokens)', label);
+  check('3D: balance line 20 → 14', (await js("document.querySelector('.cct-dl-status').textContent")) === 'Balance: 20 → 14.');
   await tick('cct-fmt-step', false);
-  check('untick STEP: 2 tokens', (await labelSettles()) === 'Download zip (2 tokens)');
+  check('untick STEP: 4 tokens', (await labelSettles()) === 'Download zip (4 tokens)');
   await tick('cct-fmt-stl', false);
-  check('untick STL: 1 token', (await labelSettles()) === 'Download zip (1 token)');
+  check('untick STL: 2 tokens', (await labelSettles()) === 'Download zip (2 tokens)');
   check('untick STL: flange row greyed, says how to include it', await js(`(() => {
     const cb = document.getElementById('cct-part-fl1');
     return cb.disabled && cb.closest('label').classList.contains('cct-check-off')
@@ -186,21 +191,21 @@ async function main() {
   check('untick all: nothing to download, disabled', (await labelSettles()) === 'Nothing to download' &&
         await js("document.querySelector('.cct-dl .cct-btn-primary').disabled"));
   for (const f of ['step', 'stl', 'svg', 'dxf']) await tick(`cct-fmt-${f}`, true);
-  check('re-tick: 3 tokens again', (await labelSettles()) === 'Download zip (3 tokens)');
+  check('re-tick: 6 tokens again', (await labelSettles()) === 'Download zip (6 tokens)');
 
   // 3. download: one zip, one charge
   let before = (await history()).length;
   await js("document.querySelector('.cct-dl .cct-btn-primary').click()");
   await waitJob();
   const h = (await history()).slice(0, (await history()).length - before);
-  check('zip: exactly one spend of 3 for STEP', h.length === 1 && h[0].kind === 'spend' && h[0].amount === -3 && h[0].fmt === 'step', h);
-  check('balance 7', (await balance()) === 7);
+  check('zip: exactly one spend of 6 for STEP', h.length === 1 && h[0].kind === 'spend' && h[0].amount === -6 && h[0].fmt === 'step', h);
+  check('balance 14', (await balance()) === 14);
   const names = newestZip();
   const ext = countExt(names);
   check('zip: STEP for both pulleys and the belt', ext.step === 3, names);
   check('zip: STL for both pulleys, belt and flange', ext.stl >= 4, names);
   check('zip: SVG and DXF for both pulleys and belt', ext.svg >= 3 && ext.dxf >= 3, names);
-  check('header shows 7 tokens', await waitFor("document.getElementById('cct-balance')?.textContent === '7 tokens'", 5000));
+  check('header shows 14 tokens', await waitFor("document.getElementById('cct-balance')?.textContent === '14 tokens'", 5000));
 
   label = await openWindow();
   check('same design again: already paid', label === 'Download zip (already paid)', label);
@@ -209,7 +214,7 @@ async function main() {
   // 4. the 2D window: drawings only
   await setMode3D(false); await sleep(2000);
   label = await openWindow();
-  check('2D: only the drawings tier', JSON.stringify(await tiers()) === JSON.stringify(['1 token · 2D drawings']), await tiers());
+  check('2D: only the drawings tier', JSON.stringify(await tiers()) === JSON.stringify(['2 tokens · 2D drawings']), await tiers());
   const p2 = await parts();
   check('2D: parts include the whole-drive drawing', p2.some(p => p.startsWith('Whole drive drawing')), p2);
   check('2D: already paid through the STEP purchase', label === 'Download zip (already paid)', label);
@@ -224,7 +229,7 @@ async function main() {
   // 5. a changed design costs again
   await bumpTeeth(2); await sleep(1500);
   label = await openWindow();
-  check('changed design: 2D zip priced at 1 token', label === 'Download zip (1 token)', label);
+  check('changed design: 2D zip priced at 2 tokens', label === 'Download zip (2 tokens)', label);
   await closeWindow();
 
   // 6. short of tokens

@@ -73,6 +73,15 @@ FreeCAD, SolidWorks and the web.
   and offers a refund of unused purchased tokens, less processor fees (terms §4); the
   ledger is kept. States that bar expiry (e.g. California) and unclaimed-property
   reporting remain open questions for a lawyer. Free tokens: unchanged (2 years).
+- **Tokens revalued (2026-09-26) — 1 token = 5¢, one expiry rule.** Every count doubles
+  so money prices stay the same: 2D 2 tokens (10¢), STL 4 (20¢), STEP 6 (30¢); packs
+  PayPal $2 = 40, $5 = 100, Stripe $5 = 100, $10 = 200, $25 = 500; the signup grant is
+  20 tokens (still $1). Reasons: a finer step leaves room to price smaller things (a
+  1-token item), and "20 free tokens" reads better. The separate 2-year expiry of free
+  tokens is dropped — one rule for every token: they end with the account after 5 years
+  without a sign-in, and each sign-in resets the clock. The ledger still tells free from
+  bought tokens: free ones are spent first and are **never refunded** (terms §4 says so).
+  Done before any customer existed, so no balance needed converting.
 - **Hosting moves to Google Cloud Run (decided 2026-09-25),** billed only while handling
   requests and scaling to zero, so cost follows token sales. (Azure Container Apps was
   picked on 2026-09-24, then dropped: the existing Microsoft account is Microsoft 365, not

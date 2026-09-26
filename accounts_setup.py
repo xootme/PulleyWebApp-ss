@@ -90,28 +90,23 @@ def make_backup_alert(email_sender: Callable, *, alert_to: str, logger):
 
 
 def make_inactivity_notify(email_sender: Callable, *, app_name: str, site_url: str):
-    """The reminder emails for cct_common.accounts housekeeping: free tokens
-    about to expire, or an idle account about to be closed (its remaining
-    tokens, purchased ones included, expiring with it).
+    """The reminder email for cct_common.accounts housekeeping: an idle
+    account about to be closed, its remaining tokens expiring with it.
     Returns True only when the email was sent — nothing expires otherwise."""
     def notify(email: str, kind: str, deadline: float, tokens: int) -> bool:
         when = datetime.fromtimestamp(deadline).strftime("%d %B %Y")
-        sign_in = f"Signing in to {app_name} before then ({site_url}) keeps them."
-        if kind == "free_tokens":
-            subject = f"Your {tokens} free {app_name} tokens expire on {when}"
-            body = (f"Hi,\n\nYour account hasn't been signed in to for almost 2 years, so its "
-                    f"{tokens} free token{'s' if tokens != 1 else ''} will expire on {when}. "
-                    f"{sign_in}\n\nTokens you bought are kept as long as you sign in "
-                    f"at least once every 5 years.\n")
-        else:
+        if kind == "account":
             subject = f"Your {app_name} account will be closed on {when}"
             held = (f"the {tokens} token{'s' if tokens != 1 else ''} left in it will expire"
                     if tokens > 0 else "it holds no tokens")
             body = (f"Hi,\n\nYour account hasn't been signed in to for almost 5 years, so it "
                     f"will be closed on {when}: your email address will be removed and {held}.\n\n"
                     f"Signing in before then ({site_url}) keeps the account open with all its "
-                    f"tokens. If you'd rather have a refund of unused purchased tokens (less "
-                    f"payment processor fees), reply to this email before {when}.\n")
+                    f"tokens. If you'd rather have a refund of the unused tokens you bought (less "
+                    f"payment processor fees; free tokens can't be refunded), reply to this email "
+                    f"before {when}.\n")
+        else:
+            return False                      # no other reminders any more
         ok, _ = email_sender(email, subject, body)
         return bool(ok)
     return notify
@@ -160,7 +155,7 @@ def start_housekeeping(accounts, notify, logger, *, interval_s: float = 24 * 360
 
 
 def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
-                  email_sender: Callable, signup_grant: int = 10,
+                  email_sender: Callable, signup_grant: int = 20,
                   app_name: str = "CheapCAD Tools",
                   backup_dir: str | None = None,
                   backup_alert: Callable[[str], None] | None = None,

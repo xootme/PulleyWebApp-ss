@@ -1057,7 +1057,8 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 .cct-account-balance:focus-visible { background: rgba(255,255,255,0.32); outline: none; }
 .cct-token-count      { margin: 0 0 6px; font-size: 34px; font-weight: 700; color: #0078d4; line-height: 1.1; }
 .cct-token-count span { font-size: 16px; font-weight: 600; color: #333; }
-.cct-token-dates      { margin: 8px 0 10px 18px; padding: 0; font-size: 14px; line-height: 1.6; }
+.cct-token-expiry     { margin: 8px 0 6px; font-size: 14px; font-weight: 600; }
+.cct-dialog-offer     { margin: 10px 0 4px; font-size: 14px; font-weight: 700; color: #0078d4; }
 .cct-account-note     { opacity: 0.8; font-style: italic; }
 .cct-account .cct-btn-primary { background: #fff; color: #0078d4; border-color: #fff; }
 .cct-account .cct-btn-link    { color: #fff; }

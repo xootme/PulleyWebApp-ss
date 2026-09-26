@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=30">
+  <link rel="stylesheet" href="/static/style.css?v=31">
 </head>
 <body>
 
@@ -977,7 +977,7 @@
   &nbsp;|&nbsp; v{{ app_version }} &nbsp;<span class="footer-build">build {{ build_time }}</span>
 </footer>
 
-<script src="/static/tokens.js?v=7"></script>
+<script src="/static/tokens.js?v=8"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -2532,14 +2532,14 @@ async function _cctTokenDownload(url, start, alsoAfter) {
 
 // ── Download window (ADR-008) ─────────────────────────────────────────────
 // One window, one zip: every part shown, in the formats ticked. In the 3D
-// view the tiers are STEP (3 tokens), STL (2) and 2D drawings (1); in the 2D
+// view the tiers are STEP (6 tokens), STL (4) and 2D drawings (2); in the 2D
 // view only the drawings. The zip is one purchase of the whole design at the
 // highest tier ticked, so the button shows what the ticks cost as they change.
 
 const _DL_TIERS_3D = [
-  { tokens: 3, label: 'CAD shape',         fmts: [['step', 'STEP']] },
-  { tokens: 2, label: '3D printing shape', fmts: [['stl', 'STL']] },
-  { tokens: 1, label: '2D drawings',       fmts: [['svg', 'SVG'], ['dxf', 'DXF']] },
+  { tokens: 6, label: 'CAD shape',         fmts: [['step', 'STEP']] },     // 1 token = 5 cents
+  { tokens: 4, label: '3D printing shape', fmts: [['stl', 'STL']] },
+  { tokens: 2, label: '2D drawings',       fmts: [['svg', 'SVG'], ['dxf', 'DXF']] },
 ];
 const _DL_TIERS_2D = [_DL_TIERS_3D[2]];
 const _DL_RANK = { step: 3, stl: 2, svg: 1, dxf: 1 };

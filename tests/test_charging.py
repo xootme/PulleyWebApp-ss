@@ -23,7 +23,7 @@ Q = 'family=HTD&pitch=5M&teeth=20&bore=8&belt_height=10'
 def paid(client, tmp_path, monkeypatch):
     from app import app
     tokens = TokenStore(str(tmp_path / 'accounts.sqlite3'))
-    accounts = AccountStore(tokens, signup_grant=10)
+    accounts = AccountStore(tokens, signup_grant=20)
     state = AccountsState(enabled=True, healthy=True, tokens=tokens, accounts=accounts)
     monkeypatch.setattr(charges, 'state', state)
     monkeypatch.setattr(charges, 'designs', DesignStore(tokens.path))
@@ -45,7 +45,7 @@ def _get(paid, path, **extra):
 def test_signed_out_download_is_refused(paid):
     r = paid.client.get(f'/download/svg?{Q}')
     assert r.status_code == 401 and r.get_json()['code'] == 'SIGN_IN_REQUIRED'
-    assert paid.balance() == 10
+    assert paid.balance() == 20
 
 
 def test_unhealthy_accounts_refuse_with_503(paid, monkeypatch):
@@ -56,30 +56,30 @@ def test_unhealthy_accounts_refuse_with_503(paid, monkeypatch):
 
 # ── prices, unlocks and refunds ───────────────────────────────────────────
 
-@pytest.mark.parametrize('path,cost', [('/download/svg', 1), ('/download/dxf', 1),
-                                       ('/download/stl', 2), ('/download/step', 3)])
+@pytest.mark.parametrize('path,cost', [('/download/svg', 2), ('/download/dxf', 2),
+                                       ('/download/stl', 4), ('/download/step', 6)])
 def test_each_format_costs_its_tier(paid, path, cost):
     r = _get(paid, path)
     assert r.status_code == 200, r.data[:200]
     assert r.headers['X-CCT-Tokens-Charged'] == str(cost)
-    assert r.headers['X-CCT-Tokens-Balance'] == str(10 - cost)
-    assert paid.balance() == 10 - cost
+    assert r.headers['X-CCT-Tokens-Balance'] == str(20 - cost)
+    assert paid.balance() == 20 - cost
 
 
 def test_redownload_is_free(paid):
     _get(paid, '/download/stl')
     r = _get(paid, '/download/stl')
     assert r.status_code == 200 and r.headers['X-CCT-Tokens-Charged'] == '0'
-    assert paid.balance() == 8
+    assert paid.balance() == 16
 
 
 def test_step_unlocks_the_designs_other_formats(paid):
     did = paid.design_id
-    assert _get(paid, '/download/step', design_id=did).headers['X-CCT-Tokens-Charged'] == '3'
+    assert _get(paid, '/download/step', design_id=did).headers['X-CCT-Tokens-Charged'] == '6'
     for path in ('/download/stl', '/download/svg', '/download/dxf'):
         r = _get(paid, path, design_id=did)
         assert r.status_code == 200 and r.headers['X-CCT-Tokens-Charged'] == '0', path
-    assert paid.balance() == 7
+    assert paid.balance() == 14
 
 
 def test_pulley_2_of_the_design_is_covered_too(paid):
@@ -92,9 +92,9 @@ def test_pulley_2_of_the_design_is_covered_too(paid):
 
 def test_upgrade_pays_the_difference(paid):
     did = paid.design_id
-    assert _get(paid, '/download/svg', design_id=did).headers['X-CCT-Tokens-Charged'] == '1'
-    assert _get(paid, '/download/step', design_id=did).headers['X-CCT-Tokens-Charged'] == '2'
-    assert paid.balance() == 7
+    assert _get(paid, '/download/svg', design_id=did).headers['X-CCT-Tokens-Charged'] == '2'
+    assert _get(paid, '/download/step', design_id=did).headers['X-CCT-Tokens-Charged'] == '4'
+    assert paid.balance() == 14
 
 
 def test_design_id_of_another_design_unlocks_nothing(paid):
@@ -102,30 +102,30 @@ def test_design_id_of_another_design_unlocks_nothing(paid):
     _get(paid, '/download/step', design_id=did)
     r = paid.client.get(f'/download/svg?family=HTD&pitch=5M&teeth=30&bore=8&belt_height=10'
                         f'&design_id={did}', headers=paid.auth)
-    assert r.status_code == 200 and r.headers['X-CCT-Tokens-Charged'] == '1'
+    assert r.status_code == 200 and r.headers['X-CCT-Tokens-Charged'] == '2'
 
 
 def test_made_up_design_id_is_priced_as_its_own_design(paid):
     r = _get(paid, '/download/svg', design_id='0' * 32)
-    assert r.headers['X-CCT-Tokens-Charged'] == '1'
+    assert r.headers['X-CCT-Tokens-Charged'] == '2'
 
 
 def test_failed_export_is_refunded(paid):
     r = paid.client.get('/download/step?family=BOGUS&pitch=5M&teeth=20&bore=8&belt_height=10',
                         headers=paid.auth)
     assert r.status_code >= 400
-    assert paid.balance() == 10
+    assert paid.balance() == 20
     kinds = [row['kind'] for row in paid.tokens.history(paid.acct)]
     assert kinds[:2] == ['refund', 'spend']
 
 
 def test_not_enough_tokens_is_402_and_nothing_is_generated(paid):
-    paid.tokens.credit(paid.acct, -9, kind='adjust')     # balance 1
+    paid.tokens.credit(paid.acct, -18, kind='adjust')     # balance 2
     r = _get(paid, '/download/step')
     body = r.get_json()
     assert r.status_code == 402 and body['code'] == 'NOT_ENOUGH_TOKENS'
-    assert (body['needed'], body['balance']) == (3, 1)
-    assert paid.balance() == 1
+    assert (body['needed'], body['balance']) == (6, 2)
+    assert paid.balance() == 2
 
 
 # ── add-in API and background jobs ────────────────────────────────────────
@@ -138,7 +138,7 @@ def test_addin_api_charges_tokens_instead_of_the_trial_limit(paid, monkeypatch):
         'machine_id': 'm1',
         'params': {'family': 'HTD', 'pitch': '5M', 'teeth': '20', 'bore': '8', 'belt_height': '10'}})
     assert r.status_code == 200, r.data[:200]
-    assert r.headers['X-CCT-Tokens-Charged'] == '2' and paid.balance() == 8
+    assert r.headers['X-CCT-Tokens-Charged'] == '4' and paid.balance() == 16
 
 
 def test_async_step_job_charges_once_it_runs(paid, monkeypatch):
@@ -149,7 +149,7 @@ def test_async_step_job_charges_once_it_runs(paid, monkeypatch):
     assert r.status_code == 200, r.data[:200]
     status = paid.client.get(r.get_json()['status_url']).get_json()
     assert status['status'] == 'done'
-    assert paid.balance() == 7
+    assert paid.balance() == 14
 
 
 def test_async_step_job_failure_is_refunded(paid, monkeypatch):
@@ -158,12 +158,12 @@ def test_async_step_job_failure_is_refunded(paid, monkeypatch):
                          json={'family': 'BOGUS', 'pitch': '5M', 'teeth': '20', 'bore': '8'})
     status = paid.client.get(r.get_json()['status_url']).get_json()
     assert status['status'] == 'failed'
-    assert paid.balance() == 10
+    assert paid.balance() == 20
 
 
 def test_async_step_job_refused_up_front_when_unaffordable(paid, monkeypatch):
     monkeypatch.setenv('PULLEY_TESTING', '1')
-    paid.tokens.credit(paid.acct, -8, kind='adjust')     # balance 2
+    paid.tokens.credit(paid.acct, -16, kind='adjust')     # balance 4
     r = paid.client.post('/api/download/step-async', headers=paid.auth, json=dict(DESIGN))
     assert r.status_code == 402 and 'job_id' not in r.get_json()
 
@@ -215,13 +215,13 @@ def test_quote_prices_a_download_exactly_as_the_download_does(mini):
     params = {'family': 'HTD', 'pitch': '5M', 'teeth': '20', 'bore': '8', 'design_id': did}
     q = mini.c.post('/api/tokens/quote', headers=mini.auth,
                     json={'path': '/download/stl', 'params': params}).get_json()
-    assert (q['cost'], q['tier'], q['balance'], q['held_tier']) == (2, 'stl', 10, None)
+    assert (q['cost'], q['tier'], q['balance'], q['held_tier']) == (4, 'stl', 20, None)
     assert q['buy_url'] == 'https://shop.example/tokens'
     qs = '&'.join(f'{k}={v}' for k, v in params.items())
-    assert mini.c.get(f'/download/stl?{qs}', headers=mini.auth).headers['X-CCT-Tokens-Charged'] == '2'
+    assert mini.c.get(f'/download/stl?{qs}', headers=mini.auth).headers['X-CCT-Tokens-Charged'] == '4'
     q = mini.c.post('/api/tokens/quote', headers=mini.auth,
                     json={'path': '/download/stl', 'params': params}).get_json()
-    assert (q['cost'], q['held_tier'], q['balance']) == (0, 'stl', 8)
+    assert (q['cost'], q['held_tier'], q['balance']) == (0, 'stl', 16)
 
 
 def test_quote_and_design_need_sign_in_and_a_charged_route(mini):
@@ -234,7 +234,7 @@ def test_quote_and_design_need_sign_in_and_a_charged_route(mini):
 
 
 def test_402_carries_the_buy_link(mini):
-    mini.tokens.credit(mini.acct, -9, kind='adjust')
+    mini.tokens.credit(mini.acct, -18, kind='adjust')
     r = mini.c.get('/download/stl?family=HTD&pitch=5M&teeth=20&bore=8', headers=mini.auth)
     assert r.status_code == 402 and r.get_json()['buy_url'] == 'https://shop.example/tokens'
 
@@ -268,21 +268,21 @@ def test_bundle_is_one_charge_at_the_highest_tier(paid, monkeypatch):
     names = _zip_names(paid.client, status)
     assert [n.rsplit('.', 1)[1] for n in names] == ['step', 'stl', 'svg']
     spends = [h for h in paid.tokens.history(paid.acct) if h['kind'] == 'spend']
-    assert [(s['amount'], s['fmt']) for s in spends] == [(-3, 'step')]
-    assert paid.balance() == 7
+    assert [(s['amount'], s['fmt']) for s in spends] == [(-6, 'step')]
+    assert paid.balance() == 14
 
 
-def test_bundle_of_drawings_costs_one(paid, monkeypatch):
+def test_bundle_of_drawings_costs_the_2d_price(paid, monkeypatch):
     monkeypatch.setenv('PULLEY_TESTING', '1')
     r = _bundle(paid, [{'path': '/download/svg', 'params': P}, {'path': '/download/dxf', 'params': P}])
     assert paid.client.get(r.get_json()['status_url']).get_json()['status'] == 'done'
-    assert paid.balance() == 9
+    assert paid.balance() == 18
 
 
 def test_bundle_refuses_files_from_another_design(paid, monkeypatch):
     monkeypatch.setenv('PULLEY_TESTING', '1')
     r = _bundle(paid, [{'path': '/download/svg', 'params': dict(P, teeth='30')}])
-    assert r.status_code == 400 and paid.balance() == 10
+    assert r.status_code == 400 and paid.balance() == 20
 
 
 def test_bundle_refuses_non_downloads_and_unknown_designs(paid):
@@ -293,7 +293,7 @@ def test_bundle_refuses_non_downloads_and_unknown_designs(paid):
 
 def test_bundle_refused_up_front_when_unaffordable(paid, monkeypatch):
     monkeypatch.setenv('PULLEY_TESTING', '1')
-    paid.tokens.credit(paid.acct, -8, kind='adjust')     # balance 2
+    paid.tokens.credit(paid.acct, -16, kind='adjust')     # balance 4
     r = _bundle(paid, [{'path': '/download/step', 'params': P}])
     assert r.status_code == 402 and 'job_id' not in r.get_json()
 
@@ -307,7 +307,7 @@ def test_bundle_failure_refunds_everything(paid, monkeypatch):
                        {'path': '/download/step', 'params': bad}], design_id=did)
     status = paid.client.get(r.get_json()['status_url']).get_json()
     assert status['status'] == 'failed'
-    assert paid.balance() == 10
+    assert paid.balance() == 20
 
 
 def test_forged_internal_header_gets_no_free_download(paid):
@@ -328,9 +328,9 @@ def test_bundle_with_tokens_off_needs_no_sign_in(client, monkeypatch):
 
 @pytest.fixture
 def agent(paid, monkeypatch):
-    """A device token with a daily limit of 4, and a record of limit emails."""
+    """A device token with a daily limit of 8, and a record of limit emails."""
     accounts = charges.state.accounts
-    token = accounts.create_session(paid.acct, kind='device', label='Claude MCP', daily_budget=4)
+    token = accounts.create_session(paid.acct, kind='device', label='Claude MCP', daily_budget=8)
     emails = []
     monkeypatch.setattr(charges, 'limit_notify', lambda *a: emails.append(a) or True)
     paid.agent = {'Authorization': f'Bearer {token}'}
@@ -340,34 +340,34 @@ def agent(paid, monkeypatch):
 
 def test_agent_stops_at_its_daily_limit_and_emails_once(agent):
     ok = agent.client.get(f'/download/step?{Q}', headers=agent.agent)
-    assert ok.status_code == 200 and ok.headers['X-CCT-Tokens-Charged'] == '3'
+    assert ok.status_code == 200 and ok.headers['X-CCT-Tokens-Charged'] == '6'
     r = agent.client.get('/download/stl?family=HTD&pitch=5M&teeth=30&bore=8&belt_height=10',
                          headers=agent.agent)
     body = r.get_json()
     assert r.status_code == 429 and body['code'] == 'DAILY_LIMIT_REACHED'
-    assert (body['budget'], body['spent'], body['needed']) == (4, 3, 2)
+    assert (body['budget'], body['spent'], body['needed']) == (8, 6, 4)
     assert body['settings_url'].endswith('/account/devices')
-    assert agent.balance() == 7                                   # nothing charged
+    assert agent.balance() == 14                                   # nothing charged
     agent.client.get('/download/stl?family=HTD&pitch=5M&teeth=31&bore=8&belt_height=10',
                      headers=agent.agent)
     assert len(agent.emails) == 1                                 # one email, not one per refusal
     email, label, budget, url = agent.emails[0]
-    assert (email, label, budget) == ('a@example.com', 'Claude MCP', 4)
+    assert (email, label, budget) == ('a@example.com', 'Claude MCP', 8)
 
 
 def test_browser_session_has_no_limit(agent):
     web = charges.state.accounts.create_session(agent.acct, kind='web')
     c = agent.client.application.test_client()
     c.set_cookie('cct_session', web)
-    for teeth in (20, 21, 22):                                    # 9 tokens, past any agent limit of 4
+    for teeth in (20, 21, 22):                                    # 18 tokens, past any agent limit of 8
         r = c.get(f'/download/step?family=HTD&pitch=5M&teeth={teeth}&bore=8&belt_height=10')
         assert r.status_code == 200
-    assert agent.balance() == 1
+    assert agent.balance() == 2
 
 
 def test_agent_limit_refuses_background_jobs_and_zips_up_front(agent, monkeypatch):
     monkeypatch.setenv('PULLEY_TESTING', '1')
-    agent.client.get(f'/download/step?{Q}', headers=agent.agent)  # 3 of 4 used
+    agent.client.get(f'/download/step?{Q}', headers=agent.agent)  # 6 of 8 used
     r = agent.client.post('/api/download/step-async', headers=agent.agent,
                           json={'family': 'HTD', 'pitch': '5M', 'teeth': '33', 'bore': '8'})
     assert r.status_code == 429 and 'job_id' not in r.get_json()

@@ -44,7 +44,8 @@ from .sqlite_db import INTEGRITY_ERRORS, SqliteDB
 TOKEN_PRICE_CENTS = 10
 UNLOCK_WINDOW_S = 24 * 60 * 60
 
-TIER_PRICE = {"2d": 1, "stl": 2, "step": 3}
+# 1 token = 5 cents (was 10 until 2026-09-26: counts doubled, prices unchanged).
+TIER_PRICE = {"2d": 2, "stl": 4, "step": 6}
 FORMAT_TIER = {"svg": "2d", "dxf": "2d", "stl": "stl", "step": "step"}
 
 # Query/body keys that change how a file is delivered, not what the design
@@ -57,8 +58,9 @@ TRANSIENT_KEYS = frozenset({
 CREDIT_KINDS = frozenset({"signup", "purchase", "referral", "promo", "adjust"})
 
 # Tokens given away rather than bought. Only these can ever expire (see
-# free_remaining / expire_free) on their own; purchased tokens end only
-# with the account, when an idle account is closed (expire_all).
+# free_remaining / expire_free); all tokens, free or bought, end together
+# when an idle account is closed (expire_all). The split still matters:
+# free tokens are never refunded (see purchased_remaining).
 FREE_KINDS = frozenset({"signup", "referral", "promo"})
 # Ledger rows that use tokens up. Free tokens are counted as used first.
 _CONSUMING_KINDS = ("spend", "refund", "expire")
