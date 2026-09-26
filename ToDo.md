@@ -54,7 +54,8 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] Admin dashboard: balances, grants/refunds, sales
 - [x] Inactivity (ADR-008, cct_common 0.9.0, `6647737`): free tokens expire after 2 years without a sign-in (spent first; purchased never expire); accounts with no purchased tokens close after 5 years; 30-day reminder emails first; any sign-in resets; daily run in `accounts_setup.py`; notice in the sign-in and buy dialogs and on the balance
 - [ ] Have the terms of service state the inactivity rule (and check it against the states you sell into)
-- [ ] Optional: refund the unused purchased balance when a customer asks to close their account
+- [x] Refund policy (2026-09-26, terms §4): on request, the **unused purchased** tokens only (never more than the balance; free tokens used first), valued at the price paid, **less the payment processor's fees**; to the original payment method where the provider still allows (~6 months), otherwise another way. Same rule when we close an account (not fraud), on shutdown, and when a customer closes their own
+- [ ] Refund tooling: a refund issued in the PayPal/Stripe dashboard takes back tokens in proportion to the *money* refunded, so a fee-reduced refund leaves a few tokens behind — add an admin action that refunds the net amount through the provider's API and removes exactly the unused purchased tokens (`purchased_remaining`)
 
 ### Database backups (must be live before charging real money)
 Render-era backups are out of scope — hosting moves to Google Cloud Run (see Hosting),
