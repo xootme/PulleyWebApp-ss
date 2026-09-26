@@ -24,7 +24,9 @@ header {
   flex-shrink: 0;
 }
 .header-inner        { display: flex; align-items: center; gap: 16px; }
-.logo                { height: 28px; width: auto; display: block; }
+/* Drawn at 48px but laid out as 28px (the -10px margins), so it fills the
+   header's padding without making the header any taller. */
+.logo                { height: 48px; width: auto; display: block; margin: -10px 0; }
 .header-title-block  { display: flex; flex-direction: column; gap: 1px; }
 .header-title        { font-size: 14px; opacity: 0.88; }
 .header-version      { font-size: 10px; opacity: 0.60; letter-spacing: 0.3px; }
