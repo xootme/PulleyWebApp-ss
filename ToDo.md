@@ -208,7 +208,8 @@ not community posting — bulk auto-posting breaks most sites' rules.
 
 ## Bug reports → GitHub (do before adding the token to Render)
 Production files no GitHub issues today: Render has no `FEEDBACK_GITHUB_PAT`.
-- [ ] **Before** adding it: this app's own `/api/report-bug` (`app.py` `_create_github_issue` / `_send_report_email`, ~2654–2806) still puts the user's design state and email into the issue and email. Switch it to `cct_common.bug_report` (issue = report id + description only; design and email stay in the private log) — keeping the desktop build's forward-to-production path while the desktop app exists
+- [x] `/api/report-bug` fixed (2026-09-26): the GitHub issue comes from `cct_common.bug_report` (description only — no design, no address); the notification email goes through Resend with the address but not the design; the full report is kept in the log and, with `DATABASE_URL`, in the `bug_reports` table (`bug_store.py`), so it survives Cloud Run servers; desktop forwarding removed. Tests: `tests/test_bug_report_privacy.py` (5 of 6 fail against the old route)
+- [ ] Admin dashboard: read bug reports from the `bug_reports` table as well as the log, and add a delete button (a deletion request must reach the database copy)
 - [ ] Then on Render: `FEEDBACK_GITHUB_PAT` (fine-grained, Issues read/write on `xootme/cct-feedback` only) and `FEEDBACK_GITHUB_REPO=xootme/cct-feedback`
 - [x] cct_common's bug reporter verified live 2026-09-24: a report from E-Box Designer became xootme/cct-feedback#1 with no design or email in it
 

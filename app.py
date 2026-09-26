@@ -2683,84 +2683,30 @@ def download_flange_assembly():
                         status=500, mimetype='text/plain')
 
 
-def _create_github_issue(report_label, timestamp, label_seeing, label_should,
-                         seeing, should_see, email, state, report_type):
-    """Create a GitHub issue in the feedback repo. Silently skips if PAT not set."""
-    pat  = os.environ.get('FEEDBACK_GITHUB_PAT', '').strip()
-    repo = os.environ.get('FEEDBACK_GITHUB_REPO', '').strip()  # e.g. xootme/cct-feedback
-    if not pat or not repo:
-        return
-    try:
-        import urllib.request, urllib.error
-        state_json = json.dumps(state, indent=2)
-        params_summary = (
-            f"**Family:** {state.get('family','?')}  "
-            f"**Pitch:** {state.get('pitch','?')}  "
-            f"**Teeth:** {state.get('teeth','?')}  "
-            f"**Bore:** {state.get('bore','?')}"
-        )
-        body = (
-            f"**Type:** {report_label}\n"
-            f"**Submitted:** {timestamp}\n"
-            f"**App Version:** {state.get('app_version', APP_VERSION)}  "
-            f"**Build:** {state.get('build_time', BUILD_TIME)}\n\n"
-            f"---\n\n"
-            f"**{label_seeing}:**\n{seeing or '_(not provided)_'}\n\n"
-            f"**{label_should}:**\n{should_see or '_(not provided)_'}\n\n"
-            f"**Contact email:** {email or '_(not provided)_'}\n\n"
-            f"---\n\n"
-            f"**Parameters:** {params_summary}\n\n"
-            f"<details><summary>Full app state</summary>\n\n"
-            f"```json\n{state_json}\n```\n\n</details>\n"
-        )
-        title = f"[{report_label}] {(seeing or should_see or 'No description')[:80]}"
-        label = 'feature-request' if report_type == 'feature' else 'bug'
-        payload = json.dumps({'title': title, 'body': body, 'labels': [label]}).encode()
-        req = urllib.request.Request(
-            f'https://api.github.com/repos/{repo}/issues',
-            data=payload,
-            headers={
-                'Authorization': f'Bearer {pat}',
-                'Accept':        'application/vnd.github+json',
-                'X-GitHub-Api-Version': '2022-11-28',
-                'Content-Type':  'application/json',
-            },
-            method='POST',
-        )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            resp = json.loads(r.read())
-        return resp.get('html_url')
-    except Exception:
-        pass  # GitHub failure must never break the log write
+# The GitHub issue comes from cct_common.bug_report: description only — no
+# design, no address (see that module and the privacy policy).
+from cct_common.bug_report import _create_github_issue as _cc_create_issue
+from cct_common.bug_report import _report_id as _cc_report_id
 
 
-def _send_report_email(report_label, timestamp, label_seeing, label_should,
-                       seeing, should_see, email, state):
-    """Fire-and-forget SendGrid notification. Silently skips if key not set."""
-    api_key = os.environ.get('SENDGRID_API_KEY', '').strip()
-    if not api_key:
+def _notify_bug_report(report_id, report_label, timestamp, label_seeing, label_should,
+                       seeing, should_see, email):
+    """Email info@ that a report came in, through Resend: the description and
+    the reporter's address (to reply), NOT the design — an emailed design
+    can't be deleted on request; the log and the database copy can.
+    Skips without RESEND_API_KEY; a send failure never fails the report."""
+    if not os.environ.get('RESEND_API_KEY', '').strip():
         return
     try:
-        from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import Mail
-        state_json = json.dumps(state, indent=2)
-        body = (
-            f'{report_label} — {timestamp}\n'
-            f'App Version: {APP_VERSION}   Build: {BUILD_TIME}\n\n'
-            f'{label_seeing}:\n  {seeing or "(not provided)"}\n\n'
-            f'{label_should}:\n  {should_see or "(not provided)"}\n\n'
-            f'Contact email:\n  {email or "(not provided)"}\n\n'
-            f'App state:\n{state_json}\n'
-        )
-        message = Mail(
-            from_email='noreply@cheapcadtools.com',
-            to_emails='info@cheapcadtools.com',
-            subject=f'[Pulley Generator] {report_label}',
-            plain_text_content=body,
-        )
-        SendGridAPIClient(api_key).send(message)
+        body = (f'{report_label} {report_id} — {timestamp}\n'
+                f'App Version: {APP_VERSION}   Build: {BUILD_TIME}\n\n'
+                f'{label_seeing}:\n  {seeing or "(not provided)"}\n\n'
+                f'{label_should}:\n  {should_see or "(not provided)"}\n\n'
+                f'Contact email:\n  {email or "(not provided)"}\n\n'
+                f'The design is in the report log / database under {report_id}.\n')
+        _smtp_send('info@cheapcadtools.com', f'[Pulley Generator] {report_label} {report_id}', body)
     except Exception:
-        pass  # email failure must never break the log write
+        pass
 
 
 def _load_bug_issue_urls():
@@ -2796,22 +2742,6 @@ def api_report_bug():
         state        = data.get('state', {})          # dict of current app params
         report_type  = str(data.get('report_type', 'bug')).strip()
 
-        # Desktop app: no GitHub PAT configured locally — forward to production server
-        _forward_failed = False
-        if not os.environ.get('FEEDBACK_GITHUB_PAT') and os.environ.get('PULLEY_BASE_DIR'):
-            try:
-                payload = json.dumps(data).encode()
-                req = urllib.request.Request(
-                    'https://cheapcadtools.com/api/report-bug',
-                    data=payload,
-                    headers={'Content-Type': 'application/json'},
-                    method='POST',
-                )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    return Response(resp.read(), status=resp.status, mimetype='application/json')
-            except Exception:
-                _forward_failed = True  # fall through to local save, then warn the user
-
         if not seeing and not should_see:
             return jsonify({'error': 'At least one description field is required.'}), 400
 
@@ -2822,7 +2752,9 @@ def api_report_bug():
 
         os.makedirs(_LOG_DIR, exist_ok=True)
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        report_id = _cc_report_id(timestamp, seeing, should_see)
         entry = (
+            f'\nReport id:\n  {report_id}\n'
             f'\n{"="*60}\n'
             f'{report_label} — {timestamp}\n'
             f'App Version: {APP_VERSION}   Build: {BUILD_TIME}\n'
@@ -2840,32 +2772,23 @@ def api_report_bug():
         )
         with open(_LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(entry)
+        if _bug_store is not None:          # lasts beyond this server (Cloud Run)
+            _bug_store.add(report_id, report_type=report_type, seeing=seeing,
+                           should_see=should_see, error_msg=error_msg,
+                           user_comment=user_comment, email=email, state=state,
+                           app_version=APP_VERSION)
 
-        issue_url = _create_github_issue(report_label, timestamp, label_seeing, label_should,
-                                         seeing, should_see, email, state, report_type)
+        issue_url = _cc_create_issue(report_id, report_label, timestamp, label_seeing,
+                                     label_should, seeing, should_see, report_type,
+                                     'Timing Pulley Generator', APP_VERSION)
         if issue_url:
             _save_bug_issue_url(timestamp, issue_url)
+            if _bug_store is not None:
+                _bug_store.set_issue_url(report_id, issue_url)
 
-        _send_report_email(report_label, timestamp, label_seeing, label_should,
-                           seeing, should_see, email, state)
-
-        if _forward_failed:
-            ts_safe = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_filename = f'bug_report_{ts_safe}.txt'
-            report_path = os.path.join(_LOG_DIR, report_filename)
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(entry.strip())
-            return jsonify({
-                'ok': True,
-                'warning': (
-                    'Your report was saved locally but could not be sent to CheapCADTools '
-                    '(no internet connection or server unreachable).\n\n'
-                    'To submit it manually, email the report file to info@cheapcadtools.com, '
-                    'or reconnect and submit again.'
-                ),
-                'report_filename': report_filename,
-            })
-        return jsonify({'ok': True, 'issue_url': issue_url})
+        _notify_bug_report(report_id, report_label, timestamp, label_seeing, label_should,
+                           seeing, should_see, email)
+        return jsonify({'ok': True, 'issue_url': issue_url, 'report_id': report_id})
     except Exception as e:
         import traceback
         return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
@@ -3963,6 +3886,11 @@ register_result_routes(app, log_dir=_LOG_DIR)
 from shared_jobs import SharedJobs
 _shared_jobs = (SharedJobs(os.environ['DATABASE_URL'].strip())
                 if os.environ.get('DATABASE_URL', '').strip() else None)
+
+# Bug reports in the database too, when there is one — see bug_store.py.
+from bug_store import BugReports
+_bug_store = (BugReports(os.environ['DATABASE_URL'].strip())
+              if os.environ.get('DATABASE_URL', '').strip() else None)
 
 
 def _finish_job(job_id, **kw):
