@@ -45,7 +45,9 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
   - [ ] Owner: apply for Micropayments pricing on the business account (it's opt-in and must be approved)
   - [ ] Owner: check whether the rate applies to *every* payment on that account — it's worse than standard above ~$12, so larger packs may need a second PayPal account or to go through Stripe/standard PayPal
   - [x] Built (cct_common 0.14.0 `payments.py`): `/account/buy` with PayPal buttons (Orders API) for $2/$5 and Stripe Checkout for $5+; server-priced orders recorded in `payments`; credit only for our order at exactly its price, ref `<provider>:<order id>` so capture/return and webhook credit once; PayPal webhooks verified with PayPal, Stripe's by HMAC (5 min); refunds and chargebacks take back the refunded share, capped at the pack. No provider libraries
-  - [ ] Owner: PayPal developer app (sandbox first) → `PAYPAL_CLIENT_ID`, secret into `PAYPAL_CLIENT_SECRET`, webhook `<site>/api/payments/paypal/webhook` (events PAYMENT.CAPTURE.COMPLETED, .REFUNDED, .REVERSED) → `PAYPAL_WEBHOOK_ID`
+  - [x] PayPal **sandbox** on the test site (app client `BAAAj9n-…`, webhook `20112976ET130170R`); 2026-09-26 sandbox card purchase of the $2 pack: capture credited 20 once, PayPal's webhook arrived 12 s later, verified, no second credit
+  - [ ] PayPal live: a **Live** app in the developer dashboard (its own client id, secret, webhook) and `PAYPAL_LIVE=1`; apply for the Micropayments rate first
+  - [ ] Test a sandbox refund (sandbox.paypal.com as the business sandbox account → Refund) — the 20 tokens should come off
   - [ ] Owner: Stripe account (test mode first) → secret key into `STRIPE_SECRET_KEY`; webhook `<site>/api/payments/stripe/webhook` (checkout.session.completed, checkout.session.async_payment_succeeded, charge.refunded, charge.dispute.created) → signing secret into `STRIPE_WEBHOOK_SECRET`
   - [ ] Test end to end in the PayPal sandbox before going live; set `TOKENS_BUY_URL` to the buy page
 - [ ] Account page: balance, purchase history, per-export history
