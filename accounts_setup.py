@@ -91,7 +91,8 @@ def make_backup_alert(email_sender: Callable, *, alert_to: str, logger):
 
 def make_inactivity_notify(email_sender: Callable, *, app_name: str, site_url: str):
     """The reminder emails for cct_common.accounts housekeeping: free tokens
-    about to expire, or an account with nothing bought about to be closed.
+    about to expire, or an idle account about to be closed (its remaining
+    tokens, purchased ones included, expiring with it).
     Returns True only when the email was sent — nothing expires otherwise."""
     def notify(email: str, kind: str, deadline: float, tokens: int) -> bool:
         when = datetime.fromtimestamp(deadline).strftime("%d %B %Y")
@@ -100,12 +101,17 @@ def make_inactivity_notify(email_sender: Callable, *, app_name: str, site_url: s
             subject = f"Your {tokens} free {app_name} tokens expire on {when}"
             body = (f"Hi,\n\nYour account hasn't been signed in to for almost 2 years, so its "
                     f"{tokens} free token{'s' if tokens != 1 else ''} will expire on {when}. "
-                    f"{sign_in}\n\nTokens you bought never expire.\n")
+                    f"{sign_in}\n\nTokens you bought are kept as long as you sign in "
+                    f"at least once every 5 years.\n")
         else:
             subject = f"Your {app_name} account will be closed on {when}"
-            body = (f"Hi,\n\nYour account hasn't been signed in to for almost 5 years and holds "
-                    f"no purchased tokens, so it will be closed on {when} and your email "
-                    f"address removed. Signing in before then ({site_url}) keeps it open.\n")
+            held = (f"the {tokens} token{'s' if tokens != 1 else ''} left in it will expire"
+                    if tokens > 0 else "it holds no tokens")
+            body = (f"Hi,\n\nYour account hasn't been signed in to for almost 5 years, so it "
+                    f"will be closed on {when}: your email address will be removed and {held}.\n\n"
+                    f"Signing in before then ({site_url}) keeps the account open with all its "
+                    f"tokens. If you'd rather have a refund of unused purchased tokens (less "
+                    f"payment processor fees), reply to this email before {when}.\n")
         ok, _ = email_sender(email, subject, body)
         return bool(ok)
     return notify

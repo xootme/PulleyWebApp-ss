@@ -62,6 +62,17 @@ FreeCAD, SolidWorks and the web.
   reminder email sent at least 30 days ahead, and any sign-in resets both clocks. The
   page states the rule wherever tokens are bought or signed in to. Not legal advice —
   confirm the wording with whoever writes the terms.
+- **Inactivity revised (2026-09-26) — purchased tokens end with the account.** Every
+  account, including one holding purchased tokens, is closed after **5 years without a
+  sign-in**, and whatever is left in it expires (ledger `expire` rows, so the record
+  stays; `TokenStore.expire_all`). Owner's reason: an end date limits the liability of
+  tracking and honouring paid balances forever. Mitigations for the gift-card and
+  unclaimed-property risk recorded above: 5 years matches the federal gift-card minimum
+  (tokens can only be bought while signed in, so none expires sooner than 5 years after
+  purchase); the closing reminder (30+ days ahead) states how many tokens are at stake
+  and offers a refund of unused purchased tokens, less processor fees (terms §4); the
+  ledger is kept. States that bar expiry (e.g. California) and unclaimed-property
+  reporting remain open questions for a lawyer. Free tokens: unchanged (2 years).
 - **Hosting moves to Google Cloud Run (decided 2026-09-25),** billed only while handling
   requests and scaling to zero, so cost follows token sales. (Azure Container Apps was
   picked on 2026-09-24, then dropped: the existing Microsoft account is Microsoft 365, not

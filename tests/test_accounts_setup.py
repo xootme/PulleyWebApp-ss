@@ -206,7 +206,7 @@ def test_free_token_reminder_email():
     assert notify('a@example.com', 'free_tokens', 1_893_456_000, 7) is True
     to, subject, body = sent[0]
     assert to == 'a@example.com' and '7 free' in subject and 'expire' in subject
-    assert 'https://example.com/p' in body and 'Tokens you bought never expire.' in body
+    assert 'https://example.com/p' in body and 'at least once every 5 years' in body
 
 
 def test_account_closing_reminder_email_and_failed_send():
@@ -215,7 +215,18 @@ def test_account_closing_reminder_email_and_failed_send():
     notify = make_inactivity_notify(lambda *a: sent.append(a) or (False, 'down'),
                                     app_name='CheapCAD Tools', site_url='https://example.com/p')
     assert notify('a@example.com', 'account', 1_893_456_000, 0) is False   # not sent -> nothing happens
-    assert 'will be closed' in sent[0][1] and 'no purchased tokens' in sent[0][2]
+    assert 'will be closed' in sent[0][1] and 'holds no tokens' in sent[0][2]
+
+
+def test_account_closing_reminder_names_the_tokens_at_stake():
+    from accounts_setup import make_inactivity_notify
+    sent = []
+    notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
+                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+    assert notify('a@example.com', 'account', 1_893_456_000, 57) is True
+    body = sent[0][2]
+    assert 'the 57 tokens left in it will expire' in body
+    assert 'refund of unused purchased tokens' in body and 'https://example.com/p' in body
 
 
 def test_daily_run_survives_a_failure(caplog):

@@ -3916,8 +3916,9 @@ _accounts_state = init_accounts(
     backup_alert=make_backup_alert(
         _accounts_email, alert_to=os.environ.get('BACKUP_ALERT_EMAIL', '').strip(),
         logger=app.logger),
-    # Daily: free tokens expire after 2 years without a sign-in, accounts with
-    # nothing bought close after 5 — each after a reminder email. Not in tests.
+    # Daily: free tokens expire after 2 years without a sign-in; after 5 every
+    # account closes and its remaining tokens expire — each after a reminder
+    # email. Not in tests.
     inactivity_notify=None if os.environ.get('PULLEY_TESTING') else make_inactivity_notify(
         _accounts_email, app_name='CheapCAD Tools',
         site_url=os.environ.get('SITE_URL', 'https://cheapcadtools.com/tools/pulleys')),

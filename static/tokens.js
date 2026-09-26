@@ -54,8 +54,9 @@
     render();
   }
 
-  const EXPIRY_NOTE = 'Free tokens expire after 2 years without a sign-in; ' +
-                      'tokens you buy never expire. Signing in resets the clock.';
+  const EXPIRY_NOTE = 'Free tokens expire after 2 years without a sign-in; tokens you buy ' +
+                      'last as long as you sign in at least once every 5 years. ' +
+                      'Signing in resets the clock.';
 
   function render() {
     const box = document.getElementById('cct-account');

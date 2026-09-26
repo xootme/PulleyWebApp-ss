@@ -57,7 +57,8 @@ TRANSIENT_KEYS = frozenset({
 CREDIT_KINDS = frozenset({"signup", "purchase", "referral", "promo", "adjust"})
 
 # Tokens given away rather than bought. Only these can ever expire (see
-# free_remaining / expire_free): purchased tokens never do.
+# free_remaining / expire_free) on their own; purchased tokens end only
+# with the account, when an idle account is closed (expire_all).
 FREE_KINDS = frozenset({"signup", "referral", "promo"})
 # Ledger rows that use tokens up. Free tokens are counted as used first.
 _CONSUMING_KINDS = ("spend", "refund", "expire")
@@ -147,7 +148,8 @@ class TokenStore(SqliteDB):
 
     Free tokens (FREE_KINDS: signup, referral, promo) are spent before
     purchased ones, so what's left of them is simply what was given minus
-    everything used, never below 0. Purchased tokens never expire."""
+    everything used, never below 0. Purchased tokens don't expire on their
+    own; they end only when the account is closed (expire_all)."""
 
     def __init__(self, path: str, *, clock: Callable[[], float] = time.time,
                  unlock_window_s: int = UNLOCK_WINDOW_S):
@@ -270,7 +272,7 @@ class TokenStore(SqliteDB):
             return self._free_remaining(db, account_id)
 
     def purchased_remaining(self, account_id: str) -> int:
-        """Bought tokens still unspent — these never expire."""
+        """Bought tokens still unspent — these don't expire on their own."""
         with self._read() as db:
             return self._balance(db, account_id) - self._free_remaining(db, account_id)
 
@@ -280,6 +282,20 @@ class TokenStore(SqliteDB):
         0, with nothing written, if none were left."""
         with self._write() as db:
             n = self._free_remaining(db, account_id)
+            if n <= 0:
+                return 0
+            db.execute(
+                "INSERT INTO ledger (account_id, ts, kind, amount, detail) VALUES (?, ?, 'expire', ?, ?)",
+                (account_id, self._clock(), -n, detail))
+        return n
+
+    def expire_all(self, account_id: str, *, detail: str = "account closed") -> int:
+        """Remove the account's whole remaining balance — free and purchased —
+        as one ``expire`` row, when the account is closed. Returns how many
+        were removed; 0, with nothing written, if the balance isn't positive
+        (a balance below zero after a chargeback is left as it is)."""
+        with self._write() as db:
+            n = self._balance(db, account_id)
             if n <= 0:
                 return 0
             db.execute(

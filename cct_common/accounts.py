@@ -45,12 +45,15 @@ once. Codes last 10 minutes; the add-in's polling secret is stored only
 as a hash; user codes use consonants only (no 0/O or 1/I mix-ups, no
 accidental words).
 
-Inactivity (housekeeping(), run daily) — a way to clear out dead accounts
-without ever taking anything a customer paid for:
+Inactivity (housekeeping(), run daily) — so no account, or balance, has
+to be kept forever:
 - Free tokens (signup grant, promos) expire after 2 years without a sign-in.
-  Purchased tokens never expire.
-- After 5 years without a sign-in, an account holding no purchased tokens
-  has its personal data deleted (delete_account; the ledger stays).
+  Purchased tokens don't expire on their own.
+- After 5 years without a sign-in, every account is closed: whatever tokens
+  are left — purchased ones included — expire (ledger "expire" rows, so the
+  record stays), and its personal data is deleted (delete_account; the
+  ledger stays). The reminder says how many tokens will be lost, so a
+  customer can sign in to keep them or ask for a refund first.
 - Each is preceded by a reminder email at least 30 days ahead, and happens
   only once that reminder has gone out. Every sign-in resets both clocks:
   it stamps the identity's last_used_at, which idle time is measured from,
@@ -72,7 +75,7 @@ LINKS_PER_IP_PER_HOUR = 20
 SESSION_TTL_S = {"web": 30 * 24 * 60 * 60, "device": 365 * 24 * 60 * 60}
 _YEAR_S = int(365.25 * 24 * 60 * 60)
 FREE_TOKEN_IDLE_S = 2 * _YEAR_S       # free tokens expire after this without a sign-in
-DEAD_ACCOUNT_IDLE_S = 5 * _YEAR_S     # an account with nothing bought is removed after this
+DEAD_ACCOUNT_IDLE_S = 5 * _YEAR_S     # any account is closed after this, its tokens expiring
 REMINDER_LEAD_S = 30 * 24 * 60 * 60   # reminder email this long before either
 DEFAULT_DEVICE_DAILY_BUDGET = 100   # tokens per rolling 24 h per add-in/agent token
 DEVICE_CODE_TTL_S = 10 * 60
@@ -471,12 +474,13 @@ class AccountStore(SqliteDB):
     def housekeeping(self, notify=None) -> dict:
         """The daily inactivity run (see the module docstring). notify(email,
         kind, deadline, tokens) -> bool sends a reminder: kind "free_tokens"
-        (tokens = free tokens that will expire) or "account" (tokens = 0).
+        (tokens = free tokens that will expire) or "account" (tokens = the
+        whole balance, which expires when the account closes).
         Nothing expires or is deleted without a reminder sent at least
         REMINDER_LEAD_S earlier in the same idle period, so with no notify
         this only tidies up. Returns counts of what it did."""
         now = self._clock()
-        done = {"reminded": 0, "free_expired": 0, "accounts_deleted": 0}
+        done = {"reminded": 0, "free_expired": 0, "accounts_deleted": 0, "tokens_expired": 0}
         with self._read() as db:
             accounts = [dict(r) for r in db.execute(
                 f"SELECT a.id, a.email, {self._LAST_SIGN_IN_SQL} AS last FROM accounts a "
@@ -493,12 +497,14 @@ class AccountStore(SqliteDB):
                 if idle >= FREE_TOKEN_IDLE_S and self._reminded_early(a, "free_tokens", deadline):
                     if self.tokens.expire_free(a["id"], detail="no sign-in for 2 years"):
                         done["free_expired"] += 1
-            if idle >= DEAD_ACCOUNT_IDLE_S - REMINDER_LEAD_S and self.tokens.purchased_remaining(a["id"]) == 0:
+            if idle >= DEAD_ACCOUNT_IDLE_S - REMINDER_LEAD_S:
                 deadline = a["last"] + DEAD_ACCOUNT_IDLE_S
-                if self._remind(a, "account", deadline, 0, notify, now):
+                left = max(0, self.tokens.balance(a["id"]))
+                if self._remind(a, "account", deadline, left, notify, now):
                     done["reminded"] += 1
                 if idle >= DEAD_ACCOUNT_IDLE_S and self._reminded_early(a, "account", deadline):
-                    self.tokens.expire_free(a["id"], detail="account closed after 5 years without a sign-in")
+                    if self.tokens.expire_all(a["id"], detail="account closed after 5 years without a sign-in"):
+                        done["tokens_expired"] += 1
                     self.delete_account(a["id"])
                     done["accounts_deleted"] += 1
         self.purge_expired()

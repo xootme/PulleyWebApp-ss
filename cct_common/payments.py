@@ -378,7 +378,8 @@ def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
                 f"<p>Signed in as <b>{html.escape(email)}</b> · balance "
                 f"<b id='bal'>{tokens.balance(acct)}</b> tokens</p>",
                 "<p class='note'>2D drawing 1 token · 3D-print (STL) 2 · CAD (STEP) 3. "
-                "Tokens you buy never expire.</p><p id='msg' role='status'></p>"]
+                "Tokens you buy last as long as you sign in at least once every 5 years."
+                "</p><p id='msg' role='status'></p>"]
         if pp:
             body.append("<h2>Pay with PayPal</h2><div class='packs' id='pp-packs'>" + "".join(
                 f"<button class='pack' data-pack='{p.id}' aria-pressed='false'><b>{p.price}</b>"
