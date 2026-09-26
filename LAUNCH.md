@@ -16,7 +16,7 @@ Written 2026-09-26; update as steps are done.
 | 5 | Google/GitHub sign-in on the real domain | Owner | **done** (2026-09-26; Google checked for both addresses; GitHub is checked at the end-to-end sign-in) |
 | 6 | Cloudflare Worker: route `/account/`, send edge headers, point at Cloud Run | Claude, via API token | token works; rollback copy `site/worker-backup-2026-09-26.js`; switch after production passes |
 | 7 | Privacy policy + terms: store refund rule, effective dates, lawyer's read, publish | Owner, then Claude publishes | open |
-| 8 | Neon paid plan (7-day restore) | Owner | open |
+| 8 | Neon paid plan (7-day restore) | Owner | **done** (2026-09-26; Launch plan, history window 7 days) |
 | 9 | Admin dashboard reads bug reports from the database | Claude | open (not blocking) |
 
 ## Owner steps
