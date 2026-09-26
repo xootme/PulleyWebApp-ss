@@ -11,7 +11,7 @@ Written 2026-09-26; update as steps are done.
 | 1 | Bug reports put email + design in GitHub issues | Claude | **done** (`dc2658a`) |
 | 2 | Forged X-Forwarded-Host could hijack sign-in links | Claude | **done** (`df5461d`, `edge_proxy.py`) |
 | 3 | Test site shared the production database | Claude | test site moved to `cct_test` (secret `DATABASE_URL_TEST`); **clearing neondb's test rows awaits owner OK** (backup taken) |
-| 4 | Buying tokens: PayPal live, Micropayments rate | Owner | open |
+| 4 | Buying tokens: PayPal live, Micropayments rate | Owner | **live app done** (2026-09-26; webhook `6P162379A7315931K` created by API); Micropayments rate still to request |
 | 5 | Google/GitHub sign-in on the real domain | Owner | open |
 | 6 | Cloudflare Worker: route `/account/`, send edge headers, point at Cloud Run | Owner (Claude drafted below) | open |
 | 7 | Privacy policy + terms: store refund rule, effective dates, lawyer's read, publish | Owner, then Claude publishes | open |
@@ -110,7 +110,7 @@ gcloud --configuration=cheapcadtools run deploy pulley --source . --region us-ce
   --set-env-vars "WEB_CONCURRENCY=4,TOKENS_ENABLED=1,CCT_ACCOUNTS_MODE=live,CCT_BUG_REPORT_MODE=live,\
 RESULTS_BUCKET=cheapcadtools-results,SITE_URL=https://cheapcadtools.com/tools/pulleys,\
 GOOGLE_CLIENT_ID=925396938485-j3e1ga1nl83ajllacf0mgkcl4bfad1vb.apps.googleusercontent.com,\
-GITHUB_CLIENT_ID=Ov23liD7sewt5PZUURBB,PAYPAL_CLIENT_ID=<live id>,PAYPAL_WEBHOOK_ID=<live webhook id>,\
+GITHUB_CLIENT_ID=Ov23liD7sewt5PZUURBB,PAYPAL_CLIENT_ID=BAAB9kB2oNSLBZtrCHK-iig6iMmBtVZnWJZaxsRRrjIUKeowPlVEzxPrLpM4QpUKVyKvV4Llhpk5Af5688,PAYPAL_WEBHOOK_ID=6P162379A7315931K,\
 PAYPAL_LIVE=1,FEEDBACK_GITHUB_REPO=xootme/cct-feedback" \
   --set-secrets "DATABASE_URL=DATABASE_URL:latest,RESEND_API_KEY=RESEND_API_KEY:latest,\
 GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:1,GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET:latest,\
