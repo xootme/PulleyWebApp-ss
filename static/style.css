@@ -335,6 +335,101 @@ footer a:hover { text-decoration: underline; }
   accent-color: #0078d4;
 }
 
+/* ── 3D Mode panel: drafting-blue blueprint grid, the 3D pulley render, a
+   switch. The real checkbox sits inside, invisible but still focusable and
+   clickable, so state, saved settings and onFeatureBuildToggle are
+   unchanged. Off: pale lettering, grey pulley. On: white lettering, the
+   pulley in colour, the switch across. No glow. ── */
+.mode3d {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+  padding: 4px 16px 4px 6px;
+  border: 2px solid #2f63c8;
+  border-radius: 10px;
+  background-color: #123a8a;
+  background-image:
+    linear-gradient(rgba(160, 220, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160, 220, 255, 0.18) 1px, transparent 1px);
+  background-size: 12px 12px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.mode3d input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.mode3d-pulley {
+  display: block;
+  height: 56px;
+  width: auto;
+  filter: grayscale(1) brightness(1.05) contrast(0.8);
+  opacity: 0.75;
+  transition: filter 0.3s, opacity 0.3s;
+  pointer-events: none;
+}
+.mode3d-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  pointer-events: none;
+}
+.mode3d-text b {
+  font-family: Orbitron, "Segoe UI", Arial, sans-serif;
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: #a9e6ff;
+  transition: color 0.3s;
+}
+.mode3d-text span {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #bcd6f2;
+  white-space: nowrap;
+}
+.mode3d-switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: #27488f;
+  transition: background 0.25s;
+  pointer-events: none;
+}
+.mode3d-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: left 0.25s;
+}
+.mode3d input:checked ~ .mode3d-pulley { filter: none; opacity: 1; }
+.mode3d input:checked ~ .mode3d-text b { color: #fff; }
+.mode3d input:checked ~ .mode3d-switch { background: #5ee0ff; }
+.mode3d input:checked ~ .mode3d-switch::after { left: 23px; }
+.mode3d input:focus-visible ~ .mode3d-switch { outline: 2px solid #fff; outline-offset: 2px; }
+@media (max-width: 700px) {
+  .mode3d-text span { display: none; }       /* keep the panel narrow on phones */
+  .mode3d { height: 52px; }
+  .mode3d-pulley { height: 44px; }
+  .mode3d-text b { font-size: 18px; }
+}
+
 .drive-spacing {
   display: flex;
   align-items: center;

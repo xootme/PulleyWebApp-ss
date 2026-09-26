@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
-  <link rel="stylesheet" href="/static/style.css?v=26">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
+  <link rel="stylesheet" href="/static/style.css?v=27">
 </head>
 <body>
 
@@ -37,9 +38,14 @@
 
 <!-- ── Drive bar ── -->
 <div class="drive-bar">
-  <label class="drive-toggle">
+  <!-- 3D Mode: the checkbox is still the control (state, saved settings,
+       onFeatureBuildToggle); the panel around it is its label, drawn in
+       style.css (.mode3d). -->
+  <label class="mode3d" title="3D Mode — hubs, spokes and flanges; STL and STEP files">
     <input type="checkbox" id="feature_build" onchange="onFeatureBuildToggle()">
-    <span>3D Features</span>
+    <img class="mode3d-pulley" src="/static/mode3d_pulley.png" alt="" width="70" height="60">
+    <span class="mode3d-text"><b>3D MODE</b><span>HUBS · SPOKES · FLANGES · STL + STEP</span></span>
+    <span class="mode3d-switch" aria-hidden="true"></span>
   </label>
   <div class="drive-spacing fb-3d" id="belt_height_row">
     <label for="belt_height" style="margin:0;white-space:nowrap">Belt Height (mm)</label>
