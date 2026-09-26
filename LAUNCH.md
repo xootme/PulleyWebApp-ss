@@ -125,6 +125,12 @@ download, refund it, and check the ledger and the bug-report path end to end on 
 `pulley-…run.app` address.
 
 ## After the switch
+- Email: DMARC fixed 2026-09-26 (`_dmarc` TXT, `p=none` with reports to info@; the
+  misplaced root record removed). After a few weeks of clean reports, tighten to
+  `p=quarantine`. Sign-in links on the run.app address land in junk (link domain ≠
+  sender domain); on cheapcadtools.com they match.
+- DNS: `tools.cheapcadtools.com` CNAME → `pulleywebapp.onrender.com` (proxied) points
+  at Render — remove it (or repoint) when Render is retired.
 - Merge `token-model` into `main` and push only when retiring Render (it deploys Render).
 - Watch Cloud Logging for errors for the first days; Render stays as the rollback
   (revert the Worker script) until the new site has run cleanly for a week.
