@@ -27,6 +27,11 @@ Written 2026-09-26; update as steps are done.
    events: Payment capture completed / refunded / reversed → Webhook ID to Claude.
 4. Ask PayPal for the **Micropayments** rate on the business account (before or soon after launch).
 
+### 4b — Bug-report issues
+A fine-grained GitHub token with Issues: read/write on `xootme/cct-feedback` only →
+Secret Manager, new version of **`FEEDBACK_GITHUB_PAT`** (slot exists). Revoke the
+token that was pasted into chat on 2026-09-24 and make a fresh one.
+
 ### 5 — Sign-in on the real domain
 Add a second redirect URI to each existing client (keep the test one):
 - Google: console.cloud.google.com/auth/clients?project=cheapcadtools → the client →
