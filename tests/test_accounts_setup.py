@@ -383,3 +383,31 @@ def test_real_app_limits_two_signups_and_trusts_one_proxy_hop():
     assert app_module.app.wsgi_app.x_for == int(os.environ.get('PROXY_HOPS', '1'))
     src = open(app_module.__file__, encoding='utf-8').read()
     assert "os.environ.get('TOKENS_SIGNUPS_PER_IP_PER_DAY', '2')" in src
+
+
+# ── buying tokens ─────────────────────────────────────────────────────────
+
+def test_buy_page_offers_only_providers_with_keys(tmp_path):
+    from cct_common.payments import DEFAULT_PACKS, PayPalConfig, StripeConfig
+    app = flask.Flask(__name__)
+    state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                          email_sender=lambda *a: (True, ''),
+                          payments={'packs': DEFAULT_PACKS,
+                                    'paypal': PayPalConfig('pp-id', 'pp-secret'),
+                                    'stripe': StripeConfig('')})
+    assert state.payment_providers == ['paypal']
+    c = app.test_client()
+    assert c.get('/account/buy').status_code == 200
+    assert c.post('/api/payments/paypal/orders', json={'pack': 'paypal-200'}).status_code == 401
+    assert c.post('/api/payments/stripe/checkout', json={}).status_code == 404
+
+
+def test_real_app_buy_url_waits_for_a_provider():
+    # Without payment keys (the test environment) there's no buy page to
+    # send people to; with them, the buy dialog points at /account/buy.
+    import app as app_module
+    from charging import charges
+    if not app_module._accounts_state.payment_providers and not os.environ.get('TOKENS_BUY_URL'):
+        assert charges.buy_url == ''
+    src = open(app_module.__file__, encoding='utf-8').read()
+    assert "or ('/account/buy' if _accounts_state.payment_providers else '')" in src

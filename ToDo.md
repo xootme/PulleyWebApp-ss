@@ -19,7 +19,7 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 
 ### Decisions (ADR-008)
 - [x] ADR-008 written: tiers include lower tiers (STEP 3 ⊃ STL 2 ⊃ 2D 1); one purchase unlocks the **whole design**; unlocks last **24 h**; upgrade pays the **difference**; **signup tokens**, no weekly allowance; sign-in by **email link and OAuth** (Microsoft, Google, GitHub — not Apple)
-- [ ] Pack sizes and prices (card fees ~30¢ + 2.9% exceed a 10¢ token — e.g. 50 for $5, 250 for $20)
+- [x] Pack sizes and prices (2026-09-26): PayPal $2 = 20 and $5 = 50; Stripe $5 = 50, $10 = 100, $25 = 250 — flat 10¢ a token. Change with `TOKEN_PACKS` (e.g. `paypal:2=20,5=50;stripe:5=50,10=100,25=250`)
 - [ ] Signup grant size (placeholder: 10)
 - [ ] Autodesk App Store channel: can it sell token packs, or does it stay a subscription / go away?
 
@@ -44,8 +44,9 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] **PayPal Micropayments for packs of $5 and under** (decided 2026-09-25; business PayPal account already exists). Rate 4.99% + 9¢ vs standard 2.9%/3.49% + 30–49¢ — on a $5 pack about 34¢ instead of 45–66¢
   - [ ] Owner: apply for Micropayments pricing on the business account (it's opt-in and must be approved)
   - [ ] Owner: check whether the rate applies to *every* payment on that account — it's worse than standard above ~$12, so larger packs may need a second PayPal account or to go through Stripe/standard PayPal
-  - [ ] PayPal Checkout (JS SDK buttons + Orders API) on the buy page for the small packs; larger packs through the other processor
-  - [ ] Webhook `PAYMENT.CAPTURE.COMPLETED` → verify PayPal's webhook signature → `TokenStore.credit(kind="purchase", ref="paypal:<capture id>")` (idempotent, so a retried webhook can't credit twice); refunds/chargebacks → negative `adjust`
+  - [x] Built (cct_common 0.14.0 `payments.py`): `/account/buy` with PayPal buttons (Orders API) for $2/$5 and Stripe Checkout for $5+; server-priced orders recorded in `payments`; credit only for our order at exactly its price, ref `<provider>:<order id>` so capture/return and webhook credit once; PayPal webhooks verified with PayPal, Stripe's by HMAC (5 min); refunds and chargebacks take back the refunded share, capped at the pack. No provider libraries
+  - [ ] Owner: PayPal developer app (sandbox first) → `PAYPAL_CLIENT_ID`, secret into `PAYPAL_CLIENT_SECRET`, webhook `<site>/api/payments/paypal/webhook` (events PAYMENT.CAPTURE.COMPLETED, .REFUNDED, .REVERSED) → `PAYPAL_WEBHOOK_ID`
+  - [ ] Owner: Stripe account (test mode first) → secret key into `STRIPE_SECRET_KEY`; webhook `<site>/api/payments/stripe/webhook` (checkout.session.completed, checkout.session.async_payment_succeeded, charge.refunded, charge.dispute.created) → signing secret into `STRIPE_WEBHOOK_SECRET`
   - [ ] Test end to end in the PayPal sandbox before going live; set `TOKENS_BUY_URL` to the buy page
 - [ ] Account page: balance, purchase history, per-export history
 - [ ] Admin dashboard: balances, grants/refunds, sales

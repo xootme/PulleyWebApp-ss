@@ -3893,6 +3893,17 @@ _accounts_email = make_email_sender(
     _smtp_send, live=_ACCOUNTS_LIVE,
     has_key=bool(os.environ.get('RESEND_API_KEY', '').strip()),
     logger=app.logger)
+def _payment_settings():
+    from cct_common.payments import DEFAULT_PACKS, PayPalConfig, StripeConfig, parse_packs
+    env = lambda k: os.environ.get(k, '').strip()
+    return {
+        'packs': parse_packs(env('TOKEN_PACKS')) if env('TOKEN_PACKS') else DEFAULT_PACKS,
+        'paypal': PayPalConfig(env('PAYPAL_CLIENT_ID'), env('PAYPAL_CLIENT_SECRET'),
+                               env('PAYPAL_WEBHOOK_ID'), live=env('PAYPAL_LIVE') == '1'),
+        'stripe': StripeConfig(env('STRIPE_SECRET_KEY'), env('STRIPE_WEBHOOK_SECRET')),
+    }
+
+
 _accounts_state = init_accounts(
     app, log_dir=_LOG_DIR,
     enabled=os.environ.get('TOKENS_ENABLED') == '1',
@@ -3925,9 +3936,16 @@ _accounts_state = init_accounts(
     oauth_clients={p: (os.environ.get(f'{p.upper()}_CLIENT_ID', '').strip(),
                        os.environ.get(f'{p.upper()}_CLIENT_SECRET', '').strip())
                    for p in ('google', 'microsoft', 'github')},
+    # Token packs at /account/buy (cct_common.payments): PayPal for $2/$5,
+    # Stripe from $5 — each provider once its keys are set (secrets from
+    # Secret Manager). PAYPAL_LIVE=1 leaves the PayPal sandbox. TOKEN_PACKS
+    # overrides the packs, e.g. "paypal:2=20,5=50;stripe:5=50,10=100,25=250".
+    payments=_payment_settings(),
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
-               buy_url=os.environ.get('TOKENS_BUY_URL', '').strip(),
+               # The buy page, once a payment provider is set up.
+               buy_url=(os.environ.get('TOKENS_BUY_URL', '').strip()
+                        or ('/account/buy' if _accounts_state.payment_providers else '')),
                limit_notify=make_limit_notify(_accounts_email, app_name='CheapCAD Tools'))
 
 # Finished background downloads live at unguessable, expiring links —

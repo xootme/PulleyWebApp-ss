@@ -36,6 +36,7 @@ class AccountsState:
     problems: tuple = ()
     backup_stop: object = None  # threading.Event; set() stops the backup thread
     housekeeping_stop: object = None  # threading.Event for the daily inactivity run
+    payment_providers: tuple = ()     # "paypal" / "stripe" — those with keys set
 
 
 def describe_db(path: str) -> str:
@@ -164,7 +165,8 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   device_daily_budget: int | None = 100,
                   database_url: str | None = None,
                   signups_per_ip_per_day: int | None = None,
-                  oauth_clients: dict | None = None) -> AccountsState:
+                  oauth_clients: dict | None = None,
+                  payments: dict | None = None) -> AccountsState:
     """backup_dir=None means no scheduled backups (tests). backup_upload
     is the off-server copy — the Cloud Storage upload once hosting moves
     to Google Cloud Run (ADR-008). inactivity_notify starts the daily inactivity run
@@ -174,7 +176,10 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
     then — see the module docstring). signups_per_ip_per_day: new
     accounts per network per day that get the free signup tokens (None: no
     limit). oauth_clients: {"google"|"microsoft"|"github": (client_id,
-    client_secret)} — "Continue with …" sign-in; blank entries are skipped."""
+    client_secret)} — "Continue with …" sign-in; blank entries are skipped.
+    payments: keyword arguments for cct_common.payments.register_payment_routes
+    (packs, paypal=PayPalConfig, stripe=StripeConfig) — the /account/buy page
+    and each provider whose keys are set; None: no buy page."""
     state = AccountsState(enabled=enabled)
     app.extensions["pulley_accounts"] = state
     if not enabled:
@@ -214,6 +219,10 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                             app_name=app_name, secure_cookies=live,
                             oauth_clients=oauth_clients)
     state.tokens, state.accounts, state.healthy = tokens, accounts, True
+    if payments is not None:
+        from cct_common.payments import register_payment_routes
+        state.payment_providers = register_payment_routes(app, accounts, app_name=app_name,
+                                                          **payments)
 
     if backup_dir and not is_postgres(db_path):
         from cct_common.db_backup import start_backup_thread
