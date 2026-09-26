@@ -496,6 +496,10 @@ See `web_provisioning.md` for the full checklist. Short version:
 ## 10. Live Configuration
 
 ### Cloudflare Worker — `cct-tools-router`
+
+> **Since 2026-09-26 the live script is `site/worker-cloudrun.js`** (routes the pulley app,
+> including `/account/`, to Cloud Run with the X-CCT-Edge secret — see LAUNCH.md). The
+> script below is the previous Render version, kept as `site/worker-backup-2026-09-26.js`.
 - **Route:** `cheapcadtools.com/*` (catches all requests — Worker decides pass-through vs. route)
 - **Zone:** `cheapcadtools.com`
 

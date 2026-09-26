@@ -1,7 +1,7 @@
 # Launch runbook — the token model on Google Cloud Run
 
 Moves cheapcadtools.com/tools/pulleys from Render (free trial model) to
-Cloud Run (accounts + tokens, ADR-008). Nothing here is live until step 6.
+Cloud Run (accounts + tokens, ADR-008). **Went live 2026-09-26** (Worker switched).
 Written 2026-09-26; update as steps are done.
 
 ## Status
@@ -14,8 +14,8 @@ Written 2026-09-26; update as steps are done.
 | 4 | Buying tokens: PayPal live, Micropayments rate | Owner | **live app done** (2026-09-26; webhook `6P162379A7315931K` created by API); Micropayments rate still to request |
 | 4b | Bug-report GitHub token | Owner | **done** (2026-09-26; fine-grained, private access to `cct-feedback` only — checked) |
 | 5 | Google/GitHub sign-in on the real domain | Owner | **done** (2026-09-26; Google checked for both addresses; GitHub is checked at the end-to-end sign-in) |
-| 6 | Cloudflare Worker: route `/account/`, send edge headers, point at Cloud Run | Claude, via API token | token works; rollback copy `site/worker-backup-2026-09-26.js`; switch after production passes |
-| 7 | Privacy policy + terms | Owner, then Claude publishes | **ready** (2026-09-26: store and standalone text removed — nothing was ever sold); publish at launch; a lawyer's read recommended |
+| 6 | Cloudflare Worker: route `/account/`, send edge headers, point at Cloud Run | Claude, via API token | **LIVE 2026-09-26** (`site/worker-cloudrun.js` + `EDGE_SECRET` binding); rollback: `cf_deploy_worker.py rollback` uploads `site/worker-backup-2026-09-26.js` |
+| 7 | Privacy policy + terms | Claude | **published 2026-09-26** (page 3 replaced, /terms/ = page 159, Fusion policy page 53 drafted; originals in `site/backup-2026-09-26/`) |
 | 8 | Neon paid plan (7-day restore) | Owner | **done** (2026-09-26; Launch plan, history window 7 days) |
 | 9 | Admin dashboard reads bug reports from the database | Claude | open (not blocking) |
 
