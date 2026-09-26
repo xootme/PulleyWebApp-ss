@@ -14,6 +14,7 @@
 !results.py
 !shared_jobs.py
 !bug_store.py
+!edge_proxy.py
 !gunicorn.conf.py
 !requirements.txt
 !admin_dashboard.html

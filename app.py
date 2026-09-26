@@ -504,14 +504,14 @@ app = Flask(__name__,
             template_folder=os.path.join(_base_dir, 'templates'),
             static_folder=os.path.join(_base_dir, 'static'))
 # ─── Cloudflare Worker proxy support ──────
-from werkzeug.middleware.proxy_fix import ProxyFix
-# PROXY_HOPS: how many proxies in front of the app append to X-Forwarded-For.
-# request.remote_addr is then the visitor's real IP, which the per-IP limits
-# (sign-in links, new accounts) rely on — the header's leading entries are
-# whatever the visitor sent. Cloud Run's own address: 1 (Google appends the
-# client). Add one for each proxy placed in front of that (e.g. Cloudflare).
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=int(os.environ.get('PROXY_HOPS', '1')),
-                        x_prefix=1, x_host=1)
+# Forwarding headers (visitor IP, host, protocol) are believed only from our
+# Cloudflare Worker, which proves itself with EDGE_SECRET; a request straight
+# to the *.run.app address gets only what Cloud Run's front end adds. A
+# forged X-Forwarded-Host could otherwise point sign-in emails at another
+# site — see edge_proxy.py. PROXY_HOPS / EDGE_HOPS set the X-Forwarded-For
+# entries trusted on each path (defaults 1 and 2).
+from edge_proxy import EdgeAwareProxyFix
+app.wsgi_app = EdgeAwareProxyFix(app.wsgi_app)
 # ──────────────────────────────────────────
 
 # ─── Gzip compression ─────────────────────

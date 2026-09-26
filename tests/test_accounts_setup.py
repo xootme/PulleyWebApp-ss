@@ -389,9 +389,10 @@ def test_real_app_limits_two_signups_and_trusts_one_proxy_hop():
     # the X-Forwarded-For entry the nearest PROXY_HOPS proxies appended —
     # never the visitor-controlled leading entries.
     import app as app_module
-    from werkzeug.middleware.proxy_fix import ProxyFix
-    assert isinstance(app_module.app.wsgi_app, ProxyFix)
-    assert app_module.app.wsgi_app.x_for == int(os.environ.get('PROXY_HOPS', '1'))
+    from edge_proxy import EdgeAwareProxyFix
+    assert isinstance(app_module.app.wsgi_app, EdgeAwareProxyFix)
+    assert app_module.app.wsgi_app.direct.x_for == int(os.environ.get('PROXY_HOPS', '1'))
+    assert app_module.app.wsgi_app.direct.x_host == 0          # see tests/test_edge_proxy.py
     src = open(app_module.__file__, encoding='utf-8').read()
     assert "os.environ.get('TOKENS_SIGNUPS_PER_IP_PER_DAY', '2')" in src
 
