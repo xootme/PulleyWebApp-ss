@@ -24,3 +24,14 @@ that WordPress page.
 Still to update at launch (token era): Home — "No account required"; About —
 "in the Beta now, so it's all free"; CAD Plug-Ins — "subscriptions sold within
 the CAD software's marketplace".
+
+## Cloudflare Worker (live since 2026-09-26)
+
+- `worker-cloudrun.js` — the live `cct-tools-router` script (Cloud Run + edge secret).
+- `worker-backup-2026-09-26.js` — the previous Render script.
+- `cf_deploy_worker.py new|rollback` — uploads either one through the Cloudflare API:
+  ```
+  { gcloud --configuration=cheapcadtools secrets versions access latest --secret=CLOUDFLARE_API_TOKEN; echo;
+    gcloud --configuration=cheapcadtools secrets versions access latest --secret=EDGE_SECRET; echo; } \
+    | python site/cf_deploy_worker.py rollback
+  ```
