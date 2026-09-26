@@ -11,3 +11,16 @@ whole content of its page; `*.preview.html` opens it standalone in a browser.
   draft "Refund and Returns Policy", page 10, can be deleted or pointed
   here). Same timing: publish at launch. [Bracketed] text marks decisions
   still to make (refund rules, tokens on account closure)
+
+## Published 2026-09-26 — "no local version"
+
+Pages 75 (Pulleys), 94 (Standalone Tools) and 98 (CAD Plug-Ins) edited to say
+there is no longer a local version; products 142 (FreeCAD add-in licence) and
+91 (Pro Plan subscription) set to Draft. Originals of every changed page are in
+`backup-2026-09-26/` (restore with `wp post update <ID> <file>`). Note: page 75's
+URL, /tools/pulleys/, is routed by Cloudflare to the app, so visitors never see
+that WordPress page.
+
+Still to update at launch (token era): Home — "No account required"; About —
+"in the Beta now, so it's all free"; CAD Plug-Ins — "subscriptions sold within
+the CAD software's marketplace".

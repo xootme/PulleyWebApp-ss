@@ -1,0 +1,180 @@
+<!-- wp:html -->
+<style>
+  .privacy-policy-container {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #111;
+    max-width: 720px;
+    margin: 40px auto;
+    padding: 0 24px;
+  }
+  .privacy-policy-container h1 { font-size: 17pt; margin-bottom: 2px; font-weight: bold; }
+  .privacy-policy-container h2 { font-size: 13pt; margin-top: 28px; margin-bottom: 4px; border-bottom: 1px solid #ccc; padding-bottom: 2px; font-weight: bold; }
+  .privacy-policy-container h3 { font-size: 11pt; margin-top: 16px; margin-bottom: 2px; font-weight: bold; }
+  .privacy-policy-container .meta { font-size: 9.5pt; color: #444; margin-top: 2px; margin-bottom: 28px; }
+  .privacy-policy-container ul, .privacy-policy-container ol { margin: 6px 0 6px 0; padding-left: 22px; }
+  .privacy-policy-container li { margin-bottom: 4px; }
+  .privacy-policy-container .contact-block { background: #f6f6f6; border: 1px solid #ddd; padding: 10px 16px; margin-top: 10px; font-style: normal; }
+  .privacy-policy-container a { color: #1a4c8e; text-decoration: underline; }
+  .privacy-policy-container .highlight { background: #fffbe6; border-left: 3px solid #e6a800; padding: 6px 12px; margin: 10px 0; }
+  .privacy-policy-container footer { margin-top: 40px; font-size: 8.5pt; color: #888; border-top: 1px solid #ddd; padding-top: 8px; }
+
+  @media print {
+    .privacy-policy-container { max-width: 100%; margin: 0; padding: 0; font-size: 10.5pt; }
+    .privacy-policy-container h2 { page-break-after: avoid; }
+    .privacy-policy-container .contact-block { background: none; border: 1px solid #aaa; }
+    .privacy-policy-container .highlight { background: none; border-left: 2px solid #888; }
+    .privacy-policy-container a { color: #000; text-decoration: none; }
+    .privacy-policy-container footer { position: relative; bottom: 0; width: 100%; }
+  }
+</style>
+
+<div class="privacy-policy-container">
+  <h1>Privacy Policy</h1>
+  <h1 style="font-size:13pt; font-weight:normal; margin-top:2px;">Sketch Timing Pulley Generator for Fusion 360</h1>
+  <div class="meta">
+    Publisher: Myerchin Enterprises Inc. (operating as Cheap CAD Tools)<br>
+    Address: 12311 SE 23rd St., Bellevue, WA 98005, United States<br>
+    Contact: <a href="mailto:info@cheapcadtools.com">info@cheapcadtools.com</a><br>
+    Effective Date: April 5, 2026<br>
+    Document URL: <a href="https://cheapcadtools.com/privacy-policy/fusion360-privacy-policy">https://cheapcadtools.com/privacy-policy/fusion360-privacy-policy</a>
+  </div>
+
+  <div class="highlight">
+    <strong>Summary:</strong> The Sketch Timing Pulley Generator add-in for Fusion 360 collects no personal data, makes no network connections, and stores only your local UI preferences on your own computer.
+  </div>
+
+  <h2>1. Introduction</h2>
+  <p>
+    This Privacy Policy describes how Myerchin Enterprises Inc., operating as Cheap CAD Tools
+    ("we," "us," or "our"), handles information in connection with the
+    <strong>Sketch Timing Pulley Generator</strong> add-in for Autodesk Fusion 360 ("the Add-In").
+    We are committed to protecting the privacy of every person who uses our software.
+  </p>
+  <p>
+    This policy applies solely to the Add-In. Our website (cheapcadtools.com) is governed by a
+    separate privacy policy available at <a href="https://cheapcadtools.com/privacy-policy/">https://cheapcadtools.com/privacy-policy/</a>.
+  </p>
+
+  <h2>2. Data Collected by the Add-In</h2>
+
+  <h3>2a. Personal Data</h3>
+  <p>
+    The Add-In does <strong>not</strong> collect, process, or transmit any personal information.
+    It makes <strong>no network connections</strong> of any kind. No data is ever sent to our
+    servers or any third party by the Add-In itself.
+  </p>
+
+  <h3>2b. Local Preferences File</h3>
+  <p>The only data the Add-In writes to disk is a single preferences file:</p>
+  <ul>
+    <li><strong>File name:</strong> <code>.last_state.json</code></li>
+    <li><strong>Location:</strong> Inside the Add-In's installation folder on your local computer</li>
+    <li><strong>Contents:</strong> Your last-used UI settings — selected belt profile, tooth count,
+      outer diameter, bore diameter, clearance mode, backlash mode, and print compensation value</li>
+    <li><strong>Purpose:</strong> To restore your preferences the next time you open the Add-In</li>
+    <li><strong>Transmitted:</strong> Never. This file never leaves your computer.</li>
+  </ul>
+  <p>No usage statistics, telemetry, analytics, crash reports, or diagnostic information is
+  collected or transmitted by the Add-In.</p>
+
+  <h2>3. Third-Party Services</h2>
+  <p>
+    The Add-In does not integrate with any third-party analytics platforms, advertising networks,
+    payment processors, or external APIs. There are no third parties with whom the Add-In shares
+    data, because no data leaves your machine.
+  </p>
+  <p>
+    Your download or purchase of the Add-In through the Autodesk App Store is subject to
+    Autodesk's own privacy policy, which is independent of this document. We have no access to
+    any personal information Autodesk collects during that transaction.
+  </p>
+
+  <h2>4. Data Retention and Deletion</h2>
+  <p>
+    The <code>.last_state.json</code> preferences file remains on your computer for as long as the
+    Add-In is installed. It is not backed up to any remote service.
+  </p>
+  <p>To permanently delete all data associated with the Add-In:</p>
+  <ol>
+    <li>In Fusion 360, go to <strong>Utilities → Add-ins → Scripts and Add-ins → Add-ins tab</strong></li>
+    <li>Select <strong>SketchTimingPulleyGenerator</strong> and click <strong>Stop</strong></li>
+    <li>Delete the Add-In folder from your Fusion 360 Add-ins directory:
+      <ul>
+        <li><strong>Windows:</strong> <code>%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\SketchTimingPulleyGenerator\</code></li>
+        <li><strong>Mac:</strong> <code>~/Library/Application Support\Autodesk\Autodesk Fusion 360\API\AddIns\SketchTimingPulleyGenerator\</code></li>
+      </ul>
+    </li>
+  </ol>
+  <p>
+    Deleting this folder removes the preferences file and all locally stored data associated
+    with the Add-In.
+  </p>
+  <p>
+    Because no data is transmitted to or stored on our servers, there is no remote data to
+    request deletion of.
+  </p>
+
+  <h2>5. Revoking Consent</h2>
+  <p>
+    Because the Add-In stores no personal data and makes no network connections, consent
+    revocation consists solely of uninstalling the Add-In and deleting its folder as described
+    in Section 4 above.
+  </p>
+  <p>
+    If you have any questions about whether data is held about you, or wish to confirm
+    deletion, please contact us using the details in Section 8.
+  </p>
+
+  <h2>6. Children's Privacy</h2>
+  <p>
+    The Add-In is a professional engineering tool not directed at children. We do not knowingly
+    collect any information from children under 13 years of age. If you believe a child under
+    13 has provided personal information to us, please contact us and we will take steps to
+    delete it.
+  </p>
+
+  <h2>7. Your Privacy Rights</h2>
+  <p>
+    Depending on where you reside, you may have rights regarding your personal data under
+    applicable law (including GDPR for EEA/UK residents and the California Consumer Privacy
+    Act for California residents). Because the Add-In collects no personal data, these rights
+    have no practical application to the Add-In itself. If you have questions, you may contact
+    us at the address below and we will respond within 30 days.
+  </p>
+
+  <h2>8. Changes to This Policy</h2>
+  <p>
+    We may update this Privacy Policy from time to time. The current version will always be
+    available at:
+  </p>
+  <p style="margin-left:20px;">
+    <a href="https://cheapcadtools.com/privacy-policy/fusion360-privacy-policy">
+      https://cheapcadtools.com/privacy-policy/fusion360-privacy-policy
+    </a>
+  </p>
+  <p>
+    The effective date at the top of this document indicates when it was last revised.
+    Continued use of the Add-In after any revision constitutes acceptance of the updated policy.
+  </p>
+
+  <h2>9. Contact Us</h2>
+  <p>For privacy-related questions, requests, or concerns:</p>
+  <div class="contact-block">
+    <strong>Myerchin Enterprises Inc.</strong> (operating as Cheap CAD Tools)<br>
+    12311 SE 23rd St.<br>
+    Bellevue, WA 98005<br>
+    United States<br><br>
+    Email: <a href="mailto:info@cheapcadtools.com">info@cheapcadtools.com</a><br>
+    Website: <a href="https://cheapcadtools.com">https://cheapcadtools.com</a>
+  </div>
+
+  <footer>
+    &copy; 2026 Myerchin Enterprises Inc. All rights reserved. &nbsp;|&nbsp;
+    Sketch Timing Pulley Generator Privacy Policy &nbsp;|&nbsp;
+    <a href="https://cheapcadtools.com/privacy-policy/fusion360-privacy-policy">https://cheapcadtools.com/privacy-policy/fusion360-privacy-policy</a>
+  </footer>
+</div>
+<!-- /wp:html -->
+
