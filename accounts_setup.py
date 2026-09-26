@@ -163,7 +163,8 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   inactivity_notify: Callable | None = None,
                   device_daily_budget: int | None = 100,
                   database_url: str | None = None,
-                  signups_per_ip_per_day: int | None = None) -> AccountsState:
+                  signups_per_ip_per_day: int | None = None,
+                  oauth_clients: dict | None = None) -> AccountsState:
     """backup_dir=None means no scheduled backups (tests). backup_upload
     is the off-server copy — the Cloud Storage upload once hosting moves
     to Google Cloud Run (ADR-008). inactivity_notify starts the daily inactivity run
@@ -171,7 +172,9 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
     (tests) leaves it off. database_url: a postgresql:// URL to keep the
     store in Postgres instead of the SQLite file (no scheduled backups
     then — see the module docstring). signups_per_ip_per_day: new
-    accounts one IP may create in 24 hours (None: no limit)."""
+    accounts per network per day that get the free signup tokens (None: no
+    limit). oauth_clients: {"google"|"microsoft"|"github": (client_id,
+    client_secret)} — "Continue with …" sign-in; blank entries are skipped."""
     state = AccountsState(enabled=enabled)
     app.extensions["pulley_accounts"] = state
     if not enabled:
@@ -208,7 +211,8 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                             device_daily_budget=device_daily_budget,
                             signups_per_ip_per_day=signups_per_ip_per_day)
     register_account_routes(app, accounts, email_sender=email_sender,
-                            app_name=app_name, secure_cookies=live)
+                            app_name=app_name, secure_cookies=live,
+                            oauth_clients=oauth_clients)
     state.tokens, state.accounts, state.healthy = tokens, accounts, True
 
     if backup_dir and not is_postgres(db_path):

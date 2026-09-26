@@ -3916,9 +3916,15 @@ _accounts_state = init_accounts(
                          else 100),
     # Postgres on Cloud Run (a Secret Manager secret); unset = the SQLite file.
     database_url=os.environ.get('DATABASE_URL', '').strip() or None,
-    # New accounts per IP per day — stops signup tokens being farmed with
-    # throwaway addresses. Blank or 0: no limit.
+    # New accounts per network per day that get the free signup tokens —
+    # later ones are still made, without them. Blank or 0: no limit.
     signups_per_ip_per_day=int(os.environ.get('TOKENS_SIGNUPS_PER_IP_PER_DAY', '2') or 0) or None,
+    # "Continue with Google / Microsoft / GitHub" — each appears once its
+    # client id and secret are set (secrets from Secret Manager on Cloud Run).
+    # Redirect URI to register: <site>/account/oauth/<provider>/callback
+    oauth_clients={p: (os.environ.get(f'{p.upper()}_CLIENT_ID', '').strip(),
+                       os.environ.get(f'{p.upper()}_CLIENT_SECRET', '').strip())
+                   for p in ('google', 'microsoft', 'github')},
 )
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
                buy_url=os.environ.get('TOKENS_BUY_URL', '').strip(),

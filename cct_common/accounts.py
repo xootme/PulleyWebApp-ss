@@ -21,10 +21,14 @@ Security choices:
   to sign in.
 - Sign-in links expire after 15 minutes, work once, and are rate-limited
   per email address and per IP.
-- New accounts can be limited per IP per day (signups_per_ip_per_day), so
-  signup tokens can't be farmed with throwaway addresses. Only creating an
-  account counts; signing in to an existing one never does. The IP is kept
-  as a hash, for a day.
+- The signup grant can be limited per IP per day (signups_per_ip_per_day),
+  so free tokens can't be farmed with throwaway addresses. Past the limit
+  the account is still created — colleagues behind one office IP can all
+  sign up and buy — it just starts with no free tokens, and the sign-in
+  says why (take_signup_notice). Only creating an account counts; signing
+  in to an existing one never does. IPv6 counts per /64 (one household or
+  office gets a whole /64, so single addresses are free to rotate). The
+  IP is kept as a hash, for a day.
 - An account is found by its linked identity (provider + the provider's
   user id), not by email alone, so one person can sign in by email link,
   Microsoft, Google or GitHub and reach the same tokens. A new identity
@@ -55,6 +59,7 @@ without ever taking anything a customer paid for:
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import secrets
 from typing import Callable, Optional
 
@@ -133,6 +138,10 @@ CREATE TABLE IF NOT EXISTS signups (
     created_at  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS signups_ip ON signups(ip_hash, created_at);
+CREATE TABLE IF NOT EXISTS signup_notices (
+    account_id  TEXT PRIMARY KEY,
+    created_at  REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS reminders (
     account_id  TEXT NOT NULL,
     kind        TEXT NOT NULL,
@@ -154,16 +163,23 @@ class IdentityInUse(Exception):
     """That sign-in identity already belongs to a different account."""
 
 
-class SignupLimitReached(Exception):
-    """This IP has created its allowed number of new accounts today."""
-
-    def __init__(self, limit: int):
-        super().__init__(f"{limit} new accounts per day from one network")
-        self.limit = limit
-
-
 def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _network_key(ip: str) -> str:
+    """What the per-IP signup limit counts: the address for IPv4, its /64
+    for IPv6 (a connection gets a whole /64 and can pick any address in
+    it). Unparseable input is counted as given."""
+    try:
+        addr = ipaddress.ip_address(ip.strip())
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        if addr.ipv4_mapped is not None:          # an IPv4 address written as IPv6
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
 
 
 def normalize_email(email: str) -> str:
@@ -181,8 +197,9 @@ class AccountStore(SqliteDB):
                  signups_per_ip_per_day: Optional[int] = None):
         """device_daily_budget: the daily token limit a new add-in/agent
         token gets unless the person picks another (None: no limit).
-        signups_per_ip_per_day: new accounts one IP may create in 24 hours
-        (None: no limit); needs the IP passed to sign_in/redeem_login_link."""
+        signups_per_ip_per_day: new accounts per IP (IPv6: per /64) per 24
+        hours that get the signup grant; later ones start with none (None:
+        every one does). Needs the IP passed to sign_in/redeem_login_link."""
         self.tokens = tokens
         self.signup_grant = signup_grant
         self.device_daily_budget = device_daily_budget
@@ -204,8 +221,8 @@ class AccountStore(SqliteDB):
         its email only if the provider verified that email; with no
         verified email at all, sign-in is refused (ValueError), since the
         account's email is how it gets receipts and sign-in links.
-        Creating a new account from an IP that has used up
-        signups_per_ip_per_day raises SignupLimitReached."""
+        A new account from an IP past signups_per_ip_per_day starts without
+        the signup grant; take_signup_notice() then reports that once."""
         if provider not in PROVIDERS:
             raise ValueError(f"unknown provider: {provider!r}")
         subject = str(subject)
@@ -224,9 +241,17 @@ class AccountStore(SqliteDB):
             closed = db.execute("SELECT 1 FROM closed_emails WHERE email_hash = ?",
                                 (_hash(email),)).fetchone()
         grant = 0 if closed else self.signup_grant
-        if self.tokens.account_by_email(email) is None:
-            self._claim_signup(ip)       # a new account, not a sign-in to one
+        withheld = False
+        if self.tokens.account_by_email(email) is None and grant:
+            # A new account, not a sign-in to one: count it against the IP.
+            withheld = not self._claim_signup(ip)
+            if withheld:
+                grant = 0
         account_id = self.tokens.get_or_create_account(email, signup_grant=grant)
+        if withheld:
+            with self._write() as db:
+                db.execute("INSERT OR IGNORE INTO signup_notices (account_id, created_at) "
+                           "VALUES (?, ?)", (account_id, now))
         with self._write() as db:
             db.execute(
                 """INSERT OR IGNORE INTO identities
@@ -284,25 +309,37 @@ class AccountStore(SqliteDB):
                 (_hash(token), email, ip, now, now + LOGIN_LINK_TTL_S))
         return token
 
-    def _claim_signup(self, ip: Optional[str]) -> None:
-        """Count one new account against this IP, or raise
-        SignupLimitReached. Check and count in one write, so two signups
+    def _claim_signup(self, ip: Optional[str]) -> bool:
+        """True (and counted) if this IP may give one more new account its
+        signup grant today. Check and count in one write, so two signups
         racing from one IP can't both slip under the limit."""
         limit = self.signups_per_ip_per_day
         if limit is None or not ip:
-            return
+            return True
+        key = _hash(_network_key(ip))
         now = self._clock()
         with self._write() as db:
             used = db.execute("SELECT COUNT(*) FROM signups WHERE ip_hash = ? AND created_at > ?",
-                              (_hash(ip), now - SIGNUP_WINDOW_S)).fetchone()[0]
+                              (key, now - SIGNUP_WINDOW_S)).fetchone()[0]
             if used >= limit:
-                raise SignupLimitReached(limit)
-            db.execute("INSERT INTO signups (ip_hash, created_at) VALUES (?, ?)", (_hash(ip), now))
+                return False
+            db.execute("INSERT INTO signups (ip_hash, created_at) VALUES (?, ?)", (key, now))
+        return True
+
+    def take_signup_notice(self, account_id: str) -> bool:
+        """True once if this account was created without its signup grant
+        (the per-IP limit), so the sign-in can say why it has no tokens."""
+        with self._write() as db:
+            row = db.execute("SELECT 1 FROM signup_notices WHERE account_id = ?",
+                             (account_id,)).fetchone()
+            if row:
+                db.execute("DELETE FROM signup_notices WHERE account_id = ?", (account_id,))
+        return bool(row)
 
     def redeem_login_link(self, token: str, *, ip: Optional[str] = None) -> Optional[str]:
         """Account id if the link is valid (unused, unexpired), else None.
-        Uses the link up. Creates the account on first sign-in — which the
-        per-IP signup limit can refuse (SignupLimitReached)."""
+        Uses the link up. Creates the account on first sign-in (without
+        the signup grant past the per-IP limit — see sign_in)."""
         if not token:
             return None
         now = self._clock()
@@ -621,5 +658,6 @@ class AccountStore(SqliteDB):
             db.execute("DELETE FROM login_links WHERE created_at < ?", (now - 24 * 3600,))
             db.execute("DELETE FROM device_codes WHERE created_at < ?", (now - 24 * 3600,))
             db.execute("DELETE FROM signups WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))
+            db.execute("DELETE FROM signup_notices WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))
             db.execute("DELETE FROM sessions WHERE expires_at < ? OR revoked_at < ?",
                        (now - 30 * 24 * 3600, now - 30 * 24 * 3600))

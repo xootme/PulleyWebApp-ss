@@ -990,6 +990,13 @@ body:not(.feature-build) .fb-3d { display: none !important; }
                         border: 1px solid #c8c8c8; border-radius: 4px; }
 .cct-check            { display: block; margin: 4px 0 4px 4px; font-size: 14px; cursor: pointer; }
 .cct-dialog-buttons   { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.cct-oauth            { display: flex; flex-direction: column; gap: 8px; }
+.cct-oauth-btn        { display: block; text-align: center; text-decoration: none; font-size: 14px;
+                        padding: 9px 14px; font-weight: 500; }
+.cct-oauth-or         { display: flex; align-items: center; gap: 10px; margin: 14px 0 12px;
+                        font-size: 12px; color: #666; }
+.cct-oauth-or::before,
+.cct-oauth-or::after  { content: ""; flex: 1; border-top: 1px solid #ddd; }
 
 /* ── Download window (index.html openDownloadWindow) ── */
 .cct-dl               { max-width: 440px; }

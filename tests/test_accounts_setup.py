@@ -355,9 +355,22 @@ def test_signups_are_limited_per_ip(tmp_path):
 
     assert signup('a@example.com').status_code == 303
     assert signup('b@example.com').status_code == 303
-    third = signup('c@example.com')
-    assert third.status_code == 429 and b'Too many new accounts' in third.data
+    third = signup('c@example.com')          # made, signed in, told why it has no tokens
+    assert third.status_code == 200 and b'starts with none' in third.data
+    assert c.get('/api/account').get_json()['balance'] == 0
     assert signup('a@example.com').status_code == 303       # existing accounts still sign in
+
+
+def test_oauth_providers_follow_their_settings(tmp_path):
+    app = flask.Flask(__name__)
+    init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                  email_sender=lambda *a: (True, ''),
+                  oauth_clients={'google': ('gid', 'gsecret'), 'microsoft': ('', ''),
+                                 'github': ('ghid', '')})
+    got = app.test_client().get('/api/account/providers').get_json()['providers']
+    assert [p['id'] for p in got] == ['google']
+    r = app.test_client().get('/account/oauth/google/start?next=/')
+    assert r.status_code == 302 and 'accounts.google.com' in r.headers['Location']
 
 
 def test_real_app_limits_two_signups_and_trusts_one_proxy_hop():

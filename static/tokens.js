@@ -128,8 +128,33 @@
     return dialog(title, el('p', 'cct-dialog-text', text), [{ label: 'OK', value: true, primary: true }]);
   }
 
+  // "Continue with Google / Microsoft / GitHub": whichever the server has
+  // set up (GET /api/account/providers). Fetched once; none on failure.
+  let _providers = null;
+  async function providers() {
+    if (_providers) return _providers;
+    try {
+      const r = await fetch('/api/account/providers', { credentials: 'same-origin' });
+      _providers = r.ok ? (await r.json()).providers || [] : [];
+    } catch (e) {
+      _providers = [];
+    }
+    return _providers;
+  }
+
   async function signIn() {
     const body = el('div');
+    const list = await providers();
+    if (list.length) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      const col = el('div', 'cct-oauth');
+      for (const p of list) {
+        const a = el('a', `cct-btn cct-oauth-btn cct-oauth-${p.id}`, `Continue with ${p.label}`);
+        a.href = `${p.start}?next=${next}`;
+        col.append(a);
+      }
+      body.append(col, el('div', 'cct-oauth-or', 'or'));
+    }
     body.append(el('p', 'cct-dialog-text',
       'Enter your email and we\'ll send you a sign-in link. No password needed.'));
     const input = el('input', 'cct-input');

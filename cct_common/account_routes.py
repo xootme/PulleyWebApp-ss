@@ -1,8 +1,8 @@
 """
 account_routes.py — Flask routes for email-link sign-in and the account
 page's data, plus CAD add-in sign-in by device code (PulleyWebApp-ss
-ADR-008). OAuth (Microsoft, Google, GitHub) plugs into the same
-AccountStore later.
+ADR-008). "Continue with Google / Microsoft / GitHub" comes from
+cct_common.oauth, registered here when oauth_clients are given.
 
     from cct_common.account_routes import register_account_routes, current_account_id
 
@@ -20,6 +20,8 @@ Routes:
     GET    /api/account/history      ledger rows, newest first
     DELETE /api/account/sessions/<id>   revoke one session (e.g. a lost laptop)
     POST   /api/account/delete       {confirm_email}  delete the account
+    GET    /api/account/providers    OAuth sign-in methods on offer (see oauth.py)
+    GET    /account/oauth/<p>/start, /account/oauth/<p>/callback
 
 CAD add-in sign-in (device code; see AccountStore.start_device_login):
     POST   /api/account/device/start {label}  -> device_code, user_code, verify_url, interval
@@ -52,7 +54,7 @@ import html
 from typing import Optional
 from urllib.parse import quote
 
-from .accounts import AccountStore, RateLimited, SignupLimitReached, normalize_email
+from .accounts import AccountStore, RateLimited, normalize_email
 
 BUDGET_CHOICES = (25, 50, 100, 250, 1000)   # offered on the pages; None = no limit
 
@@ -120,9 +122,12 @@ def _safe_next(target: Optional[str]) -> str:
 def register_account_routes(app, accounts: AccountStore, *, email_sender,
                             app_name: str = "CheapCAD Tools",
                             email_subject: Optional[str] = None,
-                            email_body=None, secure_cookies: bool = True):
+                            email_body=None, secure_cookies: bool = True,
+                            oauth_clients: Optional[dict] = None, oauth_http=None):
     """email_sender(to, subject, body) -> (ok, err), e.g.
-    cct_common.resend_email.send."""
+    cct_common.resend_email.send. oauth_clients: {"google": (client_id,
+    client_secret), "microsoft": ..., "github": ...} for OAuth sign-in
+    (see cct_common.oauth); oauth_http is a requests-like session (tests)."""
     from flask import jsonify, redirect, request, Response
 
     app.extensions[_EXT_KEY] = {"accounts": accounts}
@@ -193,24 +198,31 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "<button type='submit'>Sign in</button></form>"))
 
     def login_submit():
-        try:
-            account_id = accounts.redeem_login_link(request.form.get("token", ""),
-                                                    ip=_client_ip())
-        except SignupLimitReached:
-            return _page("Too many new accounts", (
-                "<p>Too many new accounts have been made from this network today, "
-                "so this one wasn't created.</p>"
-                "<p>Please try again tomorrow. If you already have an account, "
-                "sign in with its email address.</p>"
-                "<p><a href='/'>Back</a></p>"), status=429)
+        account_id = accounts.redeem_login_link(request.form.get("token", ""),
+                                                ip=_client_ip())
         if not account_id:
             return _page("Link expired", (
                 "<p>This sign-in link has expired or was already used. "
                 "Links work once and last 15 minutes.</p>"
                 "<p><a href='/'>Request a new one</a></p>"), status=400)
+        return _finish_sign_in(account_id, request.form.get("next"))
+
+    def _finish_sign_in(account_id: str, nxt: Optional[str]):
+        """Start a browser session and go on to `nxt` — shared by the email
+        link and OAuth. A new account made without its free tokens (the
+        per-network daily limit) is told why first, once."""
+        nxt = _safe_next(nxt)
         session = accounts.create_session(account_id, kind="web",
                                           label=(request.user_agent.string or "")[:80])
-        r = redirect(_safe_next(request.form.get("next")), code=303)
+        if accounts.take_signup_notice(account_id):
+            r = _page("You're signed in", (
+                "<p>Welcome! Your account is ready.</p>"
+                "<p>New accounts usually start with free tokens, but this network has "
+                "already had its free tokens for today, so this account starts with none. "
+                "You can buy tokens whenever you need them.</p>"
+                f"<p><a href='{html.escape(nxt, quote=True)}'>Continue</a></p>"))
+        else:
+            r = redirect(nxt, code=303)
         r.set_cookie(COOKIE_NAME, session, max_age=30 * 24 * 3600, httponly=True,
                      secure=secure_cookies, samesite="Lax", path="/")
         return r
@@ -470,3 +482,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     app.add_url_rule("/api/account/history", view_func=account_history, methods=["GET"])
     app.add_url_rule("/api/account/sessions/<int:session_id>", view_func=revoke, methods=["DELETE"])
     app.add_url_rule("/api/account/delete", view_func=delete_account, methods=["POST"])
+
+    from .oauth import register_oauth_routes
+    app.extensions[_EXT_KEY]["oauth_providers"] = register_oauth_routes(
+        app, accounts, clients=oauth_clients or {}, finish=_finish_sign_in, page=_page,
+        client_ip=_client_ip, secure_cookies=secure_cookies, http=oauth_http,
+        clock=accounts._clock)

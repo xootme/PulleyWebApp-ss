@@ -6,7 +6,8 @@
 // new account with the 10-token signup grant) and no Resend key, so the
 // sign-in link lands in <log dir>/server_errors.log:
 //
-//   TOKENS_ENABLED=1 PULLEY_LOG_DIR=<tmp> QUEUE_DISABLED=1 python app.py --port 5099 --no-debug
+//   TOKENS_ENABLED=1 PULLEY_LOG_DIR=<tmp> QUEUE_DISABLED=1 \
+//     GOOGLE_CLIENT_ID=test GOOGLE_CLIENT_SECRET=test python app.py --port 5099 --no-debug
 //   node tests/browser/tokens_ui.js http://127.0.0.1:5099 <tmp> <python>
 //
 // And with tokens off (same command without TOKENS_ENABLED), add `off`:
@@ -120,6 +121,14 @@ async function main() {
   await js("document.querySelector('.cct-dl .cct-btn-primary').click()");
   await waitFor("document.querySelector('.cct-dialog-title')?.textContent === 'Sign in to download'");
   check('signed out: sign-in dialog opens', (await dialogTitle()) === 'Sign in to download');
+  // The server is started with GOOGLE_CLIENT_ID/SECRET set (see the header):
+  // Google is offered, the others (unset) aren't. Not clicked — it leaves for Google.
+  check('sign-in dialog offers Continue with Google, and only that',
+        await js(`(() => { const b = [...document.querySelectorAll('.cct-dialog .cct-oauth-btn')];
+          return b.length === 1 && b[0].textContent === 'Continue with Google'
+            && b[0].getAttribute('href').startsWith('/account/oauth/google/start?next=%2F'); })()`));
+  check('sign-in dialog: "or" before the email field',
+        await js("!!document.querySelector('.cct-dialog .cct-oauth-or + .cct-dialog-text')"));
   await js("document.querySelector('.cct-input').value = 'ui-test@example.com'");
   await js("document.querySelector('.cct-dialog .cct-btn-primary').click()");
   await waitFor("document.querySelector('.cct-dialog-text')?.textContent.startsWith('Check your inbox')");
