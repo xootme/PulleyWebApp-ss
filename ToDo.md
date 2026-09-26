@@ -13,13 +13,13 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 
 | Output | Tokens | Price |
 |---|---|---|
-| 2D (SVG, DXF) | 1 | $0.10 |
-| STL | 2 | $0.20 |
-| STEP | 3 | $0.30 |
+| 2D (SVG, DXF) | 2 | $0.10 |
+| STL | 3 | $0.15 |
+| STEP | 4 | $0.20 |
 
 ### Decisions (ADR-008)
 - [x] ADR-008 written: tiers include lower tiers (STEP 3 ⊃ STL 2 ⊃ 2D 1); one purchase unlocks the **whole design**; unlocks last **24 h**; upgrade pays the **difference**; **signup tokens**, no weekly allowance; sign-in by **email link and OAuth** (Microsoft, Google, GitHub — not Apple)
-- [x] Pack sizes and prices (2026-09-26, revised same day): **1 token = 5¢** — PayPal $2 = 40 and $5 = 100; Stripe $5 = 100, $10 = 200, $25 = 500; downloads 2D 2 · STL 4 · STEP 6 (same money as before); signup grant 20. Change packs with `TOKEN_PACKS`
+- [x] Pack sizes and prices (2026-09-26, revised same day): **1 token = 5¢** — PayPal $2 = 40 and $5 = 100; Stripe $5 = 100, $10 = 200, $25 = 500; downloads 2D 2 · STL 3 · STEP 4 (revised from 2/4/6 the same day: each tier adds one token); signup grant 20. Change packs with `TOKEN_PACKS`
 - [ ] Signup grant size (placeholder: 10)
 - [ ] Autodesk App Store channel: can it sell token packs, or does it stay a subscription / go away?
 

@@ -22,6 +22,11 @@ FreeCAD, SolidWorks and the web.
   | step | STEP | 3 | stl, 2d |
 
   At download time a STEP purchase offers the included STL/SVG/DXF as checkboxes.
+
+  *Revised 2026-09-26:* a token is now **5¢**, and the tiers cost **2D 2 · STL 3 ·
+  STEP 4** (10¢ / 15¢ / 20¢), so each tier adds one token. A CAD download was 30¢
+  under 2/4/6, which was too much. The download dialog explains the difference with
+  a red note above the price list. `cct_common.tokens.TIER_PRICE` (0.16.1).
 - **One purchase unlocks the whole design on screen**, not a single part: a two-pulley
   drive with its belt and flanges at STEP tier costs 3 tokens. The design is
   identified by a hash of its parameters (`cct_common.tokens.design_key`).
