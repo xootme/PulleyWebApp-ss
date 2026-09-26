@@ -13,8 +13,8 @@ Written 2026-09-26; update as steps are done.
 | 3 | Test site shared the production database | Claude | test site moved to `cct_test` (secret `DATABASE_URL_TEST`); **clearing neondb's test rows awaits owner OK** (backup taken) |
 | 4 | Buying tokens: PayPal live, Micropayments rate | Owner | **live app done** (2026-09-26; webhook `6P162379A7315931K` created by API); Micropayments rate still to request |
 | 4b | Bug-report GitHub token | Owner | **done** (2026-09-26; fine-grained, private access to `cct-feedback` only — checked) |
-| 5 | Google/GitHub sign-in on the real domain | Owner | open |
-| 6 | Cloudflare Worker: route `/account/`, send edge headers, point at Cloud Run | Owner (Claude drafted below) | open |
+| 5 | Google/GitHub sign-in on the real domain | Owner | **done** (2026-09-26; Google checked for both addresses; GitHub is checked at the end-to-end sign-in) |
+| 6 | Cloudflare Worker: route `/account/`, send edge headers, point at Cloud Run | Claude, via API token | token works; rollback copy `site/worker-backup-2026-09-26.js`; switch after production passes |
 | 7 | Privacy policy + terms: store refund rule, effective dates, lawyer's read, publish | Owner, then Claude publishes | open |
 | 8 | Neon paid plan (7-day restore) | Owner | open |
 | 9 | Admin dashboard reads bug reports from the database | Claude | open (not blocking) |
