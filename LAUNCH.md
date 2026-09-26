@@ -10,7 +10,7 @@ Written 2026-09-26; update as steps are done.
 |---|---------|-----|-------|
 | 1 | Bug reports put email + design in GitHub issues | Claude | **done** (`dc2658a`) |
 | 2 | Forged X-Forwarded-Host could hijack sign-in links | Claude | **done** (`df5461d`, `edge_proxy.py`) |
-| 3 | Test site shared the production database | Claude | test site moved to `cct_test` (secret `DATABASE_URL_TEST`); **clearing neondb's test rows awaits owner OK** (backup taken) |
+| 3 | Test site shared the production database | Claude | **done** (2026-09-26): test site on `cct_test` (secret `DATABASE_URL_TEST`); production `neondb` emptied of the test-era data with the owner's go-ahead (backup kept locally) |
 | 4 | Buying tokens: PayPal live, Micropayments rate | Owner | **live app done** (2026-09-26; webhook `6P162379A7315931K` created by API); Micropayments rate still to request |
 | 4b | Bug-report GitHub token | Owner | **done** (2026-09-26; fine-grained, private access to `cct-feedback` only — checked) |
 | 5 | Google/GitHub sign-in on the real domain | Owner | **done** (2026-09-26; Google checked for both addresses; GitHub is checked at the end-to-end sign-in) |
