@@ -21,3 +21,5 @@ requests>=2.31
 # unused with the local SQLite file. [binary] bundles libpq.
 psycopg[binary]>=3.2
 psycopg-pool>=3.2
+# db_offsite_backup.py: the encrypted off-site database copy (Fernet)
+cryptography>=42
