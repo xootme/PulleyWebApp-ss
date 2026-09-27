@@ -11,14 +11,18 @@ Sources, all HTD 5M, 24 teeth, 12 mm bore, belt 10, clearance 0.5, hub OD 26 x 1
     &clearance_preset=STANDARD&backlash_preset=STANDARD&belt_height=10
     &clearance_height=0.5&hub_od=26&hub_height=12&<extra>
   none                 (nothing extra)
-  screw_std            hub_screw_dia=5&hub_screw_count=2&hub_captured_nut=0
-  screw_nut            hub_screw_dia=5&hub_screw_count=1&hub_captured_nut=1
+  screw_std            hub_screw_size=M5&hub_screw_count=2&hub_screw_hold=thread
+  screw_nut            hub_screw_size=M5&hub_screw_count=1&hub_screw_hold=nut&hub_captured_nut=1
+  screw_insert         hub_screw_size=M5&hub_screw_count=2&hub_screw_hold=insert&hub_screw_hole_dia=6.4
   dshaft               hub_flat_depth=1
   keyway               hub_keyway_w=4&hub_keyway_h=2.6
-  size_std_<d>         hub_screw_dia=<d>&hub_screw_count=1&hub_captured_nut=0   (d = 3, 5, 8)
-  size_nut_<d>         hub_screw_dia=<d>&hub_screw_count=1&hub_captured_nut=1
-  count_std_<n>        hub_screw_dia=5&hub_screw_count=<n>&hub_captured_nut=0   (n = 1, 2)
-  count_nut_<n>        hub_screw_dia=5&hub_screw_count=<n>&hub_captured_nut=1
+  size_std_<d>         hub_screw_size=M<d>&hub_screw_count=1&hub_screw_hold=thread  (d = 3, 5, 8)
+  size_nut_<d>         hub_screw_size=M<d>&hub_screw_count=1&hub_screw_hold=nut&hub_captured_nut=1
+  count_std_<n>        hub_screw_size=M5&hub_screw_count=<n>&hub_screw_hold=thread  (n = 1, 2)
+  count_nut_<n>        hub_screw_size=M5&hub_screw_count=<n>&hub_screw_hold=nut&hub_captured_nut=1
+(threaded holes at the Threaded screw holes defaults, round 50%.) The set-screw
+STLs are fetched fresh through the app's test client each run (fetch_screws);
+the rest are downloaded by hand from the URLs above.
   flat_<f>             hub_flat_depth=<f>                                       (f = 0.5, 1, 2)
   kw_w_<w>             hub_keyway_w=<w>&hub_keyway_h=2.6                        (w = 3, 4, 6)
   kw_h_<h>             hub_keyway_w=4&hub_keyway_h=<h>                          (h = 1.5, 2.6, 4)
@@ -52,6 +56,46 @@ R_BORE, R_HUB = BORE / 2, HUB_OD / 2
 
 
 # ── sources ──────────────────────────────────────────────────────────────────
+
+SCREW_SOURCES = {
+    "screw_std": dict(hub_screw_size="M5", hub_screw_count=2, hub_screw_hold="thread"),
+    "screw_nut": dict(hub_screw_size="M5", hub_screw_count=1, hub_screw_hold="nut", hub_captured_nut=1),
+    "screw_insert": dict(hub_screw_size="M5", hub_screw_count=2, hub_screw_hold="insert",
+                         hub_screw_hole_dia=6.4),
+    **{f"size_std_{d}": dict(hub_screw_size=f"M{d}", hub_screw_count=1, hub_screw_hold="thread")
+       for d in (3, 5, 8)},
+    **{f"size_nut_{d}": dict(hub_screw_size=f"M{d}", hub_screw_count=1, hub_screw_hold="nut",
+                             hub_captured_nut=1) for d in (3, 5, 8)},
+    **{f"count_std_{n}": dict(hub_screw_size="M5", hub_screw_count=n, hub_screw_hold="thread")
+       for n in (1, 2)},
+    **{f"count_nut_{n}": dict(hub_screw_size="M5", hub_screw_count=n, hub_screw_hold="nut",
+                              hub_captured_nut=1) for n in (1, 2)},
+}
+
+
+def fetch_screws():
+    """(Re)write hub/<name>.stl for every set-screw source from the app's own
+    /download/stl, through its test client (ADR-013: named sizes)."""
+    import sys
+    sys.path.insert(0, str(HERE.parent.parent))
+    from app import app
+    c = app.test_client()
+    base = {"family": "HTD", "pitch": "5M", "teeth": "24", "bore": "12", "print_extra": "0",
+            "clearance_preset": "STANDARD", "backlash_preset": "STANDARD", "belt_height": "10",
+            "clearance_height": "0.5", "hub_od": "26", "hub_height": "12"}
+    for name, extra in SCREW_SOURCES.items():
+        r = c.get("/download/stl", query_string={**base, **{k: str(v) for k, v in extra.items()}})
+        assert r.status_code == 200, (name, r.status_code)
+        (SRC / f"{name}.stl").write_bytes(r.data)
+
+
+def hole_diameter(name):
+    """The hole the app cuts for this source (geometry/set_screw.py)."""
+    import sys
+    sys.path.insert(0, str(HERE.parent.parent))
+    from geometry import set_screw
+    return set_screw.parse({k: str(v) for k, v in SCREW_SOURCES[name].items()}).hole["diameter"]
+
 
 def load(name):
     """A binary STL as a mesh. The app appends its design metadata after the
@@ -264,14 +308,16 @@ def _columns(title, cols, out_name, caps, col_w=176, snaps=True, half=None, extr
 def hub_retention():
     _columns("Retention Method",
              [("none", "None", "plain round bore"),
-              ("screw_std", "Set Screw (std.)", "holes to the bore"),
-              ("screw_nut", "Captured Nut", "nut pocket + screw"),
+              ("screw_std", "Threaded", "self-tapping holes"),
+              ("screw_nut", "Captured Nut", "nut pocket + hole"),
+              ("screw_insert", "Heat-set Insert", "insert holes"),
               ("dshaft", "D-Shaft", "flat in the bore"),
               ("keyway", "Keyway", "slot for a key")],
              "hub_retention.svg",
              ["Top: the 3D preview. Bottom: the hub cut across at the set-screw height.",
-              "Holes and slots point right (0°) and up (90°); M5 screws, 12 mm bore."],
-             row_label=("cut at", "screw height"))
+              "Holes and slots point right (0°) and up (90°); M5 screws, 12 mm bore.",
+              "Threaded, Captured Nut and Heat-set Insert are the three Set Screw choices."],
+             col_w=150, row_label=("cut at", "screw height"))
 
 
 def hub_screw_size():
@@ -283,14 +329,14 @@ def hub_screw_size():
                        for c in pt) + 1.0 for k in ("std", "nut")}
 
     def hole_dim(name, w, s):
-        d = int(name.rsplit("_", 1)[1])
+        d = hole_diameter(name)
         outer = max(x for loop in slices[name] for x, y in loop if abs(y) <= d / 2 + 0.3)
         xm = (R_BORE + R_HUB) / 2 if "_std_" in name else outer - 1.2
         return (dim(xm, d / 2, xm, -d / 2, 2 * w) +
-                text(xm - 0.5, -d / 2 - 0.9, f"Ø {d}", 16 / s, BLUE, 700, anchor="end", halo=True))
+                text(xm - 0.5, -d / 2 - 0.9, f"Ø {d:.2f}", 16 / s, BLUE, 700, anchor="end", halo=True))
 
     col_w = 190
-    rows = [("std", "Set Screw (std.)"), ("nut", "Captured Nut")]
+    rows = [("std", "Threaded"), ("nut", "Captured Nut")]
     parts, y = [], TOP + 20
     x_lab = GAP + 150
     for key, label in rows:
@@ -305,22 +351,22 @@ def hub_screw_size():
             inner += hole_dim(name, 1 / (col_w / (2 * half)), col_w / (2 * half))
             parts.append(view(x, y + 20, col_w, half, inner))
         y += col_w + 30
-    caps = ["The hole is the screw's size; with a captured nut the nut pocket grows with it.",
-            "Hub cut across at the set-screw height; screws point right (0°)."]
+    caps = ["Threaded: the self-tapping hole (Threaded screw holes, 50%). Captured nut: a clearance hole,",
+            "and the nut pocket grows with the size. Hub cut across at the set-screw height; screws point right (0°)."]
     width = x_lab + len(sizes) * (col_w + GAP)
     page("Set Screw Size", "".join(parts), width, y + caption_h(len(caps)), "hub_screw_size.svg", caps)
 
 
 def hub_screw_count():
     """1 vs 2 screws, one picture per method (the hover picks by Retention Method)."""
-    for key, method, angles in (("std", "Set Screw (std.)", "90°"), ("nut", "Captured Nut", "180°")):
+    for key, method, angles in (("std", "Threaded", "90°"), ("nut", "Captured Nut", "180°")):
         _columns(f"Number of Screws — {method}",
                  [(f"count_{key}_1", "1 screw", "at 0° (right)"),
                   (f"count_{key}_2", "2 screws", f"at 0° and {angles}")],
                  f"hub_screw_count_{key}.svg",
                  ["Top: the 3D preview. Bottom: the hub cut across at the set-screw height.",
-                  "Standard screws are 90° apart; captured nuts 180° apart." if key == "std"
-                  else "Captured nuts are 180° apart (standard screws 90°)."],
+                  "Threaded screws (and inserts) are 90° apart; captured nuts 180° apart." if key == "std"
+                  else "Captured nuts are 180° apart (threaded screws 90°)."],
                  col_w=250, row_label=("cut at", "screw height"))
 
 
@@ -376,6 +422,7 @@ def hub_keyway():
 
 
 if __name__ == "__main__":
+    fetch_screws()
     hub_size()
     hub_retention()
     hub_screw_size()

@@ -65,16 +65,22 @@ without changing the input field.</p>
 <ul>
   <li><strong>None</strong> — No set screw or shaft feature is added. The bore is a plain through-hole.
       Suitable for a light-duty fit or when you will add your own retention (e.g. shaft collar, adhesive).</li>
-  <li><strong>Set Screw (std.)</strong> — Radial screw hole(s) drilled from the outside of the hub in to
-      the bore (one side only — the screw is tapped into the plastic or used with a heat-set insert).
+  <li><strong>Set Screw (threaded)</strong> — Radial screw hole(s) drilled from the outside of the hub in to
+      the bore (one side only). The screw cuts its own thread in the plastic, so the hole is smaller than
+      the screw: how much smaller is set app-wide in <strong>Threaded screw holes</strong> (see below).
       <strong>1 screw</strong> = single perpendicular hole.
-      <strong>2 screws</strong> = holes placed 90&deg; apart. Select screw size M3–M10.</li>
-  <li><strong>Set Screw (captured nut)</strong> — A standard ISO hex nut is dropped into a pocket
-      opening from the top face of the hub. The set screw threads through the hub OD into the nut
-      and contacts the shaft. Stronger than threading into plastic.
-      <div class="note">Select screw size M3–M10 first — nut pocket dimensions are calculated automatically from ISO 4032.</div>
+      <strong>2 screws</strong> = holes placed 90&deg; apart.</li>
+  <li><strong>Set Screw (captured nut)</strong> — A standard hex nut is dropped into a pocket
+      opening from the top face of the hub. The set screw passes through the hub wall into the nut
+      and contacts the shaft. Stronger than threading into plastic. The screw's hole is a plain
+      clearance hole (ISO 273) — the nut carries the thread, so the hole is never threaded.
+      <div class="note">The nut pocket is sized from the screw size (DIN 934 metric nuts; standard machine-screw nuts for inch sizes).</div>
       <a href="/static/3D_Print_help.html" target="_blank">&#9432; 3D Print Guide — captured nut assembly, pocket shape, print settings</a>
   </li>
+  <li><strong>Set Screw (heat-set insert)</strong> — A threaded brass insert is pressed into the hole
+      with a hot soldering iron, and the set screw threads into the insert. Enter <strong>Insert hole
+      &#8960;</strong> from your insert's datasheet (it starts at about 1.35 &times; the screw size).
+      The strongest choice for a screw you will tighten hard or often.</li>
   <li><strong>D-Shaft</strong> — A flat chord is cut in the bore to match a D-profile motor shaft.
       See <em>D-Shaft Retention</em> below.</li>
   <li><strong>Keyway</strong> — A rectangular slot is cut through the bore to accept a standard parallel
@@ -82,24 +88,67 @@ without changing the input field.</p>
 </ul>
 <a class="figure" href="/static/help/hub_retention.svg" target="_blank" title="Open full size">
   <img src="/static/help/hub_retention.svg"
-       alt="The five retention methods: each hub in 3D above a cut across it at the set-screw height"/>
+       alt="The retention methods — none, threaded, captured nut, heat-set insert, D-shaft, keyway: each hub in 3D above a cut across it at the set-screw height"/>
 </a>
 <p class="caption">Click the picture to open it full size. Top: the 3D preview; bottom: the hub cut
 across at the set-screw height, showing the holes, nut pocket, flat and key slot.</p>
 
 <h3>Set Screw Size and Number of Screws</h3>
-<p><strong>Set Screw Size</strong> sets the hole's diameter (M3 = 3 mm, … M10 = 10 mm); with a
-captured nut the nut pocket grows with it. <strong>Number of Screws</strong>: 1, or 2 — standard
-screws 90&deg; apart, captured nuts 180&deg; apart. Hovering <em>Number of Screws</em> shows the
-picture for the retention method you have selected.</p>
+<p><strong>Set Screw Size</strong>: metric M2–M10 or inch #2-56 to 1/4-20. The hole cut depends on
+how the screw holds — the line under the hub settings says exactly what will be cut:</p>
+<ul>
+  <li><strong>Threaded</strong> — the self-tapping hole from <em>Threaded screw holes</em>
+      (an M5 at the default 50% gets a 4.57 mm hole).</li>
+  <li><strong>Captured nut</strong> — a clearance hole (M5: 5.5 mm) and that size's nut pocket.</li>
+  <li><strong>Heat-set insert</strong> — the insert hole you enter.</li>
+  <li><strong>Custom…</strong> — any other screw: enter the hole diameter yourself (with a captured nut,
+      the pocket fits the metric nut nearest that hole).</li>
+</ul>
+<p><strong>Number of Screws</strong>: 1, or 2 — threaded screws and inserts 90&deg; apart, captured
+nuts 180&deg; apart. Hovering <em>Number of Screws</em> shows the picture for the retention method you
+have selected.</p>
+
+<h3>Threaded screw holes</h3>
+<p>The <strong>Threaded screw holes</strong> button in the top bar (3D mode) sets how tight a hole a
+set screw cuts its own thread into. That depends on your printer and filament rather than on the
+pulley, so it is one setting for the whole app and both pulleys. It is saved with every design and
+download, so a design always re-exports with the holes it was made with.</p>
+<p><strong>Your default</strong>: new designs (and <em>Reset</em>) start from it. Tune the settings
+for your printer and press <strong>Save as my default</strong>. A design opened from a file or link
+keeps the values it was made with and doesn't change your default; the dialog then shows the
+design's values next to yours, with a <em>use my default</em> link.</p>
+<ul>
+  <li><strong>Round</strong> with <strong>Thread engagement</strong> (default 50%) — 0% makes the
+      hole the screw's outer diameter (no grip); 100% makes it the thread's root diameter (the screw
+      cuts a full thread). Raise it if screws strip or spin; lower it if they're too hard to drive or
+      crack the hub.</li>
+  <li><strong>Hex</strong> with <strong>Hex flats</strong> (default 82%) — a hexagonal hole, across
+      the flats as a percentage of the screw's diameter. The screw grips on the six flats and the
+      corners give the displaced plastic somewhere to go, which suits brittle materials. A corner
+      points up, so the hole prints without support.</li>
+</ul>
+<a class="figure" href="/static/help/thread_round.svg" target="_blank" title="Open full size">
+  <img src="/static/help/thread_round.svg"
+       alt="Round: looking into an M5 hole — the screw's outer diameter (0%), the thread root (100%) and the 4.57 mm hole at 50%"/>
+</a>
+<a class="figure" href="/static/help/thread_hex.svg" target="_blank" title="Open full size">
+  <img src="/static/help/thread_hex.svg"
+       alt="Hex: looking into an M5 hole — 4.10 mm across the flats at 82%, with the corners cut shallower"/>
+</a>
+<p class="caption">Click a picture to open it full size. The orange band is the plastic the screw
+cuts its thread into.</p>
+<p>The dialog shows the holes this gives for a few sizes as you change it. These are the same
+settings, with the same defaults, as E-Box Designer's screw holes. They don't affect captured-nut
+holes or heat-set inserts. For now these hole sizes are in the 3D-print (STL) files; STEP
+downloads still show every set-screw hole at the screw's nominal size.</p>
 <a class="figure" href="/static/help/hub_screw_size.svg" target="_blank" title="Open full size">
   <img src="/static/help/hub_screw_size.svg"
-       alt="The hub cut across at the screw for M3, M5 and M8, standard screws and captured nuts, with the hole diameter marked"/>
+       alt="The hub cut across at the screw for M3, M5 and M8, threaded screws and captured nuts, with the hole actually cut marked"/>
 </a>
 <p class="caption">Click the picture to open it full size.</p>
 <a class="figure" href="/static/help/hub_screw_count_std.svg" target="_blank" title="Open full size">
   <img src="/static/help/hub_screw_count_std.svg"
-       alt="One and two standard set screws, 90 degrees apart"/>
+       alt="One and two threaded set screws, 90 degrees apart"/>
 </a>
 <p class="caption">Click the picture to open it full size.</p>
 <a class="figure" href="/static/help/hub_screw_count_nut.svg" target="_blank" title="Open full size">
@@ -118,8 +167,8 @@ matching flat chord cut in the bore so the pulley cannot rotate on the shaft.</p
       <div class="note">The flat is oriented at 0&deg; (+X direction in the cross-section). Rotate the pulley in your slicer to match a specific orientation.</div>
   </li>
   <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the flat
-      face (at 0&deg;). Choose <strong>Standard</strong> for a hole from the outside of the hub in to
-      the flat, or <strong>Captured nut</strong> for a top-pocket nut.</li>
+      face (at 0&deg;). Choose <strong>Threaded</strong> for a hole from the outside of the hub in to
+      the flat, <strong>Captured nut</strong> for a top-pocket nut, or <strong>Heat-set insert</strong>.</li>
 </ul>
 <a class="figure" href="/static/help/hub_flat_depth.svg" target="_blank" title="Open full size">
   <img src="/static/help/hub_flat_depth.svg"
@@ -141,8 +190,8 @@ rather than friction.</p>
   <li><strong>Default Key Button</strong> — Looks up your bore in the ISO 773 table and fills in Width W
       and Hub Depth. Covers bore diameters 6–170 mm; if between entries, the next-larger standard size is used.</li>
   <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the keyway.
-      <strong>Standard</strong> = a hole from the outside in to the slot; <strong>Captured nut</strong> = top-opening pocket with the
-      nut inner face against the keyway slot outer face.
+      <strong>Threaded</strong> = a hole from the outside in to the slot; <strong>Captured nut</strong> = top-opening pocket with the
+      nut inner face against the keyway slot outer face; <strong>Heat-set insert</strong> = the insert hole you enter.
       <div class="note">A set screw over the keyway prevents axial movement even when the key alone would allow it.</div>
   </li>
   <li><strong>Keyway Orientation</strong> — Always at 0&deg; (+X direction). Rotate in your slicer or CAD tool to match a specific shaft clock position.</li>

@@ -36,9 +36,13 @@ Never `git push` unless the user explicitly says "deploy".
 - `geometry/spoke_fit.py` — decides whether spoke settings fit the pulley and what to build
   instead; used by `_parse_spoke_params` and `/api/spoke-fit` (ADR-010). Don't add spoke
   checks in the page — ask the server
+- `geometry/set_screw.py` — a hub set screw's hole and nut from its size, how it holds (threaded /
+  captured nut / heat-set insert) and the app-wide threaded-hole settings, via the shared
+  `cct_common.screws` (ADR-013). The page has no screw table of its own — don't add one
 - `tests/browser/*.js` — Chrome/CDP harnesses run by hand against a running app
   (`node tests/browser/help_ui.js http://127.0.0.1:<port>`); see each file's header
 - `web_provisioning.md` — deploy checklist and local release build procedure
+- `db_offsite_backup.py` + `RESTORE.md` — the encrypted daily copy of the Postgres database in Cloud Storage, and how to restore it (Neon point-in-time restore first)
 - `DECISIONS.md` — architectural decision log
 
 ## Desktop Packaging & Distribution

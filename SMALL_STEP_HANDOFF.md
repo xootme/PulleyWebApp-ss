@@ -1,0 +1,97 @@
+# small_step: changes needed for the 2026-09-27 pulley work
+
+For the agent working on small_step. The app side landed in PulleyWebApp-ss
+on `token-model` (ADR-013 and the bug fixes of the same day). STL and the 3D
+preview already have all of it; STEP does not. Nothing in
+`exporters/step_worker_ss.py` or small_step was changed — the owner asked to
+hold the STEP side until you're ready. When a small_step release supports
+item 1, tell the PulleyWebApp-ss session and it will wire the worker.
+
+## 1. Set-screw holes sized by how the screw holds — REQUIRED
+
+**Today** the worker passes `--screws <dia> <count> [--captured-nut]` and
+small_step cuts every hole at `dia` (the screw's nominal size) and picks the
+nut from `dia` (nearest metric). STL no longer does:
+
+| hold (`hub_screw_hold`) | hole | nut pocket | spacing (2 screws) |
+|---|---|---|---|
+| `thread` | self-tapping bore: **round** Ø = major − e%·(major − minor), or **hex** across flats = f%·major (the design's `screw_hole_shape`, `thread_engagement`, `hex_flat`) | none | 90° |
+| `nut` | plain clearance hole, ISO 273 medium (M5 → Ø5.5) | from the size's own nut — DIN 934 metric, machine-screw nuts for inch sizes | 180° |
+| `insert` | round, the Ø entered (`hub_screw_hole_dia`) | none | 90° |
+| `Custom` size | round, the Ø entered | with a nut: nearest metric nut to that Ø | as above |
+
+All numbers come from `geometry/set_screw.py` (`parse(args, prefix)` →
+`SetScrew(hole, nut, major, hold)`), which uses `cct_common.screws`. The
+worker should pass them through; small_step should not re-derive them.
+
+**Proposed CLI** (yours to shape — only the worker calls it):
+```
+--screws <count> --screw-hole round <diameter>
+--screws <count> --screw-hole hex <across_flats>
+                 [--nut <across_flats> <height>]      # captured nut
+```
+Keep `--screws <dia> <count> [--captured-nut]` working unchanged: designs
+from before sizes had names (only `hub_screw_dia`) must re-export exactly
+as they did (`set_screw.parse` returns None for them).
+
+**Geometry to match the STL** (`exporters/step_exporter.py`,
+`_add_hub_and_bore` / `_build_pulley_mesh`, helpers `_screw_hole_cutter`,
+`_screw_nut`):
+- Hole: radial, one-sided (hub OD in to the bore), unchanged placement.
+- **Hex hole (new)**: a hexagonal prism along the radial axis with a
+  **corner pointing up and down (±Z)**, flats vertical on each side, so the
+  roof prints without support. Its faces are planes meeting the hub's
+  cylinders — check this stays inside the STEP entity vocabulary before
+  extending it (and record any new obligation, as for E-Box D035).
+- Nut pocket: unchanged shape (width = AF + 0.5, radial depth = height +
+  0.5, hex-tip bottom, circumradius R = (AF + 0.5)/√3, screw at
+  hub_top − AF/√3, hub auto-raised / oblong lobes from `min_hub_r =
+  R_bore + 3·height`), but from the nut passed in, not a table lookup.
+- **Pocket inner face moved 0.05 mm into the bore** (`_POCKET_OVERLAP`):
+  R_bore − 0.05, or flat face − 0.05 (D-shaft), or key-slot face − 0.05
+  (keyway). A flat face exactly at the bore radius only touched the round
+  bore along a line (non-manifold STL); match it so STL and STEP agree, and
+  it avoids a tangent plane/cylinder contact in the B-rep too.
+
+**Worker wiring (PulleyWebApp-ss, after your release):** add the hole and
+nut to the params the app sends the worker (from `_set_screw(args,
+prefix)` in app.py), emit the new flags in `_build_pulley_cmd`, then update
+`static/Hub_help.html` ("STEP downloads still show every set-screw hole at
+the screw's nominal size") and the ToDo entry.
+
+## 2. Backlash "Tight" on Imperial / T / AT — CHECK ONLY
+
+`generate_imperial_groove` clamped negative backlash to 0, so Tight was the
+Standard groove on 14 profiles. It now narrows the groove (stopping before
+the groove floor closes). The worker builds the STEP from the app's own DXF,
+so small_step gets the new outline with no change — but these are groove
+shapes it has never seen. Please run your parity / FreeCAD checks on, e.g.,
+T5 30T, AT10 30T and XL 30T with `backlash_preset=TIGHT`.
+
+## 3. Metal flange plate profile — CHECK your own
+
+`geometry/flange_geometry.profile_metal` had the bend's arcs joined to the
+wrong faces: the top flat face (z = plate thickness) ran into the larger
+(outer) arc and the bottom flat face into the smaller one, so the outline
+traced the seam at r_tooth_OD twice — self-touching, and the revolved STL
+was non-manifold. Fixed: the arc centre is above the plate, so the
+**smaller arc is the upper face** and the larger arc the lower one.
+`small_step flange-metal` builds the plate from numbers itself, so this
+fix does not reach STEP. Check whether small_step's profile has the same
+crossing (a doubled edge at r_tooth_OD, z 0…thickness); if it does, the
+enclosed region is the same, only the traversal needs fixing.
+
+## 4. Bottom flange bore — INFORMATION
+
+For STL the bottom flange is now revolved 0.3 mm inside the bore
+(`_BORE_OVERCUT`) and the bore profile (round / D-flat / keyway) cut
+through it, so the flange's bore is exactly the pulley's; 3D-printed flanges
+are also unioned with the pulley into one solid. If STEP flanged pulleys
+show seams or slivers at the bore, this is the equivalent fix.
+
+## Not STEP-related (nothing to do)
+
+The Threaded screw holes dialog and your-default / design values, hub OD
+from links, "Flange cuts hub" removal, help pictures, JSON errors (no
+tracebacks in responses), retired `/api/admin/*` routes, the removed `xoot`
+backdoor and the off-site database backups are all app-side.

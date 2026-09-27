@@ -30,7 +30,7 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [x] `cct_common.accounts` + `cct_common.account_routes` (cct_common 0.7.0, `b8835e9`): linked identities, email sign-in links (15 min, single use, rate-limited, confirm-button page), hashed revocable sessions (web cookie 30 d, add-in device token 1 y), account page data/history, account deletion; 38 tests
 - [x] `cct_common.sqlite_db`: WAL + `synchronous=FULL`, `integrity_check()`, online `backup()`
 - [x] Wired into `app.py` via `accounts_setup.py`, **off unless `TOKENS_ENABLED=1`**: store at `logs/accounts.sqlite3`, email-link sign-in through Resend (dev without a key logs the link to `logs/server_errors.log`), startup integrity check → 503 on account routes if it fails, signup grant from `TOKENS_SIGNUP_GRANT`; 11 tests in `tests/test_accounts_setup.py`
-- [ ] When switching it on in production: set `TOKENS_ENABLED=1`, `CCT_ACCOUNTS_MODE=live` (Secure cookies; never logs sign-in links) and `RESEND_API_KEY` together
+- [x] When switching it on in production: set `TOKENS_ENABLED=1`, `CCT_ACCOUNTS_MODE=live` (Secure cookies; never logs sign-in links) and `RESEND_API_KEY` together — done at launch 2026-09-26 (LAUNCH.md, production deploy)
 - [x] Sign-in UI in the page (email box, account box with balance, sign out) — see Charging exports
 - [x] OAuth sign-in (Microsoft, Google, GitHub) on `AccountStore.sign_in` — cct_common 0.13.0 `oauth.py`: code flow + PKCE, state in the database and bound to the browser by a cookie, only provider-verified emails (Microsoft work accounts need the `xms_edov` claim — nOAuth). Each provider shows in the sign-in dialog once `<P>_CLIENT_ID`/`<P>_CLIENT_SECRET` are set
 - [x] Add-in / AI-agent device sign-in (cct_common 0.10.0, `ea50d87`): `POST /api/account/device/start` + `/poll`, approval page `/account/device` (signs in by email first if needed); 10-minute consonant-only codes, polling secret hashed, token issued once, slow-down on fast polling, per-IP rate limit
@@ -51,7 +51,7 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
   - [ ] Owner: Stripe account (test mode first) → secret key into `STRIPE_SECRET_KEY`; webhook `<site>/api/payments/stripe/webhook` (checkout.session.completed, checkout.session.async_payment_succeeded, charge.refunded, charge.dispute.created) → signing secret into `STRIPE_WEBHOOK_SECRET`
   - [ ] Test end to end in the PayPal sandbox before going live; set `TOKENS_BUY_URL` to the buy page
 - [ ] Account page: balance, purchase history, per-export history
-- [ ] Admin dashboard: balances, grants/refunds, sales
+- [x] Admin dashboard: balances, grants/refunds, sales — done: cct_common.admin, ADR-012
 - [x] Inactivity (ADR-008, cct_common 0.9.0, `6647737`): free tokens expire after 2 years without a sign-in (spent first; purchased never expire); accounts with no purchased tokens close after 5 years; 30-day reminder emails first; any sign-in resets; daily run in `accounts_setup.py`; notice in the sign-in and buy dialogs and on the balance
 - [x] Inactivity revised 2026-09-26 (ADR-008, cct_common 0.15.0): purchased tokens end with the account — every account closes after 5 years without a sign-in and its remaining tokens expire; the reminder names the tokens at stake and offers a refund of unused purchased ones
 - [ ] **Security:** PulleyWebApp-ss is a PUBLIC repo, and `app.py`'s `_smtp_send` docstring says an earlier Resend API key was committed to git history — confirm in Resend that the key now in use (Secret Manager `RESEND_API_KEY`, Render env) is not that one; revoke the old key if it still exists
@@ -59,7 +59,7 @@ One account works across all CAD programs (Fusion, FreeCAD, SolidWorks, web).
 - [ ] Have the terms of service state the inactivity rule (and check it against the states you sell into)
 - [x] Refund policy (2026-09-26, terms §4): on request, the **unused purchased** tokens only (never more than the balance; free tokens used first), valued at the price paid, **less the payment processor's fees**; to the original payment method where the provider still allows (~6 months), otherwise another way. Same rule when we close an account (not fraud), on shutdown, and when a customer closes their own
 - [x] **Do before the first refund request — refund tooling:** a refund issued in the PayPal/Stripe dashboard takes back tokens in proportion to the *money* refunded, so a fee-reduced refund leaves a few tokens behind — add an admin action that refunds the net amount through the provider's API and removes exactly the unused purchased tokens (`purchased_remaining`) — done 2026-09-26: the Refund button on the admin dashboard's Sales tab (cct_common.admin); issue refunds there, not in the provider dashboards. A refund take-back no longer counts as spending, so it takes purchased tokens, not free ones
-- [ ] Admin dashboard (cct_common.admin, 2026-09-26) replaces admin_dashboard.html: set `ADMIN_EMAILS` on test and production (default xootme@gmail.com); then retire the bearer-token `/api/admin/*` routes in app.py (health, metrics, constraints, downloads, subscribers, sales, licences, bug-report admin) and their CORS preflight — nothing calls them now
+- [x] Admin dashboard (cct_common.admin, 2026-09-26) replaces admin_dashboard.html: set `ADMIN_EMAILS` on test and production (default xootme@gmail.com); then retire the bearer-token `/api/admin/*` routes in app.py (health, metrics, constraints, downloads, subscribers, sales, licences, bug-report admin) and their CORS preflight — nothing calls them now — done 2026-09-27: ADMIN_EMAILS set on both services; the /api/admin/* routes retired (only /api/admin/licences remains, with the desktop licensing routes)
 
 ### Database backups (must be live before charging real money)
 Render-era backups are out of scope — hosting moves to Google Cloud Run (see Hosting),
@@ -67,10 +67,10 @@ and the off-server copy goes to Cloud Storage from there.
 - [x] `cct_common.db_backup` (0.8.0): hourly online backup of `accounts.sqlite3` into `logs/backups/hourly`, first of each day kept in `logs/backups/daily`, pruned to 7 days / 90 days, each copy verified with `integrity_check()` (deleted if bad) and stored as one self-contained file; a failed or missing (>2 h) backup alerts; safe with several gunicorn workers
 - [x] Wired in `accounts_setup.py` whenever accounts are on (not under `PULLEY_TESTING`); alerts go to the error log and to `BACKUP_ALERT_EMAIL` if set
 - [x] Startup `integrity_check()`: on failure the account routes answer 503, the file is left as found, and the same alert fires
-- [ ] Off-server copy: Cloud Storage upload as `backup_upload` (private bucket, the Cloud Run service account's own identity rather than a key in env; a bucket retention/lifecycle rule matching 7 / 90 days)
-- [ ] Encrypt before upload (the files contain emails), key held in Secret Manager (or Cloud KMS), not beside the backups
+- [x] Off-server copy (2026-09-27): `db_offsite_backup.py` — the Postgres database dumped whole (schema from the catalog + a CSV per table), encrypted, uploaded to `gs://cheapcadtools-backups/postgres/…` as the service account; round-trip tests against Postgres (`tests/test_db_offsite_backup.py`). **Owner: the one-time setup in RESTORE.md** (BACKUP_KEY secret + offline copy, bucket permission, the Cloud Run job, the daily schedule)
+- [x] Encrypted before upload (Fernet; key `BACKUP_KEY` in Secret Manager, never in the bucket — keep an offline copy)
 - [ ] Set `BACKUP_ALERT_EMAIL` in production
-- [ ] Written restore procedure: restore latest backup → replay payment-provider orders (idempotent on order number) → check balances
+- [x] Written restore procedure: RESTORE.md (Neon point-in-time first; then restore into an empty database, `replay-order` for purchases newer than the backup, check, switch over)
 - [ ] Practise a restore from the off-server copy before launch, then quarterly
 - [ ] After the move to Postgres (Neon): turn on point-in-time restore and keep the off-server copies as a second line
 
@@ -107,23 +107,23 @@ file (`logs/*.json`, queue sessions, trial counts) lives on that disk.
 - [ ] Optional later: Cloud Identity Free on cheapcadtools.com → an organization to own the project (move it in without redeploying)
 - [x] Test service `pulley-test` on Cloud Run (https://pulley-test-925396938485.us-central1.run.app): `token-model` branch, service account `pulley-run`, 2 vCPU / 2 GiB, concurrency 4 (`WEB_CONCURRENCY=4`), max 3 instances, `TOKENS_ENABLED=1` in dev mode (no email — sign-in links go to Cloud Logging), `DATABASE_URL` from Secret Manager, `RESULTS_BUCKET=cheapcadtools-results`. End to end on 2026-09-25: sign in → 10 tokens → STL+SVG zip −2 → STEP upgrade −1 → STEP again free; files served from the bucket; 40 signed-in calls all 200
 - [x] Fixed on the way: Postgres pool opened before gunicorn forked (preload_app) was shared by all workers, and Neon closes idle connections — cct_common 0.11.2 keys pools by process and checks each connection before use; warnings/errors now also go to stderr on Cloud Run (the log file vanished with the server); `.gcloudignore` so deploys upload 88 files, not the whole repo
-- [ ] Resend API key into Secret Manager (`RESEND_API_KEY`), then `CCT_ACCOUNTS_MODE=live` on the service — real sign-in emails, Secure cookies
+- [x] Resend API key into Secret Manager (`RESEND_API_KEY`), then `CCT_ACCOUNTS_MODE=live` on the service — real sign-in emails, Secure cookies — done at launch (LAUNCH.md)
 - [x] Free signup tokens for at most 2 new accounts per network per day (`TOKENS_SIGNUPS_PER_IP_PER_DAY`, default 2). Later accounts are still made — colleagues behind one office IP can all sign up and buy — with no free tokens and a note saying why. IPv6 counts per /64; sign-ins to existing accounts never count; IP kept hashed for a day. The account routes now take the IP from `request.remote_addr` via ProxyFix (`PROXY_HOPS`, default 1 = Cloud Run's own address) — they used the first X-Forwarded-For entry, which the visitor can forge
 - [ ] When cheapcadtools.com moves in front of Cloud Run (Cloudflare Worker or a load balancer), set `PROXY_HOPS` to match and check `remote_addr` is the visitor's IP — too low and everyone shares the proxy's IP (the 2-signups limit would then block real customers), too high and the IP can be forged
 - [x] Google sign-in live on the test site (client `925396938485-j3e1…apps.googleusercontent.com`, secret in Secret Manager); signed in end to end 2026-09-25
 - [x] GitHub sign-in live on the test site (OAuth app client `Ov23liD7sewt5PZUURBB`); signed in end to end 2026-09-26. The service pins `GOOGLE_CLIENT_SECRET:1` — version 2 was the GitHub secret saved in the wrong slot (moved, and disabled there)
 - [ ] Microsoft sign-in: register in Entra (see above), secret into `MICROSOFT_CLIENT_SECRET`, client id → `MICROSOFT_CLIENT_ID`
 - [ ] At launch, so Google's consent screen says "CheapCAD Tools" instead of the site's address: verify cheapcadtools.com in Google Search Console; Branding page — name, logo, home page, privacy policy and terms links (both on cheapcadtools.com), authorized domain cheapcadtools.com; add the cheapcadtools.com redirect URI to the client; submit for brand verification (email-only scopes: no security review). Microsoft likewise shows "unverified" until a verified publisher domain is set
-- [ ] Privacy policy page on cheapcadtools.com (needed for Google/Microsoft branding, and for accounts in general) — alongside the terms of service
-- [ ] Custom domain for cheapcadtools.com's tool path (Cloud Run domain mapping or a load balancer), then move traffic from Render
-- [ ] Secrets (Resend key, PayPal/Stripe keys, OAuth client secrets) in Secret Manager, mounted as env vars — not in the repo or plain env
-- [ ] Google OAuth app registered in the same project's console
+- [x] Privacy policy page on cheapcadtools.com (needed for Google/Microsoft branding, and for accounts in general) — alongside the terms of service — published 2026-09-26 (LAUNCH.md #7)
+- [x] Custom domain for cheapcadtools.com's tool path (Cloud Run domain mapping or a load balancer), then move traffic from Render — done via the Cloudflare Worker (LAUNCH.md #6)
+- [x] Secrets (Resend key, PayPal/Stripe keys, OAuth client secrets) in Secret Manager, mounted as env vars — not in the repo or plain env — done (LAUNCH.md production deploy)
+- [x] Google OAuth app registered in the same project's console — done (Google sign-in live)
 - [x] Ledger, accounts and registered designs on Postgres when `DATABASE_URL` is set
 - [x] Result files (zips, async STEP) in Cloud Storage when `RESULTS_BUCKET` is set; finished jobs' status in the database when `DATABASE_URL` is set, so a status poll on another server finds it; exports run inside their request (`QUEUE_DISABLED=1` in the image — Cloud Run throttles CPU after the response). Job ids are 144-bit (were 8 hex digits, and the status answer carries the file link). Two containers sharing one Postgres: started on A, polled on B — works
 - [x] Results bucket `gs://cheapcadtools-results` (us-central1, public access prevented, no soft delete, lifecycle: delete after 1 day); service account `pulley-run@cheapcadtools.iam.gserviceaccount.com` for Cloud Run with Storage Object Admin on that bucket only
 - [ ] Queue sessions and trial counts stay per-server — fine on Cloud Run with the queue off and tokens on (trial limits only apply with tokens off)
 - [x] Database: **Neon** Postgres project `cheapcadtools` (AWS US East 2, Postgres 17, database `neondb`), pooled connection string in Secret Manager as `DATABASE_URL`; `pulley-run` can read it. Checked through the pooler (advisory lock in a transaction, no prepared statements) and the full TokenStore on the direct host
-- [ ] Neon: move to the paid plan (7-day restore window) before real purchases are in the ledger — check the free plan's restore window
+- [x] Neon: move to the paid plan (7-day restore window) before real purchases are in the ledger — check the free plan's restore window — done 2026-09-26 (LAUNCH.md #8)
 - [ ] Neon's pooler rejects the `options=-csearch_path` startup parameter — fine for the app (it never sets one), but tests against Neon must use the direct host
 - [x] Dockerfile (python:3.14-slim + Cairo, non-root user, `PORT` from Cloud Run) and an allow-list `.dockerignore` — image 695 MB; the full suite passes inside it (1293 passed, 30 skipped)
 - [x] `bin/small_step_linux` rebuilt from small_step 0.3.0 (static musl, `7c21b7e`): the committed Linux binary was still 0.2.0 from June, so Render has been serving STEP without the July geometry fixes — RELEASE.md's "rebuild on every push" step was missed
@@ -211,14 +211,15 @@ not community posting — bulk auto-posting breaks most sites' rules.
 ## Bug reports → GitHub (do before adding the token to Render)
 Production files no GitHub issues today: Render has no `FEEDBACK_GITHUB_PAT`.
 - [x] `/api/report-bug` fixed (2026-09-26): the GitHub issue comes from `cct_common.bug_report` (description only — no design, no address); the notification email goes through Resend with the address but not the design; the full report is kept in the log and, with `DATABASE_URL`, in the `bug_reports` table (`bug_store.py`), so it survives Cloud Run servers; desktop forwarding removed. Tests: `tests/test_bug_report_privacy.py` (5 of 6 fail against the old route)
-- [ ] Admin dashboard: read bug reports from the `bug_reports` table as well as the log, and add a delete button (a deletion request must reach the database copy)
-- [ ] Then on Render: `FEEDBACK_GITHUB_PAT` (fine-grained, Issues read/write on `xootme/cct-feedback` only) and `FEEDBACK_GITHUB_REPO=xootme/cct-feedback`
+- [x] Admin dashboard: read bug reports from the `bug_reports` table as well as the log, and add a delete button (a deletion request must reach the database copy) — done: Bug reports tab, ADR-012
+- [x] Then on Render: `FEEDBACK_GITHUB_PAT` (fine-grained, Issues read/write on `xootme/cct-feedback` only) and `FEEDBACK_GITHUB_REPO=xootme/cct-feedback` — done on Cloud Run instead (LAUNCH.md #4b)
 - [x] cct_common's bug reporter verified live 2026-09-24: a report from E-Box Designer became xootme/cct-feedback#1 with no design or email in it
 
 ## Before Public Launch
-- [ ] **Remove dev backdoor password `'xoot'`** — the server side is already gone (dropped by `cct_common.licensing`). Still present in:
+- [x] **Remove dev backdoor password `'xoot'`** — the server side is already gone (dropped by `cct_common.licensing`). Still present in:
   - `packaging/launcher.py:60` and `packaging/launcher_ss.py:55` (still grant access locally)
-  - Fusion add-in `DEV_BACKDOOR_KEY`: `Fusion Addins/PulleyWebApp/PulleyWebApp.py`, `CCT_Addins/fusion360/TimingPulley/PulleyWebApp.py`, and its `dist/PulleyWebApp` + `dist/PulleyWebAppTrial` copies
+  - Fusion add-in `DEV_BACKDOOR_KEY`: `Fusion Addins/PulleyWebApp/PulleyWebApp.py`, `CCT_Addins/fusion360/TimingPulley/PulleyWebApp.py`, and its `dist/PulleyWebApp` + `dist/PulleyWebAppTrial` copies — done 2026-09-27 in both launchers and both add-in sources (backups of the add-in files were kept outside the repo)
+- [ ] Rebuild the Fusion add-in `dist/PulleyWebApp` and `dist/PulleyWebAppTrial` copies — they still carry the `'xoot'` backdoor key (the server ignores it); don't hand-edit build output
 - [ ] Add a test that `/api/provision` returns 403 for an unknown user (no test covers it) — or drop it with the token model
 
 ## Release and manual checks
@@ -241,11 +242,12 @@ Done: help pictures + hover pop-ups (ADR-011), "Apply to both pulleys" in Advanc
 settings fitted with warning + Auto-fit (ADR-010), 3D Print Compensation as a true offset
 (ADR-009). Tests: `test_help_pictures.py`, `test_spoke_fit.py`, `test_print_compensation.py`,
 `tests/browser/help_ui.js`.
-- [ ] **Backlash "Tight" does nothing** — `effective_backlash = max(0.0, backlash)` in
+- [x] **Backlash "Tight" does nothing** — `effective_backlash = max(0.0, backlash)` in
       `generate_imperial_groove` (and similar clamps) turns every negative backlash into 0, so
       Tight = Standard on Imperial, T, AT, GT, RPP while the panel says e.g. "Offset: −0.340 mm".
-      Decide the fix, then add Tight back to the Backlash help picture.
+      Decide the fix, then add Tight back to the Backlash help picture. — FIXED 2026-09-27: negative backlash narrows the groove, stopping before the floor closes (tests/test_backlash_tight.py); Tight is back in the Backlash picture
 - [ ] Release note: designs with 3D Print Compensation > 0 change shape (ADR-009).
+- [ ] Release note: Imperial, T and AT designs using Backlash **Tight** now get the narrower groove Tight always promised (it had the Standard groove) — STL and STEP both change. Set-screw holes are sized by how the screw holds (ADR-013; STL now, STEP later).
 - [ ] 3D hub lock: with spokes on, the 3D Hub OD field copies the spokes' typed Hub OD, so until
       Auto-fit is clicked the 3D hub uses the typed value while the spokes use the fitted one.
 - [ ] Point `fuzz_pulley.py` at `geometry/spoke_fit.py`: the geometry must never raise on its output.
@@ -255,6 +257,10 @@ settings fitted with warning + Auto-fit (ADR-010), 3D Print Compensation as a tr
 - [x] Hub (3D) pictures: Hub Height/OD, Retention Method, Set Screw Size, Number of Screws
       (one per method — the hover follows the Retention Method), Flat Depth, Keyway W and
       Hub Depth (3D preview + STL sections). The pop-up now shows pictures at their own size.
+- [x] Set-screw holes sized by how the screw holds (ADR-013, 2026-09-27): threaded = self-tapping bore from the new *Threaded screw holes* dialog (round % / hex %, E-Box defaults), captured nut = ISO 273 clearance hole + that size's nut, heat-set insert = entered hole; M2–M10 and inch sizes, Custom; old links keep their nominal holes
+- [ ] **STEP set-screw holes (small_step)** — handed over in SMALL_STEP_HANDOFF.md: small_step still cuts `hub_screw_dia` (nominal) for every hold — give it the hole from `geometry/set_screw.py` (round diameter, or a radial hex prism with a corner up for hex; clearance for nuts; the insert hole) and the named nut's pocket. Held until the small_step agent is ready; update Hub_help's STEP note when done
+- [x] Rebuild the Hub help pictures for ADR-013: `hub_screw_size.svg` shows nominal holes (its build script fetches `hub_screw_dia` links, which still cut those), and `hub_retention.svg` has no heat-set insert — done 2026-09-27 (build_hub.py fetches the set-screw sources itself now)
+- [x] A hub OD restored from a link or file is replaced by 2 × bore (`_initHubDefaults` only spares a hand-typed value) — seen restoring hub_od=26 with an 8 mm bore — FIXED 2026-09-27: link/file values and typed values are kept (tests/browser/screw_ui.js)
 - [x] **Fixed: standard set-screw holes went through both sides of the hub** in the STL and 3D
       preview (both trimesh paths in `exporters/step_exporter.py`, `hole_len = 2·R_hub + 2`);
       now OD → bore only, matching small_step's STEP and the cadquery path. Help text that
@@ -266,21 +272,21 @@ settings fitted with warning + Auto-fit (ADR-010), 3D Print Compensation as a tr
       supports. Help text corrected: Flange Height is the thickness at the teeth (not the lip);
       supports are fins inside a tube (not ribs from the pulley OD); downloads section rewritten
       (no separate metal plate or flange STEP downloads exist).
-- [ ] **"Flange cuts hub" does nothing** — `flange{n}_cuts_hub` is never sent to the server and
+- [x] **"Flange cuts hub" does nothing** — `flange{n}_cuts_hub` is never sent to the server and
       nothing reads it, but the help says it decides whether the flange trims the hub or the
-      reverse. Wire it up or remove the box (and its help paragraph). No picture until then.
+      reverse. Wire it up or remove the box (and its help paragraph). No picture until then. — removed 2026-09-27: its warning was never shown, and the app already keeps the flange whole (the hub starts on top); help rewritten
 - [ ] Metal flanges: `/download/flange-stl` always returns both plates (`which='both'`,
       "-flanges"); fine now that the page never asks it for one plate — check nothing else does.
-- [ ] Several flanged STLs are not watertight (metal assembly, 3D-print merged / separate-top
+- [x] Several flanged STLs are not watertight (metal assembly, 3D-print merged / separate-top
       pulley, support assembly — see `tools/help_illustrations/flange/`); overlapping bodies
-      rather than one union, probably. Check whether slicers mind.
+      rather than one union, probably. Check whether slicers mind. — FIXED 2026-09-27: metal plate profile, bore overcut, printed flanges unioned with the pulley (tests/test_flange_watertight.py); the metal assembly stays three closed parts
 - [x] Spoke Height (3D) picture; help corrected (it is the web's thickness, centred, with pockets
       above and below — the faces are not left solid).
 - [ ] Help pictures still missing: the Download window. Other help pages still say "3D Features"
       (the old name for 3D Mode).
-- [ ] **Captured-nut hub STL is not watertight** (HTD 5M 24T, bore 12, hub OD 26 × 12, M5 ×1
+- [x] **Captured-nut hub STL is not watertight** (HTD 5M 24T, bore 12, hub OD 26 × 12, M5 ×1
       captured nut — `tools/help_illustrations/hub/screw_nut.stl`); the other four retention
-      methods are. Slicers usually repair it, but find where the nut pocket leaves an open edge.
+      methods are. Slicers usually repair it, but find where the nut pocket leaves an open edge. — FIXED 2026-09-27: the nut pocket overlaps the bore by _POCKET_OVERLAP (tests/test_set_screw_holes.py)
 
 ## small_step known issues
 Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
@@ -303,7 +309,7 @@ Nothing below exists yet. One API serves agents and CAD plugins alike.
 **Core API:**
 - [ ] `GET /api/capabilities` — families, pitches, output formats, hub/spoke feature flags
 - [ ] `GET /api/describe?family=X&pitch=Y` — parameter constraints and download URL template
-- [ ] JSON errors on all 400 responses — the SVG/DXF routes still return plain text (`app.py` 968, 981, 1028, 1041, 1074, 1086, 1119)
+- [x] JSON errors on all 400 responses — the SVG/DXF routes still return plain text (`app.py` 968, 981, 1028, 1041, 1074, 1086, 1119) — done 2026-09-27: `_api_error`; tracebacks go to the log, never the response (tests/test_api_errors.py)
 - [ ] OpenAPI 3.0 spec at `/api/openapi.json`
 - [ ] (Optional) MCP server wrapper
 

@@ -1,5 +1,47 @@
 # Architectural Decision Records
 
+## ADR-013 — Set-screw holes sized by how the screw holds (cct_common.screws)
+**Date:** 2026-09-27
+**Status:** Active (STL); STEP pending
+
+**Context:**
+Every set-screw hole was cut at the screw's nominal diameter (an M5 got a 5.0 mm hole), from a
+page-side table of M3–M10. A "standard" set screw therefore had almost nothing to thread into, and
+a captured-nut screw had no clearance. E-Box Designer already sized screw holes properly; its
+table and rules moved to `cct_common.screws` (0.18.0, E-Box D099) so both apps share them.
+
+**Decision:**
+- **How the screw holds decides the hole** (`geometry/set_screw.py`):
+  *threaded* — the self-tapping bore (round by thread engagement %, or hex by hex flats %);
+  *captured nut* — a plain ISO 273 clearance hole, never threaded, and that size's nut
+  (DIN 934 metric, the same pockets as before; machine-screw nuts for inch); *heat-set insert* —
+  a round hole of the diameter entered. *Custom* sizes take an entered diameter too (with a nut,
+  the nearest metric nut).
+- **Sizes**: metric M2–M10 and inch #2-56 to 1/4-20, rendered into every size dropdown from the
+  server; the page keeps no size or hole table of its own (`/api/screws` gives it hole sizes for
+  its notes).
+- **Threaded-hole settings are app-wide**, in a *Threaded screw holes* dialog on the 3D title
+  bar: they depend on the printer and filament, not on a pulley. Same fields, names and defaults
+  as E-Box Designer (round 50% / hex 82%). Two things are kept apart: **your default**
+  (this browser, `pulley_thread_default`; *Save as my default*) which new designs and Reset start
+  from, and **the design's values**, which are **sent with every design** (`screw_hole_shape`,
+  `thread_engagement`, `hex_flat`), embedded in each download, and restored with it from a file
+  or link — without touching your default. The dialog shows the design's values against your
+  default, with *use my default* and *factory settings* links.
+- **Query parameters**: `hub_screw_size`, `hub_screw_hold` (thread | nut | insert),
+  `hub_screw_hole_dia`, alongside the existing `hub_screw_count`, `hub_captured_nut` and
+  `hub_screw_dia` (now the screw's nominal diameter: STEP and older readers use it).
+- **Old designs are untouched**: a link or file with only `hub_screw_dia` has no named size, so
+  `set_screw.parse` returns None and the exporters cut the nominal hole they always did.
+- **STL only for now**: both trimesh builders take the spec (`_screw_hole_cutter`,
+  `_screw_nut`). small_step still gets `hub_screw_dia` and cuts the nominal diameter; the STEP
+  side is held until the small_step work is ready (the hex bore will be a new obligation there).
+- A hex bore keeps a corner up once turned radial, so its roof prints without support.
+
+**Consequences:** `tests/test_set_screw_holes.py` measures each kind of hole in the STL download
+and the preview; `tests/browser/screw_ui.js` (33 checks) drives the controls, the dialog, saving
+and restoring. Captured-nut STLs still aren't watertight — as before this change (ToDo).
+
 ## ADR-012 — Admin dashboard: signed-in admins, subscribers, sales with refunds
 **Date:** 2026-09-26
 **Status:** Active

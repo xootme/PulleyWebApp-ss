@@ -5,9 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=37">
+  <link rel="stylesheet" href="/static/style.css?v=41">
 </head>
 <body>
+{#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
+{% macro screw_size_options() -%}
+{% for group in ['Metric', 'Inch'] %}<optgroup label="{{ group }}">{% for sz in screw_sizes if sz.group == group %}<option value="{{ sz.name }}"{% if sz.name == 'M5' %} selected{% endif %}>{{ sz.name }}</option>{% endfor %}</optgroup>{% endfor %}<option value="Custom">Custom…</option>
+{%- endmacro %}
+
 
 <div id="loading-overlay">
   <div class="spinner"></div>
@@ -88,6 +93,8 @@
   <div class="drive-bar-right">
     <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
     <button class="import-btn fb-2d" onclick="openImportDialog()" title="Import design from an exported STEP, DXF, SVG, or STL file">&#128194; Import</button>
+    <button class="drive-info-btn fb-3d" onclick="openThreadDialog()"
+            title="How tight a hole set screws cut their own thread into, for your printer">Threaded screw holes</button>
     <button class="drive-info-btn fb-3d"
             onclick="openHelpUrl('/static/3D_Print_help.html')">&#9432; 3D Print</button>
     <button class="drive-info-btn fb-2d"
@@ -205,7 +212,8 @@
         <label for="hub1_retention">Retention Method</label>
         <select id="hub1_retention" onchange="onHubChange(1)">
           <option value="set_screw_nut">Set Screw (captured nut)</option>
-          <option value="set_screw_std">Set Screw (std.)</option>
+          <option value="set_screw_std">Set Screw (threaded)</option>
+          <option value="set_screw_insert">Set Screw (heat-set insert)</option>
           <option value="d_shaft">D-Shaft</option>
           <option value="keyway">Keyway</option>
           <option value="none">None</option>
@@ -214,12 +222,7 @@
         <div id="hub1_setscrew_opts">
           <label for="hub1_screw_size">Set Screw Size</label>
           <select id="hub1_screw_size" onchange="onHubChange(1)">
-            <option value="M3">M3</option>
-            <option value="M4">M4</option>
-            <option value="M5" selected>M5</option>
-            <option value="M6">M6</option>
-            <option value="M8">M8</option>
-            <option value="M10">M10</option>
+            {{ screw_size_options() }}
           </select>
           <label for="hub1_screw_count">Number of Screws</label>
           <select id="hub1_screw_count" onchange="onHubChange(1)">
@@ -241,17 +244,13 @@
           <div id="hub1_dshaft_screw_opts" class="hidden">
             <label for="hub1_dshaft_screw_type">Screw Type</label>
             <select id="hub1_dshaft_screw_type" onchange="onHubChange(1)">
-              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_std">Threaded</option>
               <option value="set_screw_nut">Captured nut</option>
+              <option value="set_screw_insert">Heat-set insert</option>
             </select>
             <label for="hub1_dshaft_screw_size">Screw Size</label>
             <select id="hub1_dshaft_screw_size" onchange="onHubChange(1)">
-              <option value="M3">M3</option>
-              <option value="M4">M4</option>
-              <option value="M5" selected>M5</option>
-              <option value="M6">M6</option>
-              <option value="M8">M8</option>
-              <option value="M10">M10</option>
+              {{ screw_size_options() }}
             </select>
           </div>
         </div>
@@ -276,21 +275,22 @@
           <div id="hub1_keyway_screw_opts" class="hidden">
             <label for="hub1_keyway_screw_type">Screw Type</label>
             <select id="hub1_keyway_screw_type" onchange="onHubChange(1)">
-              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_std">Threaded</option>
               <option value="set_screw_nut">Captured nut</option>
+              <option value="set_screw_insert">Heat-set insert</option>
             </select>
             <label for="hub1_keyway_screw_size">Screw Size</label>
             <select id="hub1_keyway_screw_size" onchange="onHubChange(1)">
-              <option value="M3">M3</option>
-              <option value="M4">M4</option>
-              <option value="M5" selected>M5</option>
-              <option value="M6">M6</option>
-              <option value="M8">M8</option>
-              <option value="M10">M10</option>
+              {{ screw_size_options() }}
             </select>
           </div>
         </div>
 
+        <div id="hub1_screw_hole_row" class="hidden">
+          <label for="hub1_screw_hole_dia" id="hub1_screw_hole_label">Hole &#8960; (mm)</label>
+          <input type="number" id="hub1_screw_hole_dia" value="" min="0.5" max="30" step="0.05" oninput="onHubChange(1)" style="width:100%">
+        </div>
+        <div class="hub-info" id="hub1_screw_cuts"></div>
         <div class="hub-info" id="hub1_info"></div>
       </div>
     </section>
@@ -397,14 +397,6 @@
           </div>
         </div>
 
-        <!-- Hub intersection warning -->
-        <div id="flange1_hub_warn" style="display:none;margin-top:6px;padding:5px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
-          ⚠ Hub intersects the flange zone.
-          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
-            <input type="checkbox" id="flange1_cuts_hub" checked onchange="onFlangeChange(1)" style="width:auto;accent-color:#f97316;margin:0;">
-            Flange cuts hub
-          </label>
-        </div>
 
       </div>
     </section>
@@ -594,7 +586,8 @@
         <label for="hub2_retention">Retention Method</label>
         <select id="hub2_retention" onchange="onHubChange(2)">
           <option value="set_screw_nut">Set Screw (captured nut)</option>
-          <option value="set_screw_std">Set Screw (std.)</option>
+          <option value="set_screw_std">Set Screw (threaded)</option>
+          <option value="set_screw_insert">Set Screw (heat-set insert)</option>
           <option value="d_shaft">D-Shaft</option>
           <option value="keyway">Keyway</option>
           <option value="none">None</option>
@@ -603,12 +596,7 @@
         <div id="hub2_setscrew_opts">
           <label for="hub2_screw_size">Set Screw Size</label>
           <select id="hub2_screw_size" onchange="onHubChange(2)">
-            <option value="M3">M3</option>
-            <option value="M4">M4</option>
-            <option value="M5" selected>M5</option>
-            <option value="M6">M6</option>
-            <option value="M8">M8</option>
-            <option value="M10">M10</option>
+            {{ screw_size_options() }}
           </select>
           <label for="hub2_screw_count">Number of Screws</label>
           <select id="hub2_screw_count" onchange="onHubChange(2)">
@@ -630,17 +618,13 @@
           <div id="hub2_dshaft_screw_opts" class="hidden">
             <label for="hub2_dshaft_screw_type">Screw Type</label>
             <select id="hub2_dshaft_screw_type" onchange="onHubChange(2)">
-              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_std">Threaded</option>
               <option value="set_screw_nut">Captured nut</option>
+              <option value="set_screw_insert">Heat-set insert</option>
             </select>
             <label for="hub2_dshaft_screw_size">Screw Size</label>
             <select id="hub2_dshaft_screw_size" onchange="onHubChange(2)">
-              <option value="M3">M3</option>
-              <option value="M4">M4</option>
-              <option value="M5" selected>M5</option>
-              <option value="M6">M6</option>
-              <option value="M8">M8</option>
-              <option value="M10">M10</option>
+              {{ screw_size_options() }}
             </select>
           </div>
         </div>
@@ -665,21 +649,22 @@
           <div id="hub2_keyway_screw_opts" class="hidden">
             <label for="hub2_keyway_screw_type">Screw Type</label>
             <select id="hub2_keyway_screw_type" onchange="onHubChange(2)">
-              <option value="set_screw_std">Standard</option>
+              <option value="set_screw_std">Threaded</option>
               <option value="set_screw_nut">Captured nut</option>
+              <option value="set_screw_insert">Heat-set insert</option>
             </select>
             <label for="hub2_keyway_screw_size">Screw Size</label>
             <select id="hub2_keyway_screw_size" onchange="onHubChange(2)">
-              <option value="M3">M3</option>
-              <option value="M4">M4</option>
-              <option value="M5" selected>M5</option>
-              <option value="M6">M6</option>
-              <option value="M8">M8</option>
-              <option value="M10">M10</option>
+              {{ screw_size_options() }}
             </select>
           </div>
         </div>
 
+        <div id="hub2_screw_hole_row" class="hidden">
+          <label for="hub2_screw_hole_dia" id="hub2_screw_hole_label">Hole &#8960; (mm)</label>
+          <input type="number" id="hub2_screw_hole_dia" value="" min="0.5" max="30" step="0.05" oninput="onHubChange(2)" style="width:100%">
+        </div>
+        <div class="hub-info" id="hub2_screw_cuts"></div>
         <div class="hub-info" id="hub2_info"></div>
       </div>
     </section>
@@ -775,13 +760,6 @@
             </div>
           </div>
         </div>
-        <div id="flange2_hub_warn" style="display:none;margin-top:6px;padding:5px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
-          ⚠ Hub intersects the flange zone.
-          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
-            <input type="checkbox" id="flange2_cuts_hub" checked onchange="onFlangeChange(2)" style="width:auto;accent-color:#f97316;margin:0;">
-            Flange cuts hub
-          </label>
-        </div>
 
       </div>
     </section>
@@ -858,6 +836,47 @@
 </div>
 
 <!-- ── Import Design Modal ── -->
+<!-- ── Threaded screw holes (ADR-013) ── -->
+<div id="thread-overlay">
+  <div id="thread-box">
+    <div class="import-header">
+      <span class="import-title">Threaded screw holes</span>
+      <button class="bug-close" onclick="closeThreadDialog()" title="Close">&times;</button>
+    </div>
+    <div class="import-info">
+      <p>How tight a hole a set screw cuts its own thread into &mdash; it depends on your printer and
+      filament, not on the pulley. It applies to every set screw set to <b>threaded</b>, on both
+      pulleys, and is saved with each design; new designs start from your default. Captured-nut screws pass through a plain clearance
+      hole and heat-set inserts use the hole you enter, so these settings don't change them.</p>
+    </div>
+    <div class="import-body">
+      <label class="bug-label">Hole shape</label>
+      <div class="thread-shape">
+        <label><input type="radio" name="screw_hole_shape" value="round" checked onchange="onThreadChange()"> Round</label>
+        <label><input type="radio" name="screw_hole_shape" value="hex" onchange="onThreadChange()"> Hex</label>
+      </div>
+      <img id="thread_picture" class="thread-picture" src="/static/help/thread_round.svg"
+           alt="Looking into an M5 hole: the screw's outer and root diameters over the hole that is cut">
+      <div id="thread_engagement_row">
+        <label class="bug-label" for="thread_engagement">Thread engagement (%)</label>
+        <input type="number" id="thread_engagement" value="50" min="0" max="100" step="1" oninput="onThreadChange()">
+        <div class="hub-info">0% = the screw's outer diameter (no grip) &middot; 100% = its root diameter (full thread)</div>
+      </div>
+      <div id="hex_flat_row" class="hidden">
+        <label class="bug-label" for="hex_flat">Hex flats (% of the screw's diameter)</label>
+        <input type="number" id="hex_flat" value="82" min="78" max="92" step="1" oninput="onThreadChange()">
+        <div class="hub-info">The screw grips on the flats; the corners give the plastic somewhere to go.</div>
+      </div>
+      <div class="thread-example" id="thread_example"></div>
+      <div class="thread-default" id="thread_default_note"></div>
+    </div>
+    <div class="bug-footer">
+      <button class="bug-btn bug-btn-cancel" id="thread_save_default" onclick="saveThreadDefault()">Save as my default</button>
+      <button class="bug-btn bug-btn-submit" onclick="closeThreadDialog()">Done</button>
+    </div>
+  </div>
+</div>
+
 <div id="import-overlay">
   <div id="import-box">
     <div class="import-header">
@@ -1066,7 +1085,12 @@ function _applyUrlParams(p) {
   };
   const chk = (id, on) => { const el = document.getElementById(id); if (el) el.checked = !!on; };
   const setv = (id, v)  => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
-  const screwSizeOf = dia => Object.entries(HUB_SCREW_DIA).find(([, v]) => v === parseFloat(dia))?.[0] ?? null;
+  // Designs from before sizes had names carry only a metric diameter.
+  const screwSizeOf = dia => SCREW_SIZES.find(sz => sz.group === 'Metric' && sz.major === parseFloat(dia))?.name ?? null;
+  if (p.has('screw_hole_shape') || p.has('thread_engagement') || p.has('hex_flat')) {
+    setThreadSettings(p.get('screw_hole_shape') || 'round', p.get('thread_engagement'), p.get('hex_flat'));
+    _threadFromDesign = true;
+  }
 
   // ── Basic P1 ─────────────────────────────────────────────────────────────────
   if (p.has('family')) { set('family'); populatePitches(p.get('family')); }
@@ -1097,38 +1121,42 @@ function _applyUrlParams(p) {
     chk(`hub${n}_enabled`, true);
     set(`hub${n}_od`,     `${pre}od`);
     set(`hub${n}_height`, `${pre}height`);
+    // the design's own sizes: opening the panel mustn't replace them with defaults
+    document.getElementById(`hub${n}_od`)._userSet = true;
+    if (p.has(`${pre}height`)) document.getElementById(`hub${n}_height`)._userSet = true;
 
     const hasKeyway = p.has(`${pre}keyway_w`);
     const hasDShaft = p.has(`${pre}flat_depth`);
-    const hasScrewD = p.has(`${pre}screw_dia`);
+    const hasScrewD = p.has(`${pre}screw_dia`) || p.has(`${pre}screw_size`);
     const captNut   = p.get(`${pre}captured_nut`);
+    const hold      = p.get(`${pre}screw_hold`) || (captNut === '1' ? 'nut' : 'thread');
+    const screwType = hold === 'nut' ? 'set_screw_nut' : hold === 'insert' ? 'set_screw_insert' : 'set_screw_std';
+    const sz        = p.get(`${pre}screw_size`) || screwSizeOf(p.get(`${pre}screw_dia`));
+    if (p.has(`${pre}screw_hole_dia`)) setv(`hub${n}_screw_hole_dia`, p.get(`${pre}screw_hole_dia`));
     let retention   = 'none';
     if (hasKeyway)      retention = 'keyway';
     else if (hasDShaft) retention = 'd_shaft';
-    else if (hasScrewD) retention = captNut === '1' ? 'set_screw_nut' : 'set_screw_std';
+    else if (hasScrewD) retention = screwType;
     const retEl = document.getElementById(`hub${n}_retention`);
     if (retEl) retEl.value = retention;
 
-    if (retention === 'set_screw_nut' || retention === 'set_screw_std') {
-      const sz = screwSizeOf(p.get(`${pre}screw_dia`));
+    if (isSetScrewValue(retention)) {
       if (sz) setv(`hub${n}_screw_size`, sz);
       set(`hub${n}_screw_count`, `${pre}screw_count`);
     } else if (retention === 'd_shaft') {
       set(`hub${n}_flat_depth`, `${pre}flat_depth`);
       if (hasScrewD) {
         chk(`hub${n}_dshaft_screw`, true);
-        const sz = screwSizeOf(p.get(`${pre}screw_dia`));
         if (sz) setv(`hub${n}_dshaft_screw_size`, sz);
-        setv(`hub${n}_dshaft_screw_type`, captNut === '1' ? 'set_screw_nut' : 'set_screw_std');
+        setv(`hub${n}_dshaft_screw_type`, screwType);
       }
     } else if (retention === 'keyway') {
       set(`hub${n}_keyway_w`, `${pre}keyway_w`);
       set(`hub${n}_keyway_h`, `${pre}keyway_h`);
       if (hasScrewD) {
         chk(`hub${n}_keyway_screw`, true);
-        const sz = screwSizeOf(p.get(`${pre}screw_dia`));
         if (sz) setv(`hub${n}_keyway_screw_size`, sz);
-        setv(`hub${n}_keyway_screw_type`, captNut === '1' ? 'set_screw_nut' : 'set_screw_std');
+        setv(`hub${n}_keyway_screw_type`, screwType);
       }
     }
     onHubChange(n);
@@ -1240,6 +1268,9 @@ function saveSettings() {
     p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
     p2_print_extra:      document.getElementById('p2_print_extra').value,
     adv_both:            document.getElementById('adv_both_1').checked,
+    screw_hole_shape:    threadShape(),
+    thread_engagement:   document.getElementById('thread_engagement').value,
+    hex_flat:            document.getElementById('hex_flat').value,
     feature_build:       document.getElementById('feature_build').checked,
     belt_height:         document.getElementById('belt_height').value,
     clearance_height:    document.getElementById('clearance_height').value,
@@ -1259,6 +1290,7 @@ function saveSettings() {
     hub1_keyway_screw_size:   document.getElementById('hub1_keyway_screw_size').value,
     hub1_height:              document.getElementById('hub1_height').value,
     hub1_od:                  document.getElementById('hub1_od').value,
+    hub1_screw_hole_dia:      document.getElementById('hub1_screw_hole_dia').value,
     hub2_enabled:             document.getElementById('hub2_enabled').checked,
     hub2_open:                document.getElementById('hub2-body').classList.contains('open'),
     hub2_retention:           document.getElementById('hub2_retention').value,
@@ -1275,6 +1307,7 @@ function saveSettings() {
     hub2_keyway_screw_size:   document.getElementById('hub2_keyway_screw_size').value,
     hub2_height:              document.getElementById('hub2_height').value,
     hub2_od:                  document.getElementById('hub2_od').value,
+    hub2_screw_hole_dia:      document.getElementById('hub2_screw_hole_dia').value,
     // Spokes P1
     spokes1_enabled:      document.getElementById('spokes1_enabled').checked ? '1' : '0',
     spokes1_hub_od:       document.getElementById('spokes1_hub_od').value,
@@ -1424,6 +1457,7 @@ async function loadSettings() {
     _chk(`hub${n}_keyway_screw`,     s[`hub${n}_keyway_screw`]);
     _val(`hub${n}_keyway_screw_type`,s[`hub${n}_keyway_screw_type`]);
     _val(`hub${n}_keyway_screw_size`,s[`hub${n}_keyway_screw_size`]);
+    _val(`hub${n}_screw_hole_dia`,   s[`hub${n}_screw_hole_dia`]);
     if (s[`hub${n}_height`] !== undefined) {
       const hEl = document.getElementById(`hub${n}_height`);
       hEl.value = s[`hub${n}_height`];
@@ -1436,7 +1470,7 @@ async function loadSettings() {
     }
     // Restore top-level section visibility
     const ret = document.getElementById(`hub${n}_retention`).value;
-    const isSS = ret === 'set_screw_nut' || ret === 'set_screw_std';
+    const isSS = isSetScrewValue(ret);
     document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSS);
     document.getElementById(`hub${n}_dshaft_opts`).classList.toggle('hidden', ret !== 'd_shaft');
     document.getElementById(`hub${n}_keyway_opts`).classList.toggle('hidden', ret !== 'keyway');
@@ -1472,6 +1506,11 @@ async function loadSettings() {
     if (rimWrap) rimWrap.style.display = spokesOn ? 'flex' : 'none';
     _syncSpokeHubLock(n);
   });
+
+  if (s.screw_hole_shape) {
+    setThreadSettings(s.screw_hole_shape, s.thread_engagement, s.hex_flat);
+    _threadFromDesign = true;
+  }
 
   // Restore flange settings
   [1, 2].forEach(n => {
@@ -1514,6 +1553,7 @@ window.onload = async () => {
   populatePitches('HTD');
   const restored = await loadSettings();
   loadParamsFromUrl();   // URL params override saved settings when present
+  if (!_threadFromDesign) applyThreadDefault();   // a new design starts from your default
   _syncNubHeightMax();
 
   // Apply Feature Build tab state now that the DOM is fully ready.
@@ -1538,11 +1578,8 @@ window.onload = async () => {
   [1, 2].forEach(function(n) {
     const heightEl  = document.getElementById(`hub${n}_height`);
     const retention = document.getElementById(`hub${n}_retention`).value;
-    const isSetScrew = retention === 'set_screw_nut' || retention === 'set_screw_std';
-    if (heightEl && isSetScrew) {
-      const sz = document.getElementById(`hub${n}_screw_size`).value;
-      heightEl.min = (HUB_SCREW_DIA[sz] || 5) * 2;
-    }
+    if (heightEl && isSetScrewValue(retention)) heightEl.min = screwMajor(n) * 2;
+    _syncScrewHole(n);
   });
   updateBeltBtn();
   // Check restored spoke settings against the restored pulleys.
@@ -2226,29 +2263,7 @@ function buildParams() {
   if (fb && document.getElementById('hub1_enabled').checked) {
     p.hub_od     = document.getElementById('hub1_od').value;
     p.hub_height = document.getElementById('hub1_height').value;
-    const r1 = document.getElementById('hub1_retention').value;
-    if (r1 === 'set_screw_nut' || r1 === 'set_screw_std') {
-      const sz1 = document.getElementById('hub1_screw_size').value;
-      p.hub_screw_dia     = HUB_SCREW_DIA[sz1] || 5;
-      p.hub_screw_count   = parseInt(document.getElementById('hub1_screw_count').value) || 1;
-      p.hub_captured_nut  = r1 === 'set_screw_nut' ? '1' : '0';
-    } else if (r1 === 'd_shaft') {
-      if (document.getElementById('hub1_dshaft_screw').checked) {
-        const dsType1 = document.getElementById('hub1_dshaft_screw_type').value;
-        const sz1 = document.getElementById('hub1_dshaft_screw_size').value;
-        p.hub_screw_dia    = HUB_SCREW_DIA[sz1] || 5;
-        p.hub_screw_count  = 1;
-        p.hub_captured_nut = dsType1 === 'set_screw_nut' ? '1' : '0';
-      }
-    } else if (r1 === 'keyway') {
-      if (document.getElementById('hub1_keyway_screw').checked) {
-        const kwType1 = document.getElementById('hub1_keyway_screw_type').value;
-        const sz1 = document.getElementById('hub1_keyway_screw_size').value;
-        p.hub_screw_dia    = HUB_SCREW_DIA[sz1] || 5;
-        p.hub_screw_count  = 1;
-        p.hub_captured_nut = kwType1 === 'set_screw_nut' ? '1' : '0';
-      }
-    }
+    screwParams(p, 1, '');
   }
   if (dual) {
     const cp2 = document.getElementById('p2_clearance_preset').value;
@@ -2275,29 +2290,7 @@ function buildParams() {
     if (fb && document.getElementById('hub2_enabled').checked) {
       p.p2_hub_od     = document.getElementById('hub2_od').value;
       p.p2_hub_height = document.getElementById('hub2_height').value;
-      const r2 = document.getElementById('hub2_retention').value;
-      if (r2 === 'set_screw_nut' || r2 === 'set_screw_std') {
-        const sz2 = document.getElementById('hub2_screw_size').value;
-        p.p2_hub_screw_dia     = HUB_SCREW_DIA[sz2] || 5;
-        p.p2_hub_screw_count   = parseInt(document.getElementById('hub2_screw_count').value) || 1;
-        p.p2_hub_captured_nut  = r2 === 'set_screw_nut' ? '1' : '0';
-      } else if (r2 === 'd_shaft') {
-        if (document.getElementById('hub2_dshaft_screw').checked) {
-          const dsType2 = document.getElementById('hub2_dshaft_screw_type').value;
-          const sz2 = document.getElementById('hub2_dshaft_screw_size').value;
-          p.p2_hub_screw_dia    = HUB_SCREW_DIA[sz2] || 5;
-          p.p2_hub_screw_count  = 1;
-          p.p2_hub_captured_nut = dsType2 === 'set_screw_nut' ? '1' : '0';
-        }
-      } else if (r2 === 'keyway') {
-        if (document.getElementById('hub2_keyway_screw').checked) {
-          const kwType2 = document.getElementById('hub2_keyway_screw_type').value;
-          const sz2 = document.getElementById('hub2_keyway_screw_size').value;
-          p.p2_hub_screw_dia    = HUB_SCREW_DIA[sz2] || 5;
-          p.p2_hub_screw_count  = 1;
-          p.p2_hub_captured_nut = kwType2 === 'set_screw_nut' ? '1' : '0';
-        }
-      }
+      screwParams(p, 2, 'p2_');
     }
   }
   // Spoke params — P1
@@ -3664,8 +3657,169 @@ function load3DModel(url) {
 
 // ── Hub section ───────────────────────────────────────────────────────────────
 
-// Set screw diameter in mm keyed by size label
-const HUB_SCREW_DIA = { M3:3, M4:4, M5:5, M6:6, M8:8, M10:10 };
+// ── Set screws (ADR-013) ────────────────────────────────────────────────────
+// Sizes come from the server (cct_common.screws via geometry/set_screw.py), and
+// so do the holes: the page never works a hole size out itself.
+const SCREW_SIZES = {{ screw_sizes|tojson }};
+const SCREW_MAJOR = Object.fromEntries(SCREW_SIZES.map(sz => [sz.name, sz.major]));
+const SCREW_HOLD  = { set_screw_std: 'thread', set_screw_nut: 'nut', set_screw_insert: 'insert' };
+const isSetScrewValue = v => Object.prototype.hasOwnProperty.call(SCREW_HOLD, v);
+
+// The hub's active set screw — {size, count, hold, holeDia, needsHole, major} — or null.
+function activeScrew(n) {
+  const g = id => document.getElementById(`hub${n}_${id}`);
+  const r = g('retention').value;
+  let size, count, type;
+  if (isSetScrewValue(r)) {
+    size = g('screw_size').value; count = parseInt(g('screw_count').value) || 1; type = r;
+  } else if (r === 'd_shaft' && g('dshaft_screw').checked) {
+    size = g('dshaft_screw_size').value; count = 1; type = g('dshaft_screw_type').value;
+  } else if (r === 'keyway' && g('keyway_screw').checked) {
+    size = g('keyway_screw_size').value; count = 1; type = g('keyway_screw_type').value;
+  } else return null;
+  const hold    = SCREW_HOLD[type] || 'thread';
+  const holeDia = parseFloat(g('screw_hole_dia').value) || 0;
+  const custom  = size === 'Custom';
+  return { size, count, hold, holeDia, needsHole: custom || hold === 'insert',
+           major: custom ? holeDia : (SCREW_MAJOR[size] || 5) };
+}
+// The screw's outer diameter, for the hub's wall and height rules.
+function screwMajor(n) { const sc = activeScrew(n); return (sc && sc.major) || 5; }
+
+// Set-screw query parameters for pulley n (prefix '' or 'p2_').
+function screwParams(p, n, prefix) {
+  const sc = activeScrew(n);
+  if (!sc || (sc.needsHole && sc.holeDia <= 0)) return;     // nothing to cut a hole from yet
+  p[`${prefix}hub_screw_size`]   = sc.size;
+  p[`${prefix}hub_screw_hold`]   = sc.hold;
+  p[`${prefix}hub_screw_count`]  = sc.count;
+  p[`${prefix}hub_screw_dia`]    = sc.major;               // nominal: STEP and older readers
+  p[`${prefix}hub_captured_nut`] = sc.hold === 'nut' ? '1' : '0';
+  if (sc.needsHole) p[`${prefix}hub_screw_hole_dia`] = sc.holeDia;
+  if (sc.hold === 'thread' && sc.size !== 'Custom') Object.assign(p, threadParams());
+}
+
+// ── Threaded screw holes dialog: how tight a threaded hole is, app-wide ──
+// Two things: the DESIGN's values (the dialog's inputs — saved and sent with the
+// design, restored with it from a file or link) and YOUR DEFAULT (this browser,
+// THREAD_DEFAULT_KEY), which new designs start from. Opening a design never
+// changes your default.
+const THREAD_FACTORY = { shape: 'round', engagement: 50, hexFlat: 82 };   // as E-Box Designer
+const THREAD_DEFAULT_KEY = 'pulley_thread_default';
+let _threadFromDesign = false;          // the saved design or the link set them
+function threadDefault() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(THREAD_DEFAULT_KEY)); } catch (e) {}
+  return Object.assign({}, THREAD_FACTORY, d || {});
+}
+function threadCurrent() {
+  return { shape: threadShape(), engagement: +document.getElementById('thread_engagement').value,
+           hexFlat: +document.getElementById('hex_flat').value };
+}
+const _threadText = t => t.shape === 'hex' ? `Hex, flats ${t.hexFlat}%` : `Round, engagement ${t.engagement}%`;
+const _threadSame = (a, b) => a.shape === b.shape && +a.engagement === +b.engagement && +a.hexFlat === +b.hexFlat;
+function applyThreadDefault() {
+  const d = threadDefault();
+  setThreadSettings(d.shape, d.engagement, d.hexFlat);
+}
+function saveThreadDefault() {
+  try { localStorage.setItem(THREAD_DEFAULT_KEY, JSON.stringify(threadCurrent())); } catch (e) {}
+  _showThreadDefault();
+}
+function useThreadDefault() { applyThreadDefault(); onThreadChange(); }
+function useThreadFactory() {
+  setThreadSettings(THREAD_FACTORY.shape, THREAD_FACTORY.engagement, THREAD_FACTORY.hexFlat);
+  onThreadChange();
+}
+function _showThreadDefault() {
+  const d = threadDefault(), cur = threadCurrent();
+  const note = document.getElementById('thread_default_note');
+  const factory = _threadSame(cur, THREAD_FACTORY) ? '' :
+    ' · <a href="#" onclick="useThreadFactory(); return false;">factory settings</a>';
+  note.innerHTML = _threadSame(cur, d)
+    ? `These are your default settings.${factory}`
+    : `This design: ${_threadText(cur)} · your default: ${_threadText(d)} · ` +
+      `<a href="#" onclick="useThreadDefault(); return false;">use my default</a>${factory}`;
+  document.getElementById('thread_save_default').disabled = _threadSame(cur, d);
+}
+function threadShape() {
+  return document.querySelector('input[name="screw_hole_shape"]:checked')?.value || 'round';
+}
+function threadParams() {
+  return { screw_hole_shape: threadShape(),
+           thread_engagement: document.getElementById('thread_engagement').value,
+           hex_flat: document.getElementById('hex_flat').value };
+}
+function setThreadSettings(shape, engagement, hexFlat) {
+  const r = document.querySelector(`input[name="screw_hole_shape"][value="${shape === 'hex' ? 'hex' : 'round'}"]`);
+  if (r) r.checked = true;
+  if (engagement != null && engagement !== '') document.getElementById('thread_engagement').value = engagement;
+  if (hexFlat != null && hexFlat !== '') document.getElementById('hex_flat').value = hexFlat;
+  const hex = threadShape() === 'hex';
+  document.getElementById('thread_picture').src = `/static/help/thread_${hex ? 'hex' : 'round'}.svg`;
+  document.getElementById('thread_engagement_row').classList.toggle('hidden', hex);
+  document.getElementById('hex_flat_row').classList.toggle('hidden', !hex);
+}
+function openThreadDialog() {
+  onThreadChange(false);
+  document.getElementById('thread-overlay').style.display = 'flex';
+}
+function closeThreadDialog() { document.getElementById('thread-overlay').style.display = 'none'; }
+document.getElementById('thread-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeThreadDialog();
+});
+
+// Every size's holes under the current settings, from /api/screws (one fetch per settings).
+const _screwTables = {};
+function screwTable() {
+  const q = new URLSearchParams(threadParams()).toString();
+  if (!_screwTables[q]) _screwTables[q] = fetch('/api/screws?' + q).then(r => r.json())
+    .catch(e => { delete _screwTables[q]; throw e; });
+  return _screwTables[q];
+}
+const _holeText = h => h.shape === 'hex' ? `${h.flats.toFixed(2)} mm hex (across flats)`
+                                         : `Ø${h.diameter.toFixed(2)} mm`;
+let _threadSeq = 0;
+async function onThreadChange(changed = true) {
+  setThreadSettings(threadShape());
+  _showThreadDefault();
+  const seq = ++_threadSeq;
+  try {
+    const t = await screwTable();
+    if (seq !== _threadSeq) return;
+    const by = Object.fromEntries(t.sizes.map(sz => [sz.name, sz]));
+    document.getElementById('thread_example').textContent = 'Threaded holes: ' +
+      ['M3', 'M5', '#6-32'].map(n => `${n} → ${_holeText(by[n].thread)}`).join(' · ');
+  } catch (e) { /* the example is a convenience; the settings still apply */ }
+  if (changed) {
+    saveSettings();
+    [1, 2].forEach(n => updateScrewCuts(n));
+    if (document.getElementById('feature_build').checked) schedulePreview();
+  }
+}
+
+// The hub panel's "Cuts:" note — what will actually be cut for this screw.
+async function updateScrewCuts(n) {
+  const el = document.getElementById(`hub${n}_screw_cuts`);
+  const sc = activeScrew(n);
+  if (!el) return;
+  if (!sc) { el.textContent = ''; return; }
+  if (sc.needsHole) {
+    el.textContent = sc.holeDia > 0
+      ? `Cuts: Ø${sc.holeDia.toFixed(2)} mm ${sc.hold === 'insert' ? 'insert' : ''} hole`.replace('  ', ' ')
+        + (sc.hold === 'nut' ? ' · pocket for the nearest metric nut' : '')
+      : 'Enter the hole diameter';
+    return;
+  }
+  try {
+    const t = await screwTable();
+    const sz = t.sizes.find(x => x.name === sc.size);
+    if (!sz) return;
+    el.textContent = sc.hold === 'nut'
+      ? `Cuts: Ø${sz.clearance.toFixed(2)} mm clearance hole · pocket for a ${sz.nut[0]} × ${sz.nut[1]} mm nut`
+      : `Cuts: ${_holeText(sz.thread)} threaded hole (Threaded screw holes settings)`;
+  } catch (e) { el.textContent = ''; }
+}
 
 // ISO 773 / DIN 6885-1 key dimensions by shaft diameter (bore_mm)
 // Columns: [maxBore, W, t2 (hub depth), r (corner radius)]
@@ -3712,6 +3866,13 @@ function toggleAdvanced(n) {
 }
 
 // Minimum wall to bore = 2× screw dia; min hub height = 2× screw dia
+// A hub OD or height typed in is the user's: opening the panel keeps it
+// (_initHubDefaults only fills fields nobody has set).
+['hub1_od', 'hub1_height', 'hub2_od', 'hub2_height'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', () => { el._userSet = true; });
+});
+
 function toggleHub(n) {
   const body  = document.getElementById(`hub${n}-body`);
   const arrow = document.getElementById(`hub${n}-arrow`);
@@ -4093,12 +4254,10 @@ function onHubChange(n) {
   // Hub Height min = 2 × screw_dia when set screw retention (hub.md spec)
   const heightEl  = document.getElementById(`hub${n}_height`);
   const retention = document.getElementById(`hub${n}_retention`).value;
-  const isSetScrew = retention === 'set_screw_nut' || retention === 'set_screw_std';
+  const isSetScrew = isSetScrewValue(retention);
   if (heightEl) {
     if (isSetScrew) {
-      const sz = document.getElementById(`hub${n}_screw_size`).value;
-      const sd = HUB_SCREW_DIA[sz] || 5;
-      heightEl.min = sd * 2;
+      heightEl.min = screwMajor(n) * 2;
     } else {
       heightEl.min = 1;
     }
@@ -4126,6 +4285,7 @@ function onHubChange(n) {
     document.getElementById(`hub${n}_keyway_screw_opts`).classList.toggle('hidden', !kwScrew);
   }
 
+  _syncScrewHole(n);
   _validateHub(n);
 
   saveSettings();
@@ -4133,6 +4293,22 @@ function onHubChange(n) {
       document.getElementById(`hub${n}_enabled`).checked) {
     schedulePreview();
   }
+}
+
+// Hole Ø: shown for a Custom size or a heat-set insert, started at a typical
+// size (an insert's hole ≈ 1.35 × the screw); then the "Cuts:" note.
+function _syncScrewHole(n) {
+  const sc = activeScrew(n);
+  document.getElementById(`hub${n}_screw_hole_row`).classList.toggle('hidden', !(sc && sc.needsHole));
+  if (sc && sc.needsHole) {
+    document.getElementById(`hub${n}_screw_hole_label`).innerHTML =
+      (sc.hold === 'insert' ? 'Insert hole' : 'Hole') + ' &#8960; (mm)';
+    const holeEl = document.getElementById(`hub${n}_screw_hole_dia`);
+    if (!(parseFloat(holeEl.value) > 0))
+      holeEl.value = sc.hold === 'insert' && sc.size !== 'Custom'
+        ? (Math.round(SCREW_MAJOR[sc.size] * 1.35 * 10) / 10).toFixed(1) : '3.0';
+  }
+  updateScrewCuts(n);
 }
 
 function onHubEnabledChange(n) {
@@ -4156,11 +4332,12 @@ function _validateHub(n) {
 
   const lines = [];
 
-  if (retention === 'set_screw_nut' || retention === 'set_screw_std') {
-    const screwSize = document.getElementById(`hub${n}_screw_size`).value;
-    const sd   = HUB_SCREW_DIA[screwSize] || 5;
-    const minWallToBore = sd * 2;
-    const minHubH       = sd * 2;
+  if (isSetScrewValue(retention)) {
+    const sel = document.getElementById(`hub${n}_screw_size`).value;
+    const screwSize = sel === 'Custom' ? 'this screw' : sel;
+    const sd   = screwMajor(n);
+    const minWallToBore = +(sd * 2).toFixed(2);
+    const minHubH       = +(sd * 2).toFixed(2);
     const wall = (hubOD - bore) / 2;
     lines.push(`Wall: ${wall.toFixed(1)} mm · Min wall: ${minWallToBore} mm · Min height: ${minHubH} mm`);
     if (wall < minWallToBore)

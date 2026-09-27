@@ -120,6 +120,39 @@ def _nut_dims(screw_dia_mm: float):
     return _NUT_DIMS_BY_DIA[nominal]
 
 
+# The nut pocket's inner face goes this far past the bore (or the D-flat or key
+# slot face) rather than exactly onto it: a flat face exactly at the bore radius
+# only touches the round bore along a line, which leaves edges shared by more
+# than two faces and the STL not watertight. The nut still sits on the shaft.
+_POCKET_OVERLAP = 0.05
+
+
+def _screw_nut(screw_dia_mm: float, set_screw=None):
+    """(waf_mm, nut_height_mm): the named screw's own nut (geometry.set_screw,
+    from cct_common.screws), else — a design from before sizes had names —
+    the nearest metric nut, as always."""
+    if set_screw is not None and set_screw.nut is not None:
+        return set_screw.nut
+    return _nut_dims(screw_dia_mm)
+
+
+def _screw_hole_cutter(screw_dia_mm: float, length: float, set_screw=None) -> trimesh.Trimesh:
+    """A set-screw hole cutter along Z, centred on the origin; callers turn it
+    onto the radial X axis. The hole is set_screw.hole (ADR-013: a
+    self-tapping bore, a nut's clearance hole, or an insert's hole), else
+    the nominal diameter older designs were cut with. A hex bore keeps a
+    corner up once turned radial, so its roof prints without support."""
+    hole = set_screw.hole if set_screw is not None else {"shape": "circle", "diameter": screw_dia_mm}
+    if hole["shape"] == "hex":
+        r = hole["flats"] / math.sqrt(3)               # corner radius
+        hexagon = ShapelyPolygon([(r * math.cos(k * math.pi / 3), r * math.sin(k * math.pi / 3))
+                                  for k in range(6)])
+        cutter = trimesh.creation.extrude_polygon(hexagon, length)
+        cutter.apply_translation([0.0, 0.0, -length / 2.0])
+        return cutter
+    return trimesh.creation.cylinder(radius=hole["diameter"] / 2.0, height=length, sections=32)
+
+
 def _make_frustum(r_bottom: float, r_top: float, height: float, sections: int = 32):
     """Return a trimesh frustum (truncated cone) along the +Z axis.
 
@@ -380,7 +413,8 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                       keyway_w_mm: float = 0.0,
                       keyway_h_mm: float = 0.0,
                       hub_z_start: float = None,
-                      flange_ext_mm: float = 0.0) -> trimesh.Trimesh:
+                      flange_ext_mm: float = 0.0,
+                      set_screw=None) -> trimesh.Trimesh:
     """
     Union a hub boss onto `body`, subtract the bore through the full height,
     then optionally drill radial set-screw holes and (for captured_nut=True)
@@ -424,7 +458,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
     # ── Captured nut pre-calculations ────────────────────────────────────────
     if do_screws and captured_nut:
-        waf, t_nut = _nut_dims(screw_dia_mm)
+        waf, t_nut = _screw_nut(screw_dia_mm, set_screw)
         R_circ = waf / math.sqrt(3)        # hex circumradius (centre → vertex)
         tip_to_tip = 2.0 * R_circ         # maximum nut width vertex-to-vertex
 
@@ -517,8 +551,6 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         screw_angles = [0.0]
 
     if do_screws and body.is_watertight:
-        R_screw = screw_dia_mm / 2.0
-
         if captured_nut:
             # Screw at centre of the nut (hub_top minus hex circumradius)
             z_screw = hub_top - R_circ        # nut centre in Z
@@ -528,13 +560,13 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                 kw_face  = R_bore + keyway_h_mm
                 hole_len = eff_r - kw_face + 1.0
                 hole_cx  = (eff_r + kw_face) / 2.0
-                pkt_cx   = kw_face
+                pkt_cx   = kw_face - _POCKET_OVERLAP
             else:
                 # One-sided hole: enters from hub OD, stops at bore
                 hole_len = eff_r - R_bore + 1.0
                 hole_cx  = (eff_r + R_bore) / 2.0
                 # Hex pocket: inner face at bore
-                pkt_cx = R_bore
+                pkt_cx = R_bore - _POCKET_OVERLAP
 
         else:
             z_screw  = hub_z_start + flange_ext_mm + hub_height_mm / 2.0
@@ -546,8 +578,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
         for angle in screw_angles:
             # ── Radial screw hole ─────────────────────────────────────────────
-            hole = trimesh.creation.cylinder(radius=R_screw, height=hole_len,
-                                             sections=32)
+            hole = _screw_hole_cutter(screw_dia_mm, hole_len, set_screw)
             hole.apply_transform(
                 trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
             hole.apply_translation([hole_cx, 0.0, z_screw])
@@ -625,6 +656,7 @@ def generate_pulley_stl(
     spoke_height_mm: float = 0.0,
     flange_enabled: bool = False,
     flange_height_mm: float = 0.0,
+    set_screw=None,
 ) -> bytes:
     """
     Return binary STL bytes of an extruded timing pulley solid.
@@ -711,7 +743,7 @@ def generate_pulley_stl(
     hub_valid_stl = hub_height_mm > 0.0 and hub_od_mm > bore_mm
     eff_r_stl = R_hub_stl
     if hub_valid_stl and captured_nut and screw_dia_mm > 0.0 and screw_count > 0:
-        _waf_stl, _t_stl = _nut_dims(screw_dia_mm)
+        _waf_stl, _t_stl = _screw_nut(screw_dia_mm, set_screw)
         _min_hub_r_stl = bore_mm / 2.0 + 3.0 * _t_stl
         eff_r_stl = max(R_hub_stl, _min_hub_r_stl)
     hub_z_start_stl = belt_height_mm
@@ -724,7 +756,8 @@ def generate_pulley_stl(
                                hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
                                captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm,
                                hub_z_start=hub_z_start_stl,
-                               flange_ext_mm=_flange_ext_stl)
+                               flange_ext_mm=_flange_ext_stl,
+                               set_screw=set_screw)
     return result.export(file_type='stl')
 
 
@@ -1709,7 +1742,8 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                        flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0,
                        spoke_count=0, spoke_width_mm=0.0, spoke_hub_od_mm=0.0,
                        fillet_tip_mm=0.0, fillet_base_mm=0.0, rim_depth_mm=0.0,
-                       spoke_height_mm=0.0, flange_enabled=False, flange_height_mm=0.0):
+                       spoke_height_mm=0.0, flange_enabled=False, flange_height_mm=0.0,
+                       set_screw=None):
     """
     Build a single watertight pulley trimesh solid.
 
@@ -1724,7 +1758,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
 
     # ── Captured nut pre-calculations ────────────────────────────────────────
     if do_screws and captured_nut:
-        waf, t_nut = _nut_dims(screw_dia_mm)
+        waf, t_nut = _screw_nut(screw_dia_mm, set_screw)
         R_circ    = waf / math.sqrt(3)
         pkt_y     = waf + 0.5
         pkt_x     = t_nut + 0.5
@@ -1911,8 +1945,6 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         screw_angles = [0.0]
 
     if do_screws and body.is_watertight:
-        R_screw = screw_dia_mm / 2.0
-
         if captured_nut:
             z_screw = hub_top - R_circ
             if flat_depth_mm > 0.0:
@@ -1920,17 +1952,17 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                 flat_x   = R_bore - flat_depth_mm
                 hole_len = eff_r - flat_x + 1.0
                 hole_cx  = (eff_r + flat_x) / 2.0
-                pkt_cx   = flat_x
+                pkt_cx   = flat_x - _POCKET_OVERLAP
             elif keyway_h_mm > 0.0:
                 # Nut pocket inner face sits against the keyway slot outer face
                 kw_face  = R_bore + keyway_h_mm
                 hole_len = eff_r - kw_face + 1.0
                 hole_cx  = (eff_r + kw_face) / 2.0
-                pkt_cx   = kw_face
+                pkt_cx   = kw_face - _POCKET_OVERLAP
             else:
                 hole_len = eff_r - R_bore + 1.0
                 hole_cx  = (eff_r + R_bore) / 2.0
-                pkt_cx   = R_bore
+                pkt_cx   = R_bore - _POCKET_OVERLAP
         else:
             z_screw  = hub_z_start + _flange_ext_mesh + hub_height_mm / 2.0
             # One-sided: from the hub OD in to the bore (see the first mesh path).
@@ -1938,7 +1970,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
             hole_cx  = (R_hub + R_bore) / 2.0
 
         for angle in screw_angles:
-            hole = trimesh.creation.cylinder(radius=R_screw, height=hole_len, sections=32)
+            hole = _screw_hole_cutter(screw_dia_mm, hole_len, set_screw)
             hole.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
             hole.apply_translation([hole_cx, 0.0, z_screw])
             if abs(angle) > 1e-9:
@@ -2053,6 +2085,8 @@ def generate_drive_stl_preview(
     screw_dia_mm2: float = 0.0,
     screw_count2: int = 0,
     captured_nut2: bool = False,
+    set_screw1=None,
+    set_screw2=None,
     flat_depth_mm1: float = 0.0,
     flat_depth_mm2: float = 0.0,
     keyway_w_mm1: float = 0.0,
@@ -2122,7 +2156,8 @@ def generate_drive_stl_preview(
                             fillet_base_mm=fillet_base_mm1, rim_depth_mm=rim_depth_mm1,
                             spoke_height_mm=spoke_height_mm1,
                             flange_enabled=bool(flange1),
-                            flange_height_mm=flange1.get('flange_height_mm', 1.5) if flange1 else 0.0)
+                            flange_height_mm=flange1.get('flange_height_mm', 1.5) if flange1 else 0.0,
+                            set_screw=set_screw1)
     p1.apply_translation([cx1, 0.0, 0.0])
 
     p2 = _build_pulley_mesh(family, pitch, num_teeth2, bore_mm2, belt_height_mm,
@@ -2137,7 +2172,8 @@ def generate_drive_stl_preview(
                             fillet_base_mm=fillet_base_mm2, rim_depth_mm=rim_depth_mm2,
                             spoke_height_mm=spoke_height_mm2,
                             flange_enabled=bool(flange2),
-                            flange_height_mm=flange2.get('flange_height_mm', 1.5) if flange2 else 0.0)
+                            flange_height_mm=flange2.get('flange_height_mm', 1.5) if flange2 else 0.0,
+                            set_screw=set_screw2)
     p2.apply_translation([cx2, 0.0, 0.0])
 
     # ── Belt mesh ─────────────────────────────────────────────────────────────
@@ -2283,6 +2319,7 @@ def generate_pulley_stl_preview(
     flange_enabled: bool = False,
     flange_height_mm: float = 0.0,
     socket_meshes: list = None,
+    set_screw=None,
 ) -> bytes:
     """
     Same as generate_pulley_stl but centres the mesh at the origin so
@@ -2303,6 +2340,7 @@ def generate_pulley_stl_preview(
         fillet_base_mm=fillet_base_mm, rim_depth_mm=rim_depth_mm,
         spoke_height_mm=spoke_height_mm,
         flange_enabled=flange_enabled, flange_height_mm=flange_height_mm,
+        set_screw=set_screw,
     )
     if socket_meshes:
         # Union sockets first so overlapping cylinders are resolved into one solid

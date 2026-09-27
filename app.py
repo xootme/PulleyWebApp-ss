@@ -22,9 +22,6 @@ from cct_common.text_utils import safe_float as _safe_float, safe_dl_name as _sa
 from cct_common.jsonl_log import append_jsonl as _append_jsonl, trim_jsonl as _trim_jsonl
 from cct_common.github_api import request as _github_api
 from cct_common.resend_email import send as _cc_send_email
-# Reused for the /api/admin/health bug_count stat, so it matches exactly
-# what the bug_report_admin dashboard itself counts.
-from cct_common.bug_report_admin import _parse_bug_reports as _cc_parse_bug_reports
 from cct_common.addin_mirror import mirror_to_addins as _cc_mirror_to_addins
 import subprocess
 import time
@@ -47,8 +44,6 @@ from cct_common.job_queue import (
     register_trial_download, clear_all_state, clear_stale_on_startup,
     check_web_download, record_web_download,
     trial_downloads_per_week as _trial_downloads_per_week,
-    get_all_jobs as _cc_get_all_jobs,
-    get_full_queue_snapshot as _cc_get_full_queue_snapshot,
     register_machine_id as _cc_register_machine_id,
     configure as _cc_job_queue_configure,
     start_background_threads as _cc_job_queue_start_threads,
@@ -562,16 +557,6 @@ def _count_request():
     _increment_request_count()
 
 
-@app.route('/api/admin/<path:_>', methods=['OPTIONS'])
-def _admin_cors_preflight(_):
-    """Handle CORS preflight for all /api/admin/* routes."""
-    r = Response('', 204)
-    r.headers['Access-Control-Allow-Origin']  = '*'
-    r.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-    r.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
-    return r
-
-
 @app.route('/api/subscribers/<path:_>', methods=['OPTIONS'])
 def _subscribers_cors_preflight(_):
     r = Response('', 204)
@@ -686,6 +671,7 @@ def index():
             app_version=APP_VERSION,
             build_time=BUILD_TIME,
             cct_schema_version=CCT_SCHEMA_VERSION,
+            screw_sizes=_screw_size_list(),
         )
 
     session_id = request.args.get('session_id')
@@ -718,6 +704,7 @@ def index():
         app_version=APP_VERSION,
         build_time=BUILD_TIME,
         cct_schema_version=CCT_SCHEMA_VERSION,
+        screw_sizes=_screw_size_list(),
     )
 
 
@@ -984,7 +971,7 @@ def download_svg():
             headers={'Content-Disposition': f'attachment; filename="{filename}"'},
         )
     except Exception as e:
-        return f'Error generating SVG: {e}', 400
+        return _api_error(f'Error generating SVG: {e}')
 
 
 @app.route('/download/dxf')
@@ -998,7 +985,7 @@ def download_dxf():
         pulley = request.args.get('pulley', '1')
         key    = _resolve_key(family, pitch)
         if key is None or key not in PULLEY_SPECS:
-            return f'Unknown profile {family}/{pitch}', 400
+            return _api_error(f'Unknown profile {family}/{pitch}')
         spec = PULLEY_SPECS[key]
 
         if pulley == '2':
@@ -1045,7 +1032,7 @@ def download_dxf():
             headers={'Content-Disposition': f'attachment; filename="{filename}"'},
         )
     except Exception as e:
-        return f'Error generating DXF: {e}', 400
+        return _api_error(f'Error generating DXF: {e}')
 
 
 @app.route('/download/svg-rim')
@@ -1059,7 +1046,7 @@ def download_svg_rim():
         pfx    = 'p2_' if pulley == '2' else ''
         key    = _resolve_key(family, pitch)
         if key is None or key not in PULLEY_SPECS:
-            return f'Unknown profile {family}/{pitch}', 400
+            return _api_error(f'Unknown profile {family}/{pitch}')
         spec = PULLEY_SPECS[key]
 
         if pulley == '2':
@@ -1092,7 +1079,7 @@ def download_svg_rim():
         return Response(svg, mimetype='image/svg+xml',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
-        return f'Error generating rim SVG: {e}', 400
+        return _api_error(f'Error generating rim SVG: {e}')
 
 
 @app.route('/download/dxf-rim')
@@ -1105,7 +1092,7 @@ def download_dxf_rim():
         pulley = request.args.get('pulley', '1')
         key    = _resolve_key(family, pitch)
         if key is None or key not in PULLEY_SPECS:
-            return f'Unknown profile {family}/{pitch}', 400
+            return _api_error(f'Unknown profile {family}/{pitch}')
         spec = PULLEY_SPECS[key]
 
         if pulley == '2':
@@ -1138,7 +1125,7 @@ def download_dxf_rim():
         return Response(dxf, mimetype='application/dxf',
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
-        return f'Error generating rim DXF: {e}', 400
+        return _api_error(f'Error generating rim DXF: {e}')
 
 
 def _build_png_from_request(args, size_px=480):
@@ -1340,7 +1327,7 @@ def download_belt_svg():
         if dual:
             key  = _resolve_key(family, pitch)
             if key is None or key not in PULLEY_SPECS:
-                return f'Unknown profile {family}/{pitch}', 400
+                return _api_error(f'Unknown profile {family}/{pitch}')
             spec = PULLEY_SPECS[key]
 
             num_teeth1 = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
@@ -1385,7 +1372,7 @@ def download_belt_svg():
             filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.svg'
         else:
             if family not in BELT_FAMILIES:
-                return f'Belt SVG not available for family {family}', 400
+                return _api_error(f'Belt SVG not available for family {family}')
             svg      = generate_belt_svg(family, pitch, n_teeth=3)
             filename = f'{family}-{pitch}-belt-profile.svg'
 
@@ -1396,7 +1383,13 @@ def download_belt_svg():
             headers={'Content-Disposition': f'attachment; filename="{filename}"'},
         )
     except Exception as e:
-        return f'Error generating belt SVG: {e}', 400
+        return _api_error(f'Error generating belt SVG: {e}')
+
+
+def _api_error(message, status=400):
+    """An error as JSON — {"error": message} — which is what the page and API
+    clients read (they show d.error). Never put a traceback in it: log it."""
+    return jsonify({'error': message}), status
 
 
 def _cct_meta(args) -> dict:
@@ -1520,7 +1513,35 @@ def _parse_hub_params(args, prefix=''):
     flat_depth   = max(0.0, float(args.get(f'{prefix}hub_flat_depth',   0.0)))
     keyway_w     = max(0.0, float(args.get(f'{prefix}hub_keyway_w',     0.0)))
     keyway_h     = max(0.0, float(args.get(f'{prefix}hub_keyway_h',     0.0)))
+    ss = _set_screw(args, prefix)
+    if ss is not None:              # a named size (ADR-013) decides these, not the page's copy
+        screw_dia, captured_nut = ss.major, ss.hold == 'nut'
     return hub_od, hub_height, screw_dia, screw_count, captured_nut, flat_depth, keyway_w, keyway_h
+
+
+def _printed_as_one(meshes):
+    """A 3D-print pulley and the flanges printed with it, as ONE solid. They
+    touch face to face (and share the bore's edge ring), so stacked as
+    separate bodies the STL wasn't watertight; a union is. Falls back to
+    stacking them if any part isn't a closed volume or the union fails."""
+    import trimesh
+    parts = [m for m in meshes if m is not None and len(m.faces)]
+    if all(getattr(m, 'is_volume', False) for m in parts):
+        try:
+            one = trimesh.boolean.union(parts, engine='manifold')
+            if one.is_watertight:
+                return one
+        except Exception:
+            app.logger.exception('flange union failed; exporting the parts stacked')
+    return trimesh.util.concatenate(parts)
+
+
+def _set_screw(args, prefix=''):
+    """The hub's set screw — hole and nut from its named size and the design's
+    threaded-hole settings (geometry/set_screw.py, ADR-013) — for the STL
+    builders; None for no screws or a design from before sizes had names."""
+    from geometry import set_screw
+    return set_screw.parse(args, prefix)
 
 
 @functools.lru_cache(maxsize=256)
@@ -1589,6 +1610,20 @@ def _parse_spoke_params(args, prefix=''):
     return enabled, hub_od, rim_depth, width, fillet_tip, fillet_base, count, height, split
 
 
+def _screw_size_list():
+    from geometry import set_screw
+    return set_screw.size_list()
+
+
+@app.route('/api/screws')
+def api_screws():
+    """Every set-screw size's holes under the threaded-hole settings given
+    (screw_hole_shape, thread_engagement, hex_flat) — the Threaded screw
+    holes dialog's examples and the hub panel's note (ADR-013)."""
+    from geometry import set_screw
+    return jsonify(set_screw.holes_for(request.args))
+
+
 @app.route('/api/spoke-fit')
 def api_spoke_fit():
     """Do this pulley's spoke settings fit it? Unprefixed pulley params, as the
@@ -1645,6 +1680,7 @@ def api_preview_stl():
                 hub_od_mm2=hub_od2, hub_height_mm2=hub_h2,
                 screw_dia_mm1=sd1, screw_count1=sc1, captured_nut1=cn1,
                 screw_dia_mm2=sd2, screw_count2=sc2, captured_nut2=cn2,
+                set_screw1=_set_screw(request.args, ''), set_screw2=_set_screw(request.args, 'p2_'),
                 flat_depth_mm1=fd1, flat_depth_mm2=fd2,
                 keyway_w_mm1=kw_w1, keyway_h_mm1=kw_h1,
                 keyway_w_mm2=kw_w2, keyway_h_mm2=kw_h2,
@@ -1700,6 +1736,7 @@ def api_preview_stl():
                 spoke_height_mm=sp_h if sp_en else 0.0,
                 flange_enabled=_fl_enabled, flange_height_mm=_fl_h,
                 socket_meshes=_socket_meshes,
+                set_screw=_set_screw(request.args, ''),
             )
             if _fl_meshes:
                 import io as _io
@@ -1718,9 +1755,8 @@ def api_preview_stl():
                         headers={'Cache-Control': 'no-store'})
     except Exception as e:
         import traceback
-        tb = traceback.format_exc()
-        print(tb, flush=True)
-        return f'Error generating STL preview: {e}\n\n{tb}', 400
+        app.logger.error('STL preview failed:\n%s', traceback.format_exc())
+        return _api_error(f'Error generating STL preview: {e}')
 
 
 @app.route('/download/stl')
@@ -1757,6 +1793,7 @@ def download_stl():
             spoke_height_mm=sp_h if sp_en else 0.0,
             flange_enabled=_fl_enabled,
             flange_height_mm=_raise_h,
+            set_screw=_set_screw(request.args, pfx),
         )
         if _fl_metal:
             import trimesh, io as _io
@@ -1807,7 +1844,7 @@ def download_stl():
                 top_mesh = trimesh.load(_io.BytesIO(
                     generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_flange_kw)
                 ), file_type='stl')
-                stl = trimesh.util.concatenate([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
+                stl = _printed_as_one([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
             else:
                 # Separate top flange: use preview (centered) so nub sockets can
                 # be cut via boolean on the live trimesh mesh before export.
@@ -1827,6 +1864,7 @@ def download_stl():
                     spoke_height_mm=sp_h if sp_en else 0.0,
                     flange_enabled=_fl_3dp, flange_height_mm=fp.get('flange_height_mm', 1.5),
                     socket_meshes=sockets or None,
+                    set_screw=_set_screw(request.args, pfx),
                 )
                 pulley_mesh = trimesh.load(_io.BytesIO(stl_preview), file_type='stl')
                 z_bottom = float(pulley_mesh.bounds[0][2])
@@ -1835,7 +1873,7 @@ def download_stl():
                     generate_3dprint_flange_stl(which='bottom', **_flange_kw)
                 ), file_type='stl')
                 bot_mesh.apply_translation([0.0, 0.0, z_bottom])
-                stl = trimesh.util.concatenate([pulley_mesh, bot_mesh]).export(file_type='stl')
+                stl = _printed_as_one([pulley_mesh, bot_mesh]).export(file_type='stl')
 
         fl_sfx = '+flange' if _fl_enabled else ''
         fname = f'{family}-{pitch}-{num_teeth}T{suffix}{fl_sfx}.stl'
@@ -1848,7 +1886,8 @@ def download_stl():
                         headers={'Content-Disposition': f'attachment; filename="{fname}"'})
     except Exception as e:
         import traceback
-        return f'Error generating STL: {e}\n{traceback.format_exc()}', 400
+        app.logger.error('STL download failed:\n%s', traceback.format_exc())
+        return _api_error(f'Error generating STL: {e}')
 
 
 @app.route('/download/step')
@@ -1913,7 +1952,7 @@ def download_step():
         try:
             step_bytes = _run_ss_worker(dict(kw, export_type='pulley'))
         except RuntimeError as _e:
-            return f'STEP error: {_e}', 400
+            return _api_error(f'STEP error: {_e}')
 
         step_bytes = _rename_step_product(step_bytes, fname[:-5])
         step_bytes = _embed_step(step_bytes, request.args)
@@ -1928,7 +1967,7 @@ def download_step():
     except Exception as e:
         import logging as _log, traceback as _tb
         _log.getLogger(__name__).error('STEP generation failed: %s\n%s', e, _tb.format_exc())
-        return f'Error generating STEP: {e}', 400
+        return _api_error(f'Error generating STEP: {e}')
 
 
 @app.route('/download/belt-step')
@@ -1948,7 +1987,7 @@ def download_belt_step():
 
         key = _resolve_key(family, pitch)
         if key is None or key not in PULLEY_SPECS:
-            return f'Unknown profile {family}/{pitch}', 400
+            return _api_error(f'Unknown profile {family}/{pitch}')
         spec = PULLEY_SPECS[key]
 
         num_teeth1   = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
@@ -1966,7 +2005,7 @@ def download_belt_step():
                 belt_height_mm=belt_h,
             ))
         except RuntimeError as _e:
-            return f'Belt STEP error: {_e}', 400
+            return _api_error(f'Belt STEP error: {_e}')
         filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.step'
         step_bytes = _embed_step(step_bytes, request.args)
         if _mirror_to_addins(step_bytes, filename):
@@ -1978,10 +2017,8 @@ def download_belt_step():
         )
     except Exception as exc:
         import traceback
-        return Response(
-            f'Belt STEP export failed:\n{traceback.format_exc()}',
-            status=500, mimetype='text/plain'
-        )
+        app.logger.error('Belt STEP export failed:\n%s', traceback.format_exc())
+        return _api_error('Belt STEP export failed. The error has been logged.', 500)
 
 
 @app.route('/download/all-step')
@@ -2066,7 +2103,7 @@ def download_all_step():
         try:
             step_bytes = _run_ss_worker(worker_kw)
         except RuntimeError as _e:
-            return f'STEP error: {_e}', 400
+            return _api_error(f'STEP error: {_e}')
 
         fname = _fname_stem + '.step'
         # All-parts STEP is always an assembly — don't overwrite individual part names.
@@ -2080,8 +2117,8 @@ def download_all_step():
                         headers={'Content-Disposition': f'attachment; filename="{dl_name}"'})
     except Exception as exc:
         import traceback
-        return Response(f'All-parts STEP failed:\n{traceback.format_exc()}',
-                        status=500, mimetype='text/plain')
+        app.logger.error('All-parts STEP failed:\n%s', traceback.format_exc())
+        return _api_error('All-parts STEP failed. The error has been logged.', 500)
 
 
 @app.route('/download/belt-stl')
@@ -2101,7 +2138,7 @@ def download_belt_stl():
 
         key = _resolve_key(family, pitch)
         if key is None or key not in PULLEY_SPECS:
-            return f'Unknown profile {family}/{pitch}', 400
+            return _api_error(f'Unknown profile {family}/{pitch}')
         spec = PULLEY_SPECS[key]
 
         num_teeth1  = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
@@ -2113,7 +2150,7 @@ def download_belt_stl():
         mesh = _build_belt_mesh(family, pitch, num_teeth1, num_teeth2,
                                 center_dist, belt_h, cx1=0.0)
         if mesh is None:
-            return f'Belt STL not available for {family}/{pitch}', 400
+            return _api_error(f'Belt STL not available for {family}/{pitch}')
 
         stl_bytes = mesh.export(file_type='stl')
         if isinstance(stl_bytes, memoryview):
@@ -2126,7 +2163,8 @@ def download_belt_stl():
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
         import traceback
-        return f'Error generating belt STL: {e}\n{traceback.format_exc()}', 400
+        app.logger.error('belt STL failed:\n%s', traceback.format_exc())
+        return _api_error(f'Error generating belt STL: {e}')
 
 @app.route('/download/belt-dxf')
 @charges.charged('dxf')
@@ -2144,7 +2182,7 @@ def download_belt_dxf():
         if dual:
             key = _resolve_key(family, pitch)
             if key is None or key not in PULLEY_SPECS:
-                return f'Unknown profile {family}/{pitch}', 400
+                return _api_error(f'Unknown profile {family}/{pitch}')
             spec = PULLEY_SPECS[key]
 
             num_teeth1 = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
@@ -2175,7 +2213,7 @@ def download_belt_dxf():
             filename = f'{family}-{pitch}-{num_teeth1}T-{num_teeth2}T-belt.dxf'
         else:
             if family not in BELT_FAMILIES:
-                return f'Belt DXF not available for family {family}', 400
+                return _api_error(f'Belt DXF not available for family {family}')
             dxf_bytes = generate_belt_dxf(family, pitch, n_teeth=3)
             filename  = f'{family}-{pitch}-belt-profile.dxf'
 
@@ -2186,7 +2224,7 @@ def download_belt_dxf():
             headers={'Content-Disposition': f'attachment; filename="{filename}"'},
         )
     except Exception as e:
-        return f'Error generating belt DXF: {e}', 400
+        return _api_error(f'Error generating belt DXF: {e}')
 
 
 @app.route('/download/all-dxf')
@@ -2199,7 +2237,7 @@ def download_all_dxf():
         pitch  = request.args.get('pitch',  '5M')
         key    = _resolve_key(family, pitch)
         if key is None or key not in PULLEY_SPECS:
-            return f'Unknown profile {family}/{pitch}', 400
+            return _api_error(f'Unknown profile {family}/{pitch}')
         spec = PULLEY_SPECS[key]
 
         num_teeth1 = max(spec['min_teeth'], int(request.args.get('teeth',    spec['min_teeth'])))
@@ -2258,7 +2296,7 @@ def download_all_dxf():
             headers={'Content-Disposition': f'attachment; filename="{filename}"'},
         )
     except Exception as e:
-        return f'Error generating combined DXF: {e}', 400
+        return _api_error(f'Error generating combined DXF: {e}')
 
 
 @app.route('/api/fp-token', methods=['POST'])
@@ -2558,8 +2596,8 @@ def download_flange_stl():
 
     except Exception as e:
         import traceback
-        return Response(f'Flange STL export failed:\n{traceback.format_exc()}',
-                        status=500, mimetype='text/plain')
+        app.logger.error('Flange STL export failed:\n%s', traceback.format_exc())
+        return _api_error('Flange STL export failed. The error has been logged.', 500)
 
 
 @app.route('/download/flange-step')
@@ -2633,7 +2671,7 @@ def download_flange_step():
         try:
             step_bytes = _run_ss_worker(dict(kw, export_type='flange'))
         except RuntimeError as _e:
-            return f'Flange STEP error: {_e}', 400
+            return _api_error(f'Flange STEP error: {_e}')
 
         suffix   = '-upper-flange' if which == 'top' else '-lower-flange'
         type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
@@ -2646,8 +2684,8 @@ def download_flange_step():
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
         import traceback
-        return Response(f'Flange STEP export failed:\n{traceback.format_exc()}',
-                        status=500, mimetype='text/plain')
+        app.logger.error('Flange STEP export failed:\n%s', traceback.format_exc())
+        return _api_error('Flange STEP export failed. The error has been logged.', 500)
 
 
 @app.route('/download/flange-assembly')
@@ -2698,6 +2736,7 @@ def download_flange_assembly():
             fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
             rim_depth_mm=sp_rim,
             spoke_height_mm=sp_h if sp_en else 0.0,
+            set_screw=_set_screw(args),
         )
 
         import io as _io
@@ -2744,8 +2783,8 @@ def download_flange_assembly():
                         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
     except Exception as e:
         import traceback
-        return Response(f'Assembly STL export failed:\n{traceback.format_exc()}',
-                        status=500, mimetype='text/plain')
+        app.logger.error('Assembly STL export failed:\n%s', traceback.format_exc())
+        return _api_error('Assembly STL export failed. The error has been logged.', 500)
 
 
 # The GitHub issue comes from cct_common.bug_report: description only — no
@@ -2856,7 +2895,8 @@ def api_report_bug():
         return jsonify({'ok': True, 'issue_url': issue_url, 'report_id': report_id})
     except Exception as e:
         import traceback
-        return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
+        app.logger.error('bug report failed:\n%s', traceback.format_exc())
+        return _api_error(str(e), 500)
 
 
 @app.route('/api/bug-report-file/<filename>')
@@ -2890,17 +2930,6 @@ _LMFWC_CONSUMER_SECRET  = os.environ.get('LMFWC_CONSUMER_SECRET', '')
 # cct_common.licensing below. The licence purchase confirmation email
 # template (formerly _send_licence_purchase_email) is now the
 # licence_email_body callable passed to register_licensing_routes().
-
-
-@app.route('/api/admin/test-smtp', methods=['POST'])
-def api_admin_test_smtp():
-    """Test SMTP connectivity — returns ok or the error string."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-    to = (request.get_json(silent=True) or {}).get('to', 'xootme@gmail.com')
-    ok, err = _smtp_send(to, 'CCT SMTP test', 'This is a test email from pulleywebapp.onrender.com')
-    return jsonify({'ok': ok, 'error': err})
 
 
 # Environment variables (set in Render dashboard):
@@ -2955,202 +2984,10 @@ def _load_subscribers():
 # ── Admin dashboard ──────────────────────────────────────────────────────────
 # /admin is cct_common.admin (sign in as an ADMIN_EMAILS account), mounted
 # below once the accounts and bug-report stores exist. The bearer-token
-# /api/admin/* routes that follow served the old admin_dashboard.html and
-# are no longer used by any page — see ToDo.md.
-
-
-# ── Admin dashboard API ───────────────────────────────────────────────────────
-_RENDER_API_KEY    = os.environ.get('RENDER_API_KEY', '')
-_RENDER_SERVICE_ID = os.environ.get('RENDER_SERVICE_ID', 'srv-d7bve2a8qa3s738n68ig')
-
-
-def _admin_auth():
-    """Return a 401 response if the request lacks a valid admin Bearer token."""
-    auth = request.headers.get('Authorization', '')
-    if not _PROVISION_SECRET or auth != f'Bearer {_PROVISION_SECRET}':
-        return jsonify({'error': 'unauthorized'}), 401
-    return None
-
-
-def _read_jsonl_since(path, since_ts):
-    rows = []
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    if obj.get('ts', 0) >= since_ts:
-                        rows.append(obj)
-                except Exception:
-                    pass
-    except FileNotFoundError:
-        pass
-    return rows
-
-
-@app.route('/api/admin/health')
-def api_admin_health():
-    err = _admin_auth()
-    if err:
-        return err
-
-    if _HAVE_PSUTIL:
-        cpu     = psutil.cpu_percent(interval=None)
-        mem     = psutil.virtual_memory()
-        mem_mb  = mem.used // (1024 * 1024)
-        mem_pct = mem.percent
-        try:
-            disk     = psutil.disk_usage(_LOG_DIR)
-            disk_free_mb = disk.free // (1024 * 1024)
-            disk_pct     = disk.percent
-        except Exception:
-            disk_free_mb = disk_pct = 0
-    else:
-        cpu = mem_mb = mem_pct = disk_free_mb = disk_pct = 0
-
-    try:
-        with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
-            dl_count = json.load(f).get('count', 0)
-    except Exception:
-        dl_count = 0
-
-    try:
-        bug_count = len(_cc_parse_bug_reports(_LOG_FILE, _BUG_COMMENTS_FILE, _BUG_ISSUE_URLS_FILE))
-    except Exception:
-        bug_count = 0
-
-    with _subscribers_lock:
-        subs = _load_subscribers()
-    active_subs = sum(1 for s in subs.values() if s.get('active'))
-
-    return jsonify({
-        'version':          APP_VERSION,
-        'build_time':       BUILD_TIME,
-        'ts':               int(time.time()),
-        'cpu_pct':          cpu,
-        'mem_mb':           mem_mb,
-        'mem_pct':          mem_pct,
-        'disk_free_mb':     disk_free_mb,
-        'disk_pct':         disk_pct,
-        'downloads':        dl_count,
-        'bug_reports':      bug_count,
-        'active_subs':      active_subs,
-    })
-
-
-@app.route('/api/admin/metrics')
-def api_admin_metrics():
-    err = _admin_auth()
-    if err:
-        return err
-    hours    = min(int(request.args.get('hours', 24)), 720)
-    since_ts = time.time() - hours * 3600
-    rows     = _read_jsonl_since(_METRICS_FILE, since_ts)
-    return jsonify({'hours': hours, 'count': len(rows), 'data': rows})
-
-
-@app.route('/api/admin/constraints')
-def api_admin_constraints():
-    err = _admin_auth()
-    if err:
-        return err
-    hours    = min(int(request.args.get('hours', 168)), 720)
-    since_ts = time.time() - hours * 3600
-    rows     = _read_jsonl_since(_CONSTRAINTS_FILE, since_ts)
-    return jsonify({'hours': hours, 'count': len(rows), 'events': rows})
-
-
-# Bug-report admin dashboard (list/hash-lookup/delete/comment/github-close/
-# github-sync) is registered via cct_common.bug_report_admin below, once
-# _PROVISION_SECRET is defined — see register_bug_report_admin_routes() call
-# near the bottom of this file. It parses this file's own hand-rolled log
-# format directly (Build:, no Tool: line), so no local parsing code is
-# needed here anymore. The /api/report-bug write-side route stays local
-# (it has error_message/user_comment fields and the desktop-forward-to-
-# production fallback that cct_common.bug_report doesn't support).
-
-
-@app.route('/api/admin/downloads')
-def api_admin_downloads():
-    err = _admin_auth()
-    if err:
-        return err
-    try:
-        with open(_DOWNLOAD_COUNT_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = {'count': 0}
-    return jsonify(data)
-
-
-@app.route('/api/admin/subscribers')
-def api_admin_subscribers():
-    err = _admin_auth()
-    if err:
-        return err
-    with _subscribers_lock:
-        subs = _load_subscribers()
-    return jsonify({'count': len(subs), 'subscribers': subs})
-
-
-@app.route('/api/admin/sales')
-def api_admin_sales():
-    err = _admin_auth()
-    if err:
-        return err
-    with _purchases_lock:
-        try:
-            purchases = json.load(open(_PURCHASES_FILE)) if os.path.exists(_PURCHASES_FILE) else []
-        except Exception:
-            purchases = []
-    completed = [p for p in purchases if p.get('status') == 'Completed']
-    total_revenue = sum(float(p.get('amount', 0) or 0) for p in completed)
-    return jsonify({
-        'total':       len(completed),
-        'revenue':     round(total_revenue, 2),
-        'purchases':   sorted(purchases, key=lambda p: p.get('ts', 0), reverse=True),
-    })
-
-
-@app.route('/api/admin/render/service')
-def api_admin_render_service():
-    err = _admin_auth()
-    if err:
-        return err
-    if not _RENDER_API_KEY:
-        return jsonify({'error': 'RENDER_API_KEY not configured'}), 503
-    try:
-        import requests as _requests
-        r = _requests.get(
-            f'https://api.render.com/v1/services/{_RENDER_SERVICE_ID}',
-            headers={'Authorization': f'Bearer {_RENDER_API_KEY}'},
-            timeout=8,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({'error': str(e)}), 502
-
-
-@app.route('/api/admin/render/deploys')
-def api_admin_render_deploys():
-    err = _admin_auth()
-    if err:
-        return err
-    if not _RENDER_API_KEY:
-        return jsonify({'error': 'RENDER_API_KEY not configured'}), 503
-    try:
-        import requests as _requests
-        r = _requests.get(
-            f'https://api.render.com/v1/services/{_RENDER_SERVICE_ID}/deploys?limit=10',
-            headers={'Authorization': f'Bearer {_RENDER_API_KEY}'},
-            timeout=8,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({'error': str(e)}), 502
+# /api/admin/* routes of the old admin_dashboard.html were retired
+# 2026-09-27 (health, metrics, queue, sales, bug-report admin, …); only
+# /api/admin/licences remains, registered with the desktop licensing
+# routes (cct_common.licensing) until the desktop build is retired.
 
 
 # ── Async Download with Job Queue ───────────────────────────────────────────
@@ -3263,25 +3100,6 @@ def api_download_step_async():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/admin/jobs')
-def api_admin_jobs():
-    """Admin endpoint: view all active and queued jobs for debugging."""
-    snapshot = _cc_get_all_jobs()
-    snapshot['timestamp'] = datetime.now().isoformat()
-    # snapshot['max_concurrent'] is the real configured value (1) — the old
-    # inline version of this route hardcoded 2 here, which never matched
-    # actual enforcement; that display-only inconsistency is now fixed.
-    return jsonify(snapshot)
-
-
-@app.route('/api/admin/queue')
-def api_admin_queue():
-    """Admin endpoint: full session-queue snapshot for the admin dashboard."""
-    snapshot = _cc_get_full_queue_snapshot()
-    snapshot['timestamp'] = datetime.now().isoformat()
-    return jsonify(snapshot)
 
 
 @app.route('/api/download-status/<job_id>')
@@ -3767,6 +3585,7 @@ def api_download_stl():
             rim_depth_mm=sp_rim, spoke_width_mm=sp_w,
             fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
             spoke_height_mm=sp_h,
+            set_screw=_set_screw(params_dict, pfx),
         )
         stl_data = _embed_stl(stl_data, params_dict)
 
@@ -3790,20 +3609,18 @@ def queue_page():
 
 from cct_common.flask_shutdown import register_shutdown_route
 from cct_common.live_reload import register_live_reload
-from cct_common.bug_report_admin import register_bug_report_admin_routes
 from cct_common.flask_caching import (
     register_etag_caching, register_admin_cors, register_download_signal,
 )
 from cct_common.licensing import register_licensing_routes
 register_shutdown_route(app)  # POST /api/shutdown — see cct_common/flask_shutdown.py
 register_live_reload(app)  # /api/_boot_id + /_cct_live_reload.js — see cct_common/live_reload.py
-register_bug_report_admin_routes(app, admin_secret=_PROVISION_SECRET, log_dir=_LOG_DIR)
 # list/hash-lookup/delete/comment/github-close/github-sync — see
 # cct_common/bug_report_admin.py. Parses this repo's own bug_reports.log
 # format (written by the local /api/report-bug route) directly.
 register_etag_caching(app, cacheable_prefixes=_CACHEABLE_PREFIXES,
                       build_time=BUILD_TIME, max_age=_CACHE_MAX_AGE)
-register_admin_cors(app)  # defaults already match: /api/admin/, /api/subscribers/
+register_admin_cors(app, prefixes=('/api/subscribers/',))   # the desktop licence flow
 register_download_signal(app)  # default download_prefix='/download/' already matches
 
 
