@@ -44,6 +44,13 @@ metadata use never requires Flask):
     # subscribers with tokens now / lifetime / last 5 uses, grant or adjust
     # tokens, sales with refunds by the terms, bug reports, status
 
+Screw sizes and the holes 3D-printed parts need for them (no dependencies):
+
+    from cct_common import screws
+    screws.hole("M3", engagement_percent=50)   # self-tapping bore
+    screws.clearance_diameter("M3")            # pass-through, ISO 273
+    screws.nut("M5")                           # hex nut (across flats, height)
+
 Small dependency-free utilities, also imported separately:
 
     from cct_common.text_utils import safe_float, safe_dl_name
@@ -111,4 +118,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"

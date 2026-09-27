@@ -32,10 +32,17 @@ async function main() {
   // Who gets in — plain HTTP, no browser needed.
   const get = (p, c) => fetch(BASE + p, { redirect: 'manual', headers: c ? { Cookie: `cct_session=${c}` } : {} });
   let r = await get('/admin');
-  check('signed out: sent to sign-in', r.status === 302 && /\/account\/login\?next=\/admin/.test(r.headers.get('location')),
+  check('signed out: sent to the sign-in page', r.status === 302 && /\/account\/sign-in\?next=\/admin$/.test(r.headers.get('location')),
+        [r.status, r.headers.get('location')]);
+  r = await get('/account/sign-in?next=/admin');
+  const signIn = await r.text();
+  check('sign-in page: email form (and Google, where configured)', r.status === 200 && signIn.includes('Email me a sign-in link'), r.status);
+  r = await get('/account/login?next=/admin');
+  check('link page without a link: on to the sign-in page', r.status === 302 && /\/account\/sign-in\?next=\/admin$/.test(r.headers.get('location')),
         [r.status, r.headers.get('location')]);
   r = await get('/admin', cookies.plain);
-  check('signed in, not an admin: 404', r.status === 404, r.status);
+  const notAdmin = await r.text();
+  check('signed in, not an admin: told which account', r.status === 403 && notAdmin.includes('plain@example.com') && !notAdmin.includes('CCT Admin'), r.status);
   r = await get('/admin/api/accounts', cookies.plain);
   check('not an admin: API 404 too', r.status === 404, r.status);
   r = await fetch(BASE + '/admin/api/accounts/x/grant', { method: 'POST', body: '{"amount":5,"reason":"x"}',

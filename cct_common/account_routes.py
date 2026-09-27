@@ -12,8 +12,12 @@ cct_common.oauth, registered here when oauth_clients are given.
     account_id = current_account_id()   # inside a request; None if signed out
 
 Routes:
+    GET    /account/sign-in?next=... a sign-in page of its own: Continue with Google /
+                                     Microsoft / GitHub, or email me a link; back to `next`
+    POST   /account/sign-in          {email, next}  email the link
     POST   /api/account/login-link   {email, next?}  email a sign-in link
-    GET    /account/login?token=...  confirmation page (a button, see below)
+    GET    /account/login?token=...  confirmation page (a button, see below); with no
+                                     token, on to /account/sign-in
     POST   /account/login            uses the link, sets the session cookie
     POST   /api/account/logout
     GET    /api/account              email, balance (free / bought), expiry date, buy page,
@@ -150,8 +154,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "<meta name='referrer' content='no-referrer'>"
             f"<title>{html.escape(title)}</title>"
             "<style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;"
-            "padding:0 1rem;line-height:1.5}button{font-size:1rem;padding:.6rem 1.4rem;"
-            "cursor:pointer}</style></head><body>"
+            "padding:0 1rem;line-height:1.5}button,.btn{font-size:1rem;padding:.6rem 1.4rem;"
+            "cursor:pointer}.btn{display:inline-block;border:1px solid #888;border-radius:4px;"
+            "color:inherit;text-decoration:none;min-width:14rem;text-align:center}</style></head><body>"
             f"<h1>{html.escape(title)}</h1>{inner}</body></html>")
         r = Response(doc, status=status, mimetype="text/html")
         r.headers["Cache-Control"] = "no-store"
@@ -191,6 +196,8 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     def login_page():
         token = request.args.get("token", "")
         nxt = _safe_next(request.args.get("next"))
+        if not token:       # not from an emailed link: a button here could never work
+            return redirect(f"/account/sign-in?next={quote(nxt, safe='/')}", code=302)
         return _page(f"Sign in to {app_name}", (
             "<p>Press the button to finish signing in.</p>"
             "<form method='post' action='/account/login'>"
@@ -207,6 +214,52 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                 "Links work once and last 15 minutes.</p>"
                 "<p><a href='/'>Request a new one</a></p>"), status=400)
         return _finish_sign_in(account_id, request.form.get("next"))
+
+    def sign_in_page():
+        """For pages outside the tool (the admin dashboard, a bookmarked
+        link) that need a signed-in visitor; the tool itself signs in from
+        its own dialog."""
+        nxt = _safe_next(request.args.get("next"))
+        acct = current_account_id()
+        if acct:
+            return _page("Signed in", (
+                f"<p>You're signed in as <strong>{html.escape(tokens.account_email(acct) or '')}"
+                "</strong>.</p>"
+                f"<p><a href='{html.escape(nxt, quote=True)}'>Continue</a></p>"
+                "<p><button type='button' onclick=\"fetch('/api/account/logout',{method:'POST'})"
+                ".then(()=>location.reload())\">Sign in with a different account</button></p>"))
+        from .oauth import PROVIDERS
+        buttons = "".join(
+            f"<p><a class='btn' href='/account/oauth/{p}/start?next={html.escape(quote(nxt, safe='/'), quote=True)}'>"
+            f"Continue with {html.escape(PROVIDERS[p]['label'])}</a></p>"
+            for p in app.extensions[_EXT_KEY].get("oauth_providers") or [])
+        return _page(f"Sign in to {app_name}", (
+            buttons + ("<p style='color:#666'>or</p>" if buttons else "")
+            + "<form method='post' action='/account/sign-in'>"
+            f"<input type='hidden' name='next' value='{html.escape(nxt, quote=True)}'>"
+            "<p><input type='email' name='email' placeholder='you@example.com' required "
+            "style='font-size:1rem;padding:.4rem;width:100%'></p>"
+            "<button type='submit'>Email me a sign-in link</button></form>"))
+
+    def sign_in_submit():
+        nxt = _safe_next(request.form.get("next"))
+        try:
+            email = normalize_email(request.form.get("email", ""))
+        except ValueError:
+            return _page(f"Sign in to {app_name}", "<p>Enter a valid email address.</p>", 400)
+        try:
+            token = accounts.create_login_link(email, ip=_client_ip())
+        except RateLimited:
+            return _page(f"Sign in to {app_name}",
+                         "<p>Too many sign-in emails requested. Try again in an hour.</p>", 429)
+        link = f"{request.host_url}account/login?token={token}&next={quote(nxt, safe='/')}"
+        ok, _ = email_sender(email, subject, body_fn(link))
+        if not ok:
+            return _page(f"Sign in to {app_name}",
+                         "<p>Couldn't send the sign-in email. Please try again.</p>", 502)
+        return _page("Check your inbox", (
+            f"<p>We sent a sign-in link to {html.escape(email)}. It works once, within 15 "
+            "minutes, and brings you back here. Check your junk folder if it isn't there.</p>"))
 
     def _finish_sign_in(account_id: str, nxt: Optional[str]):
         """Start a browser session and go on to `nxt` — shared by the email
@@ -486,6 +539,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     app.add_url_rule("/account/device", endpoint="account_device_decide",
                      view_func=device_decide, methods=["POST"])
     app.add_url_rule("/account/device/sign-in", view_func=device_sign_in, methods=["POST"])
+    app.add_url_rule("/account/sign-in", view_func=sign_in_page, methods=["GET"])
+    app.add_url_rule("/account/sign-in", endpoint="account_sign_in_submit",
+                     view_func=sign_in_submit, methods=["POST"])
     app.add_url_rule("/api/account/login-link", view_func=login_link, methods=["POST"])
     app.add_url_rule("/account/login", view_func=login_page, methods=["GET"])
     app.add_url_rule("/account/login", endpoint="account_login_submit",

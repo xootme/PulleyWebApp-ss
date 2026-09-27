@@ -7,9 +7,10 @@ every tool's accounts).
     register_admin(app, accounts, app_name="Timing Pulleys", app_version=APP_VERSION,
                    bug_reports=bug_store, default_app="pulleys")
 
-Sign-in is the normal account sign-in; only accounts whose email is in
-ADMIN_EMAILS (comma-separated; default DEFAULT_ADMINS) get in — anyone else
-sees a 404. Browser sessions only (not add-in / agent device tokens), and
+Sign-in is the normal account sign-in (/account/sign-in); only accounts
+whose email is in ADMIN_EMAILS (comma-separated; default DEFAULT_ADMINS)
+get in. Anyone else gets a 404 from the JSON routes; the page itself tells
+a signed-in non-admin which account they're signed in as (403). Browser sessions only (not add-in / agent device tokens), and
 every change must come from the page's own origin.
 
 Pages (one page, admin_page.html, tabs):
@@ -39,6 +40,7 @@ The provider's own refund notification that follows takes nothing more
 """
 from __future__ import annotations
 
+import html
 import os
 import time
 from pathlib import Path
@@ -62,7 +64,7 @@ def register_admin(app, accounts, *, app_name: str = "CheapCAD Tools", app_versi
     (app.extensions["cct_payments"]) when it has run. `bug_reports` is an
     optional store with list(limit) and delete(id). `default_app` names the
     tool for ledger rows written before the ledger recorded one."""
-    from flask import abort, jsonify, redirect, request, send_file
+    from flask import Response, abort, jsonify, redirect, request, send_file
 
     from .account_routes import current_session
     from .payments import PaymentError
@@ -96,9 +98,22 @@ def register_admin(app, accounts, *, app_name: str = "CheapCAD Tools", app_versi
 
     # ── the page ──
     def admin_page():
-        if not current_session():
-            return redirect("/account/login?next=/admin", code=302)
-        _need_admin()
+        s = current_session()
+        if not s:
+            return redirect("/account/sign-in?next=/admin", code=302)
+        if not _admin():
+            # The page (only) says who you're signed in as, so signing in
+            # with the wrong account isn't a mystery; the JSON stays a 404.
+            email = tokens.account_email(s["account_id"]) or ""
+            r = Response(
+                "<!doctype html><meta charset='utf-8'><title>Not an admin account</title>"
+                "<body style='font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;"
+                "padding:0 1rem;line-height:1.5'><h1>Not an admin account</h1>"
+                f"<p>You're signed in as <strong>{html.escape(email)}</strong>, which isn't an "
+                "admin account.</p><p><a href='/account/sign-in?next=/admin'>Sign in with a "
+                "different account</a></p>", status=403, mimetype="text/html")
+            r.headers["Cache-Control"] = "no-store"
+            return r
         r = send_file(page, mimetype="text/html")
         r.headers["Cache-Control"] = "no-store"
         return r
