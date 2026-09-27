@@ -1864,8 +1864,8 @@ def download_stl():
                 ), file_type='stl')
                 stl = _printed_as_one([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
             else:
-                # Separate top flange: use preview (centered) so nub sockets can
-                # be cut via boolean on the live trimesh mesh before export.
+                # Separate top flange: the preview builder, which can cut nub
+                # sockets on the live trimesh mesh, left uncentred (see centre=).
                 sockets = build_socket_meshes(
                     fp, family, pitch, num_teeth, bore_mm, belt_height,
                     clearance_mm=cl_mm, print_extra_mm=pr_ex,
@@ -1883,6 +1883,7 @@ def download_stl():
                     flange_enabled=_fl_3dp, flange_height_mm=fp.get('flange_height_mm', 1.5),
                     socket_meshes=sockets or None,
                     set_screw=_set_screw(request.args, pfx),
+                    centre=False,   # on the axis, so the bottom flange lines up with it
                 )
                 pulley_mesh = trimesh.load(_io.BytesIO(stl_preview), file_type='stl')
                 z_bottom = float(pulley_mesh.bounds[0][2])

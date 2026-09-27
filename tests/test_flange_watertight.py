@@ -44,7 +44,15 @@ def _load(data):
     dict(flange_top_separate=0, hub_od=26, hub_height=12),
     dict(flange_top_separate=0, hub_flat_depth=1),                 # D-shaft through the flange
     dict(flange_top_separate=0, hub_keyway_w=4, hub_keyway_h=2.6), # key slot through the flange
-], ids=['merged', 'separate-top', 'nubs', 'hub', 'd-shaft', 'keyway'])
+    # an odd number of nub sockets, or a nut pocket, moves the centre of mass
+    # off the axis: the pulley used to be centred on it, putting it off-centre
+    # from its bottom flange (slivers where the bores met; found by fuzzing)
+    {**NUBS, 'flange_nub_count': 3},
+    dict(flange_top_separate=1, hub_od=24, hub_height=8, hub_screw_size='M5', hub_screw_count=1,
+         hub_screw_hold='nut', hub_captured_nut=1, spokes_enabled=1, spokes_hub_od=24,
+         spokes_rim_depth=4, spokes_width=6, spokes_fillet_tip=1, spokes_fillet_base=1.5,
+         spokes_count=5, spokes_height=3),
+], ids=['merged', 'separate-top', 'nubs', 'hub', 'd-shaft', 'keyway', 'three-nubs', 'nut-spokes'])
 def test_3d_print_flanged_pulley_is_one_closed_solid(client, extra):
     r = client.get('/download/stl', query_string={**BASE, **{k: str(v) for k, v in extra.items()}})
     assert r.status_code == 200

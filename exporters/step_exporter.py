@@ -2329,10 +2329,14 @@ def generate_pulley_stl_preview(
     flange_height_mm: float = 0.0,
     socket_meshes: list = None,
     set_screw=None,
+    centre: bool = True,
 ) -> bytes:
     """
     Same as generate_pulley_stl but centres the mesh at the origin so
-    Three.js auto-fits it nicely.
+    Three.js auto-fits it nicely. ``centre=False`` keeps the pulley where it
+    was built (its bore on the Z axis, its bottom at z = 0): the centre of
+    mass isn't on the axis once nub sockets or a nut pocket are cut, so a
+    centred pulley no longer lines up with parts built on the axis.
 
     ``socket_meshes`` — optional list of trimesh cylinders to subtract from the
     pulley body before export (used for flange nub sockets).  Subtraction is
@@ -2361,7 +2365,8 @@ def generate_pulley_stl_preview(
             mesh = trimesh.boolean.difference([mesh, socket_comb], engine='manifold')
         except Exception as _e:
             print(f'[preview] socket subtraction failed: {_e}', flush=True)
-    mesh.apply_translation(-mesh.centroid)
+    if centre:
+        mesh.apply_translation(-mesh.centroid)
     return mesh.export(file_type='stl')
 
 
