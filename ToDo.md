@@ -235,11 +235,58 @@ Both add-ins still force-kill the desktop server instead of calling `POST /api/s
 - [ ] **FreeCAD:** `cct_pulley/commands.py:373` (`taskkill`) and `cct_pulley/server.py:123` (`terminate()`) → same change
 - [ ] Confirm an open browser tab reloads via `/_cct_live_reload.js` across an add-in-triggered update
 
+## Help pictures, spoke fit, print compensation (2026-09-26)
+Done: help pictures + hover pop-ups (ADR-011), "Apply to both pulleys" in Advanced, spoke
+settings fitted with warning + Auto-fit (ADR-010), 3D Print Compensation as a true offset
+(ADR-009). Tests: `test_help_pictures.py`, `test_spoke_fit.py`, `test_print_compensation.py`,
+`tests/browser/help_ui.js`.
+- [ ] **Backlash "Tight" does nothing** — `effective_backlash = max(0.0, backlash)` in
+      `generate_imperial_groove` (and similar clamps) turns every negative backlash into 0, so
+      Tight = Standard on Imperial, T, AT, GT, RPP while the panel says e.g. "Offset: −0.340 mm".
+      Decide the fix, then add Tight back to the Backlash help picture.
+- [ ] Release note: designs with 3D Print Compensation > 0 change shape (ADR-009).
+- [ ] 3D hub lock: with spokes on, the 3D Hub OD field copies the spokes' typed Hub OD, so until
+      Auto-fit is clicked the 3D hub uses the typed value while the spokes use the fitted one.
+- [ ] Point `fuzz_pulley.py` at `geometry/spoke_fit.py`: the geometry must never raise on its output.
+- [ ] `/api/validate-spoke-fillets` is no longer called by the page — remove once nothing else uses it.
+- [ ] Share links don't carry "Apply to both pulleys" (settings values only).
+- [ ] 3D Mode help picture is cropped from old (Ver. 0.1) screenshots — retake from the current app.
+- [x] Hub (3D) pictures: Hub Height/OD, Retention Method, Set Screw Size, Number of Screws
+      (one per method — the hover follows the Retention Method), Flat Depth, Keyway W and
+      Hub Depth (3D preview + STL sections). The pop-up now shows pictures at their own size.
+- [x] **Fixed: standard set-screw holes went through both sides of the hub** in the STL and 3D
+      preview (both trimesh paths in `exporters/step_exporter.py`, `hole_len = 2·R_hub + 2`);
+      now OD → bore only, matching small_step's STEP and the cadquery path. Help text that
+      said "through the full hub diameter" / "through-hole" corrected.
+      Test: `tests/test_hub_setscrew.py` (negative-controlled).
+- [ ] D-Shaft / Keyway "Add Set Screw" options have no pictures of their own yet.
+- [x] Flanges pictures: type (metal vs 3D print), 3D-print shape, metal shape (the Angle /
+      Rim Radius hover follows the 3D Print box), top flange separate, gluing nubs, print
+      supports. Help text corrected: Flange Height is the thickness at the teeth (not the lip);
+      supports are fins inside a tube (not ribs from the pulley OD); downloads section rewritten
+      (no separate metal plate or flange STEP downloads exist).
+- [ ] **"Flange cuts hub" does nothing** — `flange{n}_cuts_hub` is never sent to the server and
+      nothing reads it, but the help says it decides whether the flange trims the hub or the
+      reverse. Wire it up or remove the box (and its help paragraph). No picture until then.
+- [ ] Metal flanges: `/download/flange-stl` always returns both plates (`which='both'`,
+      "-flanges"); fine now that the page never asks it for one plate — check nothing else does.
+- [ ] Several flanged STLs are not watertight (metal assembly, 3D-print merged / separate-top
+      pulley, support assembly — see `tools/help_illustrations/flange/`); overlapping bodies
+      rather than one union, probably. Check whether slicers mind.
+- [x] Spoke Height (3D) picture; help corrected (it is the web's thickness, centred, with pockets
+      above and below — the faces are not left solid).
+- [ ] Help pictures still missing: the Download window. Other help pages still say "3D Features"
+      (the old name for 3D Mode).
+- [ ] **Captured-nut hub STL is not watertight** (HTD 5M 24T, bore 12, hub OD 26 × 12, M5 ×1
+      captured nut — `tools/help_illustrations/hub/screw_nut.stl`); the other four retention
+      methods are. Slicers usually repair it, but find where the nut pocket leaves an open edge.
+
 ## small_step known issues
 Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
 - [ ] FreeCAD rejects complex pulley profiles — small_step emits no SURFACE_CURVE/PCURVE (§5, "open obligation"). Fusion/eDrawings are fine.
 - [ ] Wire-order `EDGE_LOOP` bug on a spoke + metal-flange STD-2M 74T pulley — "NOT YET INVESTIGATED" (2026-07-22 entry)
-- [ ] Self-crossing unfilleted spoke void in the "hub overlap" regime (wide spoke vs hub radius) — "NOT fixed" (2026-07-22 bowtie entry)
+- [ ] Self-crossing unfilleted spoke void in the "hub overlap" regime (wide spoke vs hub radius) — "NOT fixed" (2026-07-22 bowtie entry).
+      Likely avoided now: the spoke fit (ADR-010) rejects self-crossing openings and fits around them — confirm with the repro.
 
 ## Load Testing Dashboard
 `record_benchmarks.py` and the WSL gunicorn concurrency check exist; the simulator does not.

@@ -1320,13 +1320,81 @@ def generate_profile_groove(
     print_extra: float = 0.0,
     backlash: float = 0.0,
 ) -> HTDContainer:
+    """One groove plus its two half-lands, with 3D print compensation applied.
+
+    print_extra is the 3D print compensation in mm: every surface of the tooth
+    outline (lands, tooth tips, groove walls and floor) moves this far into the
+    material, measured perpendicular to the surface. The generators build the
+    nominal groove (their own print_extra handling is bypassed with 0.0) and
+    _offset_groove_outline() applies the offset to the whole outline at once.
+    """
     if profile_family in ('Imperial', 'T', 'AT'):
-        return generate_imperial_groove(profile_key, number_of_teeth, radial_clearance, print_extra, backlash)
-    if profile_family == 'STD':
-        return generate_std_groove(profile_key, number_of_teeth, radial_clearance, print_extra, backlash)
-    if profile_family == 'RPP':
-        return generate_rpp_groove(profile_key, number_of_teeth, radial_clearance, print_extra, backlash)
-    return generate_htd_groove(profile_key, number_of_teeth, radial_clearance, print_extra, backlash)
+        gen = generate_imperial_groove
+    elif profile_family == 'STD':
+        gen = generate_std_groove
+    elif profile_family == 'RPP':
+        gen = generate_rpp_groove
+    else:
+        gen = generate_htd_groove
+    container = gen(profile_key, number_of_teeth, radial_clearance, 0.0, backlash)
+    if print_extra:
+        _offset_groove_outline(container, print_extra)
+    container.print_extra = print_extra
+    return container
+
+
+def _offset_groove_outline(container: HTDContainer, distance: float) -> None:
+    """Move the tooth outline `distance` mm into the material, perpendicular to
+    every surface (an exact offset: straight edges stay parallel, arcs change
+    radius, the groove's inside corners round by `distance`).
+
+    Works in the flat groove frame (x across the groove, y=0 the land, y<0 into
+    the groove): the material below the outline is eroded with a round-join
+    buffer, and the new top edge replaces the container's primitives. The land
+    comes out at y = -distance, which wrap_groove_to_pulley() maps to an outer
+    radius `distance` smaller.
+    """
+    from shapely.geometry import Polygon, box
+    from shapely.geometry.polygon import orient
+
+    pitch = container.pitch
+    pts = []
+    for prim in container.primitives[1:-1]:                  # the groove, without its lands
+        seg = [p.to_tuple() for p in prim.to_points(24)] if isinstance(prim, Arc) \
+            else [prim.p1.to_tuple(), prim.p2.to_tuple()]
+        pts.extend(seg if not pts else seg[1:])
+
+    # The material under the outline, with the lands carried past both
+    # half-pitch lines so the erosion does not eat in from the sides.
+    margin = pitch
+    floor = min(y for _, y in pts) - pitch - abs(distance)
+    material = Polygon([(-pitch / 2 - margin, 0.0), *pts, (pitch / 2 + margin, 0.0),
+                        (pitch / 2 + margin, floor), (-pitch / 2 - margin, floor)])
+    eroded = material.buffer(-distance, join_style='round', quad_segs=16)
+    eroded = eroded.intersection(box(-pitch / 2, floor / 2, pitch / 2, 1.0))
+    if eroded.geom_type != 'Polygon':                          # keep the part under the groove
+        eroded = max(eroded.geoms, key=lambda g: g.area)
+
+    # The top edge: on a counter-clockwise ring it runs from the top-right
+    # corner to the top-left corner; reverse it to go left land → right land.
+    ring = list(orient(eroded, 1.0).exterior.coords)[:-1]
+    def corner(x_side):
+        on_side = [i for i, (x, _) in enumerate(ring) if abs(x - x_side) < 1e-7]
+        return max(on_side, key=lambda i: ring[i][1])
+    i, j = corner(pitch / 2), corner(-pitch / 2)
+    curve = (ring[i:j + 1] if i <= j else ring[i:] + ring[:j + 1])[::-1]
+
+    land_y = -distance
+    inside = [i for i, (_, y) in enumerate(curve) if y < land_y - 1e-9]
+    first, last = max(inside[0] - 1, 0), min(inside[-1] + 1, len(curve) - 1)
+    groove = curve[first:last + 1]
+    groove[0] = (groove[0][0], land_y)
+    groove[-1] = (groove[-1][0], land_y)
+
+    prims = [Line(Point(-pitch / 2, land_y), Point(*groove[0]))]
+    prims += [Line(Point(*a), Point(*b)) for a, b in zip(groove, groove[1:])]
+    prims.append(Line(Point(*groove[-1]), Point(pitch / 2, land_y)))
+    container.primitives = prims
 
 # ==========================================
 # Belt tooth profiles
@@ -2208,11 +2276,15 @@ def wrap_groove_to_pulley(groove_points, spec, num_teeth, print_extra=0.0):
         R_OD_mm  : physical outer radius (mm)
         edge_a   : half-angle (radians) of the OD land arc between adjacent grooves
     """
+    # groove_points already carry the print compensation (the land sits at
+    # y = -print_extra, see _offset_groove_outline), so y is measured from the
+    # nominal OD here and the returned outer radius is print_extra smaller.
     R_pitch   = (spec['pitch'] * num_teeth) / (2.0 * math.pi)
-    R_OD_phys = R_pitch - spec['pitch_line_diff'] - (print_extra / 2.0)
+    R_OD_nom  = R_pitch - spec['pitch_line_diff']
+    R_OD_phys = R_OD_nom - print_extra
     wrapped   = []
     for x, y in groove_points:
-        r = R_OD_phys + y + (print_extra / 2.0)   # radial distance from centre (mm)
+        r = R_OD_nom + y                           # radial distance from centre (mm)
         a = x / R_pitch                             # angular position (rad)
         wrapped.append((r * math.sin(a), r * math.cos(a)))
     wrapped   = _filter_min_spacing(wrapped, 0.002)

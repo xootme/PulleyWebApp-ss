@@ -22,6 +22,12 @@
   /* Spoke diagram */
   .diagram { background: #0f172a; border: 1px solid #334155; border-radius: 4px;
              margin: 10px 0; padding: 4px; }
+
+  /* Setting illustrations (white drawings, click for full size) */
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; display: block; }
+  .caption { font-size: 12px; color: #94a3b8; margin: 0 0 8px; }
 </style>
 </head>
 <body>
@@ -39,45 +45,93 @@ SVG and DXF exports and in the 3D preview.</p>
 <h3>Spoke Count</h3>
 <p>Number of equally spaced radial spokes. Range: 2–24. Even counts (4, 6, 8) are typical for
 symmetry. Higher counts on large pulleys fill more of the web area.</p>
+<a class="figure" href="/static/help/spoke_count.svg" target="_blank" title="Open full size">
+  <img src="/static/help/spoke_count.svg"
+       alt="The same pulley with 4, 6 and 8 spokes: 90°, 60° and 45° apart; the spoke width stays 5 mm"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <h3>Hub OD (mm)</h3>
 <p>Outer diameter of the central hub boss that the spokes attach to at their inner end. This
 sets where the spoke root starts. Must be larger than the bore diameter.</p>
+<a class="figure" href="/static/help/hub_od.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_od.svg"
+       alt="The centre of the pulley zoomed in at Hub OD 14, 20 and 26 mm, with the hub ring shaded and its diameter marked"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 <div class="warn">When spokes are active, Hub OD in the 3D panel is locked to this value — the 3D hub boss matches the spoke hub OD automatically.</div>
 
 <h3>Rim Depth (mm)</h3>
-<p>Radial thickness of the solid outer rim ring, measured inward from the tooth OD. The rim ring
-is the structural band that carries the tooth loads; the spokes attach to its inner face.</p>
+<p>Radial thickness of the solid outer rim ring, measured inward from the bottom of the tooth
+grooves. The rim ring is the structural band that carries the tooth loads; the spokes attach to
+its inner face.</p>
+<a class="figure" href="/static/help/rim_depth.svg" target="_blank" title="Open full size">
+  <img src="/static/help/rim_depth.svg"
+       alt="The top of the rim zoomed in at Rim Depth 2, 4 and 6 mm, each measured from the bottom of the tooth grooves to the rim's inner face"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <h3>Spoke Width (mm)</h3>
-<p>Tangential width of each spoke at its mid-span (halfway between hub boss and rim ring). The actual
-spoke narrows slightly toward the rim tip (where the fillet tip blends in) and widens at the hub base
-(fillet base).</p>
+<p>Width of each spoke, measured across it. The spoke's sides are parallel, so it is this width all
+the way from the hub to the rim; only the fillets flare it wider where it meets the rim (Fillet Tip)
+and the hub (Fillet Base).</p>
+<a class="figure" href="/static/help/spoke_width.svg" target="_blank" title="Open full size">
+  <img src="/static/help/spoke_width.svg"
+       alt="One spoke zoomed in at Spoke Width 3, 5 and 8 mm, with its parallel sides highlighted and the width marked"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <h3>Fillet Tip (mm)</h3>
 <p>Corner radius where the spoke meets the inner face of the rim ring. A larger fillet tip reduces
 stress concentration at the rim junction and improves fatigue life. Set to <code>0</code> for a sharp
 corner.</p>
-<div class="note">If adjacent fillet arcs overlap (spoke count is high and fillet tip is large), the fillet is automatically reduced to prevent geometry errors.</div>
+<div class="note">If adjacent fillet arcs would overlap (spoke count is high and fillet tip is large), the settings no longer fit — see <em>When the settings don't fit</em> below.</div>
 
 <h3>Fillet Base (mm)</h3>
 <p>Corner radius where the spoke meets the outer face of the hub boss. A larger fillet base is
 particularly important for load-bearing spokes — it distributes bending stress over a wider area.</p>
-<div class="warn">Fillet Base and Fillet Tip must leave a straight section of spoke wall between
-them. If Fillet Base is large enough to reach past where Fillet Tip ends, the spoke geometry
-becomes invalid and the export is rejected with an error — reduce one of the two fillet radii,
-or widen the spoke, to fix it.</div>
+<a class="figure" href="/static/help/fillets.svg" target="_blank" title="Open full size">
+  <img src="/static/help/fillets.svg"
+       alt="One spoke zoomed in three times: no fillets, a 3 mm fillet at the rim (Fillet Tip), and a 3 mm fillet at the hub (Fillet Base)"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
+<div class="note">Fillet Base and Fillet Tip must leave a straight section of spoke wall between
+them. If they don't, the spoke settings no longer fit — see <em>When the settings don't fit</em>
+below.</div>
+
+<h3>When the settings don't fit</h3>
+<p>Spoke settings are in millimetres, so settings that suit a large pulley can be impossible on a
+smaller one — after choosing a smaller pitch or fewer teeth, for example: the fillets collide,
+the spokes crowd the rim, or the hub fills the space. When that happens a red warning appears
+under the spoke settings, listing the values that were changed so the spokes fit, such as
+<em>Fillet Base: 3 → 1.25 mm</em>.</p>
+<ul>
+  <li>The preview and every download already use those fitted values, so nothing fails to
+      build. The numbers you typed stay in the fields.</li>
+  <li>Click <strong>Auto-fit</strong> to put the fitted values into the fields. Or change the
+      settings yourself; the warning goes away as soon as they fit.</li>
+  <li>Changes are made in the least disruptive order: first room between hub and rim (Hub OD
+      and Rim Depth shrink together, keeping at least a 1&nbsp;mm rim and a 1&nbsp;mm hub wall),
+      then Fillet Base, Fillet Tip, Spoke Width, and last Spoke Count.</li>
+  <li>If no spokes fit at all — a very small pulley, or a bore that fills it — the warning says
+      so and the spokes are left out. Turn Spokes off, or use a smaller bore or bigger pulley.</li>
+</ul>
 
 <h3>Spoke Height (mm) <em>(3D only)</em></h3>
-<p>Axial height of the spoke web. This controls how far the spokes extend through the pulley body
-in the axial direction.</p>
+<p>Thickness of the spoke web, centred in the pulley's height. The hub and the rim stay full
+height; only the spokes get thinner.</p>
 <ul>
-  <li><strong>0</strong> = full belt height (spokes span the entire axial thickness).</li>
-  <li>A positive value less than belt height creates a recessed pocket above and below the spoke web,
-      leaving solid material on both faces. This is useful when you want a solid pulley face for
-      mounting or gluing a flange.</li>
+  <li><strong>0</strong> = full height (the spokes are as thick as the pulley).</li>
+  <li>A positive value less than the pulley's height leaves a pocket above and below each spoke,
+      each (pulley height − Spoke Height) ÷ 2 deep — lighter, while the rim that carries the
+      teeth and the hub on the shaft keep their full height.</li>
 </ul>
-<div class="note">Spoke Height is only visible when 3D Features is active. The 2D SVG/DXF profile always shows the full spoke cutout regardless of this setting.</div>
+<a class="figure" href="/static/help/spoke_height.svg" target="_blank" title="Open full size">
+  <img src="/static/help/spoke_height.svg"
+       alt="Spoke Height 0, 6 and 3 mm: the 3D preview above a cut along one spoke showing the web and the pockets above and below it"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
+<div class="note">Spoke Height is only visible in 3D Mode. The 2D SVG/DXF profile always shows the full spoke cutout regardless of this setting.</div>
 <div class="note">Partial-height spoke webs (Spoke Height &gt; 0) export to STEP with their fillets intact, and nub sockets are cut and fused into the pocket at any nub depth (no ribbon). This works for both narrow spokes and very wide spokes on a small hub (where the base fillets don't reach the hub) — the recessed web is built as a connected hub collar with radial spokes.</div>
 
 <h3>2D Export Behaviour</h3>
@@ -85,7 +139,15 @@ in the axial direction.</p>
 These can be used directly in laser or waterjet cutting software — the outer tooth profile, the
 bore, and the spoke voids are all separate closed paths on the same drawing.</p>
 <p>Use <strong>Gen. Rim Layer</strong> to download the toothed rim ring as a separate 2D file — this
-is the outer portion of the pulley without the spoke web, suitable for layer-cake stacking methods.</p>
+is the outer portion of the pulley without the spoke web, suitable for layer-cake stacking methods.
+The checkbox is under each pulley's <strong>Download</strong> button, and only appears in 2D mode
+when that pulley's Spokes box is ticked. The rim-layer file also holds a hub washer (the ring
+between Hub OD and the bore) to stack in the middle as a spacer.</p>
+<a class="figure" href="/static/help/rim_layer.svg" target="_blank" title="Open full size">
+  <img src="/static/help/rim_layer.svg"
+       alt="The spoked layer, the rim layer (a toothed ring and a hub washer), and a side view of them stacked"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 <div class="diagram">
   <img src="/static/LayerCakePulley.png" alt="Layer cake pulley example" style="width:100%;display:block;border-radius:3px;"/>
 </div>

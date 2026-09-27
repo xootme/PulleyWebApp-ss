@@ -538,8 +538,11 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
         else:
             z_screw  = hub_z_start + flange_ext_mm + hub_height_mm / 2.0
-            hole_len = R_hub * 2.0 + 2.0
-            hole_cx  = 0.0   # centred — full-diameter for standard set screw
+            # One-sided: from the hub OD in to the bore, not out the far side
+            # (matches small_step's STEP and the cadquery path); +0.5 overshoot
+            # on each end so the bore and hub surface cuts are clean.
+            hole_len = R_hub - R_bore + 1.0
+            hole_cx  = (R_hub + R_bore) / 2.0
 
         for angle in screw_angles:
             # ── Radial screw hole ─────────────────────────────────────────────
@@ -1930,8 +1933,9 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                 pkt_cx   = R_bore
         else:
             z_screw  = hub_z_start + _flange_ext_mesh + hub_height_mm / 2.0
-            hole_len = R_hub * 2.0 + 2.0
-            hole_cx  = 0.0
+            # One-sided: from the hub OD in to the bore (see the first mesh path).
+            hole_len = R_hub - R_bore + 1.0
+            hole_cx  = (R_hub + R_bore) / 2.0
 
         for angle in screw_angles:
             hole = trimesh.creation.cylinder(radius=R_screw, height=hole_len, sections=32)

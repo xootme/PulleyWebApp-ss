@@ -24,6 +24,13 @@
   a     { color: #93c5fd; }
   img   { max-width: 50%; border-radius: 6px; border: 1px solid #334155;
           display: block; margin: 10px auto; }
+
+  /* Setting illustrations (white drawings, click for full size) */
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; max-width: 100%; display: block; margin: 0; border: none;
+                border-radius: 0; }
+  .caption { font-size: 12px; color: #94a3b8; margin: 0 0 8px; }
 </style>
 </head>
 <body>
@@ -34,7 +41,7 @@
 <p>Checkbox in the Hub section header. When checked, a cylindrical boss is built on top of the
 toothed section and included in the 3D preview and all exports (STL, STEP). When unchecked, no
 hub geometry is generated — the pulley is a plain toothed disk with a through-bore.</p>
-<div class="note">The Hub section is only visible when 3D Features is active.</div>
+<div class="note">The Hub section is only visible in 3D Mode.</div>
 
 <h3>Hub OD (mm)</h3>
 <p>Outer diameter of the hub boss. Can be narrower or wider than the pulley OD — no restriction.
@@ -48,12 +55,18 @@ entered OD is too small to provide adequate wall thickness.</p>
 height (Belt Height + Hub Height). For captured nut retention, this value is automatically raised
 if the nut pocket requires more depth than entered — the 3D model uses the adjusted height
 without changing the input field.</p>
+<a class="figure" href="/static/help/hub_size.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_size.svg"
+       alt="The app's 3D preview of a pulley with a hub, and a section through its axis with Hub OD and Hub Height marked"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <h3>Shaft Retention</h3>
 <ul>
   <li><strong>None</strong> — No set screw or shaft feature is added. The bore is a plain through-hole.
       Suitable for a light-duty fit or when you will add your own retention (e.g. shaft collar, adhesive).</li>
-  <li><strong>Set Screw (std.)</strong> — Radial screw hole(s) drilled through the full hub diameter.
+  <li><strong>Set Screw (std.)</strong> — Radial screw hole(s) drilled from the outside of the hub in to
+      the bore (one side only — the screw is tapped into the plastic or used with a heat-set insert).
       <strong>1 screw</strong> = single perpendicular hole.
       <strong>2 screws</strong> = holes placed 90&deg; apart. Select screw size M3–M10.</li>
   <li><strong>Set Screw (captured nut)</strong> — A standard ISO hex nut is dropped into a pocket
@@ -67,6 +80,33 @@ without changing the input field.</p>
   <li><strong>Keyway</strong> — A rectangular slot is cut through the bore to accept a standard parallel
       key (ISO 773 / DIN 6885). See <em>Keyway Retention</em> below.</li>
 </ul>
+<a class="figure" href="/static/help/hub_retention.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_retention.svg"
+       alt="The five retention methods: each hub in 3D above a cut across it at the set-screw height"/>
+</a>
+<p class="caption">Click the picture to open it full size. Top: the 3D preview; bottom: the hub cut
+across at the set-screw height, showing the holes, nut pocket, flat and key slot.</p>
+
+<h3>Set Screw Size and Number of Screws</h3>
+<p><strong>Set Screw Size</strong> sets the hole's diameter (M3 = 3 mm, … M10 = 10 mm); with a
+captured nut the nut pocket grows with it. <strong>Number of Screws</strong>: 1, or 2 — standard
+screws 90&deg; apart, captured nuts 180&deg; apart. Hovering <em>Number of Screws</em> shows the
+picture for the retention method you have selected.</p>
+<a class="figure" href="/static/help/hub_screw_size.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_screw_size.svg"
+       alt="The hub cut across at the screw for M3, M5 and M8, standard screws and captured nuts, with the hole diameter marked"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
+<a class="figure" href="/static/help/hub_screw_count_std.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_screw_count_std.svg"
+       alt="One and two standard set screws, 90 degrees apart"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
+<a class="figure" href="/static/help/hub_screw_count_nut.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_screw_count_nut.svg"
+       alt="One and two captured-nut screws, 180 degrees apart"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <h3>D-Shaft Retention</h3>
 <p>A D-profile shaft has one flat face milled along part of its length. Selecting D-Shaft adds a
@@ -78,9 +118,14 @@ matching flat chord cut in the bore so the pulley cannot rotate on the shaft.</p
       <div class="note">The flat is oriented at 0&deg; (+X direction in the cross-section). Rotate the pulley in your slicer to match a specific orientation.</div>
   </li>
   <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the flat
-      face (at 0&deg;). Choose <strong>Standard</strong> for a through-hole, or
-      <strong>Captured nut</strong> for a top-pocket nut.</li>
+      face (at 0&deg;). Choose <strong>Standard</strong> for a hole from the outside of the hub in to
+      the flat, or <strong>Captured nut</strong> for a top-pocket nut.</li>
 </ul>
+<a class="figure" href="/static/help/hub_flat_depth.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_flat_depth.svg"
+       alt="The bore at flat depths of 0.5, 1 and 2 mm, with the round bore dashed and the depth marked"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <h3>Keyway Retention</h3>
 <p>A rectangular slot cut through the bore that accepts a standard parallel key (ISO 773 / DIN 6885-1).
@@ -96,12 +141,22 @@ rather than friction.</p>
   <li><strong>Default Key Button</strong> — Looks up your bore in the ISO 773 table and fills in Width W
       and Hub Depth. Covers bore diameters 6–170 mm; if between entries, the next-larger standard size is used.</li>
   <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the keyway.
-      <strong>Standard</strong> = through-hole; <strong>Captured nut</strong> = top-opening pocket with the
+      <strong>Standard</strong> = a hole from the outside in to the slot; <strong>Captured nut</strong> = top-opening pocket with the
       nut inner face against the keyway slot outer face.
       <div class="note">A set screw over the keyway prevents axial movement even when the key alone would allow it.</div>
   </li>
   <li><strong>Keyway Orientation</strong> — Always at 0&deg; (+X direction). Rotate in your slicer or CAD tool to match a specific shaft clock position.</li>
 </ul>
+<a class="figure" href="/static/help/hub_keyway_w.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_keyway_w.svg"
+       alt="The bore with keyway widths of 3, 4 and 6 mm, the width marked"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
+<a class="figure" href="/static/help/hub_keyway_h.svg" target="_blank" title="Open full size">
+  <img src="/static/help/hub_keyway_h.svg"
+       alt="The bore with keyway hub depths of 1.5, 2.6 and 4 mm, measured from the round bore (dashed)"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <p>ISO 773 reference table:</p>
 <table>

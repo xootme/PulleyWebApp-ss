@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=32">
+  <link rel="stylesheet" href="/static/style.css?v=37">
 </head>
 <body>
 
@@ -41,7 +41,7 @@
   <!-- 3D Mode: the checkbox is still the control (state, saved settings,
        onFeatureBuildToggle); the panel around it is its label, drawn in
        style.css (.mode3d). -->
-  <label class="mode3d" title="3D Mode — hubs, spokes and flanges; STL and STEP files">
+  <label class="mode3d" data-picture="/static/help/mode3d.svg">
     <input type="checkbox" id="feature_build" onchange="onFeatureBuildToggle()">
     <img class="mode3d-pulley" src="/static/mode3d_pulley.png" alt="" width="30" height="26">
     <span class="mode3d-text">3D MODE</span>
@@ -53,7 +53,7 @@
     <label for="clearance_height" style="margin:0 0 0 8px;white-space:nowrap">Clearance Height (mm)</label>
     <input type="number" id="clearance_height" value="0.5" min="0" max="50" step="0.1" style="width:70px" data-auto-value="0.5" oninput="schedulePreview()">
   </div>
-  <label class="drive-toggle fb-2d">
+  <label class="drive-toggle fb-2d" data-picture="/static/help/two_pulley.svg">
     <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
     <span>Two Pulley Drive</span>
   </label>
@@ -79,7 +79,7 @@
       <button class="ratio-btn" onclick="stepP2Teeth(1)"  title="More teeth on Pulley 2">&#9650;</button>
       <button class="ratio-btn" onclick="stepP2Teeth(-1)" title="Fewer teeth on Pulley 2">&#9660;</button>
     </div>
-    <label class="lock-ratio-label" title="Lock Ratio: changes to either pulley adjust the other to maintain the current ratio">
+    <label class="lock-ratio-label" data-picture="/static/help/lock_ratio.svg">
       <input type="checkbox" id="lock_ratio" checked onchange="saveSettings()">
       Lock Ratio
     </label>
@@ -151,6 +151,9 @@
         <span class="hub-arrow" id="advanced1_arrow">&#9660;</span>
       </div>
       <div id="advanced1_body" style="display:none">
+        <label class="adv-both" title="Keep both pulleys' Advanced settings the same">
+          <input type="checkbox" id="adv_both_1" onchange="onAdvBothToggle(1)"> Apply to both pulleys
+        </label>
         <label for="clearance_preset">Tooth Clearance</label>
         <select id="clearance_preset" onchange="onClearancePreset(1)">
           {% for key, label in clearance_presets.items() %}
@@ -304,7 +307,7 @@
       <div class="hub-body" id="flange1-body" style="display:none;">
 
         <!-- 3D Print toggle -->
-        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;font-weight:600;">
+        <label data-picture="/static/help/flange_type.svg" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;font-weight:600;">
           <input type="checkbox" id="flange1_3dprint" onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
           3D Print
         </label>
@@ -340,14 +343,14 @@
           </div>
           <div class="hub-info">Vertical lip height at outer rim</div>
 
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;margin-bottom:2px;cursor:pointer;">
+          <label data-picture="/static/help/flange_top_separate.svg" style="display:flex;align-items:center;gap:6px;margin-top:6px;margin-bottom:2px;cursor:pointer;">
             <input type="checkbox" id="flange1_top_separate" checked onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
             Top flange as separate part
           </label>
 
           <!-- Gluing nubs (only when top is separate) -->
           <div id="flange1_nub_section">
-            <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
+            <label data-picture="/static/help/flange_nubs.svg" style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
               <input type="checkbox" id="flange1_nubs_enabled" onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
               Add Gluing Nubs
             </label>
@@ -373,7 +376,7 @@
 
           <!-- Print supports (only when top flange is integrated) -->
           <div id="flange1_support_section" style="display:none;">
-            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+            <label data-picture="/static/help/flange_supports.svg" style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
               <input type="checkbox" id="flange1_supports_enabled" onchange="onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
               Add Print Supports
             </label>
@@ -456,7 +459,7 @@
     <section class="card download-card">
       <h2>Download</h2>
       <button class="btn-download" onclick="openDownloadWindow()">⬇ Download</button>
-      <label class="fb-2d" id="rim-layer1-wrap" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
+      <label class="fb-2d" id="rim-layer1-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="rim_layer1_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
         Gen. Rim Layer
       </label>
@@ -537,6 +540,9 @@
         <span class="hub-arrow" id="advanced2_arrow">&#9660;</span>
       </div>
       <div id="advanced2_body" style="display:none">
+        <label class="adv-both" title="Keep both pulleys' Advanced settings the same">
+          <input type="checkbox" id="adv_both_2" onchange="onAdvBothToggle(2)"> Apply to both pulleys
+        </label>
         <label for="p2_clearance_preset">Tooth Clearance</label>
         <select id="p2_clearance_preset" onchange="onClearancePreset(2)">
           {% for key, label in clearance_presets.items() %}
@@ -689,7 +695,7 @@
       </div>
       <div class="hub-body" id="flange2-body" style="display:none;">
 
-        <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;font-weight:600;">
+        <label data-picture="/static/help/flange_type.svg" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;font-weight:600;">
           <input type="checkbox" id="flange2_3dprint" onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
           3D Print
         </label>
@@ -718,12 +724,12 @@
             <input type="number" id="flange2_height" value="1.5" min="0.1" max="20" step="0.1" oninput="onFlangeChange(2)" style="width:70px">
           </div>
           <div class="hub-info">Vertical lip height at outer rim</div>
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;margin-bottom:2px;cursor:pointer;">
+          <label data-picture="/static/help/flange_top_separate.svg" style="display:flex;align-items:center;gap:6px;margin-top:6px;margin-bottom:2px;cursor:pointer;">
             <input type="checkbox" id="flange2_top_separate" checked onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
             Top flange as separate part
           </label>
           <div id="flange2_nub_section">
-            <label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
+            <label data-picture="/static/help/flange_nubs.svg" style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
               <input type="checkbox" id="flange2_nubs_enabled" onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
               Add Gluing Nubs
             </label>
@@ -749,7 +755,7 @@
 
           <!-- Print supports (only when top flange is integrated) -->
           <div id="flange2_support_section" style="display:none;">
-            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
+            <label data-picture="/static/help/flange_supports.svg" style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
               <input type="checkbox" id="flange2_supports_enabled" onchange="onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
               Add Print Supports
             </label>
@@ -830,7 +836,7 @@
     <section class="card download-card">
       <h2>Download</h2>
       <button class="btn-download-p2" onclick="openDownloadWindow()">⬇ Download</button>
-      <label class="fb-2d" id="rim-layer2-wrap" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
+      <label class="fb-2d" id="rim-layer2-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="rim_layer2_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
         Gen. Rim Layer
       </label>
@@ -991,8 +997,6 @@ let previewTimer       = null;
 let ratioSnapTimer     = null;
 let beltCorrectionTimer = null;
 let _lastValidBeltTeeth = null;   // last belt_teeth value that returned a valid center dist
-// Last known non-overlapping spoke state per pulley (keys: width, filletTip, count, rimDepth)
-const _lastValidSpokes = {1: null, 2: null};
 let teethTimer1  = null;
 let teethTimer2  = null;
 let odTimer1     = null;
@@ -1235,6 +1239,7 @@ function saveSettings() {
     p2_backlash_preset:  document.getElementById('p2_backlash_preset').value,
     p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
     p2_print_extra:      document.getElementById('p2_print_extra').value,
+    adv_both:            document.getElementById('adv_both_1').checked,
     feature_build:       document.getElementById('feature_build').checked,
     belt_height:         document.getElementById('belt_height').value,
     clearance_height:    document.getElementById('clearance_height').value,
@@ -1365,6 +1370,7 @@ async function loadSettings() {
   _val('p2_backlash_preset',  s.p2_backlash_preset);
   _val('p2_backlash_custom',  s.p2_backlash_custom);
   _val('p2_print_extra',      s.p2_print_extra);
+  if (s.adv_both !== undefined) { _chk('adv_both_1', s.adv_both); _chk('adv_both_2', s.adv_both); }
   _val('gear_ratio',          s.gear_ratio);
   if (s.lock_ratio !== undefined) _chk('lock_ratio', s.lock_ratio);
 
@@ -1539,10 +1545,8 @@ window.onload = async () => {
     }
   });
   updateBeltBtn();
-  // Initialise spoke overlap state. If current values already overlap (e.g. from
-  // saved settings), still save the state so the user can make changes — the
-  // warning will appear when they interact with the spokes panel.
-  [1, 2].forEach(function(n) { _saveSpokeState(n); });
+  // Check restored spoke settings against the restored pulleys.
+  [1, 2].forEach(n => checkSpokeFit(n));
 };
 
 // ── Dual toggle ───────────────────────────────────────────────────────────────
@@ -2167,6 +2171,8 @@ function setPreviewTab(tab) {
 // ── Preview ───────────────────────────────────────────────────────────────────
 function schedulePreview() {
   _syncNubHeightMax();
+  checkSpokeFit(1);
+  checkSpokeFit(2);
   clearTimeout(previewTimer);
   previewTimer = setTimeout(updatePreview, 300);
   saveSettings();
@@ -3800,116 +3806,93 @@ function _syncSpokeHubLock(n) {
   }
 }
 
-// ── Spoke overlap check ───────────────────────────────────────────────────────
-// Checks the tip (outer) circle only:
-//   (width + 2×fillet_tip) × count > π × (OD − 2×rim_depth)
-//
-// Hub-level overlap is intentionally NOT checked here. When base fillets are
-// large enough, adjacent fillets merge and fill the hub gap — the spoke voids
-// simply don't reach the hub circle. The server's /api/validate-spoke-fillets
-// handles all fillet geometry correctly in that case (line-line fillets).
-// Only the outer (tip) circle is a hard geometric limit for the spoke voids.
-function _spokeOverlapCheck(n) {
-  const odEl     = document.getElementById(n === 2 ? 'p2_od' : 'od');
-  const od       = odEl ? parseFloat(odEl.value) || 0 : 0;
-  const rimDepth = parseFloat(document.getElementById(`spokes${n}_rim_depth`).value)  || 0;
-  const width    = parseFloat(document.getElementById(`spokes${n}_width`).value)      || 0;
-  const tip      = parseFloat(document.getElementById(`spokes${n}_fillet_tip`).value) || 0;
-  const count    = parseInt(document.getElementById(`spokes${n}_count`).value)        || 0;
+// ── Spoke fit ─────────────────────────────────────────────────────────────────
+// Whether a pulley's spoke settings fit it is decided on the server by the real
+// spoke builder (geometry/spoke_fit.py, /api/spoke-fit) — the preview and every
+// download already build with the fitted values. Here we only show it: a warning
+// listing what had to change, with an Auto-fit button that puts those values in
+// the fields. Nothing the user typed is changed without that click.
+const _spokeFitTimer = {1: null, 2: null};
+const _spokeFitSeq   = {1: 0, 2: 0};
 
-  const tipDia  = od - 2 * rimDepth;
-  const tipCirc = Math.PI * tipDia;
-  const total   = (width + 2 * tip) * count;
-
-  if (tipDia > 0 && total > tipCirc) {
-    return {
-      overlapping: true, total, circumference: tipCirc,
-      msg: `⚠ Spokes overlap at tip circle (Ø${tipDia.toFixed(1)} mm): ` +
-           `total ${total.toFixed(1)} mm > circumference ${tipCirc.toFixed(1)} mm — ` +
-           `reduce spoke width, tip fillet, rim depth, or count`,
-    };
-  }
-  return { overlapping: false };
+function _spokeFitQuery(n) {
+  const v  = id => document.getElementById(id).value;
+  const p2 = n === 2 ? 'p2_' : '';
+  return new URLSearchParams({
+    family: v('family'), pitch: v('pitch'),
+    teeth: v(p2 + 'teeth'), bore: v(p2 + 'bore'),
+    clearance_preset: v(p2 + 'clearance_preset'), clearance_custom: v(p2 + 'clearance_custom'),
+    backlash_preset:  v(p2 + 'backlash_preset'),  backlash_custom:  v(p2 + 'backlash_custom'),
+    print_extra: v(p2 + 'print_extra'),
+    spokes_hub_od:      v(`spokes${n}_hub_od`),
+    spokes_rim_depth:   v(`spokes${n}_rim_depth`),
+    spokes_width:       v(`spokes${n}_width`),
+    spokes_fillet_tip:  v(`spokes${n}_fillet_tip`),
+    spokes_fillet_base: v(`spokes${n}_fillet_base`),
+    spokes_count:       v(`spokes${n}_count`),
+  });
 }
 
-// Save the current spoke state as the last known-good state for pulley n.
-function _saveSpokeState(n) {
-  _lastValidSpokes[n] = {
-    width:      document.getElementById(`spokes${n}_width`).value,
-    fillet_tip: document.getElementById(`spokes${n}_fillet_tip`).value,
-    count:      document.getElementById(`spokes${n}_count`).value,
-    rim_depth:  document.getElementById(`spokes${n}_rim_depth`).value,
-  };
+function checkSpokeFit(n) {
+  clearTimeout(_spokeFitTimer[n]);
+  _spokeFitTimer[n] = setTimeout(() => _runSpokeFit(n), 250);
 }
 
-// Show the overlap warning and — if a previous valid state exists — revert the
-// single field that caused the overlap (the one whose value differs from prev).
-function _revertSpokeOverlap(n, check) {
-  const prev = _lastValidSpokes[n];
-  if (prev) {
-    // Find the field that changed and revert only that one
-    const fields = ['width', 'fillet_tip', 'count', 'rim_depth'];
-    for (const f of fields) {
-      const el = document.getElementById(`spokes${n}_${f}`);
-      if (el && el.value !== prev[f]) {
-        el.value = prev[f];
-        break;   // only one field changes per user interaction
-      }
-    }
+async function _runSpokeFit(n) {
+  const warn = document.getElementById(`spokes${n}_overlap_warn`);
+  const on   = document.getElementById(`spokes${n}_enabled`).checked
+            && (n === 1 || document.getElementById('dual_enable').checked);
+  const seq  = ++_spokeFitSeq[n];
+  if (!warn) return;
+  if (!on) { warn.style.display = 'none'; return; }
+  let fit;
+  try {
+    const r = await fetch('/api/spoke-fit?' + _spokeFitQuery(n));
+    fit = await r.json();
+    if (!r.ok) throw new Error(fit.error || r.status);
+  } catch (e) { return; }                     // leave the last message; the preview still works
+  if (seq !== _spokeFitSeq[n]) return;        // a newer check is on its way
+  if (fit.ok) { warn.style.display = 'none'; return; }
+
+  warn.replaceChildren();
+  const head = document.createElement('div');
+  head.className = 'spoke-fit-head';
+  head.textContent = fit.possible
+    ? '⚠ These spoke settings don\'t fit this pulley. The preview and downloads use:'
+    : '⚠ No spokes fit this pulley — the preview and downloads leave them out.';
+  warn.append(head);
+  const list = document.createElement('ul');
+  for (const line of fit.changes) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    list.append(li);
   }
-  // Always show the warning (even if prev was null — lets user know they need to fix it)
-  const warnEl = document.getElementById(`spokes${n}_overlap_warn`);
-  if (warnEl) {
-    warnEl.textContent = check.msg || `⚠ Spokes overlap at ${check.label}`;
-    warnEl.style.display = 'block';
-    warnEl.classList.remove('flash');
-    void warnEl.offsetWidth;
-    warnEl.classList.add('flash');
+  warn.append(list);
+  if (fit.possible) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'spoke-fit-btn';
+    btn.textContent = 'Auto-fit';
+    btn.title = 'Put these values in the spoke settings';
+    btn.onclick = () => applySpokeFit(n, fit.fitted);
+    warn.append(btn);
   }
+  warn.style.display = 'block';
 }
 
-// Re-validate the diameter-dependent spoke geometry after the belt profile / OD
-// changes. Changing teeth / pitch / family changes the pulley OD, which can push a
-// previously-valid spoke layout into tip-circle overlap, or make the hub OD exceed
-// the (now smaller) pulley OD. Surface or clear the 2D warnings here. We do NOT
-// auto-revert a spoke field (unlike onSpokesChange) because the user changed the
-// belt profile, not a spoke parameter — the fix is theirs to make.
-// Called from updateLabels / updateP2Labels, which run after every OD update.
+function applySpokeFit(n, f) {
+  const set = (k, v) => { document.getElementById(`spokes${n}_${k}`).value = v; };
+  set('hub_od', f.hub_od);  set('rim_depth', f.rim_depth);  set('width', f.width);
+  set('fillet_tip', f.fillet_tip);  set('fillet_base', f.fillet_base);  set('count', f.count);
+  onSpokesChange(n);
+}
+
+// Called from updateLabels / updateP2Labels after every OD change (teeth, pitch,
+// family): the same settings may no longer fit.
 function revalidateSpokesForDiameter(n) {
-  const enabledEl = document.getElementById(`spokes${n}_enabled`);
-  if (!enabledEl) return;
-  const spokesOn = enabledEl.checked;
-
-  // Hub OD vs pulley OD / bore.
-  const hubOd    = parseFloat(document.getElementById(`spokes${n}_hub_od`).value) || 0;
-  const bore     = parseFloat(document.getElementById(n === 2 ? 'p2_bore' : 'bore').value) || 0;
-  const odEl     = document.getElementById(n === 2 ? 'p2_od' : 'od');
-  const pulleyOd = odEl ? parseFloat(odEl.value) || 0 : 0;
-  const hubWarn  = document.getElementById(`spokes${n}_hub_warn`);
-  const hubTooLarge  = pulleyOd > 0 && hubOd >= pulleyOd;
-  const boreTooLarge = hubOd > 0 && bore >= hubOd;
-  if (hubWarn) {
-    hubWarn.style.display = (spokesOn && (hubTooLarge || boreTooLarge)) ? 'block' : 'none';
-    hubWarn.textContent = hubTooLarge
-      ? '⚠ Hub OD exceeds pulley OD — spokes ignored in preview'
-      : '⚠ Bore ≥ spoke Hub OD — spokes ignored in preview';
-  }
-
-  // Tip-circle overlap — directly depends on the pulley OD.
-  const overlapWarn = document.getElementById(`spokes${n}_overlap_warn`);
-  if (overlapWarn) {
-    const check = spokesOn ? _spokeOverlapCheck(n) : { overlapping: false };
-    if (check.overlapping) {
-      overlapWarn.textContent = check.msg || '⚠ Spokes overlap at tip circle';
-      overlapWarn.style.display = 'block';
-      overlapWarn.classList.remove('flash');
-      void overlapWarn.offsetWidth;
-      overlapWarn.classList.add('flash');
-    } else {
-      overlapWarn.style.display = 'none';
-      overlapWarn.classList.remove('flash');
-    }
-  }
+  const hubWarn = document.getElementById(`spokes${n}_hub_warn`);
+  if (hubWarn) hubWarn.style.display = 'none';   // the spoke fit covers the hub now
+  checkSpokeFit(n);
 }
 
 function onSpokesChange(n) {
@@ -3918,37 +3901,10 @@ function onSpokesChange(n) {
   const rimWrap   = document.getElementById(`rim-layer${n}-wrap`);
   if (rimWrap) rimWrap.style.display = spokesOn ? 'flex' : 'none';
 
-  // Warn when spoke hub OD >= pulley OD, or bore >= spoke hub OD (geometry impossible)
-  const hubOd   = parseFloat(document.getElementById(`spokes${n}_hub_od`).value) || 0;
-  const boreId  = n === 2 ? 'p2_bore' : 'bore';
-  const bore    = parseFloat(document.getElementById(boreId).value) || 0;
-  const odEl    = document.getElementById(n === 2 ? 'p2_od' : 'od');
-  const pulleyOd = odEl ? parseFloat(odEl.value) || 0 : 0;
-  const warnEl  = document.getElementById(`spokes${n}_hub_warn`);
-  const hubTooLarge = pulleyOd > 0 && hubOd >= pulleyOd;
-  const boreTooLarge = hubOd > 0 && bore >= hubOd;
-  if (warnEl) {
-    warnEl.style.display = (spokesOn && (hubTooLarge || boreTooLarge)) ? 'block' : 'none';
-    warnEl.textContent   = hubTooLarge
-      ? '⚠ Hub OD exceeds pulley OD — spokes ignored in preview'
-      : '⚠ Bore ≥ spoke Hub OD — spokes ignored in preview';
-  }
-
-  // ── Overlap check ─────────────────────────────────────────────────────────
-  if (spokesOn) {
-    const check = _spokeOverlapCheck(n);
-    if (check.overlapping) {
-      _revertSpokeOverlap(n, check);
-      _syncSpokeHubLock(n);
-      schedulePreview();
-      saveSettings();
-      return;   // don't clear the warning or save state
-    }
-    // Valid — save state and clear warning
-    _saveSpokeState(n);
-    const overlapWarn = document.getElementById(`spokes${n}_overlap_warn`);
-    if (overlapWarn) { overlapWarn.style.display = 'none'; overlapWarn.classList.remove('flash'); }
-  }
+  // Whether the settings fit the pulley is the server's call (checkSpokeFit).
+  const hubWarn = document.getElementById(`spokes${n}_hub_warn`);
+  if (hubWarn) hubWarn.style.display = 'none';
+  checkSpokeFit(n);
 
   _syncSpokeHubLock(n);
   _validateBore(n);
@@ -4117,38 +4073,9 @@ async function downloadFlangeAssembly(n) {
                             `${fp.family}${fp.pitch}-${fp.teeth}T-Assembly.stl`);
 }
 
-// Shared fillet re-validation used by both onFilletChange and onSpokesChange.
-// Fetches /api/validate-spoke-fillets and applies corrected values, then calls
-// onSpokesChange(n) — but with _spokeFilletsValidating=true to prevent a loop.
-function _revalidateSpokeFilletsAsync(n, changed) {
-  const params = new URLSearchParams({
-    family:             document.getElementById('family').value,
-    pitch:              document.getElementById('pitch').value,
-    teeth:              document.getElementById(n === 2 ? 'p2_teeth' : 'teeth').value,
-    spokes_hub_od:      document.getElementById(`spokes${n}_hub_od`).value,
-    spokes_rim_depth:   document.getElementById(`spokes${n}_rim_depth`).value,
-    spokes_width:       document.getElementById(`spokes${n}_width`).value,
-    spokes_count:       document.getElementById(`spokes${n}_count`).value,
-    spokes_fillet_tip:  document.getElementById(`spokes${n}_fillet_tip`).value,
-    spokes_fillet_base: document.getElementById(`spokes${n}_fillet_base`).value,
-    changed,
-  });
-  _spokeFilletsValidating = true;
-  fetch('/api/validate-spoke-fillets?' + params)
-    .then(r => r.json())
-    .then(data => {
-      if (data.corrected) {
-        document.getElementById(`spokes${n}_fillet_tip`).value  = data.tip;
-        document.getElementById(`spokes${n}_fillet_base`).value = data.base;
-      }
-      _spokeFilletsValidating = false;
-      onSpokesChange(n);
-    })
-    .catch(() => { _spokeFilletsValidating = false; onSpokesChange(n); });
-}
 
 function onFilletChange(n, changed) {
-  _revalidateSpokeFilletsAsync(n, changed);
+  onSpokesChange(n);
 }
 
 function _triggerDownload(url) {
@@ -4692,6 +4619,154 @@ function updateProgressDisplay(job) {
 
   // Start the idle timer
   resetIdleTimer();
+})();
+</script>
+
+<script>
+// "Apply to both pulleys" (Advanced): while ticked, a change to either
+// pulley's Advanced settings is copied to the other. The two checkboxes are
+// one setting shown in both panels; it only shows in Two Pulley Drive (CSS).
+const ADV_FIELDS = ['clearance_preset', 'clearance_custom', 'backlash_preset',
+                    'backlash_custom', 'print_extra'];
+const _advId = (n, f) => (n === 2 ? 'p2_' : '') + f;
+
+function _copyAdvanced(from) {
+  const to = from === 1 ? 2 : 1;
+  for (const f of ADV_FIELDS)
+    document.getElementById(_advId(to, f)).value = document.getElementById(_advId(from, f)).value;
+  // the other panel's Custom rows and offset readouts follow its new presets
+  for (const kind of ['clearance', 'backlash']) {
+    const custom = document.getElementById(_advId(to, kind + '_preset')).value === 'CUSTOM';
+    document.getElementById(_advId(to, kind + '_custom_row')).classList.toggle('hidden', !custom);
+  }
+  updatePresetInfo(to);
+}
+
+function onAdvBothToggle(n) {
+  const on = document.getElementById('adv_both_' + n).checked;
+  document.getElementById('adv_both_1').checked = on;
+  document.getElementById('adv_both_2').checked = on;
+  if (on) _copyAdvanced(n);          // the pulley you ticked it on is the one copied
+  schedulePreview();                 // also saves the setting
+}
+
+(() => {
+  for (const n of [1, 2]) {
+    for (const f of ADV_FIELDS) {
+      const el = document.getElementById(_advId(n, f));
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+        if (!document.getElementById('adv_both_1').checked) return;
+        _copyAdvanced(n);
+        schedulePreview();
+      });
+    }
+  }
+})();
+</script>
+
+<script>
+// Hovering a setting's label pops up the help picture for that setting.
+// The pictures are the ones on the help pages (static/help/, built by
+// tools/help_illustrations/); the key is the label's input id without the
+// pulley number (spokes1_x -> spokes_x, hub2_x -> hub_x, flange1_x -> flange_x,
+// p2_x -> x), so both pulleys share one table and panels can't collide.
+(() => {
+  const PICTURES = {
+    clearance_preset: '/static/help/clearance.svg',
+    backlash_preset:  '/static/help/backlash.svg',
+    print_extra:      '/static/help/print_comp.svg',
+    bore:             '/static/help/bore.svg',
+    // top bar
+    center_distance:  '/static/help/centre_distance.svg',
+    belt_teeth:       '/static/help/belt_teeth.svg',
+    belt_length:      '/static/help/belt_length.svg',
+    gear_ratio:       '/static/help/gear_ratio.svg',
+    belt_height:      '/static/help/heights.svg',
+    clearance_height: '/static/help/heights.svg',
+    // Spokes panel (spokes1_* / spokes2_*)
+    spokes_count:       '/static/help/spoke_count.svg',
+    spokes_hub_od:      '/static/help/hub_od.svg',
+    spokes_rim_depth:   '/static/help/rim_depth.svg',
+    spokes_width:       '/static/help/spoke_width.svg',
+    spokes_fillet_tip:  '/static/help/fillets.svg',
+    spokes_fillet_base: '/static/help/fillets.svg',
+    spokes_height:      '/static/help/spoke_height.svg',
+    // Hub panel, 3D (hub1_* / hub2_*)
+    hub_height:             '/static/help/hub_size.svg',
+    hub_od:                 '/static/help/hub_size.svg',
+    hub_retention:          '/static/help/hub_retention.svg',
+    hub_screw_size:         '/static/help/hub_screw_size.svg',
+    hub_dshaft_screw_size:  '/static/help/hub_screw_size.svg',
+    hub_keyway_screw_size:  '/static/help/hub_screw_size.svg',
+    // depends on the pulley's Retention Method (standard screws 90°, captured nuts 180°)
+    hub_screw_count: label =>
+      document.getElementById(label.htmlFor.replace('screw_count', 'retention')).value === 'set_screw_nut'
+        ? '/static/help/hub_screw_count_nut.svg' : '/static/help/hub_screw_count_std.svg',
+    hub_flat_depth:         '/static/help/hub_flat_depth.svg',
+    hub_keyway_w:           '/static/help/hub_keyway_w.svg',
+    hub_keyway_h:           '/static/help/hub_keyway_h.svg',
+    // Flanges panel, 3D (flange1_* / flange2_*); shape pictures follow the 3D Print box
+    flange_angle:        label => _flangePic(label, 'flange_shape_3dp', 'flange_shape_metal'),
+    flange_rim_radius:   label => _flangePic(label, 'flange_shape_3dp', 'flange_shape_metal'),
+    flange_height:       '/static/help/flange_shape_3dp.svg',
+    flange_plate_height: '/static/help/flange_shape_metal.svg',
+    flange_bend_radius:  '/static/help/flange_shape_metal.svg',
+    flange_nub_count:           '/static/help/flange_nubs.svg',
+    flange_nub_dia:             '/static/help/flange_nubs.svg',
+    flange_nub_height:          '/static/help/flange_nubs.svg',
+    flange_nub_allowance:       '/static/help/flange_nubs.svg',
+    flange_support_nozzle_dia:  '/static/help/flange_supports.svg',
+    flange_support_max_spacing: '/static/help/flange_supports.svg',
+    flange_support_air_gap:     '/static/help/flange_supports.svg',
+  };
+  function _flangePic(label, printed, metal) {
+    const n = label.htmlFor.match(/^flange(\d)_/)[1];
+    return `/static/help/${document.getElementById(`flange${n}_3dprint`).checked ? printed : metal}.svg`;
+  }
+  const pop = document.createElement('div');
+  pop.className = 'feature-pic';
+  pop.setAttribute('role', 'tooltip');
+  const img = document.createElement('img');
+  img.alt = '';
+  pop.append(img);
+  document.body.append(pop);
+  let timer = null;
+
+  function place(label) {
+    const r = label.getBoundingClientRect();
+    const w = pop.offsetWidth, h = pop.offsetHeight, m = 12;
+    // beside the label, on whichever side has room (pulley 2's panel is on the right)
+    let x = r.right + m;
+    if (x + w > innerWidth - m) x = r.left - w - m;
+    x = Math.max(m, Math.min(x, innerWidth - w - m));
+    let y = r.top + r.height / 2 - h / 2;
+    y = Math.max(m, Math.min(y, innerHeight - h - m));
+    pop.style.left = x + 'px';
+    pop.style.top = y + 'px';
+  }
+  function show(label, pick) {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const src = typeof pick === 'function' ? pick(label) : pick;   // may depend on other settings
+      if (!img.src.endsWith(src)) img.src = src;
+      pop.classList.add('open');
+      if (img.complete) place(label); else img.onload = () => place(label);
+    }, 250);
+  }
+  function hide() {
+    clearTimeout(timer);
+    pop.classList.remove('open');
+  }
+  // A label can also name its picture directly (data-picture), e.g. a label
+  // that wraps its checkbox and so has no for= to look up.
+  for (const label of document.querySelectorAll('label[for], label[data-picture]')) {
+    const src = label.dataset.picture
+             || PICTURES[label.htmlFor.replace(/^p2_/, '').replace(/^(spokes|hub|flange)[12]_/, '$1_')];
+    if (!src) continue;
+    label.classList.add('has-picture');
+    label.addEventListener('mouseenter', () => show(label, src));
+    label.addEventListener('mouseleave', hide);
+  }
 })();
 </script>
 

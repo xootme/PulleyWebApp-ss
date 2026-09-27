@@ -3,6 +3,7 @@ app.py — Timing Pulley Generator web app (Flask)
 Serves the pulley generator UI and returns SVG downloads.
 """
 import hashlib
+import functools
 import math
 import io
 import os
@@ -1522,9 +1523,47 @@ def _parse_hub_params(args, prefix=''):
     return hub_od, hub_height, screw_dia, screw_count, captured_nut, flat_depth, keyway_w, keyway_h
 
 
+@functools.lru_cache(maxsize=256)
+def _groove_bottom_radius(family, pitch, teeth, cl, bl, pe):
+    """Smallest radius of the tooth outline — what the exporters measure Rim Depth from."""
+    from geometry.pulley_geometry import pulley_outline_segments
+    _, _, _, wrapped = pulley_outline_segments(family, pitch, teeth, cl, bl, pe)
+    return min(math.hypot(x, y) for x, y in wrapped)
+
+
+def _spoke_fit(args, prefix=''):
+    """Check a pulley's requested spoke settings against its size (geometry/spoke_fit.py).
+    prefix '' is pulley 1 (or the only pulley), 'p2_' pulley 2."""
+    from geometry.spoke_fit import fit_spokes
+    family = args.get('family', 'HTD')
+    pitch  = args.get('pitch', '5M')
+    key    = _resolve_key(family, pitch)
+    spec   = PULLEY_SPECS[key]
+    teeth  = max(spec['min_teeth'], int(float(args.get(f'{prefix}teeth', spec['min_teeth']))))
+    cl = _get_preset_value(spec, 'clearances', args.get(f'{prefix}clearance_preset', 'STANDARD'),
+                           args.get(f'{prefix}clearance_custom', 0.0))
+    bl = _get_preset_value(spec, 'backlash', args.get(f'{prefix}backlash_preset', 'STANDARD'),
+                           args.get(f'{prefix}backlash_custom', 0.0))
+    pe = float(args.get(f'{prefix}print_extra', 0.0) or 0.0)
+    r_root = _groove_bottom_radius(family, pitch, teeth, float(cl), float(bl), pe)
+    return fit_spokes(
+        r_root, _get_bore(args, f'{prefix}bore'),
+        max(0.0, float(args.get(f'{prefix}spokes_hub_od', 0.0))),
+        max(0.0, float(args.get(f'{prefix}spokes_rim_depth', 2.0))),
+        max(0.0, float(args.get(f'{prefix}spokes_width', 4.0))),
+        max(0.0, float(args.get(f'{prefix}spokes_fillet_tip', 1.0))),
+        max(0.0, float(args.get(f'{prefix}spokes_fillet_base', 1.5))),
+        max(0, int(float(args.get(f'{prefix}spokes_count', 4)))))
+
+
 def _parse_spoke_params(args, prefix=''):
     """Return spoke params tuple from request args.
     Returns (enabled, hub_od, rim_depth, width, fillet_tip, fillet_base, count, height, split).
+
+    Settings that don't fit the pulley are built with their fitted values
+    (geometry/spoke_fit.py), and spokes are left off when none fit — so the
+    preview and every export agree, and none fails on an impossible layout.
+    The page shows what was changed, with an Auto-fit button (/api/spoke-fit).
     """
     enabled    = args.get(f'{prefix}spokes_enabled', '0') == '1'
     hub_od     = max(0.0, float(args.get(f'{prefix}spokes_hub_od',     0.0)))
@@ -1535,7 +1574,33 @@ def _parse_spoke_params(args, prefix=''):
     count      = max(0,   int(float(args.get(f'{prefix}spokes_count',   4))))
     height     = max(0.0, float(args.get(f'{prefix}spokes_height',     0.0) or 0.0))
     split      = args.get(f'{prefix}spokes_split', '0') == '1'
+    if enabled:
+        try:
+            fit = _spoke_fit(args, prefix)
+        except Exception:
+            app.logger.exception('spoke fit failed; building the settings as given')
+            fit = None
+        if fit is not None and not fit.possible:
+            enabled = False
+        elif fit is not None and not fit.ok:
+            f = fit.fitted
+            hub_od, rim_depth, width = f['hub_od'], f['rim_depth'], f['width']
+            fillet_tip, fillet_base, count = f['fillet_tip'], f['fillet_base'], f['count']
     return enabled, hub_od, rim_depth, width, fillet_tip, fillet_base, count, height, split
+
+
+@app.route('/api/spoke-fit')
+def api_spoke_fit():
+    """Do this pulley's spoke settings fit it? Unprefixed pulley params, as the
+    page sends them for one pulley. Returns ok, possible, the fitted settings
+    (what the preview and downloads use) and one line per change."""
+    from geometry.spoke_fit import describe
+    try:
+        fit = _spoke_fit(request.args, '')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'ok': fit.ok, 'possible': fit.possible, 'fitted': fit.fitted,
+                    'changes': describe(fit) if not fit.ok else []})
 
 
 @app.route('/api/preview-stl')

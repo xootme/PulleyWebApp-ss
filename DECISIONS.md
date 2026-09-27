@@ -1,5 +1,106 @@
 # Architectural Decision Records
 
+## ADR-011 — Help pictures built from the app's own drawings, shown on hover
+**Date:** 2026-09-26
+**Status:** Active
+
+**Context:**
+The help pages were text only. Settings like Fillet Tip or Backlash change the part by a
+millimetre or less, which words describe poorly.
+
+**Decision:**
+- Each picture is built from the app's **own SVG downloads** (`/download/svg`, `svg-rim`,
+  `belt-svg`) by a script in `tools/help_illustrations/`, cropped and zoomed with nested
+  `viewBox`es — vector all the way, so zoomed insets stay sharp. Callouts (dimensions, numbers,
+  highlighted arcs) are placed from the drawing's geometry, not by hand, so a script can be
+  rerun when the geometry changes. Output lives in `static/help/*.svg`; each script's
+  docstring gives the exact download URLs of its source drawings.
+- Only two are not from app drawings: 3D Mode (crops of the two sample screenshots) and Belt
+  / Clearance Height (a labelled diagram — the app has no side view).
+- **3D-mode pictures** (Hub so far) pair two things from the app: a snapshot of its own 3D
+  preview (`tools/help_illustrations/shoot3d.js` drives headless Chrome — settings as a JSON
+  list of steps, view snapped, canvas captured at 2×; the builder trims it and embeds it as
+  JPEG) for what the part looks like, and a **vector section of its STL download** (sliced
+  with trimesh's plane intersection + shapely `polygonize`; planes nudged off vertex rows)
+  for exact dimensions. The STLs carry the design metadata after the triangles, so the
+  builders read exactly the declared triangle count.
+- Hover keys drop only the pulley number (`spokes1_x` → `spokes_x`, `hub2_x` → `hub_x`,
+  `p2_x` → `x`), so panels with same-named settings can't collide. A `PICTURES` entry can be a
+  function of the label when the right picture depends on another setting (Number of Screws
+  follows the Retention Method).
+- The pop-up shows each picture at its own size (capped at 1000 px / the window), so pictures
+  are designed to be read at that size: ~650–1000 px wide, body text ≥ 14 px.
+- What the 3D help pages state about the geometry (Spoke Height is the centred web thickness;
+  Flange Height is the thickness at the teeth, the lip thinner by rim × tan(angle); metal
+  plates come in the pulley STL; nub pins are their socket less the allowance) is pinned by
+  `tests/test_help_geometry_claims.py`, measured on STLs built through the app — so the
+  pictures and text can't silently drift from the geometry again.
+- Slicing gotcha (tests and builders): shapely's `polygonize` returns each face with its holes
+  already cut *and* each hole as a face of its own — even-odd only the faces' exteriors, or
+  the holes get filled back in.
+- Horizontal slices of captured-nut hubs are taken at the nut's screw height (hub top − hex
+  circumradius, using the exporter's `_nut_dims`), not mid-hub — a small nut's screw sits
+  near the top.
+- Where the real preset is too small to see, the picture exaggerates it and says so (Backlash).
+- The pictures appear on the help pages (click for full size) and as **hover pop-ups** on the
+  setting's label (`PICTURES` table at the end of `index.html`, keyed by input id without the
+  pulley prefix; labels that wrap their control use `data-picture`).
+- Tests: `tests/test_help_pictures.py` (files exist and are SVGs, every hover key matches a
+  label); `tests/browser/help_ui.js` (pop-ups in the browser).
+
+---
+
+## ADR-010 — Spoke settings are fitted to the pulley, with a warning and Auto-fit
+**Date:** 2026-09-26
+**Status:** Active
+
+**Context:**
+Spoke settings are absolute mm. After a smaller pitch or fewer teeth they could be impossible:
+fillets colliding, spokes crowding the rim, the hub filling the web. Four separate checks
+disagreed (a page-side tip-circle formula that was ~2× tooth height optimistic, a server fillet
+clamp, a geometry error at export time, and the builder silently dropping fillets it couldn't
+fit). Edits were silently reverted or clamped as the user typed, and some exports failed.
+
+**Decision:**
+- One resolver, `geometry/spoke_fit.py`, judges a layout with the **real spoke builder**
+  (`_spoke_void_polygons`, which now reports fillets it had to leave out) — "fits" means "the
+  exporters can build it".
+- When the requested settings don't fit, it finds the smallest change: first room between
+  hub and rim (Hub OD and Rim Depth shrink together, keeping ≥ 1 mm rim and ≥ 1 mm hub wall),
+  then one setting alone if that is enough, otherwise Fillet Base → Fillet Tip → Spoke Width →
+  Spoke Count; fillets are then grown back. If nothing fits, spokes are left out.
+- `_parse_spoke_params` builds with the fitted values, so the preview and every export agree
+  and none fails. The typed values are **never** changed without the user: the page shows a
+  warning listing the changes with an **Auto-fit** button (`/api/spoke-fit`).
+- Tests: `tests/test_spoke_fit.py` (incl. a property sweep that every fitted result builds);
+  `tests/browser/help_ui.js` (warning and Auto-fit in the browser).
+
+---
+
+## ADR-009 — 3D Print Compensation is a perpendicular offset of the whole tooth outline
+**Date:** 2026-09-26
+**Status:** Active — changes existing designs that use compensation
+
+**Context:**
+Each groove generator applied `print_extra / 2` in its own way: tooth tips moved p/2, the
+groove floor moved p/2 on HTD but p on the trapezoidal profiles, and walls moved by various
+amounts. Meanwhile flanges, hub/rim features and the dual layout computed the OD as
+`getOuterDiameter(n, pitch, pld + print_extra − clearance)` — a full p per surface.
+
+**Decision:**
+- The value p is the distance **every** surface of the tooth outline (lands, tips, walls,
+  floor) moves into the material, measured perpendicular to the surface. The outer diameter
+  shrinks by 2p, matching the other OD calculations.
+- `generate_profile_groove` builds the nominal groove (the generators are called with 0) and
+  `_offset_groove_outline` erodes the material under the whole outline by p with a round-join
+  buffer; `wrap_groove_to_pulley` then measures from the nominal OD. One place, all formats.
+- The offset is exact in the flat groove frame; wrapping adds a tiny distortion.
+- With p = 0 the output is byte-identical to before. With p > 0, designs change: tips move
+  twice as far as they used to.
+- Tests: `tests/test_print_compensation.py`.
+
+---
+
 ## ADR-008 — Token model: free app, pay per export
 **Date:** 2026-09-24
 **Status:** Active (being implemented; supersedes ADR-005 once live)

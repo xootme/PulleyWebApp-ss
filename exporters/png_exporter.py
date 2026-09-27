@@ -196,11 +196,16 @@ def _check_spoke_fillet_order(i, use_hub_base, ll_base, tip_l, tip_r, base_l, ba
 
 
 def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
-                         fillet_tip_mm=0.0, fillet_base_mm=0.0, n_arc=16):
+                         fillet_tip_mm=0.0, fillet_base_mm=0.0, n_arc=16, report=None):
     """
     Return one point-list polygon per gap between spokes.
     Tip fillets tangent to spoke wall + inner rim (2 per void).
     Base fillets tangent to spoke wall + hub circle, or spoke-to-spoke if overlapping.
+
+    A requested fillet that doesn't fit its corner is left out (a sharp
+    corner). Pass a dict as `report` to learn about it: 'tip_dropped' /
+    'base_dropped' are set True — geometry/spoke_fit.py uses this so a fillet
+    silently drawn as 0 doesn't count as fitting.
     """
     if spoke_count <= 0 or spoke_width_mm <= 0.0 or R_rim_inner <= R_hub + 0.5:
         return []
@@ -292,6 +297,13 @@ def _spoke_void_polygons(R_hub, R_rim_inner, spoke_count, spoke_width_mm,
                                              True, in_rx, in_ry, prefer_high_t=False)
         else:
             base_l = base_r = None
+
+        if report is not None:
+            if fillet_tip_mm > 0.0 and (tip_l is None or tip_r is None):
+                report['tip_dropped'] = True
+            if fillet_base_mm > 0.0 and use_hub_base and not hub_overlap \
+                    and (base_l is None or base_r is None):
+                report['base_dropped'] = True
 
         _check_spoke_fillet_order(i, use_hub_base, ll_base, tip_l, tip_r, base_l, base_r,
                                    lb_x, lb_y, l_dx, l_dy, rb_x, rb_y, r_dx, r_dy)

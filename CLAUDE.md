@@ -28,6 +28,16 @@ Never `git push` unless the user explicitly says "deploy".
 - `static/style.css` — all styles; bump `?v=N` on the CSS link in index.html when changing
 - `geometry/pulley_geometry.py` — 2D profile math shared by SVG, DXF, STL, and STEP
 - `static/*_help.html` — split help files: one 2D and one 3D per panel
+- `static/help/*.svg` — help pictures, built by `tools/help_illustrations/build_*.py` from the
+  app's own SVG downloads (each script's docstring lists its source URLs; the sources need a
+  running local server to refetch). 3D pictures also use `shoot3d.js` (a snapshot of the app's
+  3D preview) and slice the app's STL. Also shown as hover pop-ups — `PICTURES` table at the
+  end of `index.html` (ADR-011)
+- `geometry/spoke_fit.py` — decides whether spoke settings fit the pulley and what to build
+  instead; used by `_parse_spoke_params` and `/api/spoke-fit` (ADR-010). Don't add spoke
+  checks in the page — ask the server
+- `tests/browser/*.js` — Chrome/CDP harnesses run by hand against a running app
+  (`node tests/browser/help_ui.js http://127.0.0.1:<port>`); see each file's header
 - `web_provisioning.md` — deploy checklist and local release build procedure
 - `DECISIONS.md` — architectural decision log
 

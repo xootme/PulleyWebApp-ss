@@ -63,3 +63,6 @@ flask_output.txt
 # ── Packaging ─────────────────────────────────────────────────────────────────
 releases/           # built .zip release artefacts
 licences/           # per-customer licence.lic files
+
+# ── Help-picture STL sources: the app's own downloads, 15 MB; each build script's docstring gives the URLs ─
+tools/help_illustrations/**/*.stl

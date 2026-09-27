@@ -16,11 +16,28 @@
           border-radius: 3px; margin: 8px 0; font-size: 13px; }
   code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
           color: #a5f3fc; }
+
+  /* Setting illustrations (white drawings, click for full size) */
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; display: block; }
+  .caption { font-size: 12px; color: #94a3b8; margin: 0 0 8px; }
 </style>
 </head>
 <body>
 
 <h2>&#9881; Advanced — 2D Settings</h2>
+
+<h3>Apply to both pulleys</h3>
+<p>Shown when <strong>Two Pulley Drive</strong> is on. Tick it to keep both pulleys' Advanced
+settings the same: while it is ticked, changing Tooth Clearance, Backlash (including their
+Custom values) or 3D Print Compensation on either pulley changes the other pulley to match.</p>
+<ul>
+  <li>Ticking it copies the settings of the pulley you ticked it on to the other pulley.</li>
+  <li>The box is the same setting in both pulleys' Advanced sections — tick or untick it in
+      either one.</li>
+  <li>Untick it to give each pulley its own settings again; both keep their current values.</li>
+</ul>
 
 <h3>Tooth Clearance</h3>
 <p>Radial gap between the belt tooth tip and the groove bottom.</p>
@@ -30,6 +47,11 @@
   <li><strong>Loose</strong> — groove deepened by 5% of the tooth height; Loosening is useful for dirty environments, but can increase backlash.</li>
   <li><strong>Custom</strong> — enter any mm value directly.</li>
 </ul>
+<a class="figure" href="/static/help/clearance.svg" target="_blank" title="Open full size">
+  <img src="/static/help/clearance.svg"
+       alt="One tooth groove zoomed in: Tight raises the groove bottom, Loose deepens it, compared with Standard"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 <h3>Backlash</h3>
 <p>Tangential play between the belt tooth and groove walls.</p>
@@ -39,15 +61,28 @@
   <li><strong>Loose</strong> — groove widened 5% the mid tooth width, so that the tooth fits more easily into the groove. Loosening is commonly used for high-speed belt applications.</li>
   <li><strong>Custom</strong> — exact mm offset applied per side.</li>
 </ul>
+<a class="figure" href="/static/help/backlash.svg" target="_blank" title="Open full size">
+  <img src="/static/help/backlash.svg"
+       alt="One tooth groove zoomed in: Loose moves both groove walls outward, compared with Standard, with a closer view of one wall"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 <div class="note">Too little clearance / backlash makes the belt hard to seat and increases wear.</div>
 
 <h3>3D Print Compensation (mm)</h3>
-<p>Shrinks the groove profile inward to compensate for FDM dimensional bloat — printed walls tend
-to be slightly thicker than designed, which tightens belt grooves.</p>
+<p>Moves the whole tooth outline into the material to compensate for FDM dimensional bloat —
+printed walls tend to be slightly thicker than designed, which tightens belt grooves. Every
+surface of the teeth and grooves moves this distance, measured square to the surface: the tooth
+tips come in, and the groove walls and bottom move out, so the printed part comes out at its
+nominal size. The outer diameter gets smaller by twice the value.</p>
 <ul>
   <li>Typical FDM value: <code>0.1–0.2 mm</code></li>
   <li>Set to <code>0</code> for CNC machining or resin printing.</li>
 </ul>
+<a class="figure" href="/static/help/print_comp.svg" target="_blank" title="Open full size">
+  <img src="/static/help/print_comp.svg"
+       alt="One tooth groove zoomed in: with 0.2 mm compensation the tooth tips are lower and the groove deeper and wider than the part as designed"/>
+</a>
+<p class="caption">Click the picture to open it full size.</p>
 
 </body>
 </html>
