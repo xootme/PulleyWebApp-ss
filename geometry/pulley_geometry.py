@@ -1114,11 +1114,18 @@ def generate_imperial_groove(
     else:
         raise ValueError(f"Profile '{profile_name}' has neither 'Sr' nor 'land_width' — cannot generate groove.")
 
-    effective_backlash = max(0.0, backlash)
+    # Backlash widens (positive) or narrows (negative: the TIGHT presets) the
+    # groove by backlash/2 per side. Wider only as far as the tooth land
+    # allows; narrower only while the groove floor keeps some width, or the
+    # flanks would cross. (Negative values used to be clamped to 0, so Tight
+    # did nothing on Imperial, T and AT.)
+    effective_backlash = backlash
     if profile_pts:
         profile_w = profile_pts[-1][0] - profile_pts[0][0]
         max_backlash = max(0.0, pitch - profile_w - 0.01)
-        effective_backlash = min(effective_backlash, max_backlash)
+        floor_half = min(abs(x) for x, _ in profile_pts if abs(x) > 1e-9)
+        min_backlash = -2.0 * max(0.0, floor_half - 0.005)
+        effective_backlash = min(max(backlash, min_backlash), max_backlash)
 
     shifted_pts: List[Tuple[float, float]] = []
     bs = effective_backlash / 2.0

@@ -13,9 +13,11 @@ The sources adv_<name>.svg come from a local server:
   cl_tight  pe=0    cl=TIGHT    bl=STANDARD
   cl_loose  pe=0    cl=LOOSE    bl=STANDARD
   bl_ex     pe=0    cl=STANDARD bl=CUSTOM backlash_custom=1.0 (exaggerated)
+  bl_tight  pe=0    cl=STANDARD bl=TIGHT
+  bl_loose  pe=0    cl=STANDARD bl=LOOSE
   pe02      pe=0.2  cl=STANDARD bl=STANDARD
-(bl_tight is fetched too but not drawn: the geometry clamps negative backlash
-to 0, so Tight currently gives the Standard groove.)
+They are fetched fresh through the app's test client on every run
+(fetch_sources), so the pictures always show the current geometry.
 pe02 is drawn with the perpendicular offset of the whole outline (generate_profile_groove).
 Output: static/help/clearance.svg, backlash.svg, print_comp.svg
 (shown in static/2d_advanced_help.html).
@@ -37,6 +39,28 @@ LOC = 150                                 # px, locator view size
 R_CROP = 32.0
 GAP = 30
 TOP = 50
+
+
+SOURCES = {
+    "std": {}, "cl_tight": {"clearance_preset": "TIGHT"}, "cl_loose": {"clearance_preset": "LOOSE"},
+    "bl_ex": {"backlash_preset": "CUSTOM", "backlash_custom": "1.0"},
+    "bl_tight": {"backlash_preset": "TIGHT"}, "bl_loose": {"backlash_preset": "LOOSE"},
+    "pe02": {"print_extra": "0.2"},
+}
+
+
+def fetch_sources():
+    """(Re)write adv_<name>.svg from the app's own /download/svg (test client)."""
+    import sys
+    sys.path.insert(0, str(HERE.parent.parent))
+    from app import app
+    c = app.test_client()
+    base = {"family": "Imperial", "pitch": "L", "teeth": "20", "bore": "8", "print_extra": "0",
+            "clearance_preset": "STANDARD", "backlash_preset": "STANDARD"}
+    for name, extra in SOURCES.items():
+        r = c.get("/download/svg", query_string={**base, **extra})
+        assert r.status_code == 200, (name, r.status_code)
+        (HERE / f"adv_{name}.svg").write_bytes(r.data)
 
 
 def outline(name):
@@ -173,15 +197,20 @@ def main():
            f"L belt, 20 teeth, where the presets differ most. Mainly the groove bottom moves. {zoom}.",
            "clearance.svg")
 
-    # The real presets are too small to see (Loose on L is 0.10 mm), so this one
-    # is drawn with an exaggerated Custom value and says so.
-    bl_x = outline("bl_ex")
+    # Loose on L is only 0.10 mm — too small to see — so it is drawn with an
+    # exaggerated Custom value and says so. Tight (−0.34 mm on L) is the real preset.
+    bl_x, bl_t = outline("bl_ex"), outline("bl_tight")
+    r_mid = (b_std + t_std) / 2
+    w_std = groove_width(std, r_mid)
+    tight_in = (w_std - groove_width(bl_t, r_mid)) / 2
+    assert tight_in > 0.05, tight_in            # Tight really narrows the groove
     figure("Backlash",
-           [(std, INK, True), (bl_x, CALLOUT, False)],
+           [(std, INK, True), (bl_t, BLUE, False), (bl_x, CALLOUT, False)],
            [(INK, True, "Standard: the ISO groove"),
+            (BLUE, False, f"Tight: each groove wall moves in {tight_in:.2f} mm, to touch the belt tooth"),
             (CALLOUT, False, "More backlash: the groove walls move outward "
                              "(exaggerated: Custom 1.0 mm)")],
-           f"L belt, 20 teeth. Exaggerated: the real Loose preset here is only 0.10 mm. {zoom}.",
+           f"L belt, 20 teeth. Loose is exaggerated: the real Loose preset here is only 0.10 mm. {zoom}.",
            "backlash.svg")
 
     b_pe, t_pe = radii(pe)
@@ -195,4 +224,5 @@ def main():
 
 
 if __name__ == "__main__":
+    fetch_sources()
     main()
