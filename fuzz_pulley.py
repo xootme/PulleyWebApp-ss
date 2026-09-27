@@ -239,6 +239,15 @@ def generate_step_and_stl(cfg: dict, ss_bin: str) -> tuple[int, bytes, int, byte
     return step_resp.status_code, step_resp.data, stl_resp.status_code, stl_resp.data
 
 
+def _fetch(route: str, cfg: dict) -> bytes:
+    from app import app as flask_app
+    with flask_app.test_client() as c:
+        r = c.get(route, query_string={k: str(v) for k, v in cfg.items()})
+    if r.status_code != 200:
+        raise RuntimeError(f"{route} failed (HTTP {r.status_code}): {r.data[:200]!r}")
+    return r.data
+
+
 # ── Geometry checks ─────────────────────────────────────────────────────
 
 def _load_stl(data: bytes) -> "trimesh.Trimesh":
@@ -368,6 +377,14 @@ def run(iterations: int | None, duration: float | None, seed: int | None,
                     metal = cfg.get('flange_enabled') == '1' and cfg.get('flange_3dprint') == '0'
                     stl_problems = [] if (metal or stl_mesh.is_watertight) else \
                         ["stl: not watertight"]   # (a metal-flange STL is three touching parts)
+                    if metal:
+                        # The STL download is the pulley AND its two sheet-metal
+                        # plates; the STEP is the pulley. Compare like with like:
+                        # take the plates (/download/flange-stl) away.
+                        plates = _load_stl(_fetch('/download/flange-stl', cfg))
+                        stl_volume -= plates.volume
+                        if not plates.is_watertight:
+                            stl_problems.append("stl: metal plates not watertight")
 
                     step_path = (occt_tmp_dir / f"{n}.step"
                                 if occt_tmp_dir is not None else None)
