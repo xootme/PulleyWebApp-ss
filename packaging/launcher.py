@@ -57,7 +57,6 @@ _PROVISION_URL    = 'https://cheapcadtools.com'
 _LICENCE_FILE     = os.path.join(_appdata, 'CheapCADTools', 'licence.dat')
 _VERIFY_DAYS      = 7    # call server at most every N days
 _GRACE_DAYS       = 14   # allow offline this long before hard-blocking
-_DEV_BACKDOOR     = 'xoot'  # TODO: remove before public launch
 
 
 def _machine_id():
@@ -115,14 +114,6 @@ def _api_post(path, payload):
 def _activate(key):
     """Send activation request. Returns (ok: bool, message: str)."""
     mid = _machine_id()
-    if key.lower() == _DEV_BACKDOOR:
-        _save_licence({
-            'key':         key,
-            'machine_id':  mid,
-            'valid_until': (_dt.now() + _td(days=90)).isoformat(),
-            'verified_at': _dt.now().isoformat(),
-        })
-        return True, 'Dev backdoor — valid for 90 days.'
     try:
         resp = _api_post('/api/desktop/activate', {
             'licence_key': key,
@@ -157,15 +148,6 @@ def _verify_licence():
     dat = _load_licence()
     if not dat:
         return False, 'no_licence'
-
-    # Dev backdoor — only check local expiry, never hit server
-    if (dat.get('key') or '').lower() == _DEV_BACKDOOR:
-        try:
-            if _dt.fromisoformat(dat['valid_until']) < _dt.now():
-                return False, 'no_licence'
-        except Exception:
-            pass
-        return True, 'ok (dev)'
 
     mid = _machine_id()
     if dat.get('machine_id') != mid:

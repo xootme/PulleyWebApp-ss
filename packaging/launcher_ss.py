@@ -52,7 +52,6 @@ _PROVISION_URL    = 'https://cheapcadtools.com'
 _LICENCE_FILE     = os.path.join(_appdata, 'CheapCADTools', 'licence.dat')
 _VERIFY_DAYS      = 7    # call server at most every N days
 _GRACE_DAYS       = 14   # allow offline this long before hard-blocking
-_DEV_BACKDOOR     = 'xoot'  # TODO: remove before public launch
 _INSTALL_MARKER   = os.path.join(_appdata, 'CheapCADTools', 'PulleyApp', '.installed')
 
 
@@ -104,10 +103,6 @@ def _verify_licence() -> tuple[bool, str]:
     lic = _load_licence()
     mid = _machine_id()
 
-    # Dev backdoor
-    if lic.get('backdoor') == _DEV_BACKDOOR:
-        return True, 'backdoor'
-
     expiry_str = lic.get('expiry', '')
     if not expiry_str:
         return False, 'no_licence'
@@ -129,7 +124,6 @@ def _verify_licence() -> tuple[bool, str]:
         resp = _call_provision('/api/provision', {
             'machine_id': mid,
             'action': 'verify',
-            'backdoor': _DEV_BACKDOOR,
         })
         if resp.get('valid'):
             lic['last_verified'] = _dt.now().isoformat()
@@ -171,7 +165,6 @@ def _show_activation_dialog() -> bool:
                 'machine_id': mid,
                 'licence_key': key,
                 'action': 'activate',
-                'backdoor': _DEV_BACKDOOR,
             })
             if resp.get('valid'):
                 lic = {'expiry': resp.get('expiry', ''), 'machine_id': mid,
