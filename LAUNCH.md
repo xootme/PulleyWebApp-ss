@@ -17,7 +17,7 @@ Written 2026-09-26; update as steps are done.
 | 6 | Cloudflare Worker: route `/account/`, send edge headers, point at Cloud Run | Claude, via API token | **LIVE 2026-09-26** (`site/worker-cloudrun.js` + `EDGE_SECRET` binding); rollback: `site/cf_deploy_worker.py rollback` (token + secret on stdin from Secret Manager) uploads `site/worker-backup-2026-09-26.js` |
 | 7 | Privacy policy + terms | Claude | **published 2026-09-26** (page 3 replaced, /terms/ = page 159, Fusion policy page 53 drafted; originals in `site/backup-2026-09-26/`) |
 | 8 | Neon paid plan (7-day restore) | Owner | **done** (2026-09-26; Launch plan, history window 7 days) |
-| 9 | Admin dashboard reads bug reports from the database | Claude | open (not blocking) |
+| 9 | Admin dashboard reads bug reports from the database | Claude | **done** (2026-09-26, ADR-012): new `/admin` from cct_common 0.17.0 — sign in as `ADMIN_EMAILS` (set on both services); test `pulley-test-00021`, production `pulley-00004` |
 
 ## Owner steps
 
