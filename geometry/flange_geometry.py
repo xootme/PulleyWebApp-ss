@@ -333,31 +333,32 @@ def profile_metal(
     # Going from inner-rim top-left, tracing the outside of the plate all the way
     # around, then back along the inside.
 
-    # 1. Flat top surface: (r_inner, pt) → (r_tooth_OD, pt)
+    # The arc centre is ABOVE the plate, so the smaller (inner) arc is the
+    # plate's upper face and the larger (outer) arc its lower face: the top
+    # flat face (z = pt) runs on into inner_arc, the bottom one (z = 0) into
+    # outer_arc. (They used to be crossed over, which traced the seam at
+    # r_tooth_OD twice — a self-touching outline whose revolved mesh had
+    # edges shared by four faces, so metal-flange STLs weren't watertight.
+    # The region enclosed is the same.)
+
+    # 1. Top face: the flat, then the bend's upper arc (its first point is the
+    #    flat's end), then the straight section's upper edge.
     top_surface = [(r_inner, pt), (r_tooth_OD, pt)]
+    top_surface += [(r, z) for r, z in inner_arc[1:]]
+    top_surface.append((r_straight_end_inner, z_straight_end_inner))
 
-    # 2. Top surface of outer arc (tracing outer_arc from start to end)
-    top_surface += [(r, z) for r, z in outer_arc]
+    # 2. Outer edge (rectangular cut) down to the lower face, then back inward:
+    #    the straight section's lower edge, the bend's lower arc reversed (it
+    #    ends at (r_tooth_OD, 0)), and the flat bottom face.
+    bottom_surface = [(r_straight_end_outer, z_straight_end_outer)]
+    bottom_surface += [(r, z) for r, z in reversed(outer_arc)]
+    bottom_surface.append((r_inner, 0.0))
 
-    # 3. Top surface of straight section
-    top_surface.append((r_straight_end_outer, z_straight_end_outer))
-
-    # 4. Outer edge (rectangular cut): go down by plate_height_mm
-    outer_edge_top    = (r_straight_end_outer, z_straight_end_outer)
-    outer_edge_bottom = (r_straight_end_inner, z_straight_end_inner)
-    # (already added top via step 3; add bottom here)
-
-    # 5. Bottom surface of straight section (tracing back inward)
-    bottom_surface = [outer_edge_bottom]
-
-    # 6. Bottom surface of inner arc (tracing inner_arc end → start, reversed)
-    bottom_surface += [(r, z) for r, z in reversed(inner_arc)]
-
-    # 7. Flat bottom surface: (r_tooth_OD, 0) → (r_inner, 0)
-    bottom_surface += [(r_tooth_OD, 0.0), (r_inner, 0.0)]
-
-    # 8. Inner edge: (r_inner, 0) → (r_inner, pt) — closes back to start
-    # (polygon closes automatically; don't repeat first point)
-
-    polygon = top_surface + bottom_surface
+    # 3. Inner edge: (r_inner, 0) → (r_inner, pt) closes back to the start
+    #    (the polygon closes automatically; don't repeat the first point).
+    # A zero-radius bend collapses an arc to one point: drop repeats.
+    polygon = []
+    for pt_rz in top_surface + bottom_surface:
+        if not polygon or math.dist(pt_rz, polygon[-1]) > 1e-9:
+            polygon.append(pt_rz)
     return polygon
