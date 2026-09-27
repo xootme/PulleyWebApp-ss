@@ -89,6 +89,37 @@ through it, so the flange's bore is exactly the pulley's; 3D-printed flanges
 are also unioned with the pulley into one solid. If STEP flanged pulleys
 show seams or slivers at the bore, this is the equivalent fix.
 
+## 5. Captured nut: the pocket and the bore — REQUIRED (measured 2026-09-27)
+
+Measured on an AT10 24T pulley, bore 12, hub OD 30 × 16, M5 captured nut,
+sliced 1 mm below the hub top along the pocket's axis (+X), in the STL, the
+cadquery STEP and the small_step STEP:
+
+| bore | STL | cadquery STEP | small_step STEP |
+|---|---|---|---|
+| round | pocket opens into the bore | pocket on the bore | **0.4 mm wall** (6.0–6.4) |
+| D-flat 1 mm | pocket on the flat* | pocket on the flat | **no flat in the hub**; 0.4 wall off the round bore |
+| keyway 4 × 1.96 | pocket on the slot face | pocket on the slot face | **no slot in the hub**; 0.4 wall off the round bore |
+
+\* the downloaded STL left a 0.95 mm wall in front of the flat; fixed in the
+app the same day (`_add_hub_and_bore` now handles the D-flat like the
+preview).
+
+What small_step needs, in `crates/ss-pulley/src/lib.rs`:
+- **No wall.** `xi = bore_r + 0.4; // 0.4 mm wall between bore and nut
+  pocket` (≈ line 2937) is a stand-in — there should be no gap. Put the
+  pocket's inner face where the STL puts it: `bore_r − 0.05` for a round
+  bore, `flat_x − 0.05` for a D-flat, `bore_r + keyway_h − 0.05` for a key
+  slot (`_POCKET_OVERLAP`; cadquery uses the face exactly, 0 overlap).
+- **Keep the D-flat / key slot through the hub when there's a captured
+  nut.** Without a nut small_step cuts them through the hub (z 5, 12, 20 all
+  show the flat at 5.00); with one the hub's bore is round.
+- **Key slot depth.** small_step puts the slot face at 7.617 for
+  `--keyway 4 1.96` on a 12 mm bore — the depth measured from the chord at
+  the slot edge (√(6² − 2²) + 1.96). The STL and cadquery put it at 7.96 —
+  bore radius + depth, at the slot's centre (ISO 773 t₂ + r, which the
+  app's Default Key fills in). Match the app.
+
 ## Not STEP-related (nothing to do)
 
 The Threaded screw holes dialog and your-default / design values, hub OD

@@ -546,8 +546,11 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                     pass
 
     # ── Set-screw holes + nut pockets ─────────────────────────────────────────
-    # Keyway: screw at angle=0, nut pocket against keyway slot outer face.
-    if keyway_h_mm > 0.0 and do_screws:
+    # D-shaft: screw at angle=0 (aligned with the flat), nut pocket against the flat.
+    # Keyway:  screw at angle=0, nut pocket against keyway slot outer face.
+    # (Same as _build_pulley_mesh; the D-flat case was missing here, which left
+    # a wall between the flat and the pocket in the downloaded STL.)
+    if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
         screw_angles = [0.0]
 
     if do_screws and body.is_watertight:
@@ -555,7 +558,13 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
             # Screw at centre of the nut (hub_top minus hex circumradius)
             z_screw = hub_top - R_circ        # nut centre in Z
 
-            if keyway_h_mm > 0.0:
+            if flat_depth_mm > 0.0:
+                # Nut pocket inner face sits against the D-flat face
+                flat_x   = R_bore - flat_depth_mm
+                hole_len = eff_r - flat_x + 1.0
+                hole_cx  = (eff_r + flat_x) / 2.0
+                pkt_cx   = flat_x - _POCKET_OVERLAP
+            elif keyway_h_mm > 0.0:
                 # Nut pocket inner face sits against the keyway slot outer face
                 kw_face  = R_bore + keyway_h_mm
                 hole_len = eff_r - kw_face + 1.0

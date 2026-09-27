@@ -148,6 +148,25 @@ def test_captured_nut_stls_are_watertight(client, extra):
     assert _stl(client, **q).is_watertight
 
 
+@pytest.mark.parametrize('extra,face', [
+    ({}, BORE / 2),                                          # round bore
+    ({'hub_flat_depth': 1}, BORE / 2 - 1),                   # D-flat
+    ({'hub_keyway_w': 4, 'hub_keyway_h': 2.6}, BORE / 2 + 2.6),   # key slot
+], ids=['round', 'd-shaft', 'keyway'])
+def test_nut_pocket_sits_on_the_bore_with_no_wall(client, extra, face):
+    """The pocket's inner face is the bore (or the D-flat, or the slot face):
+    no plastic between them. The downloaded STL used to leave a 0.95 mm wall
+    in front of a D-flat (the preview and STEP didn't)."""
+    from shapely.geometry import LineString
+    m = _stl(client, hub_screw_size='M5', hub_screw_count=1, hub_screw_hold='nut',
+             hub_captured_nut=1, **extra)
+    z = float(m.bounds[1][2]) - 1.0                  # through the pocket, above the screw
+    hits = LineString([(0, 0), (40, 0)]).intersection(_material_at(m, z))
+    first = min(g.bounds[0] for g in getattr(hits, 'geoms', [hits]) if g.length > 1e-6)
+    # the first plastic along +X is the pocket's far wall (nut height 4 + 0.5 past the face)
+    assert first == pytest.approx(face + 4.5 - 0.05, abs=0.02), first
+
+
 def test_heat_set_insert_gets_the_hole_entered(client):
     m = _stl(client, hub_screw_size='M4', hub_screw_count=1, hub_screw_hold='insert',
              hub_screw_hole_dia=5.6)
