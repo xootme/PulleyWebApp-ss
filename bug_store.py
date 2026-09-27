@@ -65,6 +65,18 @@ class BugReports(SqliteDB):
         d["state"] = json.loads(d["state"] or "null")
         return d
 
+    def list(self, limit: int = 500) -> list[dict]:
+        """Newest first, for the admin dashboard (cct_common.admin)."""
+        with self._read() as db:
+            rows = db.execute("SELECT * FROM bug_reports ORDER BY created_at DESC LIMIT ?",
+                              (limit,)).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["state"] = json.loads(d["state"] or "null")
+            out.append(d)
+        return out
+
     def delete(self, report_id: str) -> bool:
         """For a deletion request: the design and address go with the row."""
         with self._write() as db:

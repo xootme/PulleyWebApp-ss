@@ -64,6 +64,9 @@ CREDIT_KINDS = frozenset({"signup", "purchase", "referral", "promo", "adjust"})
 FREE_KINDS = frozenset({"signup", "referral", "promo"})
 # Ledger rows that use tokens up. Free tokens are counted as used first.
 _CONSUMING_KINDS = ("spend", "refund", "expire")
+# Refs of the adjusts that take back a refunded payment's tokens:
+# "<provider>-refund:<refund id>" (payments.py).
+PAYMENT_REFUND_REF = "-refund:"
 
 
 BUDGET_WINDOW_S = 24 * 60 * 60     # a device token's daily limit is over a rolling 24 h
@@ -154,13 +157,18 @@ class TokenStore(SqliteDB):
     own; they end only when the account is closed (expire_all)."""
 
     def __init__(self, path: str, *, clock: Callable[[], float] = time.time,
-                 unlock_window_s: int = UNLOCK_WINDOW_S):
+                 unlock_window_s: int = UNLOCK_WINDOW_S, app: Optional[str] = None):
         self._clock = clock
         self.unlock_window_s = unlock_window_s
+        # Which CCT tool this store charges for ("pulleys", "ebox", ...): the
+        # accounts and ledger are shared across tools, so every spend,
+        # download and refund row records it (the admin dashboard shows it).
+        self.app = app
         super().__init__(path, _SCHEMA)
         # Which session (browser or add-in/agent token) made a spend — for
-        # per-token spending and daily limits. Older databases lack it.
-        self._ensure_columns("ledger", {"session_id": "INTEGER"})
+        # per-token spending and daily limits — and which tool. Older
+        # databases lack them; rows from before have NULL.
+        self._ensure_columns("ledger", {"session_id": "INTEGER", "app": "TEXT"})
 
     @staticmethod
     def _balance(db, account_id: str) -> int:
@@ -262,10 +270,13 @@ class TokenStore(SqliteDB):
             (account_id, *sorted(FREE_KINDS))).fetchone()[0]
         # Everything that used tokens up, net of refunds; negative admin
         # adjustments count too (the customer-friendly side: less expires).
+        # A payment refund or chargeback (an adjust ref'd "<provider>-refund:...")
+        # takes back *purchased* tokens, so it doesn't use up free ones.
         used = -db.execute(
             f"SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE account_id = ? "
-            f"AND (kind IN ({','.join('?' * len(_CONSUMING_KINDS))}) OR (kind = 'adjust' AND amount < 0))",
-            (account_id, *_CONSUMING_KINDS)).fetchone()[0]
+            f"AND (kind IN ({','.join('?' * len(_CONSUMING_KINDS))}) OR (kind = 'adjust' AND amount < 0 "
+            f"AND (ref IS NULL OR ref NOT LIKE ?)))",
+            (account_id, *_CONSUMING_KINDS, f"%{PAYMENT_REFUND_REF}%")).fetchone()[0]
         return max(0, min(self._balance(db, account_id), int(given) - int(used)))
 
     def free_remaining(self, account_id: str) -> int:
@@ -354,9 +365,10 @@ class TokenStore(SqliteDB):
                 if bal < q.cost:
                     raise InsufficientTokens(q.cost, bal)
                 spend_id = db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id)
-                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?, ?) RETURNING id""",
-                    (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id)).fetchone()[0]
+                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app)
+                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                    (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id,
+                     self.app)).fetchone()[0]
         try:
             yield q
         except BaseException:
@@ -366,9 +378,9 @@ class TokenStore(SqliteDB):
         if spend_id is None:
             with self._write() as db:
                 db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id)
-                       VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?)""",
-                    (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id))
+                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app)
+                       VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?, ?)""",
+                    (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id, self.app))
 
     def refund(self, spend_id: int, *, detail: Optional[str] = None) -> bool:
         """Reverse one spend: returns its tokens and removes the unlock it
@@ -380,10 +392,11 @@ class TokenStore(SqliteDB):
                 raise KeyError(spend_id)
             try:
                 db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, ref, design_key, tier, fmt, detail, session_id)
-                       VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO ledger (account_id, ts, kind, amount, ref, design_key, tier, fmt, detail, session_id, app)
+                       VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (row["account_id"], self._clock(), -row["amount"], f"spend:{spend_id}",
-                     row["design_key"], row["tier"], row["fmt"], detail, row["session_id"]))
+                     row["design_key"], row["tier"], row["fmt"], detail, row["session_id"],
+                     row["app"]))
             except INTEGRITY_ERRORS:
                 return False
         return True

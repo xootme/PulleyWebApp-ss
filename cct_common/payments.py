@@ -193,6 +193,59 @@ class Payments(SqliteDB):
                        "WHERE order_id = ?", (after, order_id))
         return back
 
+    # ── admin: listing and refunds by the terms (unused purchased tokens, net of fees) ──
+
+    def list_orders(self, limit: int = 500) -> list[dict]:
+        """Orders, newest first, with the buyer's email — for the admin Sales page."""
+        with self._read() as db:
+            rows = db.execute(
+                "SELECT p.*, a.email FROM payments p LEFT JOIN accounts a ON a.id = p.account_id "
+                "ORDER BY p.created_at DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def refund_quote(self, provider: str, order_id: str, fee_cents: int = 0) -> dict:
+        """What refunding this order owes under the terms: its tokens the
+        account still has unused (never more than it has purchased and
+        unspent, nor than the order has left unrefunded), valued at the
+        price paid, less the processor's fee — capped at what's left of the
+        payment. Raises PaymentError for an order that can't be refunded."""
+        order = self.get(provider, order_id)
+        if order is None or order["status"] not in ("completed", "refunded"):
+            raise PaymentError("That order hasn't been paid.")
+        refunded_tokens = round(order["tokens"] * order["refunded_cents"] / order["cents"])
+        unused = self.tokens.purchased_remaining(order["account_id"])
+        tokens = max(0, min(order["tokens"] - refunded_tokens, unused))
+        value = round(tokens * order["cents"] / order["tokens"])
+        amount = max(0, min(value - max(0, int(fee_cents)), order["cents"] - order["refunded_cents"]))
+        return {"provider": provider, "order_id": order_id, "tokens": tokens,
+                "value_cents": value, "fee_cents": max(0, int(fee_cents)),
+                "amount_cents": amount, "unused_purchased": unused}
+
+    def record_admin_refund(self, provider: str, order_id: str, *, refund_id: str,
+                            amount_cents: int, tokens: int, admin: str) -> bool:
+        """Book a refund the admin made through the provider: take back
+        exactly `tokens` and add the money to the order's refunded total.
+        The ledger ref is the one the provider's refund webhook uses
+        ("<provider>-refund:<refund id>"), and the refunded total is what
+        Stripe's webhook compares against, so the notification that follows
+        takes nothing more. False if this refund was already booked."""
+        order = self.get(provider, order_id)
+        if order is None:
+            raise PaymentError("unknown order")
+        if tokens > 0 and not self.tokens.credit(
+                order["account_id"], -int(tokens), kind="adjust",
+                ref=f"{provider}-refund:{refund_id}",
+                detail=f"refund of {provider} {order_id} by {admin}"):
+            return False
+        with self._write() as db:
+            db.execute("UPDATE payments SET status = 'refunded', "
+                       "refunded_cents = MIN(cents, refunded_cents + ?) WHERE order_id = ?"
+                       if not self.is_postgres else
+                       "UPDATE payments SET status = 'refunded', "
+                       "refunded_cents = LEAST(cents, refunded_cents + ?) WHERE order_id = ?",
+                       (int(amount_cents), order_id))
+        return True
+
 
 def _cents(value: str) -> int:
     return round(float(value) * 100)
@@ -264,6 +317,24 @@ class PayPal:
                            headers=self._auth(), data=json.dumps(body), timeout=15)
         return r.status_code == 200 and r.json().get("verification_status") == "SUCCESS"
 
+    def capture_fee(self, capture_id: str) -> Optional[int]:
+        """PayPal's fee on a capture, in cents (None if PayPal doesn't say)."""
+        r = self.http.get(f"{self.cfg.api}/v2/payments/captures/{capture_id}",
+                          headers=self._auth(), timeout=15)
+        if r.status_code >= 400:
+            return None
+        fee = r.json().get("seller_receivable_breakdown", {}).get("paypal_fee", {}).get("value")
+        return _cents(fee) if fee is not None else None
+
+    def refund_capture(self, capture_id: str, cents: int) -> str:
+        """Refund part or all of a capture; returns PayPal's refund id."""
+        body = {"amount": {"currency_code": "USD", "value": f"{cents / 100:.2f}"}}
+        r = self.http.post(f"{self.cfg.api}/v2/payments/captures/{capture_id}/refund",
+                           headers=self._auth(), data=json.dumps(body), timeout=30)
+        if r.status_code >= 400:
+            raise PaymentError(f"PayPal refused the refund ({r.status_code}): {r.text[:300]}")
+        return r.json()["id"]
+
 
 # ── Stripe ────────────────────────────────────────────────────────────────
 
@@ -316,6 +387,25 @@ class Stripe:
         r.raise_for_status()
         return r.json()
 
+    def intent_fee(self, payment_intent: str) -> Optional[int]:
+        """Stripe's fee on a payment, in cents (None if not available yet)."""
+        r = self.http.get(f"{STRIPE_API}/payment_intents/{payment_intent}",
+                          params={"expand[]": "latest_charge.balance_transaction"},
+                          auth=(self.cfg.secret_key, ""), timeout=20)
+        if r.status_code >= 400:
+            return None
+        bt = (r.json().get("latest_charge") or {}).get("balance_transaction") or {}
+        return int(bt["fee"]) if isinstance(bt, dict) and "fee" in bt else None
+
+    def refund(self, payment_intent: str, cents: int) -> str:
+        """Refund part or all of a payment; returns Stripe's refund id."""
+        r = self.http.post(f"{STRIPE_API}/refunds", auth=(self.cfg.secret_key, ""),
+                           data={"payment_intent": payment_intent, "amount": str(int(cents))},
+                           timeout=30)
+        if r.status_code >= 400:
+            raise PaymentError(f"Stripe refused the refund ({r.status_code}): {r.text[:300]}")
+        return r.json()["id"]
+
 
 # ── routes ────────────────────────────────────────────────────────────────
 
@@ -340,6 +430,8 @@ def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
     by_id = {p.id: p for p in packs}
     store = Payments(accounts.tokens, clock=clock)
     tokens = accounts.tokens
+    # For the admin dashboard (admin.py): the orders and the provider clients.
+    app.extensions["cct_payments"] = {"store": store, "paypal": pp, "stripe": st}
 
     def _pack(data) -> Pack:
         pack = by_id.get(str((data or {}).get("pack", "")))

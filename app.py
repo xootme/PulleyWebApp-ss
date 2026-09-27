@@ -2952,11 +2952,11 @@ def _load_subscribers():
 # (backdoor_key == 'xoot') that used to bypass entitlement checks here.
 
 
-# ── Admin dashboard UI ───────────────────────────────────────────────────────
-@app.route('/admin')
-@app.route('/admin/')
-def admin_dashboard():
-    return send_from_directory(_base_dir, 'admin_dashboard.html')
+# ── Admin dashboard ──────────────────────────────────────────────────────────
+# /admin is cct_common.admin (sign in as an ADMIN_EMAILS account), mounted
+# below once the accounts and bug-report stores exist. The bearer-token
+# /api/admin/* routes that follow served the old admin_dashboard.html and
+# are no longer used by any page — see ToDo.md.
 
 
 # ── Admin dashboard API ───────────────────────────────────────────────────────
@@ -3956,6 +3956,11 @@ _shared_jobs = (SharedJobs(os.environ['DATABASE_URL'].strip())
 from bug_store import BugReports
 _bug_store = (BugReports(os.environ['DATABASE_URL'].strip())
               if os.environ.get('DATABASE_URL', '').strip() else None)
+
+if _accounts_state.accounts is not None:
+    from cct_common.admin import register_admin
+    register_admin(app, _accounts_state.accounts, app_name='Timing Pulleys',
+                   app_version=APP_VERSION, bug_reports=_bug_store, default_app='pulleys')
 
 
 def _finish_job(job_id, **kw):

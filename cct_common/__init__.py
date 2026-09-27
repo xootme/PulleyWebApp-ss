@@ -37,6 +37,13 @@ metadata use never requires Flask):
     # look up by short hash, delete, comment, and (given GitHub
     # credentials) close/sync the linked GitHub issue
 
+    from cct_common.admin import register_admin
+    register_admin(app, accounts, app_name="E-Box Designer", app_version="0.1.0",
+                   bug_reports=bug_store, default_app="ebox")
+    # the admin dashboard at /admin (sign in as an ADMIN_EMAILS account):
+    # subscribers with tokens now / lifetime / last 5 uses, grant or adjust
+    # tokens, sales with refunds by the terms, bug reports, status
+
 Small dependency-free utilities, also imported separately:
 
     from cct_common.text_utils import safe_float, safe_dl_name
@@ -104,4 +111,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.16.1"
+__version__ = "0.17.0"

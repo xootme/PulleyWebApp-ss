@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>CCT Admin</title>
+<!-- The CCT admin dashboard (cct_common/admin.py). Served only to signed-in
+     admins; every request goes to this page's own origin with its cookie. -->
+<style>
+  :root { --blue: #0078d4; --ink: #1e293b; --grey: #64748b; --line: #e2e8f0; --bg: #f8fafc;
+          --red: #b91c1c; --green: #15803d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--ink);
+         background: var(--bg); }
+  header { background: var(--blue); color: #fff; padding: 10px 20px; display: flex;
+           align-items: center; gap: 24px; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  nav button { background: none; border: none; color: #dbeafe; font: inherit; font-weight: 600;
+               padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  nav button.on { background: rgba(255,255,255,.18); color: #fff; }
+  #who { margin-left: auto; font-size: 12px; opacity: .85; }
+  main { padding: 16px 20px 40px; }
+  .bar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .bar input { padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 4px; width: 280px; font: inherit; }
+  .bar .count { color: var(--grey); font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; border: 1px solid var(--line); }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-size: 12px; text-transform: uppercase; letter-spacing: .3px;
+       color: #334155; cursor: pointer; user-select: none; white-space: nowrap; }
+  th.nosort { cursor: default; }
+  th .arrow { color: var(--blue); margin-left: 4px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sub { color: var(--grey); font-size: 12px; }
+  .uses { margin: 0; padding: 0; list-style: none; font-size: 12px; }
+  .uses li { white-space: nowrap; }
+  .uses .app { font-weight: 600; }
+  button.act { font: inherit; font-size: 12px; padding: 3px 9px; border: 1px solid #cbd5e1;
+               background: #fff; border-radius: 4px; cursor: pointer; margin: 0 4px 3px 0; }
+  button.act:hover { border-color: var(--blue); color: var(--blue); }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+  .tab { display: none; } .tab.on { display: block; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: #e2e8f0; }
+  .pill.completed { background: #dcfce7; color: var(--green); }
+  .pill.refunded { background: #fee2e2; color: var(--red); }
+  .empty { padding: 24px; text-align: center; color: var(--grey); background: #fff; border: 1px solid var(--line); }
+  dialog { border: none; border-radius: 8px; padding: 20px 22px; width: 420px;
+           box-shadow: 0 12px 40px rgba(15,23,42,.3); }
+  dialog h2 { margin: 0 0 12px; font-size: 17px; }
+  dialog label { display: block; margin: 10px 0 3px; font-weight: 600; font-size: 13px; }
+  dialog input { width: 100%; padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 4px; font: inherit; }
+  dialog .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  dialog .buttons button { font: inherit; padding: 6px 14px; border-radius: 4px; cursor: pointer;
+                           border: 1px solid #cbd5e1; background: #fff; }
+  dialog .buttons button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  dialog .buttons button.primary.danger { background: var(--red); border-color: var(--red); }
+  .msg { margin-top: 10px; font-size: 13px; }
+  .msg.err { color: var(--red); } .msg.ok { color: var(--green); }
+  .status { background: #fff; border: 1px solid var(--line); padding: 14px 18px; max-width: 640px; }
+  .status .row { display: flex; gap: 16px; padding: 4px 0; }
+  .status .row b { width: 170px; flex: none; color: #334155; }
+  pre.state { max-height: 160px; overflow: auto; font-size: 11px; background: #f8fafc; margin: 4px 0 0;
+              padding: 6px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">CCT Admin</h1>
+  <nav>
+    <button data-tab="subs" class="on">Subscribers</button>
+    <button data-tab="sales">Sales</button>
+    <button data-tab="bugs">Bug reports</button>
+    <button data-tab="status">Status</button>
+  </nav>
+  <span id="who"></span>
+</header>
+
+<main>
+  <section class="tab on" id="tab-subs">
+    <div class="bar"><input id="subs-q" placeholder="Search email…"><span class="count" id="subs-count"></span></div>
+    <div id="subs"></div>
+  </section>
+  <section class="tab" id="tab-sales">
+    <div class="bar"><input id="sales-q" placeholder="Search email or order…"><span class="count" id="sales-count"></span></div>
+    <div id="sales"></div>
+  </section>
+  <section class="tab" id="tab-bugs">
+    <div class="bar"><input id="bugs-q" placeholder="Search…"><span class="count" id="bugs-count"></span></div>
+    <div id="bugs"></div>
+  </section>
+  <section class="tab" id="tab-status"><div class="status" id="status"></div></section>
+</main>
+
+<dialog id="dlg-grant">
+  <h2>Grant or adjust tokens</h2>
+  <div class="sub" id="grant-who"></div>
+  <label for="grant-amount">Tokens (+ to give, − to take away)</label>
+  <input id="grant-amount" type="number" step="1">
+  <label for="grant-reason">Reason (kept in the ledger)</label>
+  <input id="grant-reason" maxlength="300">
+  <div class="sub" style="margin-top:6px">Given tokens are free tokens: spent first, not refundable.</div>
+  <div class="msg" id="grant-msg"></div>
+  <div class="buttons"><button data-close>Cancel</button><button class="primary" id="grant-go">Save</button></div>
+</dialog>
+
+<dialog id="dlg-refund">
+  <h2>Refund order</h2>
+  <div class="sub" id="refund-who"></div>
+  <div id="refund-body" style="margin-top:10px"></div>
+  <label for="refund-fee">Processor fee to keep (cents)</label>
+  <input id="refund-fee" type="number" min="0" step="1">
+  <div class="sub" id="refund-fee-src"></div>
+  <div class="msg" id="refund-msg"></div>
+  <div class="buttons"><button data-close>Cancel</button><button class="primary danger" id="refund-go">Refund</button></div>
+</dialog>
+
+<script>
+'use strict';
+// ── helpers ───────────────────────────────────────────────────────────────
+const $ = s => document.querySelector(s);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls;
+                                 if (text !== undefined) e.textContent = text; return e; };
+const pad = n => String(n).padStart(2, '0');
+const date = t => { if (!t) return '—'; const d = new Date(t * 1000);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const money = c => '$' + (c / 100).toFixed(2);
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { credentials: 'same-origin', ...opts,
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
+  return body;
+}
+
+// A sortable table: columns [{key, label, num, sort(row) -> value, cell(row) -> Node|string}].
+// Click a heading to sort by it; click again to reverse.
+function table(host, rows, cols, state, countEl, noun) {
+  host.replaceChildren();
+  if (countEl) countEl.textContent = `${rows.length} ${noun}${rows.length === 1 ? '' : 's'}`;
+  if (!rows.length) { host.append(el('div', 'empty', `No ${noun}s.`)); return; }
+  const col = cols.find(c => c.key === state.key) || cols[0];
+  const val = r => col.sort ? col.sort(r) : r[col.key];
+  const sorted = rows.slice().sort((a, b) => {
+    const x = val(a), y = val(b);
+    if ((x == null) !== (y == null)) return x == null ? 1 : -1;   // blanks last, either way round
+    if (x == null) return 0;
+    return state.dir * (typeof x === 'string' ? x.localeCompare(y) : x - y);
+  });
+  const t = el('table'), head = el('tr');
+  for (const c of cols) {
+    const th = el('th', (c.num ? 'num ' : '') + (c.nosort ? 'nosort' : ''), c.label);
+    if (!c.nosort) {
+      if (c.key === col.key) th.append(el('span', 'arrow', state.dir > 0 ? '▲' : '▼'));
+      th.onclick = () => { state.dir = state.key === c.key ? -state.dir : (c.num || c.date ? -1 : 1);
+                           state.key = c.key; table(host, rows, cols, state, countEl, noun); };
+    }
+    head.append(th);
+  }
+  t.append(el('thead')); t.tHead.append(head);
+  const tb = el('tbody');
+  for (const r of sorted) {
+    const tr = el('tr');
+    for (const c of cols) {
+      const td = el('td', c.num ? 'num' : '');
+      const v = c.cell ? c.cell(r) : r[c.key];
+      if (v instanceof Node) td.append(v); else td.textContent = v ?? '';
+      tr.append(td);
+    }
+    tb.append(tr);
+  }
+  t.append(tb); host.append(t);
+}
+const matches = (q, ...fields) => !q || fields.some(f => String(f || '').toLowerCase().includes(q));
+function button(label, onclick, cls = '') { const b = el('button', 'act ' + cls, label); b.onclick = onclick; return b; }
+
+// ── tabs ──────────────────────────────────────────────────────────────────
+const loaders = {};
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + name));
+  loaders[name]();
+}
+document.querySelectorAll('dialog [data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+
+// ── subscribers ───────────────────────────────────────────────────────────
+let accounts = [];
+const subsSort = { key: 'created_at', dir: -1 };
+const subsCols = [
+  { key: 'email', label: 'Email' },
+  { key: 'created_at', label: 'First subscribed', date: true, cell: r => date(r.created_at) },
+  { key: 'last_sign_in', label: 'Last sign-in', date: true, cell: r => date(r.last_sign_in) },
+  { key: 'balance', label: 'Tokens now', num: true, cell: r => {
+      const d = el('div'); d.append(el('div', '', String(r.balance)),
+                                     el('div', 'sub', `${r.free} free · ${r.purchased} bought`)); return d; } },
+  { key: 'lifetime', label: 'Lifetime tokens', num: true },
+  { key: 'last_use', label: 'Last 5 uses', date: true, sort: r => r.last_uses.length ? r.last_uses[0].ts : null,
+    cell: r => { if (!r.last_uses.length) return el('span', 'sub', 'none');
+      const ul = el('ul', 'uses');
+      for (const u of r.last_uses) { const li = el('li');
+        li.append(el('span', 'app', u.app), ` · ${u.tokens} token${u.tokens === 1 ? '' : 's'} · ${date(u.ts)}`);
+        if (u.fmt) li.append(el('span', 'sub', ` (${u.fmt.toUpperCase()})`)); ul.append(li); }
+      return ul; } },
+  { key: 'actions', label: '', nosort: true, cell: r => { const d = el('div');
+      d.append(button('Grant / adjust', () => openGrant(r)));
+      if (r.purchased > 0) d.append(button('Refund…', () => { $('#sales-q').value = r.email; showTab('sales'); }));
+      return d; } },
+];
+function drawSubs() {
+  const q = $('#subs-q').value.trim().toLowerCase();
+  table($('#subs'), accounts.filter(a => matches(q, a.email)), subsCols, subsSort, $('#subs-count'), 'subscriber');
+}
+loaders.subs = async () => {
+  try { const d = await api('/admin/api/accounts'); accounts = d.accounts; drawSubs(); }
+  catch (e) { $('#subs').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
+};
+$('#subs-q').oninput = drawSubs;
+
+let grantFor = null;
+function openGrant(r) {
+  grantFor = r;
+  $('#grant-who').textContent = `${r.email} — ${r.balance} tokens now`;
+  $('#grant-amount').value = ''; $('#grant-reason').value = ''; $('#grant-msg').textContent = '';
+  $('#dlg-grant').showModal(); $('#grant-amount').focus();
+}
+$('#grant-go').onclick = async () => {
+  const msg = $('#grant-msg'); msg.className = 'msg';
+  try {
+    const d = await api(`/admin/api/accounts/${encodeURIComponent(grantFor.id)}/grant`, { method: 'POST',
+      body: JSON.stringify({ amount: parseInt($('#grant-amount').value, 10), reason: $('#grant-reason').value }) });
+    msg.className = 'msg ok'; msg.textContent = `Done — balance now ${d.balance}.`;
+    await loaders.subs(); setTimeout(() => $('#dlg-grant').close(), 700);
+  } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; }
+};
+
+// ── sales ─────────────────────────────────────────────────────────────────
+let orders = [];
+const salesSort = { key: 'created_at', dir: -1 };
+const salesCols = [
+  { key: 'created_at', label: 'Date', date: true, cell: r => date(r.created_at) },
+  { key: 'email', label: 'Email' },
+  { key: 'provider', label: 'Via' },
+  { key: 'tokens', label: 'Tokens', num: true },
+  { key: 'cents', label: 'Paid', num: true, cell: r => money(r.cents) },
+  { key: 'status', label: 'Status', cell: r => el('span', 'pill ' + r.status, r.status) },
+  { key: 'refunded_cents', label: 'Refunded', num: true, cell: r => r.refunded_cents ? money(r.refunded_cents) : '' },
+  { key: 'order_id', label: 'Order', cell: r => el('span', 'sub', r.order_id) },
+  { key: 'actions', label: '', nosort: true, cell: r => (r.status === 'completed' || r.status === 'refunded')
+      && r.refunded_cents < r.cents ? button('Refund…', () => openRefund(r), 'danger') : '' },
+];
+function drawSales() {
+  const q = $('#sales-q').value.trim().toLowerCase();
+  table($('#sales'), orders.filter(o => matches(q, o.email, o.order_id, o.payment_ref)), salesCols,
+        salesSort, $('#sales-count'), 'order');
+}
+loaders.sales = async () => {
+  try { const d = await api('/admin/api/orders'); orders = d.orders; drawSales(); }
+  catch (e) { $('#sales').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
+};
+$('#sales-q').oninput = drawSales;
+
+let refundFor = null;
+async function quote(fee) {
+  const q = fee === undefined ? '' : `?fee_cents=${encodeURIComponent(fee)}`;
+  return api(`/admin/api/orders/${refundFor.provider}/${encodeURIComponent(refundFor.order_id)}/refund-quote${q}`);
+}
+function showQuote(q) {
+  const b = $('#refund-body'); b.replaceChildren();
+  const row = (k, v) => { const r = el('div', 'row'); r.append(el('span', '', k), el('b', '', v)); b.append(r); };
+  row('Unused purchased tokens (this order)', String(q.tokens));
+  row('Their value at the price paid', money(q.value_cents));
+  row('Less processor fee', '− ' + money(q.fee_cents));
+  row('Refund to the customer', money(q.amount_cents));
+  $('#refund-fee').value = q.fee_cents;
+  $('#refund-fee-src').textContent = { provider: 'Fee as reported by the payment processor.',
+    unknown: 'The processor did not report a fee — enter it.', entered: 'Fee as entered.' }[q.fee_source] || '';
+  $('#refund-go').disabled = !(q.tokens > 0 && q.amount_cents > 0);
+}
+async function openRefund(o) {
+  refundFor = o;
+  $('#refund-who').textContent = `${o.email || o.account_id} — ${o.tokens} tokens, ${money(o.cents)} via ${o.provider}`;
+  $('#refund-msg').textContent = ''; $('#refund-body').textContent = 'Working out the refund…';
+  $('#dlg-refund').showModal();
+  try { showQuote(await quote()); }
+  catch (e) { $('#refund-msg').className = 'msg err'; $('#refund-msg').textContent = e.message; }
+}
+$('#refund-fee').oninput = async () => {
+  try { showQuote(await quote(Math.max(0, parseInt($('#refund-fee').value || '0', 10)))); } catch (e) {}
+};
+$('#refund-go').onclick = async () => {
+  const msg = $('#refund-msg'); msg.className = 'msg';
+  if (!confirm('Refund this order now? The money goes back to the customer and the tokens are taken back.')) return;
+  $('#refund-go').disabled = true;
+  try {
+    const d = await api(`/admin/api/orders/${refundFor.provider}/${encodeURIComponent(refundFor.order_id)}/refund`,
+      { method: 'POST', body: JSON.stringify({ fee_cents: parseInt($('#refund-fee').value || '0', 10) }) });
+    msg.className = 'msg ok';
+    msg.textContent = `Refunded ${money(d.amount_cents)} and took back ${d.tokens} tokens (refund ${d.refund_id}).`;
+    await loaders.sales();
+  } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; $('#refund-go').disabled = false; }
+};
+
+// ── bug reports ───────────────────────────────────────────────────────────
+let bugs = [];
+const bugsSort = { key: 'created_at', dir: -1 };
+const bugsCols = [
+  { key: 'created_at', label: 'Date', date: true, cell: r => date(r.created_at) },
+  { key: 'report_type', label: 'Type' },
+  { key: 'seeing', label: 'Report', cell: r => { const d = el('div');
+      d.append(el('div', '', r.seeing || ''));
+      if (r.should_see) d.append(el('div', 'sub', 'Should: ' + r.should_see));
+      if (r.error_msg) d.append(el('div', 'sub', 'Error: ' + r.error_msg));
+      if (r.user_comment) d.append(el('div', 'sub', 'Comment: ' + r.user_comment));
+      if (r.state) { const det = el('details'); det.append(el('summary', 'sub', 'design'),
+                       el('pre', 'state', JSON.stringify(r.state, null, 1))); d.append(det); }
+      return d; } },
+  { key: 'email', label: 'Email' },
+  { key: 'app_version', label: 'Version' },
+  { key: 'actions', label: '', nosort: true, cell: r => { const d = el('div');
+      if (r.issue_url) { const a = el('a', '', 'GitHub'); a.href = r.issue_url; a.target = '_blank';
+                         a.rel = 'noopener'; d.append(a, el('br')); }
+      d.append(button('Delete', async () => {
+        if (!confirm('Delete this report, with its design and address?')) return;
+        try { await api(`/admin/api/bugs/${encodeURIComponent(r.report_id)}`, { method: 'DELETE', body: '{}' });
+              await loaders.bugs(); } catch (e) { alert(e.message); } }, 'danger'));
+      return d; } },
+];
+function drawBugs() {
+  const q = $('#bugs-q').value.trim().toLowerCase();
+  table($('#bugs'), bugs.filter(b => matches(q, b.seeing, b.should_see, b.email, b.user_comment, b.report_id)),
+        bugsCols, bugsSort, $('#bugs-count'), 'report');
+}
+loaders.bugs = async () => {
+  try { const d = await api('/admin/api/bugs'); bugs = d.bugs;
+        if (!d.enabled) { $('#bugs').replaceChildren(el('div', 'empty', 'This app has no bug-report store.')); return; }
+        drawBugs(); }
+  catch (e) { $('#bugs').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
+};
+$('#bugs-q').oninput = drawBugs;
+
+// ── status ────────────────────────────────────────────────────────────────
+loaders.status = async () => {
+  const host = $('#status'); host.textContent = 'Loading…';
+  try {
+    const s = await api('/admin/api/status'); host.replaceChildren();
+    const row = (k, v) => { const r = el('div', 'row'); r.append(el('b', '', k));
+                            r.append(v instanceof Node ? v : el('span', '', v)); host.append(r); };
+    const link = (href, text) => { const a = el('a', '', text); a.href = href; a.target = '_blank'; a.rel = 'noopener'; return a; };
+    row('App', `${s.app} ${s.version}`);
+    row('Cloud Run', s.service ? `${s.service} · revision ${s.revision}` : 'not on Cloud Run (local)');
+    row('Database', `${s.database} — ${s.database_ok ? 'OK' : 'NOT REACHABLE'}`);
+    row('Accounts', String(s.counts.accounts ?? '—'));
+    row('Ledger rows', String(s.counts.ledger ?? '—'));
+    row('Orders', String(s.counts.payments ?? '—'));
+    row('Payments', s.payments.length ? s.payments.join(', ') : 'none configured');
+    row('Admins', s.admins.join(', '));
+    const links = el('span'); links.append(link('https://console.cloud.google.com/run', 'Cloud Run console'),
+      ' · ', link('https://console.neon.tech', 'Neon'), ' · ', link('https://dash.cloudflare.com', 'Cloudflare'));
+    row('Consoles', links);
+    $('#title').textContent = `${s.app} — Admin`;
+  } catch (e) { host.textContent = 'Could not load: ' + e.message; }
+};
+
+loaders.subs();
+api('/admin/api/status').then(s => { $('#title').textContent = `${s.app} — Admin`;
+  document.title = `${s.app} Admin`; }).catch(() => {});
+</script>
+</body>
+</html>

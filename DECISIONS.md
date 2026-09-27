@@ -1,5 +1,52 @@
 # Architectural Decision Records
 
+## ADR-012 — Admin dashboard: signed-in admins, subscribers, sales with refunds
+**Date:** 2026-09-26
+**Status:** Active
+
+**Context:**
+The old `admin_dashboard.html` was a static page that called bearer-token `/api/admin/*`
+routes (Render-era: metrics, queue, subscribers/licences, downloads). Most of it described the
+subscription model that ADR-008 replaced, and none of it showed the token ledger. Refunds had no
+tooling: one issued in the PayPal/Stripe dashboard takes back tokens in proportion to the
+money, so a refund net of fees left tokens behind.
+
+**Decision:**
+- One shared dashboard, `cct_common.admin` (0.17.0), at `/admin`. Every CCT tool shares the
+  accounts database, so any tool's `/admin` shows every tool's subscribers. Tabs: Subscribers,
+  Sales, Bug reports, Status. Every column sorts by clicking its heading (again to reverse,
+  blanks always last), and each tab has a search box.
+- **Who gets in:** the normal account sign-in, with the email in `ADMIN_EMAILS`
+  (comma-separated; default `xootme@gmail.com`). Browser sessions only; add-in/agent device
+  tokens get a 404. Anyone else gets a 404, not a 403, so the page isn't advertised. Changes
+  must come from the page's own origin and be JSON (the cookie is SameSite=Lax; this closes the
+  rest). The JSON lives under `/admin/api/`, not `/api/admin/`, which carries the old routes'
+  wildcard CORS header.
+- **Subscribers:** first subscribed, last sign-in, tokens now (free / bought), **lifetime
+  tokens** (one number: every token received — signup, purchase, referral, promo and positive
+  adjustments), and the **last 5 uses** (the CCT tool, tokens, date, format; refunded failed
+  exports don't count). The tool comes from a new `app` column on the ledger, written by each
+  tool's `TokenStore(..., app=...)` (`"pulleys"` here); older rows show the mounting app's
+  `default_app`. **Grant / adjust**: a positive amount is a `promo` credit (free tokens, not
+  refundable); a negative one is an `adjust`. A reason is required and recorded.
+- **Sales and refunds (terms §4):** Refund… on an order quotes the account's unused
+  *purchased* tokens from that order, valued at the price paid, less the processor's fee (read
+  from PayPal/Stripe; editable, and entered by hand when the provider doesn't report it). A
+  confirmed refund goes through the provider's API and takes back exactly those tokens, under
+  the same `provider-refund:<id>` ref the provider's own refund notification uses, so the
+  notification that follows takes nothing more.
+- **Ledger fix that came with it:** a refund take-back used to count as *spending*, so it ate
+  free tokens first. Refund adjustments are now left out of "free used"; they come off the
+  purchased tokens they refunded.
+- **Dropped:** Metrics, Queue, Render status, Subscribers/Licences (the old model), Downloads.
+  The bearer-token `/api/admin/*` routes remain in `app.py` with nothing calling them; retiring
+  them is a ToDo.
+
+**Consequences:** `ADMIN_EMAILS` should be set on test and production at deploy. The browser
+harness `tests/browser/admin_ui.js` (seeded by `admin_seed.py`) drives sorting, search, both
+dialogs, bug delete and status; `cct_common/tests/test_admin.py` covers the routes on SQLite and
+Postgres.
+
 ## ADR-011 — Help pictures built from the app's own drawings, shown on hover
 **Date:** 2026-09-26
 **Status:** Active

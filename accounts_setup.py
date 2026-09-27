@@ -194,7 +194,7 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
 
     db_path = database_url or os.path.join(log_dir, "accounts.sqlite3")
     try:
-        tokens = TokenStore(db_path)
+        tokens = TokenStore(db_path, app="pulleys")   # the tool on each ledger row (admin page)
         problems = tuple(tokens.integrity_check())
     except DB_ERRORS as e:  # unreadable file / unreachable server: setup itself fails
         tokens, problems = None, (_redact(str(e), db_path),)

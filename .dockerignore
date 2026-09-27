@@ -12,7 +12,6 @@
 !edge_proxy.py
 !gunicorn.conf.py
 !requirements.txt
-!admin_dashboard.html
 !bin/small_step_linux
 !cct_common/
 !exporters/

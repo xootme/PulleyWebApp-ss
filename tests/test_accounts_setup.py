@@ -63,6 +63,25 @@ def test_enabled_email_sign_in_end_to_end(tmp_path):
     assert info['email'] == 'a@example.com' and info['balance'] == 10
 
 
+def test_ledger_rows_name_this_tool(tmp_path):
+    # The admin dashboard's "last 5 uses" shows which CCT tool each spend
+    # came from; every tool shares one ledger, so each must say it's itself.
+    app, state, _ = _fresh_app(tmp_path)
+    assert state.tokens.app == 'pulleys'
+    acct = state.tokens.get_or_create_account('a@example.com', signup_grant=10)
+    with state.tokens.charge(acct, 'k', 'svg'):
+        pass
+    with state.tokens._read() as db:
+        assert db.execute("SELECT app FROM ledger WHERE kind = 'spend'").fetchone()[0] == 'pulleys'
+
+
+def test_real_app_has_no_admin_page_with_accounts_off(client):
+    # /admin is cct_common.admin, mounted only with accounts on (it signs in
+    # through them); the old bearer-token page is gone.
+    assert client.get('/admin').status_code == 404
+    assert not os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'admin_dashboard.html'))
+
+
 def test_signup_grant_is_configurable(tmp_path):
     app, _, sent = _fresh_app(tmp_path, grant=25)
     c = app.test_client()
