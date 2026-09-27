@@ -88,6 +88,13 @@ _FAMILIES = {
     'HTD': {'3M': (10, 80), '5M': (12, 80), '8M': (15, 60), '14M': (18, 50)},
     'GT':  {'2M': (10, 80), '3M': (10, 80), '5M': (12, 70), '8M':  (20, 50)},
     'STD': {'2M': (10, 80), '3M': (10, 80), '5M': (12, 70), '8M':  (22, 50)},
+    # added 2026-09-27: the trapezoidal and parabolic families (Backlash Tight
+    # now narrows their grooves), tooth ranges clamped to each profile's own
+    # min_teeth in _raw_config
+    'T':        {'T2.5': (12, 80), 'T5': (12, 70), 'T10': (14, 60), 'T20': (15, 50)},
+    'AT':       {'AT3': (12, 80), 'AT5': (12, 70), 'AT10': (15, 60), 'AT20': (18, 50)},
+    'Imperial': {'MXL': (12, 80), 'XL': (12, 70), 'L': (12, 60), 'H': (14, 50), 'XH': (18, 40)},
+    'RPP':      {'3M': (12, 80), '5M': (12, 70), '8M': (15, 60), '14M': (18, 50)},
 }
 _CLEARANCE = ['TIGHT', 'STANDARD', 'LOOSE']
 _BACKLASH = ['NONE', 'TIGHT', 'STANDARD', 'LOOSE']
@@ -97,6 +104,10 @@ def _raw_config(r: random.Random) -> dict:
     family = r.choice(list(_FAMILIES))
     pitch = r.choice(list(_FAMILIES[family]))
     t_min, t_max = _FAMILIES[family][pitch]
+    from geometry.pulley_geometry import PROFILE_KEY_PREFIX, PULLEY_SPECS
+    spec_min = PULLEY_SPECS[PROFILE_KEY_PREFIX.get(family, '') + pitch].get('min_teeth', t_min)
+    t_min = max(t_min, spec_min)
+    t_max = max(t_max, t_min)
     cfg = {
         'family': family,
         'pitch': pitch,
@@ -119,6 +130,8 @@ def _raw_config(r: random.Random) -> dict:
         hub_od = round(float(cfg['bore']) + r.uniform(4.0, 18.0), 1)
         cfg['hub_od'] = hub_od
         cfg['hub_height'] = round(r.uniform(3.0, 18.0), 1)
+        if r.random() > 0.3:
+            _add_set_screw(r, cfg)
     else:
         hub_od = 0.0
     if int(cfg['teeth']) >= 20 and r.random() > 0.4:
@@ -151,6 +164,27 @@ def _raw_config(r: random.Random) -> dict:
     return cfg
 
 
+def _add_set_screw(r: random.Random, cfg: dict) -> None:
+    """A hub set screw (ADR-013): any size or Custom, any hold, and the
+    design's threaded-hole settings — the parameters the page sends."""
+    from geometry.set_screw import INCH, METRIC
+    from cct_common import screws
+    size = r.choice(list(METRIC) + list(INCH) + ['Custom'])
+    hold = r.choice(['thread', 'nut', 'insert'])
+    major = round(r.uniform(2.0, 8.0), 2) if size == 'Custom' else screws.get(size).major_diameter
+    cfg['hub_screw_size'] = size
+    cfg['hub_screw_hold'] = hold
+    cfg['hub_screw_count'] = r.choice([1, 2])
+    cfg['hub_screw_dia'] = major
+    cfg['hub_captured_nut'] = '1' if hold == 'nut' else '0'
+    if size == 'Custom' or hold == 'insert':
+        cfg['hub_screw_hole_dia'] = round(major * r.uniform(1.0, 1.45), 2)
+    if hold == 'thread' and size != 'Custom':
+        cfg['screw_hole_shape'] = r.choice(['round', 'hex'])
+        cfg['thread_engagement'] = r.choice([0, 25, 50, 75, 100])
+        cfg['hex_flat'] = r.choice([78, 82, 88, 92])
+
+
 def _make_config(r: random.Random, max_attempts: int = 30) -> dict:
     from app import _parse_hub_params, _parse_spoke_params, _parse_stl_params
     from geometry.pulley_geometry import PROFILE_KEY_PREFIX, PULLEY_SPECS, getOuterDiameter
@@ -175,6 +209,8 @@ def _make_config(r: random.Random, max_attempts: int = 30) -> dict:
                 raise ValueError('keyway extends outside pulley')
             if fd > 0 and fd >= bore_mm / 2.0 - 0.5:
                 raise ValueError('d-flat too deep')
+            if sc > 0 and sd > 0 and hub_od > 0 and (hub_od - bore_mm) / 2.0 < sd:
+                raise ValueError(f'hub wall {(hub_od - bore_mm) / 2:.1f} thinner than the screw {sd}')
             sp_en, sp_hub, rim_d, sp_w, ft, fb, sp_c, sp_h, _ = _parse_spoke_params(qs, '')
             if sp_en:
                 R_rim = R_tr - rim_d
@@ -193,7 +229,7 @@ def _make_config(r: random.Random, max_attempts: int = 30) -> dict:
 # for both, so there's no hand-mapped-kwargs risk of the two diverging) ────
 
 def generate_step_and_stl(cfg: dict, ss_bin: str) -> tuple[int, bytes, int, bytes]:
-    os.environ['SMALL_STEP_BIN'] = ss_bin
+    os.environ['SMALL_STEP_BIN'] = ss_bin     # (ignored when PULLEY_STEP_BACKEND=cadquery)
     from app import app as flask_app
     flask_app.config['TESTING'] = True
     qs = {k: str(v) for k, v in cfg.items()}
@@ -204,6 +240,18 @@ def generate_step_and_stl(cfg: dict, ss_bin: str) -> tuple[int, bytes, int, byte
 
 
 # ── Geometry checks ─────────────────────────────────────────────────────
+
+def _load_stl(data: bytes) -> "trimesh.Trimesh":
+    """The app's binary STL: exactly the declared triangles. Its design data is
+    appended after them, which a plain trimesh.load reads as stray triangles
+    (a non-watertight mesh and a wrong volume)."""
+    import numpy as np
+    n = int(np.frombuffer(data[80:84], "<u4")[0])
+    rec = np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")])
+    t = np.frombuffer(data[84:84 + 50 * n], rec)
+    return trimesh.Trimesh(vertices=t["v"].reshape(-1, 3),
+                           faces=np.arange(3 * n).reshape(-1, 3), process=True)
+
 
 def _occt_tools_available() -> bool:
     return _OCC_PY.exists() and _OCCT_SERVER.exists()
@@ -288,7 +336,8 @@ def run(iterations: int | None, duration: float | None, seed: int | None,
             return (time.time() - start) < duration
         return n < iterations
 
-    print(f"small_step: {ss_bin}")
+    backend = os.environ.get('PULLEY_STEP_BACKEND', '').strip().lower() or 'small_step'
+    print(f"STEP backend: {backend}" + (f" ({ss_bin})" if backend == 'small_step' else ""))
     print(f"Fuzzing PulleyWebApp-ss (STEP + STL"
          f"{' + OCCT' if geometry_check else ''}{' + SFA' if sfa_available else ''}), "
          f"seed={seed} -> {log_path}")
@@ -314,15 +363,17 @@ def run(iterations: int | None, duration: float | None, seed: int | None,
                     if stl_status != 200 or len(stl_bytes) == 0:
                         raise RuntimeError(f"STL generation failed (HTTP {stl_status})")
 
-                    stl_volume = trimesh.load(
-                        trimesh.util.wrap_as_stream(stl_bytes), file_type="stl",
-                    ).volume
+                    stl_mesh = _load_stl(stl_bytes)
+                    stl_volume = stl_mesh.volume
+                    metal = cfg.get('flange_enabled') == '1' and cfg.get('flange_3dprint') == '0'
+                    stl_problems = [] if (metal or stl_mesh.is_watertight) else \
+                        ["stl: not watertight"]   # (a metal-flange STL is three touching parts)
 
                     step_path = (occt_tmp_dir / f"{n}.step"
                                 if occt_tmp_dir is not None else None)
                     problems = _geometry_check(
                         step_bytes, stl_volume, occt_worker, step_path, sfa_available)
-                    record["geometry_problems"] = problems
+                    record["geometry_problems"] = stl_problems + problems
                 except Exception as e:
                     record["ok"] = False
                     record["error"] = f"{type(e).__name__}: {e}"
@@ -365,7 +416,11 @@ if __name__ == "__main__":
     p.add_argument("--iterations", type=int, default=None)
     p.add_argument("--duration", type=float, default=None, help="seconds")
     p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--backend", choices=["small_step", "cadquery"], default="small_step",
+                   help="which STEP builder to check against the STL")
     args = p.parse_args()
+    # before anything imports app (it reads this per request, but be early)
+    os.environ['PULLEY_STEP_BACKEND'] = '' if args.backend == 'small_step' else 'cadquery'
     if args.iterations is None and args.duration is None:
         args.iterations = 200
 

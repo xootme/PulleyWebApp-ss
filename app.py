@@ -198,6 +198,8 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
 
     Raises RuntimeError on failure so callers can return 400.
     """
+    if os.environ.get('PULLEY_STEP_BACKEND', '').strip().lower() == 'cadquery':
+        return _run_cadquery_worker(worker_kw, timeout=timeout)
     if getattr(sys, 'frozen', False):
         from exporters.step_worker_ss import run as _ss_run
         try:
@@ -221,6 +223,22 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
             result.returncode, result.stderr.decode(errors='replace'),
         )
         raise RuntimeError(result.stderr.decode(errors='replace'))
+    return result.stdout
+
+
+def _run_cadquery_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
+    """STEP from cadquery (exporters/step_worker.py) instead of small_step —
+    the reference backend of this cadquery track (PULLEY_STEP_BACKEND=cadquery).
+    cadquery/OCP only has Python 3.12 wheels, so it runs in .venv312."""
+    root   = os.path.dirname(os.path.abspath(__file__))
+    python = os.path.join(root, '.venv312', 'Scripts', 'python.exe')
+    if not os.path.isfile(python):
+        python = sys.executable
+    result = subprocess.run(
+        [python, os.path.join(root, 'exporters', 'step_worker.py'), json.dumps(worker_kw)],
+        capture_output=True, cwd=root, timeout=timeout)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.decode(errors='replace')[-2000:])
     return result.stdout
 
 
