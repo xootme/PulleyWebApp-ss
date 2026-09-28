@@ -920,6 +920,128 @@ def api_belt():
         return jsonify({'n_belt': n_belt, 'center_dist_mm': round(C_corr, 4)})
 
 
+@app.route('/api/dimensions')
+def api_dimensions():
+    """The Dimensions panel under the 2D view (the Sprocket app's): each
+    pulley's diameters and widths, the drive's figures for two pulleys, and
+    warnings where a published rule is broken (geometry/belt_specs.py), with
+    an Auto-fix for the ones a setting can clear.
+
+    Takes the preview's query plus belt_height, clearance_height and
+    feature_build (flanges only count with 3D features on)."""
+    from geometry import belt_specs as bs
+    from exporters.flange_exporter import _pulley_radii
+    args = request.args
+    try:
+        family, pitch = args.get('family', 'HTD'), args.get('pitch', '5M')
+        key = _resolve_key(family, pitch)
+        if key is None or key not in PULLEY_SPECS:
+            return jsonify({'error': f'Unknown profile {family}/{pitch}'}), 400
+        spec = PULLEY_SPECS[key]
+        dual = args.get('dual') == 'true'
+        belt_w = max(1.0, _safe_float(args.get('belt_height'), 10.0))
+        extra_w = max(0.0, _safe_float(args.get('clearance_height'), 0.0))
+        three_d = args.get('feature_build', '1') == '1'
+
+        pulleys, warnings, changes, fix_set = [], [], [], {}
+        for n, pfx in ((1, ''), (2, 'p2_')) if dual else ((1, ''),):
+            who = f'Pulley {n}: ' if dual else ''
+            _, _, teeth, _, _, cl_mm, _, pr_ex = _parse_stl_params(args, str(n))
+            pd = spec['pitch'] * teeth / math.pi
+            od = getOuterDiameter(teeth, spec['pitch'], spec['pitch_line_diff'])
+            R_OD, _, tooth_ht = _pulley_radii(family, pitch, teeth, cl_mm, pr_ex)
+            face_w = belt_w + extra_w
+            p = {'teeth': teeth, 'pitch_diameter': pd, 'outside_diameter': od,
+                 'outside_diameter_built': 2 * R_OD, 'root_diameter': od - 2 * tooth_ht,
+                 'tooth_height': tooth_ht, 'pitch_line_diff': spec['pitch_line_diff'],
+                 'belt_width': belt_w, 'face_width': face_w, 'approx': {}}
+
+            flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
+            p['flanged'] = flanged
+            if flanged:
+                fp = _parse_flange_params(args, pfx)
+                spokes = _parse_spoke_params(args, pfx)[0]
+                # A printed flange on a spoked pulley measures its rim from the
+                # tooth root (flange_exporter.generate_3dprint_flange_stl).
+                r_ref = R_OD - tooth_ht if (fp['flange_3dprint'] and spokes) else R_OD
+                flange_od = 2 * (r_ref + fp['rim_radius_mm'])
+                reach = flange_od / 2 - R_OD
+                need = bs.min_flange_height(key, spec)
+                p.update(flange_od=flange_od, flange_reach=reach, flange_min_height=need.value)
+                if need.approximate:
+                    p['approx']['flange_min_height'] = need.source
+                if reach < need.value - 1e-6:
+                    rim_id = f'flange{n}_rim_radius'
+                    new_rim = math.ceil((fp['rim_radius_mm'] + need.value - reach) * 10) / 10
+                    warnings.append(f'{who}the flange reaches {reach:.2f} mm past the OD; '
+                                    f'{need.source} asks for at least {need.value:.2f} mm'
+                                    + (' (≈)' if need.approximate else '') + '.')
+                    fix_set[rim_id] = new_rim
+                    changes.append(f'{who}flange rim radius {fp["rim_radius_mm"]:g} → {new_rim:g} mm')
+                raw_angle = _safe_float(args.get(f'{pfx}flange_angle'), 15.0)
+                lo, hi = bs.FLANGE_ANGLE_RANGE
+                if not lo <= raw_angle <= hi:
+                    warnings.append(f'{who}flange angle {raw_angle:g}° is outside ISO\'s '
+                                    f'{lo:g}–{hi:g}°; it is built at {fp["flange_angle_deg"]:g}°.')
+                    fix_set[f'flange{n}_angle'] = fp['flange_angle_deg']
+                    changes.append(f'{who}flange angle {raw_angle:g}° → {fp["flange_angle_deg"]:g}°')
+
+            need_w = bs.min_face_width(key, belt_w, flanged)
+            if need_w is not None:
+                p['face_width_min'] = need_w.value
+                if face_w < need_w.value - 1e-6:
+                    kind = 'a flanged' if flanged else 'an unflanged'
+                    warnings.append(f'{who}the pulley face is {face_w:g} mm wide; {need_w.source} '
+                                    f'asks for at least {need_w.value:g} mm on {kind} pulley '
+                                    f'for a {belt_w:g} mm belt.')
+                    new_extra = math.ceil((need_w.value - belt_w) * 10) / 10
+                    if new_extra > fix_set.get('clearance_height', -1):
+                        fix_set['clearance_height'] = new_extra
+            pulleys.append(p)
+
+        if 'clearance_height' in fix_set:
+            changes.append(f'clearance height {extra_w:g} → {fix_set["clearance_height"]:g} mm')
+
+        drive = None
+        if dual:
+            t1, t2 = pulleys[0]['teeth'], pulleys[1]['teeth']
+            C = max(0.0, _safe_float(args.get('center_distance'), 100.0))
+            _L, n_belt, C_corr = correct_center_distance(spec['pitch'], t1, t2, C)
+            d = bs.drive(spec['pitch'], t1, t2, C_corr)
+            drive = {'belt_teeth': n_belt, 'belt_length': n_belt * spec['pitch'],
+                     'centre': C_corr, 'ratio': d.ratio, 'wrap_small_deg': d.wrap_small_deg,
+                     'teeth_in_mesh': d.teeth_in_mesh, 'span': d.span,
+                     'span_ratio': d.span / d.small_pd}
+            tim = d.teeth_in_mesh
+            if tim < bs.MIN_TEETH_IN_MESH:
+                if tim in bs.TIM_FACTOR:
+                    warnings.append(f'{tim} teeth in mesh on the smaller pulley (under '
+                                    f'{bs.MIN_TEETH_IN_MESH}): the belt\'s torque rating is '
+                                    f'×{bs.TIM_FACTOR[tim]} (Gates p. 104). More teeth or a longer '
+                                    'centre distance adds teeth in mesh.')
+                else:
+                    warnings.append(f'Only {tim} teeth in mesh on the smaller pulley: Gates '
+                                    '(p. 104) suggests a redesign — more teeth, a smaller ratio or '
+                                    'an idler.')
+            if d.wrap_small_deg < bs.MIN_WRAP_DEG:
+                warnings.append(f'The belt wraps {d.wrap_small_deg:.0f}° of the smaller pulley; '
+                                f'Gates (p. 64) asks for at least {bs.MIN_WRAP_DEG:.0f}° on a '
+                                'loaded pulley.')
+            f1, f2 = pulleys[0]['flanged'], pulleys[1]['flanged']
+            if not (f1 or f2):
+                warnings.append('Neither pulley has flanges: on a two-pulley drive Gates (p. 62) '
+                                'flanges one pulley on both sides (Flanges, in 3D features).')
+            elif d.span / d.small_pd >= bs.LONG_SPAN_RATIO and not (f1 and f2):
+                warnings.append(f'The span is {d.span / d.small_pd:.1f} × the smaller pulley '
+                                f'(over {bs.LONG_SPAN_RATIO:g}): Gates (p. 63) suggests flanging '
+                                'both pulleys.')
+
+        fix = {'set': fix_set, 'changes': changes} if fix_set else None
+        return jsonify({'pulleys': pulleys, 'drive': drive, 'warnings': warnings, 'fix': fix})
+    except (ValueError, TypeError, KeyError) as e:
+        return jsonify({'error': str(e)}), 400
+
+
 @app.route('/api/od')
 def api_od():
     """Convert teeth ↔ OD for live preview."""

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=41">
+  <link rel="stylesheet" href="/static/style.css?v=42">
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
@@ -489,6 +489,22 @@
       <img id="preview-img" src="" alt="" style="display:none;">
       <div class="preview-placeholder" id="preview-placeholder"><span class="preview-spinner"></span>Loading preview…</div>
       <canvas id="three-canvas" style="display:none;"></canvas>
+    </div>
+    <!-- Dimensions and spec warnings (the Sprocket app's panel; /api/dimensions) -->
+    <div class="dims-results" id="dims-results">
+      <div class="warn-row">
+        <button type="button" class="spoke-fit-btn hidden" id="dims_fix" onclick="applyDimsFix()">Auto-fix</button>
+        <ul class="dims-warnings" id="dims-warnings"></ul>
+      </div>
+      <details id="dims-details" ontoggle="rememberDimsOpen()">
+        <summary>Dimensions</summary>
+        <table class="dims" id="dims-table"></table>
+        <table class="dims" id="drive-dims"></table>
+        <p class="approx-note hidden" id="dims-approx-note">
+          <span class="approx">≈</span> approximate: no published figure for this profile, so
+          the standard's rule is applied to this app's own profile data. Hover it for the source.
+        </p>
+      </details>
     </div>
     <div class="preview-footer" id="preview-footer"></div>
   </div>
@@ -2212,6 +2228,7 @@ function schedulePreview() {
   checkSpokeFit(2);
   clearTimeout(previewTimer);
   previewTimer = setTimeout(updatePreview, 300);
+  scheduleDims();
   saveSettings();
 }
 
@@ -3416,7 +3433,144 @@ let _loadGen      = 0;   // increments on every load3DModel call; callbacks chec
 function schedulePreview3D() {
   clearTimeout(three3dTimer);
   three3dTimer = setTimeout(update3DPreview, 400);
+  scheduleDims();
 }
+
+// ── Dimensions and spec warnings (the Sprocket app's panel) ─────────────────
+// /api/dimensions answers with each pulley's figures, the drive's (two
+// pulleys), warnings where a published rule is broken (geometry/belt_specs.py)
+// and an Auto-fix for the ones a setting clears.
+const DIM_ROWS = [
+  ['pitch_diameter',         'Pitch diameter'],
+  ['outside_diameter',       'Outside diameter'],
+  ['outside_diameter_built', 'Outside diameter, as built'],
+  ['root_diameter',          'Root diameter'],
+  ['tooth_height',           'Groove depth'],
+  ['pitch_line_diff',        'Pitch line differential'],
+  ['belt_width',             'Belt width'],
+  ['face_width',             'Face width (belt + clearance)'],
+  ['face_width_min',         'Minimum face width'],
+  ['flange_od',              'Flange outside diameter'],
+  ['flange_reach',           'Flange past the OD'],
+  ['flange_min_height',      'Minimum flange height'],
+];
+// A figure that fails the rule next to it is shown red.
+const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height' };
+let dimsTimer = null, dimsSeq = 0, dimsFix = null;
+
+function scheduleDims() {
+  clearTimeout(dimsTimer);
+  dimsTimer = setTimeout(refreshDims, 350);
+}
+
+async function refreshDims() {
+  const seq = ++dimsSeq;
+  const p = buildParams();
+  p.belt_height      = document.getElementById('belt_height').value;
+  p.clearance_height = document.getElementById('clearance_height').value;
+  p.feature_build    = document.getElementById('feature_build').checked ? '1' : '0';
+  let data;
+  try {
+    const r = await fetch('/api/dimensions?' + new URLSearchParams(p));
+    data = await r.json();
+    if (!r.ok) data = { error: data.error || `HTTP ${r.status}` };
+  } catch (e) {
+    data = { error: e.message };
+  }
+  if (seq !== dimsSeq) return;               // a newer request superseded this one
+  showDims(data);
+}
+
+function showDims(data) {
+  const warn = document.getElementById('dims-warnings');
+  const table = document.getElementById('dims-table');
+  const drive = document.getElementById('drive-dims');
+  table.replaceChildren();
+  drive.replaceChildren();
+  const lines = data.error ? [data.error] : data.warnings;
+  warn.replaceChildren(...lines.map(w => { const li = document.createElement('li'); li.textContent = w; return li; }));
+  dimsFix = data.fix || null;
+  const fixBtn = document.getElementById('dims_fix');
+  fixBtn.classList.toggle('hidden', !dimsFix);
+  if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
+  if (data.error) return;
+
+  const mm = v => `${v.toFixed(2)} mm`;
+  const cols = data.pulleys;
+  if (cols.length > 1) {
+    const tr = table.insertRow();
+    tr.append(document.createElement('th'));
+    cols.forEach((_, i) => { const th = document.createElement('th'); th.textContent = `Pulley ${i + 1}`; tr.append(th); });
+  }
+  let anyApprox = false;
+  for (const [key, label] of DIM_ROWS) {
+    if (cols.every(c => c[key] === undefined)) continue;
+    // "as built" only when print compensation or clearance moves it
+    if (key === 'outside_diameter_built'
+        && cols.every(c => Math.abs(c.outside_diameter_built - c.outside_diameter) < 0.0005)) continue;
+    const tr = table.insertRow();
+    tr.insertCell().textContent = label;
+    for (const c of cols) {
+      const td = tr.insertCell();
+      td.className = 'num';
+      if (c[key] === undefined) { td.textContent = '—'; continue; }
+      td.textContent = mm(c[key]);
+      const limit = DIM_SHORT[key];
+      if (limit && c[limit] !== undefined && c[key] < c[limit] - 1e-6) td.classList.add('short');
+      if (c.approx && c.approx[key]) {
+        const s = document.createElement('span');
+        s.className = 'approx'; s.textContent = '≈'; s.title = c.approx[key];
+        td.append(s);
+        anyApprox = true;
+      }
+    }
+  }
+  document.getElementById('dims-approx-note').classList.toggle('hidden', !anyApprox);
+
+  const d = data.drive;
+  if (d) {
+    const rows = [
+      ['Belt', `${d.belt_teeth} teeth (${d.belt_length.toFixed(1)} mm)`],
+      ['Centre distance', mm(d.centre)],
+      ['Ratio', `${d.ratio.toFixed(3)} : 1`],
+      ['Wrap on the smaller pulley', `${d.wrap_small_deg.toFixed(1)}°`],
+      ['Teeth in mesh on the smaller pulley', `${d.teeth_in_mesh}`],
+      ['Free span', `${mm(d.span)} — ${d.span_ratio.toFixed(1)} × the smaller pulley`],
+    ];
+    const head = drive.insertRow();
+    const th = document.createElement('th');
+    th.textContent = 'Drive';
+    head.append(th);
+    for (const [label, value] of rows) {
+      const tr = drive.insertRow();
+      tr.insertCell().textContent = label;
+      const td = tr.insertCell();
+      td.className = 'num';
+      td.textContent = value;
+    }
+  }
+}
+
+// Auto-fix: set each field the server named and let its own handler run.
+function applyDimsFix() {
+  if (!dimsFix) return;
+  for (const [id, value] of Object.entries(dimsFix.set)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  schedulePreview();
+}
+
+function rememberDimsOpen() {
+  try { localStorage.setItem('pulley_dims_open', document.getElementById('dims-details').open ? '1' : '0'); } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    if (localStorage.getItem('pulley_dims_open') === '1') document.getElementById('dims-details').open = true;
+  } catch (e) {}
+});
 
 async function update3DPreview() {
   if (previewTab !== '3d') return;
