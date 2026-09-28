@@ -52,7 +52,16 @@ def _load(data):
          hub_screw_hold='nut', hub_captured_nut=1, spokes_enabled=1, spokes_hub_od=24,
          spokes_rim_depth=4, spokes_width=6, spokes_fillet_tip=1, spokes_fillet_base=1.5,
          spokes_count=5, spokes_height=3),
-], ids=['merged', 'separate-top', 'nubs', 'hub', 'd-shaft', 'keyway', 'three-nubs', 'nut-spokes'])
+    # the merged top flange's hole is the hub's circle drawn with other points:
+    # the union touched itself at single vertices, which an STL reader merges
+    # into a non-manifold edge (found by fuzzing)
+    dict(family='GT', pitch='5M', teeth=49, bore=12.5, print_extra=0.07, clearance_preset='LOOSE',
+         backlash_preset='TIGHT', belt_height=8.8, clearance_height=0.57, hub_flat_depth=1.22,
+         hub_od=24.4, hub_height=13.2, hub_screw_size='M5', hub_screw_hold='insert', hub_screw_count=2,
+         hub_screw_dia=5.0, hub_captured_nut=0, hub_screw_hole_dia=5.58, flange_angle=13.6,
+         flange_rim_radius=2.5, flange_height=1.9, flange_top_separate=0),
+], ids=['merged', 'separate-top', 'nubs', 'hub', 'd-shaft', 'keyway', 'three-nubs', 'nut-spokes',
+        'merged-top-on-hub'])
 def test_3d_print_flanged_pulley_is_one_closed_solid(client, extra):
     r = client.get('/download/stl', query_string={**BASE, **{k: str(v) for k, v in extra.items()}})
     assert r.status_code == 200

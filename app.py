@@ -1872,8 +1872,16 @@ def download_stl():
                 bot_mesh = trimesh.load(_io.BytesIO(
                     generate_3dprint_flange_stl(which='bottom', **_flange_kw)
                 ), file_type='stl')
+                # The top flange's hole is the hub's own circle, but drawn with
+                # different points: the union then touches itself at single
+                # vertices, which merge into a non-manifold edge when an STL is
+                # read. Cut the hole 0.1 mm into the hub so they overlap (the
+                # union hides the difference).
+                _top_kw = dict(_flange_kw)
+                if hub_h > 0.0 and _top_kw['hub_od_mm'] > bore_mm + 0.4:
+                    _top_kw['hub_od_mm'] -= 0.2
                 top_mesh = trimesh.load(_io.BytesIO(
-                    generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_flange_kw)
+                    generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_top_kw)
                 ), file_type='stl')
                 stl = _printed_as_one([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
             else:
