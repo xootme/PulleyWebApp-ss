@@ -110,7 +110,7 @@ What small_step needs, in `crates/ss-pulley/src/lib.rs`:
   pocket` (≈ line 2937) is a stand-in — there should be no gap. Put the
   pocket's inner face where the STL puts it: `bore_r − 0.05` for a round
   bore, `flat_x − 0.05` for a D-flat, `bore_r + keyway_h − 0.05` for a key
-  slot (`_POCKET_OVERLAP`; cadquery uses the face exactly, 0 overlap).
+  slot (`_POCKET_OVERLAP`; cadquery now uses the same overlap, see 6c).
 - **Keep the D-flat / key slot through the hub when there's a captured
   nut.** Without a nut small_step cuts them through the hub (z 5, 12, 20 all
   show the flat at 5.00); with one the hub's bore is round.
@@ -119,6 +119,45 @@ What small_step needs, in `crates/ss-pulley/src/lib.rs`:
   the slot edge (√(6² − 2²) + 1.96). The STL and cadquery put it at 7.96 —
   bore radius + depth, at the slot's centre (ISO 773 t₂ + r, which the
   app's Default Key fills in). Match the app.
+
+## 6. STEP/STL parity fixes from the cadquery fuzz — CHECK each (2026-09-27)
+
+The cadquery track (PulleyWebApp `cadquery-track`, now fast-forwarded into
+-ss `token-model`) fuzzed cadquery STEP against the STL on three seeds, 150
+pulleys each, to 0 failures. These are the rules the STL and cadquery now
+agree on; small_step should match each one. Every case is in
+`tests/test_step_stl_parity.py` — run `fuzz_pulley.py --backend small_step`
+to see which small_step still misses.
+
+a. **Metal flange, hub wider than the pulley: raise the hub by the plate
+   thickness** (`--top-metal … <plate_height>`), not the 3D-print flange
+   height. The hub sits on the plate. cadquery used flange_height (2.5 vs
+   2.4 plate in the fuzz case).
+b. **Key slot from the bore's centre out** (`R_bore + keyway_h` long,
+   `keyway_w` wide). Same cut for a normal key, but a key wider than the
+   bore (fuzz: 6 mm key, 4.1 mm bore) otherwise leaves two slivers beside
+   the bore.
+c. **Nut pocket reaches `_POCKET_OVERLAP` (0.05) into the bore** — also
+   from section 5. With the pocket face exactly on `x = R_bore` (tangent to
+   the bore) cadquery built an invalid solid (two captured nuts over
+   spokes).
+d. **45° support cone under each captured-nut lobe over the spoke
+   pocket**: a truncated cone on the lobe's axis, from `R_hub − h` at the
+   bottom to `R_hub` at the lobe's underside, `h = min(spoke_h + pocket,
+   R_hub − 0.5)`. cadquery and the preview had it; the STL download didn't
+   (fixed). Check small_step builds it.
+e. **No hub height → no hub and no set screw.** cadquery used to invent a
+   nut-sized hub when hub_height was 0 but a screw was set; the STL and the
+   preview show none. Check small_step doesn't build one.
+f. **Nub sockets stop at the belt face** (`belt − depth` to `belt`). The
+   STL's cutters reached 20 mm up and carved the hub on small pulleys
+   (fixed); cadquery was already right. Check small_step doesn't cut into
+   the hub.
+
+App-side only, nothing for small_step: `/download/flange-stl` now fits the
+spokes like every other export; spoke-void arcs in the STL are drawn within
+0.01 mm; a merged printed top flange overlaps the hub 0.1 mm so the STL is
+watertight.
 
 ## Not STEP-related (nothing to do)
 
