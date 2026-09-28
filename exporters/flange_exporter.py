@@ -487,6 +487,25 @@ def build_socket_meshes(
     else:
         clip_r = 0.0
 
+    # Above the belt face, keep the cutters out of the hub (the STEP cuts each
+    # socket only up to the belt face): on a small pulley the nub circle can
+    # overlap the hub, and a cutter reaching 20 mm up carved the hub away.
+    R_hub = hub_od_mm / 2.0
+
+    def _off_hub(meshes):
+        if R_hub <= bore_mm / 2.0 or not meshes:
+            return meshes
+        try:
+            hub = trimesh.creation.cylinder(radius=R_hub, height=cut_top - belt_height_mm + 2.0,
+                                            sections=96)
+            hub.apply_translation([0.0, 0.0, (belt_height_mm + cut_top + 2.0) / 2.0])
+            both = (trimesh.boolean.union(meshes, engine='manifold')
+                    if len(meshes) > 1 else meshes[0])
+            kept = trimesh.boolean.difference([both, hub], engine='manifold')
+            return [kept] if len(kept.vertices) > 0 else []
+        except Exception:
+            return meshes
+
     # One clip cylinder for every socket: union all sockets, then one difference.
     if clip_r > 0.0 and cyls:
         try:
@@ -498,10 +517,10 @@ def build_socket_meshes(
             clipped = trimesh.boolean.difference([sockets_union, inner_clip], engine='manifold')
             # If a socket sat entirely inside the void (mis-placed nub), the clip
             # removes it — nothing to cut, so drop the empty mesh.
-            return [clipped] if len(clipped.vertices) > 0 else []
+            return _off_hub([clipped] if len(clipped.vertices) > 0 else [])
         except Exception:
             pass  # fall through and return unclipped cylinders
-    return cyls
+    return _off_hub(cyls)
 
 
 # ---------------------------------------------------------------------------

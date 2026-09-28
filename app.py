@@ -2570,16 +2570,18 @@ def download_flange_stl():
         pe_mm     = float(args.get('print_extra', 0.0))
 
         hub_od         = max(0.0, float(args.get('hub_od', 0.0)))
-        spokes_enabled = args.get('spokes_enabled', '0') == '1'
-        spoke_hub_od   = max(0.0, float(args.get('spokes_hub_od', 0.0)))
-        spoke_rim_depth = max(0.0, float(args.get('spokes_rim_depth', 0.0)))
+        # The spokes as fitted (_parse_spoke_params), like the pulley itself:
+        # the typed values could leave the flange's inner edge off the real
+        # spokes (fuzz: rim depth 6.3 typed, 4.1 built).
+        spokes_enabled, spoke_hub_od, spoke_rim_depth = _parse_spoke_params(args)[:3]
 
         fp    = _parse_flange_params(args)
         which = args.get('flange_which', 'top')   # 'top' or 'bottom' (or 'both' for metal)
 
-        flat_d = max(0.0, float(args.get('flat_depth', 0.0)))
-        kw_w   = max(0.0, float(args.get('keyway_w', 0.0)))
-        kw_h   = max(0.0, float(args.get('keyway_h', 0.0)))
+        # The page sends the short names; the pulley routes' hub_ names work too
+        flat_d = max(0.0, float(args.get('flat_depth', args.get('hub_flat_depth', 0.0))))
+        kw_w   = max(0.0, float(args.get('keyway_w', args.get('hub_keyway_w', 0.0))))
+        kw_h   = max(0.0, float(args.get('keyway_h', args.get('hub_keyway_h', 0.0))))
 
         if fp['flange_3dprint']:
             stl_bytes = generate_3dprint_flange_stl(

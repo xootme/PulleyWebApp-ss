@@ -15,7 +15,11 @@ the cadquery fuzz found:
   * a big pulley's spoke voids: the STL drew the rim arc with 16 points,
     sagging ~0.2 mm inside the STEP's true arc;
   * two captured nuts over spokes: the STEP's pocket face sat exactly on
-    the bore (tangent) and OCCT made an invalid solid.
+    the bore (tangent) and OCCT made an invalid solid;
+  * metal plates over spokes the app had to fit: /download/flange-stl cut
+    the plates for the spokes as typed, not as built;
+  * nub sockets on a pulley small enough that the nub circle overlaps the
+    hub: the STL's socket cutters reached up through the hub and carved it.
 
 Skipped without cadquery (the .venv312 track has it).
 """
@@ -67,6 +71,23 @@ TWO_NUTS_SPOKES = {
     'spokes_fillet_tip': 1.5, 'spokes_fillet_base': 3.6, 'spokes_count': 3, 'spokes_height': 2.5,
 }
 
+METAL_FITTED_SPOKES = {
+    'family': 'STD', 'pitch': '3M', 'teeth': 28, 'bore': 8.0, 'print_extra': 0.06,
+    'clearance_preset': 'LOOSE', 'backlash_preset': 'TIGHT', 'belt_height': 8.9, 'clearance_height': 0.76,
+    'spokes_enabled': '1', 'spokes_hub_od': 12.7, 'spokes_rim_depth': 6.3, 'spokes_width': 5.0,
+    'spokes_fillet_tip': 0.6, 'spokes_fillet_base': 3.4, 'spokes_count': 7, 'spokes_height': 0.9,
+    'flange_enabled': '1', 'flange_3dprint': '0', 'flange_angle': 13.9, 'flange_rim_radius': 5.5,
+    'flange_height': 1.8, 'flange_plate_height': 1.0, 'flange_bend_radius': 2.9, 'flange_top_separate': '1',
+}
+NUBS_OVER_HUB = {
+    'family': 'T', 'pitch': 'T5', 'teeth': 13, 'bore': 4.4, 'print_extra': 0.03,
+    'clearance_preset': 'STANDARD', 'backlash_preset': 'LOOSE', 'belt_height': 7.7, 'clearance_height': 0.22,
+    'hub_od': 13.2, 'hub_height': 12.8,
+    'flange_enabled': '1', 'flange_3dprint': '1', 'flange_angle': 8.4, 'flange_rim_radius': 4.9,
+    'flange_height': 2.4, 'flange_top_separate': '1', 'flange_nubs_enabled': '1', 'flange_nub_count': 6,
+    'flange_nub_dia': 5.8, 'flange_nub_height': 3.6, 'flange_nub_allowance': 0.35,
+}
+
 
 @pytest.fixture
 def cadquery_backend(monkeypatch):
@@ -75,9 +96,10 @@ def cadquery_backend(monkeypatch):
 
 
 @pytest.mark.parametrize('cfg', [NUT_SPOKES, NO_HUB_HEIGHT, METAL_WIDE_HUB, WIDE_KEY, BIG_SPOKED,
-                                 TWO_NUTS_SPOKES],
+                                 TWO_NUTS_SPOKES, METAL_FITTED_SPOKES, NUBS_OVER_HUB],
                          ids=['nut-lobes-over-spokes', 'screw-without-hub-height', 'metal-flange-wide-hub',
-                              'keyway-wider-than-bore', 'big-spoked-rim-arc', 'two-nuts-over-spokes'])
+                              'keyway-wider-than-bore', 'big-spoked-rim-arc', 'two-nuts-over-spokes',
+                              'metal-plates-fitted-spokes', 'nub-sockets-over-hub'])
 def test_step_and_stl_are_the_same_pulley(cadquery_backend, cfg):
     stl = _load_stl(_fetch('/download/stl', cfg))
     stl_volume = stl.volume

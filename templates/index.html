@@ -4165,6 +4165,15 @@ function _flangeParams(n) {
   fp.spokes_enabled   = document.getElementById(`spokes${n}_enabled`).checked ? '1' : '0';
   fp.spokes_hub_od    = document.getElementById(`spokes${n}_hub_od`).value;
   fp.spokes_rim_depth = document.getElementById(`spokes${n}_rim_depth`).value;
+  // The rest of the spoke settings too, so the server fits them exactly as it
+  // does for the pulley: the flange's inner edge follows the fitted spokes.
+  fp.spokes_width       = document.getElementById(`spokes${n}_width`).value;
+  fp.spokes_fillet_tip  = document.getElementById(`spokes${n}_fillet_tip`).value;
+  fp.spokes_fillet_base = document.getElementById(`spokes${n}_fillet_base`).value;
+  fp.spokes_count       = document.getElementById(`spokes${n}_count`).value;
+  fp.spokes_height      = document.getElementById(`spokes${n}_height`).value;
+  fp.backlash_preset    = n === 2 ? (p.p2_backlash_preset || 'STANDARD') : (p.backlash_preset || 'STANDARD');
+  fp.backlash_custom    = n === 2 ? (p.p2_backlash_custom || 0)           : (p.backlash_custom  || 0);
 
   // Flange-specific params
   fp.flange_3dprint      = document.getElementById(`flange${n}_3dprint`).checked ? '1' : '0';
