@@ -779,6 +779,7 @@ def api_onshape_import():
             clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
             hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc,
+            **_step_screw_kw(args, pfx),
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
             spoke_count=sp_c if sp_en else 0,
@@ -1554,6 +1555,16 @@ def _printed_as_one(meshes):
     return trimesh.util.concatenate(parts)
 
 
+def _step_screw_kw(args, prefix=''):
+    """The set screw's hole and nut for a STEP worker (ADR-013), as JSON:
+    {} for no screws or an old design (the worker then cuts the nominal
+    hole, as it always did)."""
+    ss = _set_screw(args, prefix)
+    if ss is None:
+        return {}
+    return {'screw_hole': dict(ss.hole), 'screw_nut': list(ss.nut) if ss.nut else None}
+
+
 def _set_screw(args, prefix=''):
     """The hub's set screw — hole and nut from its named size and the design's
     threaded-hole settings (geometry/set_screw.py, ADR-013) — for the STL
@@ -1746,6 +1757,8 @@ def api_preview_stl():
                     ) or None
             _fl_enabled = request.args.get('flange_enabled') == '1'
             _fl_h = fp.get('flange_height_mm', 1.5) if _fl_enabled and fp else 1.5
+            if _fl_enabled and fp and not fp.get('flange_3dprint'):
+                _fl_h = fp.get('plate_height_mm', 1.0)   # the hub sits on a metal plate
             stl = generate_pulley_stl_preview(
                 family, pitch, num_teeth, bore_mm, belt_height,
                 cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
@@ -1937,6 +1950,7 @@ def download_step():
             clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
             hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc,
+            **_step_screw_kw(request.args, pfx),
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
             spoke_count=sp_c if sp_en else 0,
@@ -2066,6 +2080,7 @@ def download_all_step():
                 clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
                 hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
                 screw_dia_mm=sd, screw_count=sc,
+                **_step_screw_kw(request.args, pfx),
                 captured_nut=cn, flat_depth_mm=fd,
                 keyway_w_mm=kw_w, keyway_h_mm=kw_h,
                 spoke_count=sp_c if sp_en else 0,
@@ -3057,6 +3072,7 @@ def api_download_step_async():
                         clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
                         hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
                         screw_dia_mm=sd, screw_count=sc,
+                        **_step_screw_kw(query_params, pfx),
                         captured_nut=cn, flat_depth_mm=fd,
                         keyway_w_mm=kw_w, keyway_h_mm=kw_h,
                         spoke_count=sp_c if sp_en else 0,
@@ -3197,6 +3213,7 @@ def api_download_all_step_async():
                             clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
                             hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
                             screw_dia_mm=sd, screw_count=sc,
+                            **_step_screw_kw(query_params, pfx),
                             captured_nut=cn, flat_depth_mm=fd,
                             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
                             spoke_count=sp_c if sp_en else 0,
@@ -3479,6 +3496,7 @@ def api_download_step():
             clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
             hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc,
+            **_step_screw_kw(params_dict, pfx),
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
             spoke_count=sp_c if sp_en else 0,

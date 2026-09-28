@@ -266,6 +266,23 @@ def _occt_tools_available() -> bool:
     return _OCC_PY.exists() and _OCCT_SERVER.exists()
 
 
+def _step_mesh_volume(step_path: Path) -> float | None:
+    """Total volume of the STEP's solids, from a fine tessellation (0.005 mm
+    deflection) — accurate to ~1e-4 where OCCT's integrator isn't. Needs
+    cadquery, which this tool's .venv312 has; None without it."""
+    try:
+        import cadquery as cq
+    except ImportError:
+        return None
+    total = 0.0
+    for shape in cq.importers.importStep(str(step_path)).vals():
+        for solid in shape.Solids():
+            vs, ts = solid.tessellate(0.005, 0.05)
+            m = trimesh.Trimesh(vertices=[(v.x, v.y, v.z) for v in vs], faces=ts, process=True)
+            total += m.volume
+    return total
+
+
 def _geometry_check(step_bytes: bytes, stl_volume: float | None,
                     occt_worker: PersistentStepWorker | None,
                     step_path: Path | None, sfa_available: bool) -> list[str]:
@@ -287,11 +304,16 @@ def _geometry_check(step_bytes: bytes, stl_volume: float | None,
                 problems.append(f"occt: {occt['invalid']}/{occt['solids']} solids invalid")
             if occt["solids"] == 0:
                 problems.append("occt: 0 solids in STEP output")
-            if occt["volume"] is not None and stl_volume is not None and stl_volume > 1e-9:
-                rel = abs(occt["volume"] - stl_volume) / stl_volume
+            # Volume from a fine mesh of the STEP, not OCCT's GProp integration:
+            # that was found off by 0.6% (default) to 4% ("precise") on solids
+            # with extruded spline faces - an RPP 14M whose cross-section was
+            # right to 2e-4 - so it reported mismatches that weren't there.
+            step_volume = _step_mesh_volume(step_path)
+            if step_volume is not None and stl_volume is not None and stl_volume > 1e-9:
+                rel = abs(step_volume - stl_volume) / stl_volume
                 if rel > VOLUME_REL_TOL:
                     problems.append(
-                        f"volume mismatch: STEP={occt['volume']:.3f} "
+                        f"volume mismatch: STEP={step_volume:.3f} "
                         f"STL={stl_volume:.3f} rel_diff={rel:.2e} "
                         f"(> tol {VOLUME_REL_TOL:.0e})")
 

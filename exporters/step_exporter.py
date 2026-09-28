@@ -276,6 +276,37 @@ def _nub_circle_r_step(r_tooth_OD: float, tooth_ht: float, nub_dia_mm: float) ->
     return r_groove_bottom - margin - nub_dia_mm / 2.0
 
 
+def _smooth_runs(pts, corner_deg: float = 20.0, long_span: float = 3.0):
+    """Split a point list into runs that share their end points, each smooth
+    enough for one spline: at corners (a turn sharper than corner_deg between
+    consecutive segments), and around straight spans much longer than the
+    points' usual spacing (> long_span x the median) — a spline through
+    evenly spaced points and one long gap wiggles across the gap (0.05 mm on
+    an AT10 flank). Such a span becomes a run of two points: a straight line."""
+    gaps = sorted(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    long_gap = long_span * gaps[len(gaps) // 2] if gaps else float("inf")
+    runs, run = [], [pts[0]]
+    for i in range(1, len(pts)):
+        if math.dist(pts[i - 1], pts[i]) > long_gap:
+            if len(run) >= 2:
+                runs.append(run)
+            runs.append([pts[i - 1], pts[i]])
+            run = [pts[i]]
+            continue
+        run.append(pts[i])
+        if i < len(pts) - 1:
+            ax, ay = pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]
+            bx, by = pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]
+            la, lb = math.hypot(ax, ay), math.hypot(bx, by)
+            if la > 1e-12 and lb > 1e-12:
+                cos_t = max(-1.0, min(1.0, (ax * bx + ay * by) / (la * lb)))
+                if math.degrees(math.acos(cos_t)) > corner_deg:
+                    runs.append(run)
+                    run = [pts[i]]
+    runs.append(run)
+    return [r for r in runs if len(r) >= 2]
+
+
 def _segs_to_cq_sketch(segments, base_wp, inner_r=None):
     """
     Translate a pulley_outline_segments() or belt_outline_segments() segment
@@ -308,9 +339,17 @@ def _segs_to_cq_sketch(segments, base_wp, inner_r=None):
         kind = seg[0]
         if kind == 'spline':
             _, pts = seg
-            # includeCurrent=True: start from current wp position (= pts[0]),
-            # so the spline connects to the previous arc with zero gap.
-            wp = wp.spline(pts[1:], includeCurrent=True)
+            # A groove's points include sharp corners (flank → fillet → land),
+            # which one smooth spline can't follow: it overshoots, and the STEP
+            # came out up to 0.6% off the 2D outline (found by fuzzing STEP
+            # against STL). Spline each smooth run between corners instead;
+            # includeCurrent=True starts each from the current position, so the
+            # pieces join with zero gap.
+            for run in _smooth_runs(pts):
+                if len(run) == 2:
+                    wp = wp.lineTo(*run[1])
+                else:
+                    wp = wp.spline(run[1:], includeCurrent=True)
         elif kind == 'arc':
             _, _cx, _cy, _r, _start, mid, end = seg
             wp = wp.threePointArc(mid, end)
@@ -414,7 +453,8 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                       keyway_h_mm: float = 0.0,
                       hub_z_start: float = None,
                       flange_ext_mm: float = 0.0,
-                      set_screw=None) -> trimesh.Trimesh:
+                      set_screw=None,
+                      lobe_cone_mm: float = 0.0) -> trimesh.Trimesh:
     """
     Union a hub boss onto `body`, subtract the bore through the full height,
     then optionally drill radial set-screw holes and (for captured_nut=True)
@@ -529,6 +569,20 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         hub_mesh.fix_normals()
         body         = trimesh.boolean.union([body, hub_mesh], engine='manifold')
         total_height = hub_top
+
+        # 45° support cone under each oblong lobe (lobe_cone_mm tall, ending at
+        # the lobe's bottom face) so its overhang over the spoke pocket prints;
+        # the bore cut below clears whatever reaches the shaft.
+        if captured_nut and need_oblong and lobe_cone_mm > 0.0:
+            for angle in screw_angles:
+                cone = _make_frustum(max(R_hub - lobe_cone_mm, 0.1), R_hub, lobe_cone_mm,
+                                     sections=_BORE_SECTIONS)
+                off = min_hub_r - R_hub
+                cone.apply_translation([off * math.cos(angle), off * math.sin(angle),
+                                        hub_z_start - lobe_cone_mm])
+                cone.fix_normals()
+                if body.is_watertight and cone.is_watertight:
+                    body = trimesh.boolean.union([body, cone], engine='manifold')
 
     # ── Bore + keyway (_build_bore_2d is the single source of truth) ─────────
     if R_bore > 0.5:
@@ -683,6 +737,7 @@ def generate_pulley_stl(
     outer_poly = shapely_orient(outer_poly, sign=1.0)
     outer_poly = outer_poly.buffer(0)   # clean near-coincident tooth vertices
 
+    _spokes_built = None               # (spoke height, spoke hub radius) once built
     if spoke_count > 0 and spoke_width_mm > 0.0:
         from exporters.png_exporter import _spoke_void_polygons
         _R_hub_s = (spoke_hub_od_mm / 2.0) if spoke_hub_od_mm > 0.0 else (bore_mm / 2.0 + 1.0)
@@ -691,6 +746,7 @@ def generate_pulley_stl(
         # Guard: hub/rim larger than pulley face, or bore >= hub OD — impossible geometry, skip spokes
         if _R_hub_s < _R_tr and _R_rim_s < _R_tr and _R_hub_s > bore_mm / 2.0:
             spk_h = min(spoke_height_mm, belt_height_mm) if spoke_height_mm > 0.0 else belt_height_mm
+            _spokes_built = (spk_h, _R_hub_s)
 
             # 1. Hub Cylinder (Full Height)
             hub_cyl = trimesh.creation.cylinder(radius=_R_hub_s, height=belt_height_mm, sections=64)
@@ -760,14 +816,40 @@ def generate_pulley_stl(
         hub_z_start_stl = belt_height_mm + flange_height_mm
     _has_spokes_stl = spoke_count > 0 and spoke_width_mm > 0.0
     _flange_ext_stl = flange_height_mm if (flange_enabled and not _has_spokes_stl) else 0.0
+    # 45° support cone under each captured-nut lobe, over the spoke pocket
+    # (as the STEP and the preview mesh have): through the spoke zone and the
+    # top pocket, clamped so the tip radius stays >= 0.5 mm.
+    _lobe_cone_stl = 0.0
+    if _spokes_built is not None and hub_valid_stl and eff_r_stl > R_hub_stl:
+        _spk_h_c, _R_hub_s_c = _spokes_built
+        _pocket_c = (belt_height_mm - _spk_h_c) / 2.0
+        if _pocket_c > 0 and eff_r_stl > _R_hub_s_c:
+            _lobe_cone_stl = min(_spk_h_c + _pocket_c, R_hub_stl - 0.5)
 
     result = _add_hub_and_bore(body, belt_height_mm, bore_mm,
                                hub_od_mm, hub_height_mm, screw_dia_mm, screw_count,
                                captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm,
                                hub_z_start=hub_z_start_stl,
                                flange_ext_mm=_flange_ext_stl,
-                               set_screw=set_screw)
+                               set_screw=set_screw,
+                               lobe_cone_mm=_lobe_cone_stl)
     return result.export(file_type='stl')
+
+
+def _cq_screw_profile(wp, r_nominal: float, screw_hole: dict = None):
+    """The set screw's hole profile on a YZ workplane (its axis is X): the
+    hole geometry/set_screw.py gives (ADR-013) — round, or hex with a corner
+    up so it prints without support — else the nominal circle older designs
+    were cut with. Matches the STL's _screw_hole_cutter."""
+    if screw_hole and screw_hole.get("shape") == "hex":
+        r = screw_hole["flats"] / math.sqrt(3)            # corner radius
+        # workplane (u, v) = world (Y, Z): corners at v = ±r
+        pts = [(r * math.cos(math.radians(90 + 60 * k)), r * math.sin(math.radians(90 + 60 * k)))
+               for k in range(6)]
+        return wp.polyline(pts).close()
+    if screw_hole and screw_hole.get("diameter"):
+        return wp.circle(screw_hole["diameter"] / 2.0)
+    return wp.circle(r_nominal)
 
 
 def generate_pulley_step(
@@ -802,11 +884,14 @@ def generate_pulley_step(
     flange_rim_radius_mm: float = 3.0,
     flange_height_mm: float = 1.5,
     flange_top_separate: bool = True,
+    plate_height_mm: float = None,
     nubs_enabled: bool = False,
     nub_count: int = 4,
     nub_dia_mm: float = 3.0,
     nub_height_mm: float = 2.0,
     nub_allowance_mm: float = 0.2,
+    screw_hole: dict = None,
+    screw_nut=None,
     _return_cq: bool = False,
 ) -> bytes:
     """
@@ -833,20 +918,14 @@ def generate_pulley_step(
 
     # ── Hub pre-calculations (MUST be before any extrusion) ─────────────────
     R_bore = bore_mm / 2.0
-    if hub_height_mm <= 0.0 and hub_od_mm > bore_mm and screw_dia_mm > 0.0 and screw_count > 0:
-        if captured_nut:
-            _waf_pre, _t_pre = _nut_dims(screw_dia_mm)
-            _pkt_y_pre = _waf_pre + 0.5
-            _R_pkt_pre = _pkt_y_pre / math.sqrt(3)
-            hub_height_mm = max(2.0 * _R_pkt_pre, 4.0)
-        else:
-            hub_height_mm = max(screw_dia_mm * 1.5, 4.0)
+    # No hub height means no hub and no set screw, as in the STL and the
+    # preview (this used to invent a nut-sized hub the user never saw).
     hub_valid = hub_height_mm > 0.0 and hub_od_mm > bore_mm
     R_hub     = hub_od_mm / 2.0 if hub_valid else 0.0
     do_screws = hub_valid and screw_dia_mm > 0.0 and screw_count > 0
 
     if do_screws and captured_nut:
-        waf, t_nut = _nut_dims(screw_dia_mm)
+        waf, t_nut = tuple(screw_nut) if screw_nut else _nut_dims(screw_dia_mm)
         R_circ    = waf / math.sqrt(3)
         pkt_y     = waf + 0.5
         pkt_x     = t_nut + 0.5
@@ -870,10 +949,14 @@ def generate_pulley_step(
     # ── Spoke pre-calculations ────────────────────────────────────────────────
     has_spokes = spoke_count > 0 and spoke_width_mm > 0.0
 
+    # Hub raise: a 3D-printed flange's rim height, a metal flange's plate
+    # thickness (as the STL download does: the hub sits on the plate).
+    _raise_h = (plate_height_mm if (not flange_3dprint and plate_height_mm is not None)
+                else flange_height_mm)
     hub_z_start  = belt_height_mm
     if flange_enabled and hub_valid and eff_r > _R_OD:
-        hub_z_start = belt_height_mm + flange_height_mm
-    _flange_ext_step = flange_height_mm if (flange_enabled and not has_spokes) else 0.0
+        hub_z_start = belt_height_mm + _raise_h
+    _flange_ext_step = _raise_h if (flange_enabled and not has_spokes) else 0.0
     _ext_hub_h   = hub_height_mm + _flange_ext_step
     hub_top      = hub_z_start + _ext_hub_h
     total_height = hub_top if hub_valid else belt_height_mm
@@ -1135,8 +1218,7 @@ def generate_pulley_step(
 
         for angle in screw_angles:
             x_start = hole_cx - hole_len / 2.0
-            hole = (cq.Workplane('YZ')
-                    .circle(R_screw)
+            hole = (_cq_screw_profile(cq.Workplane('YZ'), R_screw, screw_hole)
                     .extrude(hole_len)
                     .translate((x_start, 0.0, z_screw)))
             if abs(angle) > 1e-9:
@@ -1435,7 +1517,7 @@ def _flange_kw_from_pulley_kw(kw: dict) -> dict:
     )
 
 
-_PULLEY_STEP_EXTRA = {'plate_height_mm', 'bend_radius_mm'}
+_PULLEY_STEP_EXTRA = {'bend_radius_mm'}
 
 
 def generate_pulley_assembly_step(kw: dict) -> bytes:
