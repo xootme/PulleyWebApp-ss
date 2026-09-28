@@ -1180,9 +1180,12 @@ def generate_pulley_step(
     if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5:
         kw_depth = keyway_h_mm
         kw_h_total = total_height + _flange_h_ext + 1.0
+        # From the bore's centre out, like the STL's _build_bore_2d: the same
+        # cut normally, but a key wider than the bore leaves no slivers.
+        kw_len = R_bore + kw_depth
         kw_box = (cq.Workplane('XY')
-                  .box(kw_depth + 0.5, keyway_w_mm, kw_h_total, clean=False)
-                  .translate((R_bore + kw_depth / 2.0 - 0.25, 0.0, (total_height - _flange_h_ext) / 2.0)))
+                  .box(kw_len, keyway_w_mm, kw_h_total, clean=False)
+                  .translate((kw_len / 2.0, 0.0, (total_height - _flange_h_ext) / 2.0)))
         result = result.cut(kw_box, clean=False)
 
     # ── 6. Set-screw holes + nut pockets ──────────────────────────────────────
@@ -1199,16 +1202,19 @@ def generate_pulley_step(
                 flat_x   = R_bore - flat_depth_mm
                 hole_len = eff_r - flat_x + 1.0
                 hole_cx  = (eff_r + flat_x) / 2.0
-                pkt_cx   = flat_x
+                pkt_cx   = flat_x - _POCKET_OVERLAP
             elif keyway_h_mm > 0.0:
                 kw_face  = R_bore + keyway_h_mm
                 hole_len = eff_r - kw_face + 1.0
                 hole_cx  = (eff_r + kw_face) / 2.0
-                pkt_cx   = kw_face
+                pkt_cx   = kw_face - _POCKET_OVERLAP
             else:
                 hole_len = eff_r - R_bore + 1.0
                 hole_cx  = (eff_r + R_bore) / 2.0
-                pkt_cx   = R_bore
+                # Into the bore a little, as the STL does: a pocket face on
+                # x = R_bore is tangent to the bore and OCCT can leave an
+                # invalid solid (fuzz: two captured nuts over spokes).
+                pkt_cx   = R_bore - _POCKET_OVERLAP
         else:
             z_screw  = hub_z_start + _flange_ext_step + hub_height_mm / 2.0
             # Hole goes from hub OD inward to bore — not through the other side.

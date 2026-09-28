@@ -9,7 +9,13 @@ the cadquery fuzz found:
   * a set screw with no hub height: the STEP invented a nut-sized hub the
     STL and the preview never showed;
   * a metal flange under a hub wider than the pulley: the STEP raised the
-    hub by flange_height, the STL by the plate it actually sits on.
+    hub by flange_height, the STL by the plate it actually sits on;
+  * a keyway wider than the bore: the STEP's key box started just inside
+    the bore wall and left two slivers the STL cut away;
+  * a big pulley's spoke voids: the STL drew the rim arc with 16 points,
+    sagging ~0.2 mm inside the STEP's true arc;
+  * two captured nuts over spokes: the STEP's pocket face sat exactly on
+    the bore (tangent) and OCCT made an invalid solid.
 
 Skipped without cadquery (the .venv312 track has it).
 """
@@ -40,6 +46,27 @@ METAL_WIDE_HUB = {
     'flange_height': 2.5, 'flange_plate_height': 1.2, 'flange_bend_radius': 0.4,
 }
 
+WIDE_KEY = {
+    'family': 'GT', 'pitch': '2M', 'teeth': 33, 'bore': 4.1, 'print_extra': 0.33,
+    'clearance_preset': 'STANDARD', 'backlash_preset': 'LOOSE', 'belt_height': 15.7,
+    'clearance_height': 0.1, 'hub_keyway_w': 6.0, 'hub_keyway_h': 3.0, 'hub_od': 14.9, 'hub_height': 8.1,
+}
+BIG_SPOKED = {
+    'family': 'T', 'pitch': 'T20', 'teeth': 31, 'bore': 27.6, 'print_extra': 0.27,
+    'clearance_preset': 'LOOSE', 'backlash_preset': 'LOOSE', 'belt_height': 11.8,
+    'clearance_height': 0.48, 'spokes_enabled': '1', 'spokes_hub_od': 30.9, 'spokes_rim_depth': 2.1,
+    'spokes_width': 6.2, 'spokes_fillet_tip': 0.7, 'spokes_fillet_base': 1.1, 'spokes_count': 3,
+    'spokes_height': 4.1,
+}
+TWO_NUTS_SPOKES = {
+    'family': 'HTD', 'pitch': '14M', 'teeth': 33, 'bore': 6.6, 'print_extra': 0.29,
+    'clearance_preset': 'TIGHT', 'backlash_preset': 'STANDARD', 'belt_height': 16.2,
+    'clearance_height': 0.25, 'hub_od': 21.4, 'hub_height': 4.1, 'hub_screw_size': '#4-40',
+    'hub_screw_hold': 'nut', 'hub_screw_count': 2, 'hub_screw_dia': 2.845, 'hub_captured_nut': '1',
+    'spokes_enabled': '1', 'spokes_hub_od': 21.4, 'spokes_rim_depth': 6.9, 'spokes_width': 6.0,
+    'spokes_fillet_tip': 1.5, 'spokes_fillet_base': 3.6, 'spokes_count': 3, 'spokes_height': 2.5,
+}
+
 
 @pytest.fixture
 def cadquery_backend(monkeypatch):
@@ -47,8 +74,10 @@ def cadquery_backend(monkeypatch):
     monkeypatch.setenv('QUEUE_DISABLED', '1')
 
 
-@pytest.mark.parametrize('cfg', [NUT_SPOKES, NO_HUB_HEIGHT, METAL_WIDE_HUB],
-                         ids=['nut-lobes-over-spokes', 'screw-without-hub-height', 'metal-flange-wide-hub'])
+@pytest.mark.parametrize('cfg', [NUT_SPOKES, NO_HUB_HEIGHT, METAL_WIDE_HUB, WIDE_KEY, BIG_SPOKED,
+                                 TWO_NUTS_SPOKES],
+                         ids=['nut-lobes-over-spokes', 'screw-without-hub-height', 'metal-flange-wide-hub',
+                              'keyway-wider-than-bore', 'big-spoked-rim-arc', 'two-nuts-over-spokes'])
 def test_step_and_stl_are_the_same_pulley(cadquery_backend, cfg):
     stl = _load_stl(_fetch('/download/stl', cfg))
     stl_volume = stl.volume
@@ -62,3 +91,11 @@ def test_step_and_stl_are_the_same_pulley(cadquery_backend, cfg):
         f.write(_fetch('/download/step', cfg))
     step_volume = _step_mesh_volume(Path(f.name))
     assert abs(step_volume - stl_volume) / stl_volume < VOLUME_REL_TOL, (step_volume, stl_volume)
+
+
+def test_two_nuts_over_spokes_is_a_valid_solid(cadquery_backend):
+    import cadquery as cq
+    with tempfile.NamedTemporaryFile(suffix='.step', delete=False) as f:
+        f.write(_fetch('/download/step', TWO_NUTS_SPOKES))
+    solids = [so for sh in cq.importers.importStep(f.name).vals() for so in sh.Solids()]
+    assert solids and all(so.isValid() for so in solids)

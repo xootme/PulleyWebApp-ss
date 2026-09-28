@@ -60,11 +60,19 @@ def _sv_arc_pts(cx, cy, r, a_start, a_end, ccw=True, n=12):
         pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
     return pts
 
+_ARC_SAG_MM = 0.01   # max chord-to-arc gap when tessellating void arcs
+
+
 def _sv_fillet_arc_pts(cx, cy, r, a1, a2, n=8):
     """Tessellate a fillet arc — always takes the SHORT path between a1 and a2."""
     diff = (a2 - a1) % (2 * math.pi)
     if diff > math.pi:
         diff -= 2 * math.pi   # flip to short arc
+    # At least n points, and enough that a chord sags <= 0.01 mm from the arc:
+    # a big pulley's rim arc at a fixed 16 points sagged ~0.2 mm, leaving the
+    # STL's spoke voids smaller than the STEP's true arcs.
+    if r > _ARC_SAG_MM:
+        n = max(n, math.ceil(abs(diff) / (2.0 * math.acos(1.0 - _ARC_SAG_MM / r))))
     pts = []
     for k in range(n + 1):
         a = a1 + diff * k / n
