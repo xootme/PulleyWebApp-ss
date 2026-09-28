@@ -1211,3 +1211,16 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
 .dims td.short { color: #b91c1c; font-weight: 600; }
 .approx { color: #b91c1c; font-weight: 600; cursor: help; margin-left: 2px; }
 .approx-note { font-size: 11px; color: #666; margin-top: 6px; }
+
+/* Undo / redo, the Sprocket app's pair: small, quiet, obviously paired. */
+.undo-btn {
+  padding: 1px 8px;
+  font-size: 16px;
+  line-height: 1.2;
+  background: #f1f3f5;
+  border: 1px solid #c8d0db;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.undo-btn:hover:not(:disabled) { background: #e2e8f0; border-color: #94a3b8; }
+.undo-btn:disabled { opacity: 0.35; cursor: default; }

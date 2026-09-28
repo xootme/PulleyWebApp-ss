@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=42">
+  <link rel="stylesheet" href="/static/style.css?v=43">
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
@@ -91,6 +91,8 @@
     <span class="drive-note" id="ratio_note"></span>
   </div>
   <div class="drive-bar-right">
+    <button class="undo-btn" id="undo_btn" type="button" onclick="undo()" title="Nothing to undo (Ctrl+Z)" disabled>&#8630;</button>
+    <button class="undo-btn" id="redo_btn" type="button" onclick="redo()" title="Nothing to redo (Ctrl+Y)" disabled>&#8631;</button>
     <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
     <button class="import-btn fb-2d" onclick="openImportDialog()" title="Import design from an exported STEP, DXF, SVG, or STL file">&#128194; Import</button>
     <button class="drive-info-btn fb-3d" onclick="openThreadDialog()"
@@ -1269,7 +1271,14 @@ function loadParamsFromUrl() {
 const SETTINGS_KEY = 'pulley_last';
 
 function saveSettings() {
-  const s = {
+  const s = collectSettings();
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
+  recordUndoStep(s);
+}
+
+// The page's settings as saved, and as one undo step.
+function collectSettings() {
+  return {
     family:              document.getElementById('family').value,
     pitch:               document.getElementById('pitch').value,
     teeth:               document.getElementById('teeth').value,
@@ -1379,7 +1388,6 @@ function saveSettings() {
     flange2_nub_height:   document.getElementById('flange2_nub_height').value,
     flange2_nub_allowance:document.getElementById('flange2_nub_allowance').value,
   };
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch(e) {}
 }
 
 function _val(id, v) {
@@ -1395,7 +1403,13 @@ async function loadSettings() {
   let s;
   try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch(e) {}
   if (!s) return false;
+  await applySettings(s);
+  return true;
+}
 
+// Put a settings snapshot (collectSettings) back on the page: saved settings
+// at startup, and undo / redo.
+async function applySettings(s) {
   // Family + pitch (must come before onPitchChange populates the spec)
   const famEl = document.getElementById('family');
   if (s.family && [...famEl.options].some(o => o.value === s.family))
@@ -1566,9 +1580,155 @@ async function loadSettings() {
     // Apply visibility
     onFlangeChange(n);
   });
+}
 
+// ── Undo / redo (the Sprocket app's, EBoxDesigner's pattern) ────────────────
+// Snapshots, not a command log: a step is the page's settings as saved
+// (collectSettings). One gesture — typing in a field, a click, dragging a
+// slider — is one step: the first save records it and the rest fold in, and
+// so do the page's own follow-ups (an automatic clearance height). Panel
+// open/closed state isn't part of a step.
+const HISTORY_SKIP = new Set(['hub1_open', 'hub2_open', 'clearance_auto']);
+const UNDO_LIMIT = 100;
+const undoStack = [];
+const redoStack = [];
+let currentStep = null;          // the settings on the page now
+let historyReady = false;        // startup's own saves aren't steps
+let restoringHistory = false;
+let gestureActive = false, gestureRecorded = false;
+let foldNextStep = false;        // the page changed a setting itself (showDims)
+
+function sameSettings(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) if (!HISTORY_SKIP.has(k) && a[k] !== b[k]) return false;
   return true;
 }
+
+function recordUndoStep(now) {
+  if (!historyReady || currentStep === null || restoringHistory || foldNextStep
+      || sameSettings(currentStep, now) || (gestureActive && gestureRecorded)) {
+    currentStep = now;                        // the same step, as it stands now
+    foldNextStep = false;
+    refreshUndoUI();
+    return;
+  }
+  undoStack.push(currentStep);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack.length = 0;                       // a new change forks the future
+  currentStep = now;
+  gestureRecorded = true;
+  refreshUndoUI();
+}
+
+async function applyHistory(step) {
+  restoringHistory = true;
+  try {
+    const s = { ...step };
+    delete s.hub1_open; delete s.hub2_open;   // leave the panels as they are
+    await applySettings(s);
+    const fb = document.getElementById('feature_build').checked;
+    setPreviewTab(fb ? '3d' : (previewTab === '3d' ? 'pulley' : previewTab));
+    await onPitchChange();
+    if (document.getElementById('dual_enable').checked) {
+      updateMinDistance();
+      updateBeltTeethFromCenter();
+    }
+    [1, 2].forEach(n => { _updateHubMaxValues(n); _syncScrewHole(n); checkSpokeFit(n); });
+    updateBeltBtn();
+    schedulePreview();
+  } finally {
+    currentStep = step;
+    // The redraw's own saves (debounced) belong to this step.
+    setTimeout(() => { restoringHistory = false; }, 900);
+    refreshUndoUI();
+  }
+}
+
+function undo() {
+  if (!undoStack.length || !currentStep || restoringHistory) return;
+  redoStack.push(currentStep);
+  applyHistory(undoStack.pop());
+}
+
+function redo() {
+  if (!redoStack.length || !currentStep || restoringHistory) return;
+  undoStack.push(currentStep);
+  applyHistory(redoStack.pop());
+}
+
+// A setting's name as its label shows it, and a value as the field shows it.
+function fieldName(key) {
+  const id = key === 'adv_both' ? 'adv_both_1' : key;
+  const el = document.getElementById(id);
+  const lab = document.querySelector(`label[for="${id}"]`) || (el ? el.closest('label') : null);
+  let name = lab ? lab.textContent : '';
+  name = name.replace(/\(.*?\)/g, '').replace(/\s+/g, ' ').trim();
+  if (!name) name = key.replace(/^p2_/, '').replace(/^(hub|spokes|flange)\d_?/, '$1 ').replace(/_/g, ' ').trim();
+  name = name.charAt(0).toUpperCase() + name.slice(1);
+  const dual = document.getElementById('dual_enable').checked;
+  const which = /^(p2_|hub2|spokes2|flange2)/.test(key) ? 'Pulley 2 '
+              : dual && /^(hub1|spokes1|flange1)/.test(key) ? 'Pulley 1 ' : '';
+  return which + name;
+}
+function shownValue(key, v) {
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (/(_enabled|_3dprint|_top_separate)$/.test(key) && (v === '1' || v === '0')) return v === '1' ? 'on' : 'off';
+  const el = document.getElementById(key);
+  if (el && el.tagName === 'SELECT') {
+    const o = [...el.options].find(x => x.value === v);
+    if (o) return o.textContent.trim();
+  }
+  return v === '' || v === undefined ? 'blank' : String(v);
+}
+// Worked out from other settings: named only when nothing else changed.
+const DERIVED_KEYS = new Set(['gear_ratio', 'center_distance', 'clearance_height']);
+function describeChange(before, after) {
+  const changed = Object.keys(after).filter(k => !HISTORY_SKIP.has(k) && before[k] !== after[k]);
+  const main = changed.filter(k => !DERIVED_KEYS.has(k));
+  const shown = main.length ? main : changed;
+  if (!shown.length) return 'no change';
+  const words = shown.slice(0, 2).map(k => `${fieldName(k)} ${shownValue(k, before[k])} → ${shownValue(k, after[k])}`);
+  return words.join(', ') + (shown.length > 2 ? ` and ${shown.length - 2} more` : '');
+}
+
+function refreshUndoUI() {
+  const u = document.getElementById('undo_btn'), r = document.getElementById('redo_btn');
+  if (!u || !r) return;
+  const top = undoStack[undoStack.length - 1];
+  u.disabled = !top;
+  u.title = top ? `Undo ${describeChange(top, currentStep)} (Ctrl+Z)` : 'Nothing to undo (Ctrl+Z)';
+  const next = redoStack[redoStack.length - 1];
+  r.disabled = !next;
+  r.title = next ? `Redo ${describeChange(currentStep, next)} (Ctrl+Y)` : 'Nothing to redo (Ctrl+Y)';
+}
+
+window.addEventListener('pointerdown', () => { gestureActive = true; gestureRecorded = false; }, true);
+// A click's follow-ups (a debounced redraw) still belong to it; a click into
+// a field lasts until the field is left (focusout).
+window.addEventListener('pointerup', () => {
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (!(a && a.matches('input:not([type=checkbox]):not([type=radio]), select, textarea'))) gestureActive = false;
+  }, 700);
+}, true);
+window.addEventListener('focusin', e => {
+  if (e.target.matches('input, select, textarea')) { gestureActive = true; gestureRecorded = false; }
+}, true);
+window.addEventListener('focusout', e => {
+  if (e.target.matches('input, select, textarea')) gestureActive = false;
+}, true);
+window.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  const isUndo = k === 'z' && !e.shiftKey;
+  const isRedo = k === 'y' || (k === 'z' && e.shiftKey);
+  if (!isUndo && !isRedo) return;
+  // Inside a text field the browser's own undo is what's meant.
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.type !== 'checkbox' && t.type !== 'range') return;
+  e.preventDefault();
+  if (isUndo) undo(); else redo();
+});
 
 function resetSettings() {
   try { localStorage.removeItem(SETTINGS_KEY); } catch(e) {}
@@ -1611,6 +1771,9 @@ window.onload = async () => {
   updateBeltBtn();
   // Check restored spoke settings against the restored pulleys.
   [1, 2].forEach(n => checkSpokeFit(n));
+  // Undo history starts from the page as it opened, once its own follow-up
+  // saves (the debounced redraw, an automatic clearance) have landed.
+  setTimeout(() => { currentStep = collectSettings(); historyReady = true; refreshUndoUI(); }, 1500);
 };
 
 // ── Dual toggle ───────────────────────────────────────────────────────────────
@@ -3510,6 +3673,7 @@ function showDims(data) {
     const el = document.getElementById('clearance_height');
     if (Math.abs((parseFloat(el.value) || 0) - want) > 1e-6) {
       el.value = want;
+      foldNextStep = true;        // part of the change that caused it, not a step
       schedulePreview();          // redraws, and asks again with the new width
       return;
     }

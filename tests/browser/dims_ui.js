@@ -4,8 +4,8 @@
 // drive table for two pulleys, and that the panel remembers being open.
 //
 // Needs a running app (tokens off is fine):
-//   QUEUE_DISABLED=1 python app.py --port 5097 --no-debug
-//   node tests/browser/dims_ui.js http://127.0.0.1:5097 [screenshot.png]
+//   QUEUE_DISABLED=1 python app.py --port 5197 --no-debug
+//   node tests/browser/dims_ui.js http://127.0.0.1:5197 [screenshot.png]
 const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
