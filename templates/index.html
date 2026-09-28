@@ -56,7 +56,7 @@
     <label for="belt_height" style="margin:0;white-space:nowrap">Belt Height (mm)</label>
     <input type="number" id="belt_height" value="10" min="1" max="200" step="0.5" style="width:80px" oninput="onBeltHeightInput()">
     <label for="clearance_height" style="margin:0 0 0 8px;white-space:nowrap">Clearance Height (mm)</label>
-    <input type="number" id="clearance_height" value="0.5" min="0" max="50" step="0.1" style="width:70px" data-auto-value="0.5" oninput="schedulePreview()">
+    <input type="number" id="clearance_height" value="0.5" min="0" max="50" step="0.1" style="width:70px" oninput="onClearanceInput()">
   </div>
   <label class="drive-toggle fb-2d" data-picture="/static/help/two_pulley.svg">
     <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
@@ -1029,6 +1029,12 @@ let previewTab = 'pulley';   // 'pulley' | 'belt'
 let currentSpec  = null;
 let currentSpec2 = null;
 let previewTimer       = null;
+// A new design's clearance height follows the spec: the face is made as wide
+// as the standard's minimum for the belt (the Dimensions panel's "Minimum
+// face width"), or belt/20 for a profile with no published figure. It stays
+// automatic until the user types one (3D Mode bar), a saved design or link
+// brings its own, or Auto-fix sets it.
+let clearanceAuto = true;
 let ratioSnapTimer     = null;
 let beltCorrectionTimer = null;
 let _lastValidBeltTeeth = null;   // last belt_teeth value that returned a valid center dist
@@ -1114,6 +1120,7 @@ function _applyUrlParams(p) {
   set('clearance_preset');  set('clearance_custom');
   set('backlash_preset');   set('backlash_custom');
   set('belt_height');  set('clearance_height');
+  if (p.has('clearance_height')) clearanceAuto = false;   // a design keeps its own
 
   // ── Dual / P2 ─────────────────────────────────────────────────────────────────
   const isDual = p.get('dual') === 'true';
@@ -1290,6 +1297,7 @@ function saveSettings() {
     feature_build:       document.getElementById('feature_build').checked,
     belt_height:         document.getElementById('belt_height').value,
     clearance_height:    document.getElementById('clearance_height').value,
+    clearance_auto:      clearanceAuto,
     hub1_enabled:             document.getElementById('hub1_enabled').checked,
     hub1_open:                document.getElementById('hub1-body').classList.contains('open'),
     hub1_retention:           document.getElementById('hub1_retention').value,
@@ -1445,7 +1453,10 @@ async function loadSettings() {
   if (s.belt_height !== undefined) _val('belt_height', s.belt_height);
   if (s.clearance_height !== undefined) {
     const chEl = document.getElementById('clearance_height');
-    if (chEl) { chEl.value = s.clearance_height; chEl.dataset.autoValue = s.clearance_height; }
+    if (chEl) chEl.value = s.clearance_height;
+    // Still following the spec minimum (see showDims)? Settings saved before
+    // the flag existed keep the value they have.
+    clearanceAuto = s.clearance_auto === true;
   }
 
   // Restore hub settings
@@ -2888,20 +2899,15 @@ function updateBeltBtn() {
 // ── Feature Build ─────────────────────────────────────────────────────────────
 
 function onBeltHeightInput() {
-  const bh   = Math.max(1, parseFloat(document.getElementById('belt_height').value) || 10);
-  const chEl = document.getElementById('clearance_height');
-  // Auto-update clearance_height only if it still matches the bh/20 default for the prior bh.
-  // Use a data attribute to track the last auto-set value.
-  if (chEl) {
-    const prev = parseFloat(chEl.dataset.autoValue ?? chEl.value) || 0;
-    const cur  = parseFloat(chEl.value) || 0;
-    if (Math.abs(cur - prev) < 0.001) {   // user hasn't changed it manually
-      const autoVal = Math.round(bh / 20 * 10) / 10;
-      chEl.value = autoVal;
-      chEl.dataset.autoValue = autoVal;
-    }
-  }
+  // A clearance height still on automatic follows the new belt width when
+  // the Dimensions answer comes back (showDims).
   _syncDynamicBounds();
+  schedulePreview();
+}
+
+// Typing a clearance height takes it off automatic.
+function onClearanceInput() {
+  clearanceAuto = false;
   schedulePreview();
 }
 
@@ -3495,6 +3501,20 @@ function showDims(data) {
   if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
   if (data.error) return;
 
+  if (clearanceAuto && data.pulleys.length) {
+    const bw = data.pulleys[0].belt_width;
+    const needs = data.pulleys.filter(c => c.face_width_min !== undefined)
+                              .map(c => c.face_width_min - c.belt_width);
+    const want = needs.length ? Math.ceil(Math.max(...needs) * 10 - 1e-6) / 10
+                              : Math.round(bw / 20 * 10) / 10;
+    const el = document.getElementById('clearance_height');
+    if (Math.abs((parseFloat(el.value) || 0) - want) > 1e-6) {
+      el.value = want;
+      schedulePreview();          // redraws, and asks again with the new width
+      return;
+    }
+  }
+
   const mm = v => `${v.toFixed(2)} mm`;
   const cols = data.pulleys;
   if (cols.length > 1) {
@@ -3554,6 +3574,7 @@ function showDims(data) {
 // Auto-fix: set each field the server named and let its own handler run.
 function applyDimsFix() {
   if (!dimsFix) return;
+  if ('clearance_height' in dimsFix.set) clearanceAuto = false;
   for (const [id, value] of Object.entries(dimsFix.set)) {
     const el = document.getElementById(id);
     if (!el) continue;
