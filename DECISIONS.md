@@ -1,5 +1,48 @@
 # Architectural Decision Records
 
+## ADR-017 — A splined bore's fit, sample shaft and retaining ring (cct_common 0.20.0)
+**Date:** 2026-09-29
+**Status:** Active (2D, STL, cadquery STEP); small_step STEP pending (it refuses splines, ADR-014)
+
+**Context:** ADR-014 cut a spline's nominal outline. A printed pulley on a splined shaft also needs the
+fit (how much looser the hole is than the shaft), something that holds it on the shaft axially, and a
+shaft to try it on. The sources are in Sprocket's `Pdf/`: ISO 14:1982 (scanned; Table 2's fits), the
+ISO 4156-1:2005 design worksheet, and DIN 471:2011 (external retaining rings), checked against
+McMaster-Carr's DIN 471 rings (98541A…, 3–29 mm, all match).
+
+**Decision:**
+- **The standard's default fit only**, no choice: ISO 14 sliding (hole H9 / H10 / H7 on B / D / d,
+  shaft d10 / a11 / f7, zones from ISO 286-2 — `cct_common.iso286`); ISO 4156 H/h, tolerance class 6,
+  on the space / tooth width (the minor from the form diameter + 0.2 m, per the worksheet). Hole and
+  shaft are each drawn at the **middle of their tolerance zone** (`splines.hole` / `splines.shaft`;
+  `path` is now the fitted hole, `shaft_path` the mating shaft). Bore Diameter is the fitted hole's
+  minor (23.0105 for 6 × 23 × 26).
+- **Print compensation on printed parts only** (STL): `print_extra` grows the bore and counterbore and
+  shrinks the sample shaft and the washer's OD (`splines.printed`, a mitred offset); the shaft's groove
+  widens by 2c and its floor comes in by c. SVG, DXF and STEP stay at the nominal fit.
+- **Retention: a DIN 471 ring** (`cct_common.retaining_rings`), `spline_ring` = top / bottom / none,
+  default top — the smallest d1 ≥ the shaft's outside diameter. The face gets a **counterbore**
+  Ø d4 (DIN's clearance for the lugs) and m deep, so the ring sits flush with the groove's outer wall at
+  the face; a cylinder on the axis, cut after flanges are joined on (`_cut_counterbore`), and in the
+  cadquery STEP. **Splined washer** (`spline_washer=1`): Ø d4 − 1, 1.5 mm, the bore's spline for its
+  hole; the counterbore deepens by its thickness.
+- **A spline takes no set screw**: Retention is locked to None on the page while Bore Shape is Spline
+  (the previous choice returns after), and the server zeroes the screw whatever is sent.
+- **Two new parts** in the download window, per pulley with a spline: the **sample splined shaft**
+  (the part's measured height + 5 mm past the far face + DIN's n past the groove) and the **splined
+  washer**; STL / SVG / DXF (`/download/spline-stl|svg|dxf?part=shaft|washer`), no STEP yet.
+- **The page takes the figures from the server** (`/api/spline`): the fitted hole and shaft, the fit's
+  source, the ring (label, McMaster PN), counterbore and washer. The Dimensions panel lists them and
+  warns when the counterbore leaves under 1 mm to the hub / spoke hub / tooth root, or sits under a
+  metal plate or a separate top flange.
+- **Later** (ToDo): a set screw that lands in a spline root, and a clamp hub (slot + screw boss).
+
+**Consequences:** `tests/test_spline_retainer.py` (22), `tests/test_bore_shape.py` on the fitted
+figures, `tests/browser/bore_ui.js` (42 checks); `cct_common/tests/test_splines.py`,
+`test_iso286.py`, `test_retaining_rings.py`. Help picture `spline_ring.svg`
+(`build_spline_ring.py`); `spline_involute.svg` relabelled. `/download/stl`'s body is `_pulley_stl`,
+which the shaft's length measures. SMALL_STEP_HANDOFF §8.
+
 ## ADR-016 — Undo / redo: settings snapshots; a state the page is about to correct is never a step
 **Date:** 2026-09-28
 **Status:** Active

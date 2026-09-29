@@ -3,6 +3,9 @@
 // bore a spline sets and locks, what the page sends, the Dimensions rows,
 // saving and reloading, links old (a D-flat on the hub) and new (a spline),
 // and a design saved before Bore Shape (D-Shaft in Retention) moving over.
+// ADR-017: the bore is the hole at the default fit (from /api/spline), the
+// retaining ring and splined washer, Retention locked to None, and the
+// sample shaft and washer in the download window.
 //
 // Needs a running app (tokens off is fine):
 //   QUEUE_DISABLED=1 python app.py --port 5197 --no-debug
@@ -59,6 +62,8 @@ async function main() {
   const val = sel => js(`document.querySelector('${sel}').value`);
   const params = () => js('buildParams()');
   const shown = sel => js(`!document.querySelector('${sel}').classList.contains('hidden')`);
+  const settle = () => sleep(600);                 // /api/spline answers after 150 ms
+  const text = sel => js(`document.querySelector('${sel}').textContent`);
 
   await send('Runtime.enable'); await send('Page.enable');
   await load(BASE + '/');
@@ -83,9 +88,13 @@ async function main() {
   const presets = await js("[...document.querySelectorAll('#spline1_preset option')].map(o => o.value)");
   check('ISO 14 presets: Custom, 15 light and 20 medium', presets.length === 36 && presets.includes('6,23,26,6'), presets.length);
   await setSel('#spline1_preset', '8,32,38,6');
+  await settle();
   check('a preset fills N × d × D × B',
     [await val('#spline1_n'), await val('#spline1_minor'), await val('#spline1_major'), await val('#spline1_width')].join() === '8,32,38,6');
-  check('the bore is the minor diameter, and locked', (await val('#bore')) === '32' && await js("document.getElementById('bore').disabled"));
+  check('the bore is the hole\'s minor at the default fit (H7 middle), and locked',
+    (await val('#bore')) === '32.0125' && await js("document.getElementById('bore').disabled"), await val('#bore'));
+  check('…the fit and the sample shaft shown', (await text('#spline1_info')).includes('ISO 14:1982 Table 2')
+    && (await text('#spline1_info')).includes('sample shaft'), await text('#spline1_info'));
   check('…with a note saying so', await shown('#bore1_note') && (await js("document.getElementById('bore1_note').textContent")).includes('minor diameter'));
   p = await params();
   check('sends bore_shape=spline and its sizes', p.bore_shape === 'spline' && p.spline_type === 'straight'
@@ -104,7 +113,8 @@ async function main() {
   check('45°: fillet root only', await js("document.getElementById('spline1_root').disabled") && (await val('#spline1_root')) === 'fillet');
   await setSel('#spline1_pa', '30'); await setSel('#spline1_m', '1.5'); await setSel('#spline1_z', '20');
   await setSel('#spline1_root', 'flat');
-  check('30° flat root, m 1.5 × 20: bore = m(z − 1) = 28.5', (await val('#bore')) === '28.5', await val('#bore'));
+  await settle();
+  check('30° flat root, m 1.5 × 20: bore = ISO 4156\'s minor, 28.6718', (await val('#bore')) === '28.6718', await val('#bore'));
   p = await params();
   check('sends the involute', p.spline_type === 'involute' && p.spline_m === '1.5' && p.spline_z === '20' && p.spline_pa === '30', p);
 
@@ -114,16 +124,50 @@ async function main() {
   await js("document.getElementById('dims-details').open = true");
   await waitFor("[...document.querySelectorAll('#dims-table tr')].some(r => r.textContent.startsWith('Spline major'))", 6000);
   const rows = await js("[...document.querySelectorAll('#dims-table tr')].map(r => r.textContent)");
-  check('Dimensions: spline minor and major', rows.some(r => r.startsWith('Spline minor') && r.includes('28.50 mm'))
+  check('Dimensions: spline minor and major', rows.some(r => r.startsWith('Spline minor') && r.includes('28.67 mm'))
     && rows.some(r => r.startsWith('Spline major') && r.includes('32.25 mm')), rows);   // m(z + 1.5), flat root
+  check('Dimensions: the sample shaft, ring and counterbore', rows.some(r => r.startsWith('Sample shaft major'))
+    && rows.some(r => r.startsWith('Retaining ring') && r.includes('DIN 471'))
+    && rows.some(r => r.startsWith('Ring counterbore diameter')), rows);
+
+  // ── the retaining ring and washer; Retention ──
+  p = await params();
+  check('the ring on the top face by default, no washer', p.spline_ring === 'top' && !('spline_washer' in p), p);
+  check('…named, with its counterbore', (await text('#spline1_ring_info')).includes('DIN 471')
+    && (await text('#spline1_ring_info')).includes('McMaster') && (await text('#spline1_ring_info')).includes('counterbore'),
+    await text('#spline1_ring_info'));
+  await js("document.getElementById('spline1_washer').click()");
+  await settle();
+  p = await params();
+  check('the washer is sent and shown', p.spline_washer === '1' && (await text('#spline1_ring_info')).includes('washer'), p);
+  check('Retention is None and locked, with a note', (await val('#hub1_retention')) === 'none'
+    && await js("document.getElementById('hub1_retention').disabled") && await shown('#hub1_spline_note'));
+  check('no screw is sent', !('hub_screw_size' in p) && !('hub_screw_count' in p), p);
+  const parts = await js('_dlParts(true).map(x => x.id)');
+  check('download window: the sample shaft and the washer', parts.includes('sh1') && parts.includes('wa1'), parts);
+  const files = await js("_dlFiles('sh1', 'stl').concat(_dlFiles('wa1', 'dxf'), _dlFiles('sh1', 'step'))");
+  check('…their routes, no STEP', files.length === 2 && files[0].path === '/download/spline-stl' && files[0].params.part === 'shaft'
+    && files[1].path === '/download/spline-dxf' && files[1].params.part === 'washer', files);
+  const shaft = await js(`fetch('/download/spline-stl?' + new URLSearchParams(_dlFiles('sh1', 'stl')[0].params)).then(r => r.status)`);
+  check('…and the shaft downloads', shaft === 200, shaft);
+  await setSel('#spline1_ring', 'none');
+  check('no ring: the washer box is off, and no washer part', await js("document.getElementById('spline1_washer').disabled")
+    && !(await js('_dlParts(true).map(x => x.id)')).includes('wa1'));
+  await setSel('#spline1_ring', 'bottom');
+  await settle();
+  check('bottom face', (await params()).spline_ring === 'bottom' && (await text('#spline1_ring_info')).includes('bottom face'));
 
   // ── saved and restored ──
   await js('saveSettings()');
   await load(BASE + '/');
+  await settle();
   check('reload keeps the involute spline', (await val('#bore1_shape')) === 'spline' && (await val('#spline1_type')) === 'involute'
-    && (await val('#spline1_m')) === '1.5' && (await val('#bore')) === '28.5', [await val('#bore1_shape'), await val('#spline1_m'), await val('#bore')]);
+    && (await val('#spline1_m')) === '1.5' && (await val('#bore')) === '28.6718', [await val('#bore1_shape'), await val('#spline1_m'), await val('#bore')]);
+  check('…and its ring and washer', (await val('#spline1_ring')) === 'bottom' && await js("document.getElementById('spline1_washer').checked")
+    && (await val('#hub1_retention')) === 'none');
   await setSel('#bore1_shape', 'round');
   check('back to Round: the bore can be typed again', !(await js("document.getElementById('bore').disabled")) && !(await shown('#bore1_note')));
+  check('…and Retention is free again', !(await js("document.getElementById('hub1_retention').disabled")) && !(await shown('#hub1_spline_note')));
 
   // ── links ──
   await js("localStorage.clear()");
@@ -131,9 +175,11 @@ async function main() {
   check('old link (D-flat on the hub): Bore Shape D-flat', (await val('#bore1_shape')) === 'flat' && (await val('#hub1_flat_depth')) === '1.2');
   check('…and its screw in Retention', (await val('#hub1_retention')) === 'set_screw_nut' && (await val('#hub1_screw_size')) === 'M4');
   await js("localStorage.clear()");
-  await load(BASE + '/?family=HTD&pitch=5M&teeth=40&bore=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=26&spline_major=30&spline_width=6');
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=40&bore=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=26&spline_major=30&spline_width=6&spline_ring=bottom&spline_washer=1');
+  await settle();
   check('new link: the spline and its bore', (await val('#bore1_shape')) === 'spline' && (await val('#spline1_minor')) === '26'
-    && (await val('#bore')) === '26' && (await val('#spline1_preset')) === '6,26,30,6');
+    && (await val('#bore')) === '26.0105' && (await val('#spline1_preset')) === '6,26,30,6', await val('#bore'));
+  check('…its ring and washer', (await val('#spline1_ring')) === 'bottom' && await js("document.getElementById('spline1_washer').checked"));
 
   // ── a design saved before Bore Shape ──
   await js(`localStorage.setItem('pulley_last', JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('pulley_last') || '{}'),
@@ -152,8 +198,11 @@ async function main() {
   await js("(() => { const d = document.getElementById('dual_enable'); if (!d.checked) d.click(); })()");
   await sleep(1500);
   await setSel('#bore2_shape', 'spline');
+  await settle();
   p = await params();
-  check('Pulley 2: its own spline, prefixed', p.p2_bore_shape === 'spline' && p.p2_spline_type === 'straight' && (await val('#p2_bore')) === '23', p);
+  check('Pulley 2: its own spline, prefixed', p.p2_bore_shape === 'spline' && p.p2_spline_type === 'straight'
+    && p.p2_spline_ring === 'top' && (await val('#p2_bore')) === '23.0105', [p, await val('#p2_bore')]);
+  check('Pulley 2: its own sample shaft', (await js('_dlParts(true).map(x => x.id)')).includes('sh2'));
 
   finish(errors);
   ws.close(); chrome.kill();

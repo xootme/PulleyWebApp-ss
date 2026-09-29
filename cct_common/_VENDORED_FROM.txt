@@ -1,4 +1,4 @@
 Vendored from C:\Users\cmyer\Documents\cct_common
-cct_common version: 0.19.0
-source commit: 10ae3c3fea276121ac3a770e325a6a1adefb110f
+cct_common version: 0.20.0
+source commit: 78aecafe450e2b097ae2f0182c471df39c0f2155
 Run sync_cct_common.py (repo root) to refresh.

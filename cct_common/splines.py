@@ -7,8 +7,10 @@ Timing Pulleys'.
 
     sp = splines.straight(6, 23, 26, 6)          # ISO 14: N × d × D × B
     sp = splines.involute(1.5, 20, 30, "flat")   # ISO 4156: m, z, pressure angle, root
-    segs = splines.path(sp)                      # exact lines and arcs, closed, CCW
+    segs = splines.path(sp)                      # the hole, at the default fit: lines and arcs
+    shaft = splines.shaft_path(sp)               # the mating shaft, at the default fit
     pts = splines.sample_closed(segs, 0.05)      # or points, for a mesh or a polygon
+    pts = splines.printed(pts, 0.2, hole=True)   # 3D printing: the bore grows, a shaft shrinks
 
 Two kinds:
 
@@ -17,11 +19,21 @@ Two kinds:
   light and medium series are the presets; any N × d × D × B can be typed.
 * **Involute, ISO 4156** — module m, z teeth, pressure angle 30°, 37.5° or
   45° (30° also flat root). Pitch diameter m·z, base diameter m·z·cos α,
-  basic space width πm/2 on the pitch circle, internal major diameter
-  m(z + 1.5 / 1.8 / 1.4 / 1.2) (ISO 4156-1:2021 Table 1). The internal minor
-  diameter is m(z − 1) at 30° (ANSI B92.1's (N − 1)/P); at 37.5° and 45°
-  the table isn't in the public preview, so the looser of the published
-  figures is used, m(z − 0.8) and m(z − 0.6) — EST, which an app marks ≈.
+  basic space width and tooth thickness πm/2 on the pitch circle. Internal
+  major m(z + 1.5 / 1.8 / 1.4 / 1.2), external major m(z + 1 / 1 / 0.9 / 0.8),
+  external minor m(z − 1.5 / 1.8 / 1.4 / 1.2); internal minor
+  D_Fe max + 2c_F, the external form diameter plus twice the form clearance
+  0.1m (ISO 4156-1:2005, as its design worksheet computes them).
+
+**The default fit** (the only one offered): each part is drawn at the middle
+of its tolerance zone, so the pair has the fit's mean clearance.
+* ISO 14 **sliding**: hole B H9, D H10, d H7 (not treated after broaching);
+  shaft B d10, D a11, d f7 (ISO 14:1982 Table 2; zones from ISO 286).
+* ISO 4156 **H/h, tolerance class 6**: the space width and tooth thickness
+  each vary by T + λ = 2.5 (10 i* + 40 i**) µm, i* = 0.45 ∛D + 0.001 D and
+  i** = 0.45 ∛(πm/2) + 0.001 πm/2 (which reproduces the worksheet's 0.034 /
+  0.054 / 0.084 / 0.134 mm for classes 4-7 exactly); diameters are drawn at
+  their maximum material limit, since the form clearance keeps them apart.
 
 Profiles are exact Line/Arc primitives, so a DXF or SVG carries true
 geometry: the straight-sided hole is lines and arcs outright; each involute
@@ -145,19 +157,51 @@ ISO14_SOURCE = "ISO 14:1982 Table 1"
 MODULES = {30: (0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 8, 10),
            37.5: (0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 8, 10),
            45: (0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5)}
-# (pressure angle, root) -> (major k, major basis, minor k, minor basis, root fillet / m)
-# Internal major = m(z + k_major); internal minor = m(z − k_minor).
+# (pressure angle, root) -> (internal major k, form tooth height / m, minimum root
+# radius / m, external major k, external minor k), all times the module:
+# internal major = m(z + k), external major = m(z + k), external minor = m(z − k).
+# ISO 4156-1:2005 Table 1, as the project's design worksheet (iso4156-spline-
+# design-calcs.pdf) applies it.
 INVOLUTE = {
-    (30, "flat"): (1.5, STD, 1.0, SEC, 0.2),
-    (30, "fillet"): (1.8, STD, 1.0, SEC, 0.2),
-    (37.5, "fillet"): (1.4, STD, 0.8, EST, 0.4),
-    (45, "fillet"): (1.2, STD, 0.6, EST, 0.3),
+    (30, "flat"): (1.5, 0.6, 0.2, 1.0, 1.5),
+    (30, "fillet"): (1.8, 0.6, 0.4, 1.0, 1.8),
+    (37.5, "fillet"): (1.4, 0.55, 0.3, 0.9, 1.4),
+    (45, "fillet"): (1.2, 0.5, 0.25, 0.8, 1.2),
 }
+FORM_CLEARANCE = 0.1        # c_F / m
 INVOLUTE_SOURCES = {
-    STD: "ISO 4156-1:2021 Table 1 (internal major diameter)",
+    STD: "ISO 4156-1:2005 (the project's design worksheet, iso4156-spline-design-calcs.pdf)",
     SEC: "ANSI B92.1 internal minor diameter (N − 1)/P, via Engineers Edge",
     EST: "The looser published figure; ISO 4156's table isn't in the public preview",
 }
+ISO14_FIT = {"hole": {"B": "H9", "D": "H10", "d": "H7"},
+             "shaft": {"B": "d10", "D": "a11", "d": "f7"}}     # sliding, ISO 14:1982 Table 2
+ISO14_FIT_SOURCE = "ISO 14:1982 Table 2, sliding (zones: ISO 286-2)"
+INVOLUTE_CLASS = 6          # tolerance class of the default H/h fit
+
+
+def _form_diameter(m: float, z: int, pressure: float) -> float:
+    """D_Fe max: the external spline's form diameter at the h fit (es_v = 0),
+    2 √((D_b/2)² + (D/2 sin α − h_s / sin α)²), h_s the form tooth height."""
+    a = math.radians(pressure)
+    root = "flat" if pressure == 30 else "fillet"
+    hs = INVOLUTE[(pressure, root)][1] * m
+    d, db = m * z, m * z * math.cos(a)
+    return 2 * math.hypot(db / 2, d / 2 * math.sin(a) - hs / math.sin(a))
+
+
+def involute_minor(m: float, z: int, pressure: float) -> float:
+    """The internal minor diameter D_ii min = D_Fe max + 2 c_F."""
+    return _form_diameter(m, z, pressure) + 2 * FORM_CLEARANCE * m
+
+
+def involute_tolerance(m: float, z: int, cls: int = INVOLUTE_CLASS) -> float:
+    """T + λ in mm: the total tolerance on space width / tooth thickness."""
+    d, w = m * z, math.pi * m / 2
+    i1 = 0.45 * d ** (1 / 3) + 0.001 * d
+    i2 = 0.45 * w ** (1 / 3) + 0.001 * w
+    factor = {4: 1.0, 5: 1.6, 6: 2.5, 7: 4.0}[cls]
+    return factor * (10 * i1 + 40 * i2) / 1000.0
 
 
 @dataclass(frozen=True)
@@ -199,8 +243,8 @@ def involute(m: float, z: int, pressure: float = 30.0, root: str = "flat") -> Sp
         raise ValueError("the spline module must be more than 0")
     if not 6 <= z <= 100:
         raise ValueError("an involute spline has 6 to 100 teeth")
-    k_major, _, k_minor, _, _ = INVOLUTE[key]
-    return Spline("involute", z, m * (z - k_minor), m * (z + k_major), module=m,
+    k_major = INVOLUTE[key][0]
+    return Spline("involute", z, involute_minor(m, z, pressure), m * (z + k_major), module=m,
                   pressure=pressure, root=key[1])
 
 
@@ -209,8 +253,7 @@ def basis(sp: Spline) -> dict[str, tuple[str, str]]:
     {"major": (STD/SEC/EST, source), "minor": (...)}."""
     if sp.kind == "straight":
         return {"major": (STD, ISO14_SOURCE), "minor": (STD, ISO14_SOURCE)}
-    k = INVOLUTE[(sp.pressure, sp.root)]
-    return {"major": (k[1], INVOLUTE_SOURCES[k[1]]), "minor": (k[3], INVOLUTE_SOURCES[k[3]])}
+    return {"major": (STD, INVOLUTE_SOURCES[STD]), "minor": (STD, INVOLUTE_SOURCES[STD])}
 
 
 def presets() -> dict:
@@ -222,10 +265,58 @@ def presets() -> dict:
 
 # ── Outlines ──────────────────────────────────────────────────────────────────
 
-def _straight_path(sp: Spline) -> list[Segment]:
-    """Minor circle between the slots; each slot two radial-parallel walls
-    and its bottom on the major circle."""
-    r, R, h = sp.minor / 2, sp.major / 2, sp.width / 2
+@dataclass(frozen=True)
+class Profile:
+    """One part of a spline pair as it's drawn: the inner circle (the hole's
+    lands / the shaft's roots), the outer circle (the hole's slot bottoms /
+    the shaft's tips), and the width of a slot or tooth (straight) or of a
+    space or tooth on the pitch circle (involute). A hole's space and a
+    shaft's tooth of the same width have the same outline."""
+    kind: str
+    n: int
+    inner: float           # diameter
+    outer: float           # diameter
+    width: float
+    module: float = 0.0
+    pressure: float = 30.0
+
+
+def hole(sp: Spline) -> Profile:
+    """The bore at the default fit (the middle of each tolerance zone)."""
+    if sp.kind == "straight":
+        from . import iso286
+        z = ISO14_FIT["hole"]
+        return Profile("straight", sp.n, sp.minor + iso286.middle(sp.minor, z["d"]),
+                       sp.major + iso286.middle(sp.major, z["D"]),
+                       sp.width + iso286.middle(sp.width, z["B"]))
+    t = involute_tolerance(sp.module, sp.n)
+    return Profile("involute", sp.n, sp.minor, sp.major, math.pi * sp.module / 2 + t / 2,
+                   sp.module, sp.pressure)
+
+
+def shaft(sp: Spline) -> Profile:
+    """The mating shaft at the default fit."""
+    if sp.kind == "straight":
+        from . import iso286
+        z = ISO14_FIT["shaft"]
+        return Profile("straight", sp.n, sp.minor + iso286.middle(sp.minor, z["d"]),
+                       sp.major + iso286.middle(sp.major, z["D"]),
+                       sp.width + iso286.middle(sp.width, z["B"]))
+    k = INVOLUTE[(sp.pressure, sp.root)]
+    t = involute_tolerance(sp.module, sp.n)
+    return Profile("involute", sp.n, sp.module * (sp.n - k[4]), sp.module * (sp.n + k[3]),
+                   math.pi * sp.module / 2 - t / 2, sp.module, sp.pressure)
+
+
+def fit_source(sp: Spline) -> str:
+    return (ISO14_FIT_SOURCE if sp.kind == "straight"
+            else f"ISO 4156-1:2005 H/h, tolerance class {INVOLUTE_CLASS}")
+
+
+def _straight_path(sp: Profile) -> list[Segment]:
+    """Inner circle between the slots / teeth; each two radial-parallel walls
+    and its end on the outer circle."""
+    r, R, h = sp.inner / 2, sp.outer / 2, sp.width / 2
     a_in = math.asin(h / r)                  # half-angle of a slot mouth on the minor circle
     a_out = math.asin(h / R)                 # … and of its bottom on the major circle
     step = 2 * math.pi / sp.n
@@ -289,16 +380,15 @@ def _flank_arcs(point_at, t0, t1, depth=0) -> list[Arc]:
     return _flank_arcs(point_at, t0, tm, depth + 1) + _flank_arcs(point_at, tm, t1, depth + 1)
 
 
-def _involute_path(sp: Spline) -> list[Segment]:
-    """Spaces (where the shaft's teeth go) round the pitch circle, basic
-    width πm/2 there, between internal teeth whose tips lie on the minor
-    circle; each space's flanks are involutes of the base circle, its root
-    on the major circle."""
+def _involute_path(sp: Profile) -> list[Segment]:
+    """Spaces (a hole) or teeth (a shaft) round the pitch circle, sp.width
+    wide there, from the inner circle to the outer; each flank an involute of
+    the base circle. (A hole's space and a shaft's tooth are the same shape.)"""
     m, z, alpha = sp.module, sp.n, math.radians(sp.pressure)
     rp = m * z / 2
     rb = rp * math.cos(alpha)
-    r_min, r_maj = sp.minor / 2, sp.major / 2
-    half_space = (math.pi * m / 2) / 2 / rp          # half the space's angle at the pitch circle
+    r_min, r_maj = sp.inner / 2, sp.outer / 2
+    half_space = sp.width / 2 / rp                   # half the space's angle at the pitch circle
     phi_p = _inv(alpha)
     step = 2 * math.pi / z
 
@@ -338,6 +428,30 @@ def _involute_path(sp: Spline) -> list[Segment]:
     return out
 
 
+def outline(pr: Profile) -> list[Segment]:
+    return _straight_path(pr) if pr.kind == "straight" else _involute_path(pr)
+
+
 def path(sp: Spline) -> list[Segment]:
-    """The hole's outline: exact lines and arcs, closed, counter-clockwise."""
-    return _straight_path(sp) if sp.kind == "straight" else _involute_path(sp)
+    """The hole's outline at the default fit: exact lines and arcs, closed,
+    counter-clockwise."""
+    return outline(hole(sp))
+
+
+def shaft_path(sp: Spline) -> list[Segment]:
+    """The mating shaft's outline at the default fit."""
+    return outline(shaft(sp))
+
+
+def printed(points: list[Point], offset: float, hole: bool) -> list[Point]:
+    """3D-print compensation on a sampled outline: a hole grows by `offset`,
+    a shaft shrinks by it (a perpendicular offset, mitred corners). For the
+    printed parts only — drawings and STEP stay nominal."""
+    if offset <= 0:
+        return points
+    from shapely.geometry import Polygon
+    grown = Polygon(points).buffer(offset if hole else -offset, join_style=2, mitre_limit=4.0)
+    if grown.geom_type != "Polygon":
+        grown = max(grown.geoms, key=lambda g: g.area)
+    pts = list(grown.exterior.coords)[:-1]
+    return pts if Polygon(pts).exterior.is_ccw else pts[::-1]

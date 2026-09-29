@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=44">
+  <link rel="stylesheet" href="/static/style.css?v=45">
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
@@ -75,6 +75,18 @@
           </div>
         </div>
         <div class="hub-info" id="spline{{ n }}_info"></div>
+        <!-- ADR-017: a DIN 471 ring on the shaft, in a counterbore in one face -->
+        <label for="spline{{ n }}_ring">Retaining Ring</label>
+        <select id="spline{{ n }}_ring" onchange="onBoreShapeChange({{ n }})">
+          <option value="top">Top face</option>
+          <option value="bottom">Bottom face</option>
+          <option value="none">None</option>
+        </select>
+        <label for="spline{{ n }}_washer" class="spline-check">
+          <input type="checkbox" id="spline{{ n }}_washer" onchange="onBoreShapeChange({{ n }})">
+          Splined washer under the ring
+        </label>
+        <div class="hub-info" id="spline{{ n }}_ring_info"></div>
       </div>
 {%- endmacro %}
 
@@ -288,6 +300,7 @@
           <option value="set_screw_insert">Set Screw (heat-set insert)</option>
           <option value="none">None</option>
         </select>
+        <div class="hub-info hidden" id="hub1_spline_note"></div>
 
         <div id="hub1_setscrew_opts">
           <label for="hub1_screw_size">Set Screw Size</label>
@@ -623,6 +636,7 @@
           <option value="set_screw_insert">Set Screw (heat-set insert)</option>
           <option value="none">None</option>
         </select>
+        <div class="hub-info hidden" id="hub2_spline_note"></div>
 
         <div id="hub2_setscrew_opts">
           <label for="hub2_screw_size">Set Screw Size</label>
@@ -2721,7 +2735,25 @@ function _dlParts(threeD) {
   } else if (dual && hasBelt) {
     parts.push({ id: 'drive', label: 'Whole drive drawing', only: 'dxf', note: 'DXF only' });
   }
+  // A splined bore's own parts (ADR-017): a sample shaft that fits it, and the
+  // washer under the ring — STL and drawings, no STEP.
+  for (const n of dual ? [1, 2] : [1]) {
+    if (boreShape(n) !== 'spline') continue;
+    parts.push({ id: `sh${n}`, label: `Pulley ${n} sample splined shaft`, note: threeD ? 'no STEP' : '' });
+    if (_sv(n, 'ring') !== 'none' && document.getElementById(`spline${n}_washer`).checked)
+      parts.push({ id: `wa${n}`, label: `Pulley ${n} splined washer`, note: threeD ? 'no STEP' : '' });
+  }
   return parts;
+}
+
+// The query for a spline part: the pulley's own query (its height, flanges,
+// bore) plus which part.
+function _splinePartParams(n, part) {
+  const p = buildParams();
+  if (n === 2) p.pulley = '2';
+  p.belt_height = document.getElementById('belt_height').value;
+  p.part = part;
+  return p;
 }
 
 // The requests one part needs in one format — the same routes and parameters
@@ -2749,6 +2781,10 @@ function _dlFiles(part, fmt) {
   }
   if (part.startsWith('fl') && fmt === 'stl') return _flangeFiles(Number(part.slice(2)));
   if (part === 'drive' && fmt === 'dxf') return [q('/download/all-dxf', buildBeltParams())];
+  if ((part.startsWith('sh') || part.startsWith('wa')) && fmt !== 'step') {
+    const n = Number(part.slice(2));
+    return [q(`/download/spline-${fmt}`, _splinePartParams(n, part.startsWith('sh') ? 'shaft' : 'washer'))];
+  }
   return [];
 }
 
@@ -3577,6 +3613,14 @@ const DIM_ROWS = [
   ['pitch_line_diff',        'Pitch line differential'],
   ['spline_minor',           'Spline minor (the bore)'],
   ['spline_major',           'Spline major (its reach)'],
+  ['shaft_minor',            'Sample shaft minor'],
+  ['shaft_major',            'Sample shaft major'],
+  ['ring',                   'Retaining ring', c => `${c.ring}, ${c.ring_face} face` +
+                                                   (c.ring_mcmaster ? ` (McMaster ${c.ring_mcmaster})` : '')],
+  ['counterbore_d',          'Ring counterbore diameter'],
+  ['counterbore_depth',      'Ring counterbore depth'],
+  ['washer_od',              'Splined washer OD'],
+  ['washer_t',               'Splined washer thickness'],
   ['belt_width',             'Belt width'],
   ['face_width',             'Face width (belt + clearance)'],
   ['face_width_min',         'Minimum face width'],
@@ -3584,6 +3628,7 @@ const DIM_ROWS = [
   ['flange_reach',           'Flange past the OD'],
   ['flange_min_height',      'Minimum flange height'],
 ];
+// A row's third entry, if any, writes its text (a figure that isn't mm).
 // A figure that fails the rule next to it is shown red.
 const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height' };
 let dimsTimer = null, dimsSeq = 0, dimsFix = null;
@@ -3648,7 +3693,7 @@ function showDims(data) {
     cols.forEach((_, i) => { const th = document.createElement('th'); th.textContent = `Pulley ${i + 1}`; tr.append(th); });
   }
   let anyApprox = false;
-  for (const [key, label] of DIM_ROWS) {
+  for (const [key, label, text] of DIM_ROWS) {
     if (cols.every(c => c[key] === undefined)) continue;
     // "as built" only when print compensation or clearance moves it
     if (key === 'outside_diameter_built'
@@ -3659,7 +3704,7 @@ function showDims(data) {
       const td = tr.insertCell();
       td.className = 'num';
       if (c[key] === undefined) { td.textContent = '—'; continue; }
-      td.textContent = mm(c[key]);
+      td.textContent = text ? text(c) : mm(c[key]);
       const limit = DIM_SHORT[key];
       if (limit && c[limit] !== undefined && c[key] < c[limit] - 1e-6) td.classList.add('short');
       if (c.approx && c.approx[key]) {
@@ -3965,16 +4010,17 @@ const boreShape = n => document.getElementById(`bore${n}_shape`).value;
 const _bid = n => (n === 1 ? 'bore' : 'p2_bore');
 const _sv = (n, k) => document.getElementById(`spline${n}_${k}`).value;
 
-// The spline as the server builds it — minor and major — or null.
+// The spline's nominal minor and major, or null: the page's first guess for
+// the wall checks, until /api/spline answers with the fitted figures.
 function splineOf(n) {
   if (boreShape(n) !== 'spline') return null;
   if (_sv(n, 'type') === 'involute') {
     const m = parseFloat(_sv(n, 'm')) || 1, z = parseInt(_sv(n, 'z')) || 20;
     const pa = parseFloat(_sv(n, 'pa')) || 30, root = pa === 30 ? _sv(n, 'root') : 'fillet';
     const k = { '30flat': [1.5, 1.0], '30fillet': [1.8, 1.0], '37.5fillet': [1.4, 0.8], '45fillet': [1.2, 0.6] }[`${pa}${root}`];
-    return { minor: m * (z - k[1]), major: m * (z + k[0]), estimated: pa !== 30 };
+    return { minor: m * (z - k[1]), major: m * (z + k[0]) };
   }
-  return { minor: parseFloat(_sv(n, 'minor')) || 0, major: parseFloat(_sv(n, 'major')) || 0, estimated: false };
+  return { minor: parseFloat(_sv(n, 'minor')) || 0, major: parseFloat(_sv(n, 'major')) || 0 };
 }
 // How far the bore reaches: a spline's major diameter, else the bore.
 function boreReach(n) {
@@ -3997,13 +4043,16 @@ function boreParams(p, n, prefix) {
     p[`${prefix}spline_type`] = t;
     const keys = t === 'involute' ? ['m', 'z', 'pa', 'root'] : ['n', 'minor', 'major', 'width'];
     for (const k of keys) p[`${prefix}spline_${k}`] = _sv(n, k);
+    p[`${prefix}spline_ring`] = _sv(n, 'ring');
+    if (document.getElementById(`spline${n}_washer`).checked) p[`${prefix}spline_washer`] = '1';
   }
 }
 
-const SPLINE_KEYS = ['type', 'preset', 'n', 'minor', 'major', 'width', 'pa', 'root', 'm', 'z'];
+const SPLINE_KEYS = ['type', 'preset', 'n', 'minor', 'major', 'width', 'pa', 'root', 'm', 'z', 'ring'];
 function boreSettings(n) {
   const out = { [`bore${n}_shape`]: boreShape(n) };
   for (const k of SPLINE_KEYS) out[`spline${n}_${k}`] = _sv(n, k);
+  out[`spline${n}_washer`] = document.getElementById(`spline${n}_washer`).checked;
   return out;
 }
 function applyBoreSettings(n, s) {
@@ -4015,6 +4064,8 @@ function applyBoreSettings(n, s) {
     if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) el.dataset.want = v;   // filled later
     el.value = v;
   }
+  if (s[`spline${n}_washer`] !== undefined)
+    document.getElementById(`spline${n}_washer`).checked = !!s[`spline${n}_washer`];
   showBoreShape(n);
 }
 function boreFromLink(p, n, pre) {
@@ -4027,6 +4078,7 @@ function boreFromLink(p, n, pre) {
       f.value = p.get(`${pre}spline_${k}`);
       if (f.tagName === 'SELECT' && f.value !== p.get(`${pre}spline_${k}`)) f.dataset.want = p.get(`${pre}spline_${k}`);
     }
+    document.getElementById(`spline${n}_washer`).checked = p.get(`${pre}spline_washer`) === '1';
   } else if (p.has(`${pre}hub_flat_depth`)) {
     el.value = 'flat';
     document.getElementById(`hub${n}_flat_depth`).value = p.get(`${pre}hub_flat_depth`);
@@ -4060,11 +4112,46 @@ function showBoreShape(n) {
     boreEl.value = +sp.minor.toFixed(3);
     note.textContent = `Set by the spline: the bore is its minor diameter, ${sp.minor.toFixed(2)} mm. ` +
       'Change the spline below, or set Bore Shape to Round to type a bore.';
-    document.getElementById(`spline${n}_info`).textContent =
-      `minor ${sp.minor.toFixed(2)} mm${sp.estimated ? ' ≈' : ''} · major ${sp.major.toFixed(2)} mm` +
-      (sp.estimated ? ' — ≈ the looser published minor; ISO 4156\'s table isn\'t public' : '');
+    document.getElementById(`spline${n}_info`).textContent = '';   // /api/spline fills it
   }
   note.classList.toggle('hidden', !sp);
+  const washer = document.getElementById(`spline${n}_washer`);
+  washer.disabled = _sv(n, 'ring') === 'none';
+  washer.parentElement.style.opacity = washer.disabled ? '0.45' : '';
+  if (sp) _fetchSplineFit(n);
+  _lockRetentionForSpline(n);
+}
+
+// The fitted figures (ADR-017) come from the server — /api/spline, the same
+// cct_common code the exports use: the bore at the default fit, the sample
+// shaft, and the ring's counterbore and washer.
+const _splineFitTimer = {};
+function _fetchSplineFit(n) {
+  clearTimeout(_splineFitTimer[n]);
+  _splineFitTimer[n] = setTimeout(async () => {
+    const pre = n === 1 ? '' : 'p2_', p = { pulley: String(n) };
+    boreParams(p, n, pre);
+    const out = document.getElementById(`spline${n}_ring_info`);
+    let fit;
+    try {
+      const r = await fetch('/api/spline?' + new URLSearchParams(p));
+      fit = await r.json();
+      if (!r.ok) { out.textContent = `⚠ ${fit.error || 'Spline error'}`; return; }
+    } catch (e) { return; }
+    if (!fit || boreShape(n) !== 'spline') return;
+    document.getElementById(_bid(n)).value = fit.bore;
+    document.getElementById(`spline${n}_info`).textContent =
+      `Hole ${fit.bore.toFixed(3)} × ${fit.hole_major.toFixed(3)} mm · sample shaft ` +
+      `${fit.shaft_minor.toFixed(3)} × ${fit.shaft_major.toFixed(3)} mm — ${fit.fit}, each part at the middle of its tolerance`;
+    document.getElementById(`bore${n}_note`).textContent =
+      `Set by the spline: the bore is the hole's minor diameter at the default fit, ${fit.bore.toFixed(3)} mm. ` +
+      'Change the spline below, or set Bore Shape to Round to type a bore.';
+    const rt = fit.retainer;
+    out.textContent = rt
+      ? `${rt.ring} (McMaster ${rt.mcmaster || '—'}) · counterbore Ø${rt.cb_d} × ${+rt.cb_depth.toFixed(2)} mm ` +
+        `in the ${rt.face} face` + (rt.washer_t > 0 ? ` · washer Ø${rt.washer_od} × ${rt.washer_t} mm` : '')
+      : 'No ring: nothing holds the pulley on the shaft.';
+  }, 150);
 }
 
 function onBoreShapeChange(n) {
@@ -4727,7 +4814,27 @@ function _triggerDownload(url) {
   document.body.removeChild(a);
 }
 
+// A splined bore holds the pulley itself (ADR-017): Retention is None and
+// locked while Bore Shape is Spline; the choice before comes back after.
+function _lockRetentionForSpline(n) {
+  const ret = document.getElementById(`hub${n}_retention`);
+  const note = document.getElementById(`hub${n}_spline_note`);
+  const spline = boreShape(n) === 'spline';
+  if (spline) {
+    if (!ret.disabled) ret.dataset.before = ret.value;
+    ret.value = 'none';                  // even if a restore set it since
+  } else if (!spline && ret.disabled) {
+    if (ret.dataset.before) ret.value = ret.dataset.before;
+    delete ret.dataset.before;
+  }
+  ret.disabled = spline;
+  note.textContent = spline ? 'None with a splined bore: the spline drives it and the retaining ring ' +
+    'holds it on the shaft (Bore Shape, Size card).' : '';
+  note.classList.toggle('hidden', !spline);
+}
+
 function onHubChange(n) {
+  _lockRetentionForSpline(n);
   _updateHubMaxValues(n);
 
   // Hub Height min = 2 × screw_dia when set screw retention (hub.md spec)
@@ -4747,7 +4854,7 @@ function onHubChange(n) {
   document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSetScrew);
   // A shaped bore takes one screw, aimed at its flat, key or first slot.
   const shape = boreShape(n);
-  const where = { flat: 'on the D-flat', key: 'into the keyway', spline: 'into the first spline slot' }[shape];
+  const where = { flat: 'on the D-flat', key: 'into the keyway' }[shape];
   const shapeNote = document.getElementById(`hub${n}_shape_note`);
   shapeNote.textContent = where ? `One screw, ${where} (Bore Shape, Size card).` : '';
   shapeNote.classList.toggle('hidden', !where);
@@ -5357,6 +5464,8 @@ function onAdvBothToggle(n) {
     spline_root:            '/static/help/spline_involute.svg',
     spline_m:               '/static/help/spline_involute.svg',
     spline_z:               '/static/help/spline_involute.svg',
+    spline_ring:            '/static/help/spline_ring.svg',
+    spline_washer:          '/static/help/spline_ring.svg',
     hub_flat_depth:         '/static/help/hub_flat_depth.svg',
     hub_keyway_w:           '/static/help/hub_keyway_w.svg',
     hub_keyway_h:           '/static/help/hub_keyway_h.svg',

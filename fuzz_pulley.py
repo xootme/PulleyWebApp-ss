@@ -119,8 +119,12 @@ def _raw_config(r: random.Random) -> dict:
         'belt_height': round(r.uniform(6.0, 25.0), 1),
         'clearance_height': round(r.uniform(0.0, 0.8), 2),
     }
-    profile = r.choice(['round', 'dflat', 'keyway'])
-    if profile == 'dflat':
+    # small_step refuses a splined bore (SMALL_STEP_HANDOFF §7): cadquery only
+    shapes = ['round', 'dflat', 'keyway'] + (['spline'] if _splines_on() else [])
+    profile = r.choice(shapes)
+    if profile == 'spline':
+        _add_spline(r, cfg)
+    elif profile == 'dflat':
         cfg['hub_flat_depth'] = round(r.uniform(0.3, float(cfg['bore']) * 0.25), 2)
     elif profile == 'keyway':
         kw = r.choice([2.0, 3.0, 4.0, 5.0, 6.0])
@@ -164,6 +168,32 @@ def _raw_config(r: random.Random) -> dict:
     return cfg
 
 
+def _splines_on() -> bool:
+    return os.environ.get('PULLEY_STEP_BACKEND', '').strip().lower() == 'cadquery'
+
+
+def _add_spline(r: random.Random, cfg: dict) -> None:
+    """A splined bore (ADR-014): an ISO 14 size or an ISO 4156 one, with a
+    retaining ring on either face or none and maybe the washer (ADR-017).
+    Half get no print compensation, so the STEP-vs-STL volume check runs
+    (the STL's bore is printed, the STEP's nominal)."""
+    from cct_common import splines
+    pre = splines.presets()
+    cfg['bore_shape'] = 'spline'
+    if r.random() < 0.5:
+        n, d, D, B = r.choice([x for x in pre['straight']['light'] + pre['straight']['medium'] if x[2] <= 40])
+        cfg.update(spline_type='straight', spline_n=n, spline_minor=d, spline_major=D, spline_width=B)
+    else:
+        pa = r.choice([30, 37.5, 45])
+        mods = [m for m in pre['involute']['modules'][str(pa)] if m <= 2]     # sizes a pulley can hold
+        cfg.update(spline_type='involute', spline_pa=pa, spline_m=r.choice(mods), spline_z=r.randint(6, 30), spline_root=r.choice(['flat', 'fillet']) if pa == 30 else 'fillet')
+    cfg['spline_ring'] = r.choice(['top', 'bottom', 'none'])
+    if cfg['spline_ring'] != 'none' and r.random() < 0.5:
+        cfg['spline_washer'] = '1'
+    if r.random() < 0.5:
+        cfg['print_extra'] = 0.0
+
+
 def _add_set_screw(r: random.Random, cfg: dict) -> None:
     """A hub set screw (ADR-013): any size or Custom, any hold, and the
     design's threaded-hole settings — the parameters the page sends."""
@@ -202,7 +232,25 @@ def _make_config(r: random.Random, max_attempts: int = 30) -> dict:
             R_tr = R_OD - spec['tooth_ht']
             if bore_mm >= R_tr - 1.0:
                 raise ValueError(f'bore {bore_mm} >= tooth root {R_tr:.1f}')
+            if qs.get('bore_shape') == 'spline':
+                from app import _spline_of
+                from cct_common import splines
+                sp = _spline_of(qs, '')                   # ValueError for a size ISO can't make
+                reach = splines.hole(splines.Spline(**{k: sp[k] for k in (
+                    'kind', 'n', 'minor', 'major', 'width', 'module', 'pressure', 'root')})).outer / 2
+                if reach >= R_tr - 1.0:
+                    raise ValueError(f'spline reach {reach:.1f} >= tooth root {R_tr:.1f}')
+                rt = sp['retainer']
+                if rt and rt['cb_d'] / 2 >= R_tr - 1.0:
+                    raise ValueError('ring counterbore reaches the tooth root')
+                if rt and rt['face'] == 'top' and float(raw.get('hub_od', 0)) > 0 \
+                        and rt['cb_d'] >= float(raw['hub_od']) - 2.0:
+                    raise ValueError('ring counterbore wider than the hub')
+                if rt and rt['cb_depth'] >= belt_h + float(raw.get('hub_height', 0)) - 1.0:
+                    raise ValueError('ring counterbore deeper than the part')
             hub_od, hub_h, sd, sc, cn, fd, kw, kh = _parse_hub_params(qs, '')
+            if qs.get('bore_shape') == 'spline' and hub_od > 0 and hub_od <= reach * 2 + 2.0:
+                raise ValueError('hub wall too thin round the spline')
             if hub_od > 0 and hub_od / 2.0 >= R_tr - 1.0:
                 raise ValueError(f'hub_od {hub_od} >= tooth root {R_tr:.1f}')
             if kw > 0 and (bore_mm / 2.0 + kh) >= R_tr - 1.0:
@@ -249,6 +297,17 @@ def _fetch(route: str, cfg: dict) -> bytes:
 
 
 # ── Geometry checks ─────────────────────────────────────────────────────
+
+def _spline_part_problems(cfg: dict) -> list[str]:
+    """The sample shaft (and the washer, if any) print as closed solids."""
+    out = []
+    parts = ['shaft'] + (['washer'] if cfg.get('spline_washer') == '1' else [])
+    for part in parts:
+        m = _load_stl(_fetch('/download/spline-stl', {**cfg, 'part': part}))
+        if not m.is_watertight:
+            out.append(f"stl: spline {part} not watertight")
+    return out
+
 
 def _load_stl(data: bytes) -> "trimesh.Trimesh":
     """The app's binary STL: exactly the declared triangles. Its design data is
@@ -407,6 +466,11 @@ def run(iterations: int | None, duration: float | None, seed: int | None,
                         stl_volume -= plates.volume
                         if not plates.is_watertight:
                             stl_problems.append("stl: metal plates not watertight")
+
+                    if cfg.get('bore_shape') == 'spline':
+                        stl_problems += _spline_part_problems(cfg)
+                        if float(cfg.get('print_extra', 0)) > 0:
+                            stl_volume = None   # the STL's bore is printed, the STEP's nominal (ADR-017)
 
                     step_path = (occt_tmp_dir / f"{n}.step"
                                 if occt_tmp_dir is not None else None)

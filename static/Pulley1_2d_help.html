@@ -91,21 +91,45 @@ select <strong>RPP</strong>; if it starts with <code>S</code> (e.g. <code>S8M</c
             <strong>Minor d</strong>, <strong>Major D</strong> and slot <strong>Width B</strong>.
             <strong>Involute (ISO 4156)</strong>: <strong>Pressure angle</strong> 30&deg;, 37.5&deg; or
             45&deg;, <strong>Root</strong> (30&deg; only), <strong>Module m</strong> and <strong>Teeth z</strong>.
-            A spline replaces the round bore: <strong>Bore Diameter</strong> becomes its minor diameter and
-            can't be typed until Bore Shape is Round again. Its major diameter is how far the bore reaches,
-            for the wall checks and the Dimensions panel.</li>
+            A spline replaces the round bore: <strong>Bore Diameter</strong> becomes the hole's minor diameter
+            and can't be typed until Bore Shape is Round again. Its major diameter is how far the bore reaches,
+            for the wall checks and the Dimensions panel.
+            <ul>
+              <li><strong>The fit</strong> is the standard's default, and the line under the sizes gives it:
+                  ISO 14's sliding fit (hole H9 / H10 / H7 on B / D / d, shaft d10 / a11 / f7, from
+                  ISO 286-2), or ISO 4156's H/h, tolerance class 6. The hole and a <strong>sample
+                  shaft</strong> that fits it are each drawn at the middle of their tolerance zone.</li>
+              <li><strong>Retaining Ring</strong> (Top face / Bottom face / None) — a DIN 471 external ring
+                  (McMaster's 98541A…), the size for the shaft's outside diameter, holds the pulley on the
+                  shaft. That face gets a <strong>counterbore</strong> DIN 471's d4 wide (the room the
+                  ring's lugs need) and the groove's width deep, so the ring sits flush; the sample shaft
+                  carries the groove.</li>
+              <li><strong>Splined washer under the ring</strong> — a thin washer with the same spline
+                  (d4 &minus; 1 mm across, 1.5 mm thick) between the pulley and the ring: it turns with the
+                  shaft, so the ring rubs the washer, not the pulley. The counterbore gets deeper by its
+                  thickness.</li>
+            </ul>
+            A spline drives the pulley itself, so it takes no set screw: <strong>Retention</strong> (Hub, in
+            3D Mode) is None while Bore Shape is Spline.</li>
       </ul>
       <div class="note">Every feature sits on the +X side (0&deg;): the flat, the key slot, the first spline slot.
-      In 3D Mode a set screw (Hub &rarr; Retention) then goes on that feature — one screw.</div>
+      In 3D Mode a set screw (Hub &rarr; Retention) then goes on a flat or key — one screw.</div>
       <div class="note">The involute's flanks are drawn as arcs within 0.001 mm of the true involute, and
-      the SVG and DXF carry the spline as true lines and arcs. The STEP download can't build a splined bore
-      yet and says so — use the STL for printing, or the DXF / SVG for the exact outline.</div>
+      the SVG and DXF carry the spline as true lines and arcs. The <strong>STL</strong> adds the print
+      compensation (Advanced): the bore and counterbore grow, the sample shaft and the washer's outside
+      shrink, the shaft's groove widens. SVG, DXF and STEP are the nominal fit. The small_step STEP
+      can't build a splined bore yet and says so.</div>
+      <div class="note">The <strong>Download</strong> window then lists the <strong>sample splined
+      shaft</strong> (as long as the pulley, 5 mm past the far face, DIN 471's n past the groove) and,
+      with the box ticked, the <strong>splined washer</strong> — STL, SVG and DXF.</div>
       <a class="figure" href="/static/help/bore_shape.svg" target="_blank" title="Open full size">
         <img src="/static/help/bore_shape.svg" alt="The same pulley's bore as Round, D-flat, Keyway and Spline"/></a>
       <a class="figure" href="/static/help/spline_straight.svg" target="_blank" title="Open full size">
         <img src="/static/help/spline_straight.svg" alt="An ISO 14 straight-sided spline, 6 x 23 x 26 (B 6), with N, d, D and B marked"/></a>
       <a class="figure" href="/static/help/spline_involute.svg" target="_blank" title="Open full size">
         <img src="/static/help/spline_involute.svg" alt="An ISO 4156 involute spline, m 1.5 x 16 teeth, with its minor, pitch and major circles"/></a>
+      <a class="figure" href="/static/help/spline_ring.svg" target="_blank" title="Open full size">
+        <img src="/static/help/spline_ring.svg" alt="A section through a splined pulley on its sample shaft: the DIN 471 ring in the counterbore on the top face, the splined washer under it"/></a>
   </li>
   <li><span class="tag tag-read">Read-only</span> <strong>Pitch Diameter</strong> — Theoretical belt
       pitch-line diameter used for belt length calculations.
@@ -116,7 +140,8 @@ select <strong>RPP</strong>; if it starts with <code>S</code> (e.g. <code>S8M</c
 <h3>Dimensions and Warnings</h3>
 <p>Under the preview, a collapsible <strong>Dimensions</strong> table lists the pulley's figures:
 pitch, outside and root diameters, groove depth, pitch line differential, belt and face width (with
-the minimum the belt's standard asks for), a spline's minor and major diameters, and — with flanges in
+the minimum the belt's standard asks for), a spline's minor and major diameters with the sample
+shaft's, the retaining ring, its counterbore and the washer, and — with flanges in
 3D Mode — the flange's outside diameter, how far it reaches past the OD, and the minimum flange height.
 A figure that falls short of its minimum is shown red; one with no published figure behind it is
 marked <strong>&asymp;</strong> (hover it for why).</p>
@@ -130,6 +155,8 @@ source:</p>
       (belt tooth height + pitch differential), ISO 5294 or Gates Table 22.</li>
   <li><strong>Flange angle</strong> — outside ISO's 8–25&deg; (it's built at the nearest limit).</li>
   <li><strong>Spline reach</strong> — a spline's major diameter within 1 mm of the tooth root or the hub OD.</li>
+  <li><strong>Ring counterbore</strong> — within 1 mm of the hub OD (on the top face), the spoke hub or the
+      tooth root; or covered by a metal flange plate or a separate top flange, where the ring can't seat.</li>
 </ul>
 <p><strong>Auto-fix</strong>, beside the warnings, applies the settings that clear the ones a setting
 can: clearance height, flange rim radius, flange angle.</p>

@@ -672,7 +672,7 @@ def _get_bore(args, key='bore', default=8.0):
     splined bore is its spline's minor diameter, whatever the bore field says."""
     sp = _spline_of(args, key[:-len('bore')])
     if sp:
-        return sp['minor']
+        return sp['bore']
     try:
         return max(1.0, float(args.get(key, default)))
     except (ValueError, TypeError):
@@ -685,7 +685,14 @@ def _spline_of(args, prefix=''):
     Spline: {prefix}bore_shape=spline, then {prefix}spline_type straight
     (spline_n, spline_minor, spline_major, spline_width: ISO 14's N x d x D x B)
     or involute (spline_m, spline_z, spline_pa, spline_root: ISO 4156). A size
-    the standard can't make raises ValueError, which the routes answer as 400."""
+    the standard can't make raises ValueError, which the routes answer as 400.
+
+    Besides the spline's own fields the dict carries (ADR-017) `bore` — the
+    hole's minor diameter at the default fit, what Bore Diameter shows —
+    `print`, the pulley's print compensation, which the printed parts (STL)
+    add to the bore and take off the shaft, and `retainer`: the DIN 471 ring
+    ({prefix}spline_ring top / bottom, sized to the shaft's outside diameter)
+    and its counterbore, deeper by a splined washer ({prefix}spline_washer=1)."""
     if args.get(f'{prefix}bore_shape') != 'spline':
         return None
     import dataclasses
@@ -700,7 +707,26 @@ def _spline_of(args, prefix=''):
                                   float(g('major', 26)), float(g('width', 6)))
     except (TypeError, ValueError) as e:
         raise ValueError(f'Spline: {e}') from None
-    return dataclasses.asdict(sp)
+    out = dataclasses.asdict(sp)
+    out['bore'] = round(splines.hole(sp).inner, 4)
+    out['print'] = max(0.0, _safe_float(args.get(f'{prefix}print_extra'), 0.0))
+    out['retainer'] = _retainer_of(args, prefix, sp)
+    return out
+
+
+def _retainer_of(args, prefix, sp):
+    """The retaining ring on one face (cct_common.retaining_rings), or None."""
+    face = args.get(f'{prefix}spline_ring', 'none')
+    if face not in ('top', 'bottom'):
+        return None
+    from cct_common import retaining_rings as rr, splines
+    ring = rr.for_shaft(splines.shaft(sp).outer)
+    washer = rr.WASHER_THICKNESS if args.get(f'{prefix}spline_washer') == '1' else 0.0
+    cb = rr.counterbore(ring, washer=washer)
+    return {'face': face, 'ring': ring.label(), 'mcmaster': ring.mcmaster, 'd1': ring.d1,
+            'd2': ring.d2, 'm': ring.m, 's': ring.s, 'n': ring.n, 'a': ring.a, 'd4': ring.d4,
+            'cb_d': cb.diameter, 'cb_depth': cb.depth,
+            'washer_od': cb.washer_od, 'washer_t': cb.washer_t}
 
 
 def _get_preset_value(spec, preset_type, preset_key, custom_val):
@@ -970,6 +996,61 @@ def api_splines():
     return jsonify(splines.presets())
 
 
+@app.route('/api/spline')
+def api_spline():
+    """One pulley's splined bore at the default fit (pulley=1|2, the Bore
+    Shape keys): the hole and the sample shaft's diameters, the fit's source,
+    and the retaining ring with its counterbore and washer — the Size card's
+    info line. 400 for a size the standard can't make."""
+    from cct_common import splines
+    pfx = 'p2_' if request.args.get('pulley') == '2' else ''
+    try:
+        sp = _spline_of(request.args, pfx)
+    except ValueError as e:
+        return _api_error(str(e))
+    if not sp:
+        return jsonify(None)
+    s = _as_spline_obj(sp)
+    hole, shaft = splines.hole(s), splines.shaft(s)
+    return jsonify({'bore': sp['bore'], 'hole_major': round(hole.outer, 4),
+                    'shaft_minor': round(shaft.inner, 4), 'shaft_major': round(shaft.outer, 4),
+                    'fit': splines.fit_source(s), 'label': s.label(), 'retainer': sp['retainer']})
+
+
+def _as_spline_obj(sp):
+    from exporters.step_exporter import _as_spline
+    return _as_spline(sp)
+
+
+def _counterbore_warnings(args, pfx, who, rt, root_d, three_d):
+    """Where the ring's counterbore (ADR-017) can't do its job: too wide for
+    the material around it, or under a plate or flange that covers it."""
+    out, cb = [], rt['cb_d']
+    face = 'top' if rt['face'] == 'top' else 'bottom'
+    hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0) if three_d else 0.0
+    hub_h = _safe_float(args.get(f'{pfx}hub_height'), 0.0) if three_d else 0.0
+    spokes = three_d and _parse_spoke_params(args, pfx)[0]
+    if face == 'top' and hub_od > 0 and hub_h > 0:
+        wall, what = hub_od, f'the Ø{hub_od:g} mm hub'
+    elif spokes:
+        sp_hub = _parse_spoke_params(args, pfx)[1]
+        wall, what = sp_hub, f'the Ø{sp_hub:g} mm spoke hub'
+    else:
+        wall, what = root_d, f'the tooth root (Ø{root_d:.2f} mm)'
+    if cb > wall - 2.0:
+        out.append(f'{who}the ring\'s counterbore is Ø{cb:g} mm, leaving under 1 mm to {what}: '
+                   f'put the ring on the other face, or pick a smaller spline.')
+    if three_d and args.get(f'{pfx}flange_enabled') == '1':
+        fp = _parse_flange_params(args, pfx)
+        if not fp['flange_3dprint']:
+            out.append(f'{who}the metal flange plate covers the ring\'s counterbore on the {face} '
+                       f'face: the ring can\'t seat. Use printed flanges, or no ring.')
+        elif fp['top_separate'] and face == 'top':
+            out.append(f'{who}the separate top flange covers the ring\'s counterbore: put the ring '
+                       f'on the bottom face, or print the flanges integrated.')
+    return out
+
+
 @app.route('/api/dimensions')
 def api_dimensions():
     """The Dimensions panel under the 2D view (the Sprocket app's): each
@@ -1007,23 +1088,35 @@ def api_dimensions():
                  'belt_width': belt_w, 'face_width': face_w, 'approx': {}}
 
             # A splined bore: its minor diameter is the bore, its major the
-            # reach every wall is measured to (Sprocket's ADR-021).
+            # reach every wall is measured to (Sprocket's ADR-021) — both the
+            # hole's at the default fit (ADR-017), the sample shaft's beside.
             sp = _spline_of(args, pfx)
             if sp:
                 from cct_common import splines as _spl
-                sp_obj = _spl.Spline(**sp)
-                p.update(spline=sp_obj.label(), spline_minor=sp['minor'], spline_major=sp['major'])
+                sp_obj = _as_spline_obj(sp)
+                hole, shaft = _spl.hole(sp_obj), _spl.shaft(sp_obj)
+                reach = round(hole.outer, 4)
+                p.update(spline=sp_obj.label(), spline_minor=sp['bore'], spline_major=reach,
+                         spline_fit=_spl.fit_source(sp_obj),
+                         shaft_minor=round(shaft.inner, 4), shaft_major=round(shaft.outer, 4))
                 for which, (tag, src) in _spl.basis(sp_obj).items():
                     if tag == _spl.EST:
                         p['approx'][f'spline_{which}'] = src
                 root_d = od - 2 * tooth_ht
-                if sp['major'] > root_d - 2.0:
-                    warnings.append(f'{who}the spline reaches Ø{sp["major"]:g} mm, within 1 mm of the '
+                if reach > root_d - 2.0:
+                    warnings.append(f'{who}the spline reaches Ø{reach:g} mm, within 1 mm of the '
                                     f'tooth root (Ø{root_d:.2f} mm): pick a smaller spline or more teeth.')
                 hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0)
-                if three_d and hub_od > 0 and sp['major'] > hub_od - 2.0:
-                    warnings.append(f'{who}the spline reaches Ø{sp["major"]:g} mm, leaving under 1 mm '
+                if three_d and hub_od > 0 and reach > hub_od - 2.0:
+                    warnings.append(f'{who}the spline reaches Ø{reach:g} mm, leaving under 1 mm '
                                     f'of wall in the Ø{hub_od:g} mm hub.')
+                rt = sp['retainer']
+                if rt:
+                    p.update(ring=rt['ring'], ring_mcmaster=rt['mcmaster'], ring_face=rt['face'],
+                             counterbore_d=rt['cb_d'], counterbore_depth=rt['cb_depth'])
+                    if rt['washer_t'] > 0:
+                        p.update(washer_od=rt['washer_od'], washer_t=rt['washer_t'])
+                    warnings += _counterbore_warnings(args, pfx, who, rt, root_d, three_d)
 
             flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
             p['flanged'] = flanged
@@ -1732,10 +1825,14 @@ def _parse_hub_params(args, prefix=''):
     keyway_h     = max(0.0, float(args.get(f'{prefix}hub_keyway_h',     0.0)))
     if args.get(f'{prefix}bore_shape') == 'spline':
         flat_depth = keyway_w = keyway_h = 0.0     # one bore shape at a time
+        screw_dia, screw_count, captured_nut = 0.0, 0, False   # and no set screw (ADR-017)
     ss = _set_screw(args, prefix)
     if ss is not None:              # a named size (ADR-013) decides these, not the page's copy
         screw_dia, captured_nut = ss.major, ss.hold == 'nut'
     return hub_od, hub_height, screw_dia, screw_count, captured_nut, flat_depth, keyway_w, keyway_h
+
+
+from exporters.step_exporter import _cut_counterbore   # noqa: E402  (ADR-017)
 
 
 def _printed_as_one(meshes):
@@ -1769,6 +1866,8 @@ def _set_screw(args, prefix=''):
     """The hub's set screw — hole and nut from its named size and the design's
     threaded-hole settings (geometry/set_screw.py, ADR-013) — for the STL
     builders; None for no screws or a design from before sizes had names."""
+    if args.get(f'{prefix}bore_shape') == 'spline':
+        return None                    # a splined bore takes no set screw (ADR-017)
     from geometry import set_screw
     return set_screw.parse(args, prefix)
 
@@ -1993,138 +2092,148 @@ def api_preview_stl():
         return _api_error(f'Error generating STL preview: {e}')
 
 
+def _pulley_stl(args):
+    """One pulley's printed STL as the download builds it — the pulley,
+    its integrated or metal flanges, the ring's counterbore — with the
+    file name's parts: (stl bytes, name stem, flanges on). Raises on bad
+    input, as the route did."""
+    pulley = args.get('pulley', '1')
+    family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+        _parse_stl_params(args, pulley)
+    pfx = 'p2_' if pulley == '2' else ''
+    hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(args, pfx)
+    sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, _ = \
+        _parse_spoke_params(args, pfx)
+    suffix   = '-P2' if pulley == '2' else ''
+    sp_count = sp_cnt if sp_en else 0
+
+    # 3D-print flanges: parse flange params first so we can pass flange info to STL generator
+    _fl_enabled = args.get(f'{pfx}flange_enabled') == '1'
+    fp = _parse_flange_params(args, pfx) if _fl_enabled else {}
+
+    _fl_3dp   = _fl_enabled and fp.get('flange_3dprint', False)
+    _fl_metal = _fl_enabled and not fp.get('flange_3dprint', False)
+    # Hub raise amount: 3D-print uses flange rim height; metal uses plate thickness
+    _raise_h  = (fp.get('flange_height_mm', 1.5) if _fl_3dp
+                 else fp.get('plate_height_mm', 1.0) if _fl_metal
+                 else 0.0)
+    stl = generate_pulley_stl(
+        family, pitch, num_teeth, bore_mm, belt_height,
+        cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+        spline=_spline_of(args, pfx),
+        spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+        fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+        spoke_height_mm=sp_h if sp_en else 0.0,
+        flange_enabled=_fl_enabled,
+        flange_height_mm=_raise_h,
+        set_screw=_set_screw(args, pfx),
+    )
+    if _fl_metal:
+        import trimesh, io as _io
+        from exporters.flange_exporter import generate_metal_flange_stl
+        pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
+        flange_bytes = generate_metal_flange_stl(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, belt_height_mm=belt_height,
+            clearance_mm=cl_mm, print_extra_mm=pr_ex,
+            flange_angle_deg=fp['flange_angle_deg'],
+            rim_radius_mm=fp['rim_radius_mm'],
+            plate_height_mm=fp['plate_height_mm'],
+            bend_radius_mm=fp.get('bend_radius_mm', 0.0),
+            which='both',
+            hub_od_mm=hub_od, spokes_enabled=sp_en,
+            spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
+            flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spline=_spline_of(args, pfx),
+        )
+        flange_mesh = trimesh.load(_io.BytesIO(flange_bytes), file_type='stl')
+        stl = trimesh.util.concatenate([pulley_mesh, flange_mesh]).export(file_type='stl')
+    elif _fl_enabled and fp.get('flange_3dprint'):
+        import trimesh, io as _io
+        from exporters.flange_exporter import (
+            generate_3dprint_flange_stl, build_socket_meshes,
+        )
+        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+
+        _flange_kw = dict(
+            family=family, pitch=pitch, num_teeth=num_teeth,
+            bore_mm=bore_mm, belt_height_mm=belt_height,
+            clearance_mm=cl_mm, print_extra_mm=pr_ex,
+            flange_angle_deg=fp['flange_angle_deg'],
+            rim_radius_mm=fp['rim_radius_mm'],
+            flange_height_mm=fp['flange_height_mm'],
+            hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
+            spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
+            flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spline=_spline_of(args, pfx),
+        )
+
+        if not fp.get('top_separate'):
+            # Integrated mode: reuse the already-generated uncentered STL so
+            # flanges can be placed at natural z=0 / z=belt_height positions —
+            # same approach as the Assembly STL route, which is known to work.
+            pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
+            bot_mesh = trimesh.load(_io.BytesIO(
+                generate_3dprint_flange_stl(which='bottom', **_flange_kw)
+            ), file_type='stl')
+            # The top flange's hole is the hub's own circle, but drawn with
+            # different points: the union then touches itself at single
+            # vertices, which merge into a non-manifold edge when an STL is
+            # read. Cut the hole 0.1 mm into the hub so they overlap (the
+            # union hides the difference).
+            _top_kw = dict(_flange_kw)
+            if hub_h > 0.0 and _top_kw['hub_od_mm'] > bore_mm + 0.4:
+                _top_kw['hub_od_mm'] -= 0.2
+            top_mesh = trimesh.load(_io.BytesIO(
+                generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_top_kw)
+            ), file_type='stl')
+            stl = _cut_counterbore(_printed_as_one([pulley_mesh, bot_mesh, top_mesh]),
+                                   _spline_of(args, pfx)).export(file_type='stl')
+        else:
+            # Separate top flange: the preview builder, which can cut nub
+            # sockets on the live trimesh mesh, left uncentred (see centre=).
+            sockets = build_socket_meshes(
+                fp, family, pitch, num_teeth, bore_mm, belt_height,
+                clearance_mm=cl_mm, print_extra_mm=pr_ex,
+                hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
+                spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
+                spoke_height_mm=sp_h if sp_en else 0.0,
+            ) if fp.get('nubs_enabled') else []
+
+            stl_preview = generate_pulley_stl_preview(
+                family, pitch, num_teeth, bore_mm, belt_height,
+                cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+                spline=_spline_of(args, pfx),
+                spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+                fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
+                spoke_height_mm=sp_h if sp_en else 0.0,
+                flange_enabled=_fl_3dp, flange_height_mm=fp.get('flange_height_mm', 1.5),
+                socket_meshes=sockets or None,
+                set_screw=_set_screw(args, pfx),
+                centre=False,   # on the axis, so the bottom flange lines up with it
+            )
+            pulley_mesh = trimesh.load(_io.BytesIO(stl_preview), file_type='stl')
+            z_bottom = float(pulley_mesh.bounds[0][2])
+
+            bot_mesh = trimesh.load(_io.BytesIO(
+                generate_3dprint_flange_stl(which='bottom', **_flange_kw)
+            ), file_type='stl')
+            bot_mesh.apply_translation([0.0, 0.0, z_bottom])
+            stl = _cut_counterbore(_printed_as_one([pulley_mesh, bot_mesh]),
+                                   _spline_of(args, pfx)).export(file_type='stl')
+    return stl if isinstance(stl, bytes) else bytes(stl), f'{family}-{pitch}-{num_teeth}T{suffix}', _fl_enabled
+
+
 @app.route('/download/stl')
 @charges.charged('stl')
 def download_stl():
     """Return binary STL file download."""
     _consume_web_token(request)
     try:
-        pulley = request.args.get('pulley', '1')
-        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
-            _parse_stl_params(request.args, pulley)
-        pfx = 'p2_' if pulley == '2' else ''
-        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(request.args, pfx)
-        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, _ = \
-            _parse_spoke_params(request.args, pfx)
-        suffix   = '-P2' if pulley == '2' else ''
-        sp_count = sp_cnt if sp_en else 0
-
-        # 3D-print flanges: parse flange params first so we can pass flange info to STL generator
-        _fl_enabled = request.args.get(f'{pfx}flange_enabled') == '1'
-        fp = _parse_flange_params(request.args, pfx) if _fl_enabled else {}
-
-        _fl_3dp   = _fl_enabled and fp.get('flange_3dprint', False)
-        _fl_metal = _fl_enabled and not fp.get('flange_3dprint', False)
-        # Hub raise amount: 3D-print uses flange rim height; metal uses plate thickness
-        _raise_h  = (fp.get('flange_height_mm', 1.5) if _fl_3dp
-                     else fp.get('plate_height_mm', 1.0) if _fl_metal
-                     else 0.0)
-        stl = generate_pulley_stl(
-            family, pitch, num_teeth, bore_mm, belt_height,
-            cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
-            spline=_spline_of(request.args, pfx),
-            spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-            fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
-            spoke_height_mm=sp_h if sp_en else 0.0,
-            flange_enabled=_fl_enabled,
-            flange_height_mm=_raise_h,
-            set_screw=_set_screw(request.args, pfx),
-        )
-        if _fl_metal:
-            import trimesh, io as _io
-            from exporters.flange_exporter import generate_metal_flange_stl
-            pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
-            flange_bytes = generate_metal_flange_stl(
-                family=family, pitch=pitch, num_teeth=num_teeth,
-                bore_mm=bore_mm, belt_height_mm=belt_height,
-                clearance_mm=cl_mm, print_extra_mm=pr_ex,
-                flange_angle_deg=fp['flange_angle_deg'],
-                rim_radius_mm=fp['rim_radius_mm'],
-                plate_height_mm=fp['plate_height_mm'],
-                bend_radius_mm=fp.get('bend_radius_mm', 0.0),
-                which='both',
-                hub_od_mm=hub_od, spokes_enabled=sp_en,
-                spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
-                flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
-                spline=_spline_of(request.args, pfx),
-            )
-            flange_mesh = trimesh.load(_io.BytesIO(flange_bytes), file_type='stl')
-            stl = trimesh.util.concatenate([pulley_mesh, flange_mesh]).export(file_type='stl')
-        elif _fl_enabled and fp.get('flange_3dprint'):
-            import trimesh, io as _io
-            from exporters.flange_exporter import (
-                generate_3dprint_flange_stl, build_socket_meshes,
-            )
-            eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
-
-            _flange_kw = dict(
-                family=family, pitch=pitch, num_teeth=num_teeth,
-                bore_mm=bore_mm, belt_height_mm=belt_height,
-                clearance_mm=cl_mm, print_extra_mm=pr_ex,
-                flange_angle_deg=fp['flange_angle_deg'],
-                rim_radius_mm=fp['rim_radius_mm'],
-                flange_height_mm=fp['flange_height_mm'],
-                hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
-                spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
-                flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
-                spline=_spline_of(request.args, pfx),
-            )
-
-            if not fp.get('top_separate'):
-                # Integrated mode: reuse the already-generated uncentered STL so
-                # flanges can be placed at natural z=0 / z=belt_height positions —
-                # same approach as the Assembly STL route, which is known to work.
-                pulley_mesh = trimesh.load(_io.BytesIO(stl), file_type='stl')
-                bot_mesh = trimesh.load(_io.BytesIO(
-                    generate_3dprint_flange_stl(which='bottom', **_flange_kw)
-                ), file_type='stl')
-                # The top flange's hole is the hub's own circle, but drawn with
-                # different points: the union then touches itself at single
-                # vertices, which merge into a non-manifold edge when an STL is
-                # read. Cut the hole 0.1 mm into the hub so they overlap (the
-                # union hides the difference).
-                _top_kw = dict(_flange_kw)
-                if hub_h > 0.0 and _top_kw['hub_od_mm'] > bore_mm + 0.4:
-                    _top_kw['hub_od_mm'] -= 0.2
-                top_mesh = trimesh.load(_io.BytesIO(
-                    generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_top_kw)
-                ), file_type='stl')
-                stl = _printed_as_one([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
-            else:
-                # Separate top flange: the preview builder, which can cut nub
-                # sockets on the live trimesh mesh, left uncentred (see centre=).
-                sockets = build_socket_meshes(
-                    fp, family, pitch, num_teeth, bore_mm, belt_height,
-                    clearance_mm=cl_mm, print_extra_mm=pr_ex,
-                    hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
-                    spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
-                    spoke_height_mm=sp_h if sp_en else 0.0,
-                ) if fp.get('nubs_enabled') else []
-
-                stl_preview = generate_pulley_stl_preview(
-                    family, pitch, num_teeth, bore_mm, belt_height,
-                    cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
-                    spline=_spline_of(request.args, pfx),
-                    spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-                    fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
-                    spoke_height_mm=sp_h if sp_en else 0.0,
-                    flange_enabled=_fl_3dp, flange_height_mm=fp.get('flange_height_mm', 1.5),
-                    socket_meshes=sockets or None,
-                    set_screw=_set_screw(request.args, pfx),
-                    centre=False,   # on the axis, so the bottom flange lines up with it
-                )
-                pulley_mesh = trimesh.load(_io.BytesIO(stl_preview), file_type='stl')
-                z_bottom = float(pulley_mesh.bounds[0][2])
-
-                bot_mesh = trimesh.load(_io.BytesIO(
-                    generate_3dprint_flange_stl(which='bottom', **_flange_kw)
-                ), file_type='stl')
-                bot_mesh.apply_translation([0.0, 0.0, z_bottom])
-                stl = _printed_as_one([pulley_mesh, bot_mesh]).export(file_type='stl')
-
+        stl, stem, _fl_enabled = _pulley_stl(request.args)
         fl_sfx = '+flange' if _fl_enabled else ''
-        fname = f'{family}-{pitch}-{num_teeth}T{suffix}{fl_sfx}.stl'
-        stl = _embed_stl(stl if isinstance(stl, bytes) else bytes(stl), request.args)
+        fname = f'{stem}{fl_sfx}.stl'
+        stl = _embed_stl(stl, request.args)
         # Mirror to a connected CAD addin's watch folder (CCT_Import) so it auto-
         # imports, same as STEP downloads; skip the browser download if it landed.
         if _mirror_to_addins(stl, fname):
@@ -2753,6 +2862,96 @@ def _parse_flange_params(args, prefix=''):
         support_max_spacing  = max(1.0, _safe_float(args.get(f'{prefix}flange_support_max_spacing'), 10.0)),
         support_air_gap      = max(0.0, _safe_float(args.get(f'{prefix}flange_support_air_gap'),     0.2)),
     )
+
+
+# ── The parts that go with a splined bore (ADR-017) ─────────────────────────
+def _spline_part(args):
+    """(prefix, spline dict, part) for a spline-part download, or ValueError."""
+    pfx = 'p2_' if args.get('pulley') == '2' else ''
+    sp = _spline_of(args, pfx)
+    if not sp:
+        raise ValueError('Bore Shape is not Spline, so there is no spline part')
+    part = args.get('part', 'shaft')
+    if part not in ('shaft', 'washer'):
+        raise ValueError(f'Unknown spline part {part!r}')
+    if part == 'washer' and not (sp['retainer'] and sp['retainer']['washer_t'] > 0):
+        raise ValueError('No splined washer: choose a retaining ring and tick Splined washer')
+    return pfx, sp, part
+
+
+def _part_span(args, pfx):
+    """The part's extent along its bore (z low, z high), measured on the STL
+    the download builds — hub, integrated flanges, metal plates and all — plus
+    a separate top flange, which sits on top when assembled."""
+    import io as _io
+    import trimesh
+    q = args.to_dict() if hasattr(args, 'to_dict') else dict(args)
+    q['pulley'] = '2' if pfx else '1'
+    stl = _pulley_stl(q)[0]
+    lo, hi = (float(v) for v in trimesh.load(_io.BytesIO(stl), file_type='stl').bounds[:, 2])
+    if args.get(f'{pfx}flange_enabled') == '1':
+        fp = _parse_flange_params(args, pfx)
+        if fp['flange_3dprint'] and fp['top_separate']:
+            hi += fp['flange_height_mm']
+    return lo, hi
+
+
+def _spline_part_file(args, fmt):
+    """The bytes (or text) and file name of a spline part in one format."""
+    from exporters import spline_parts as parts
+    pfx, sp, part = _spline_part(args)
+    rt = sp['retainer']
+    teeth = args.get(f'{pfx}teeth', args.get('teeth', ''))
+    base = f"{args.get('family', 'HTD')}-{args.get('pitch', '5M')}-{teeth}T-spline-{part}"
+    if part == 'washer':
+        data = {'stl': parts.washer_stl, 'svg': parts.washer_svg, 'dxf': parts.washer_dxf}[fmt](sp)
+    elif fmt == 'stl':
+        lo, hi = _part_span(args, pfx)
+        end = rt['n'] if rt else parts.TAIL        # DIN 471's edge margin past the groove
+        data = parts.shaft_stl(sp, (hi - lo) + parts.TAIL + end, end)
+    else:
+        data = {'svg': parts.shaft_svg, 'dxf': parts.shaft_dxf}[fmt](sp)
+    return data, f'{base}.{fmt}'
+
+
+def _send_spline_part(fmt, mimetype, embed):
+    _consume_web_token(request)
+    try:
+        data, filename = _spline_part_file(request.args, fmt)
+        data = embed(data, request.args)
+        if isinstance(data, str):
+            data = data.encode('utf-8')
+        if _mirror_to_addins(data, filename):
+            return ('', 204)
+        return Response(data, mimetype=mimetype,
+                        headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except ValueError as e:
+        return _api_error(str(e))
+    except Exception as e:
+        import traceback
+        app.logger.error('spline part failed:\n%s', traceback.format_exc())
+        return _api_error(f'Error generating the spline part: {e}')
+
+
+@app.route('/download/spline-stl')
+@charges.charged('stl')
+def download_spline_stl():
+    """The sample splined shaft or the splined washer (part=shaft|washer), STL."""
+    return _send_spline_part('stl', 'model/stl', _embed_stl)
+
+
+@app.route('/download/spline-svg')
+@charges.charged('svg')
+def download_spline_svg():
+    """The sample shaft's or washer's outline, SVG."""
+    return _send_spline_part('svg', 'image/svg+xml', _embed_svg)
+
+
+@app.route('/download/spline-dxf')
+@charges.charged('dxf')
+def download_spline_dxf():
+    """The sample shaft's or washer's outline, DXF (true lines and arcs)."""
+    return _send_spline_part('dxf', 'application/dxf', _embed_dxf)
 
 
 @app.route('/download/flange-stl')

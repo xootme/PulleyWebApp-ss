@@ -167,20 +167,22 @@ def spline_straight(src):
 
 def spline_involute(src):
     """ISO 4156: module m, teeth z, pressure angle; minor, pitch and major circles."""
+    from cct_common import splines as spl
     m, z = 1.5, 16
-    minor, major, pd = m * (z - 1), m * (z + 1.5), m * z
+    hole = spl.hole(spl.involute(m, z, 30, "flat"))       # ISO 4156-1's figures, as the app cuts
+    minor, major, pd = hole.inner, hole.outer, m * z
     px, half = 460, 17.5
     s = px / (2 * half)
     w, fs = 1.0 / s, 15 / s
     extra = [circle(minor / 2, 1.2 * w), circle(pd / 2, 1.0 * w, GREY), circle(major / 2, 1.2 * w, BLUE),
-             text(0, -1.0, f"minor {minor:g} = m(z − 1)", fs, CALLOUT, 700, halo=True),
+             text(0, -1.0, f"minor {minor:.2f} (form Ø + 0.2m)", fs, CALLOUT, 700, halo=True),
              text(0, 1.2, f"pitch Ø {pd:g} = m·z", fs, GREY, 700, halo=True),
              text(0, 3.4, f"major {major:g} = m(z + 1.5)", fs, BLUE, 700, halo=True),
              text(0, -major / 2 - 1.2, f"m {m:g} × {z} teeth, 30° flat root", fs, "#1e293b", 700, halo=True)]
     parts = [panel((PAGE_W - px) / 2, TOP, px, half, src["involute"], "".join(extra))]
     caps = ["ISO 4156 involute spline: module m, z teeth and a 30°, 37.5° or 45° pressure angle.",
-            "The flanks are true involutes, drawn as arcs within 0.001 mm. At 37.5° and 45° the",
-            "minor diameter is the looser published figure (marked ≈): ISO's own table isn't public."]
+            "Diameters from ISO 4156-1:2005; the fit is H/h, tolerance class 6, on the space width.",
+            "The flanks are true involutes, drawn as arcs within 0.001 mm."]
     page("Involute spline (ISO 4156)", "".join(parts), PAGE_W,
          TOP + px + 20 * len(caps) + 30, "spline_involute.svg", caps)
 

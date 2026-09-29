@@ -288,6 +288,18 @@ settings fitted with warning + Auto-fit (ADR-010), 3D Print Compensation as a tr
       captured nut — `tools/help_illustrations/hub/screw_nut.stl`); the other four retention
       methods are. Slicers usually repair it, but find where the nut pocket leaves an open edge. — FIXED 2026-09-27: the nut pocket overlaps the bore by _POCKET_OVERLAP (tests/test_set_screw_holes.py)
 
+## Splined bores — what's next (ADR-017)
+- [ ] **Set screw into a spline root**: reuse `cct_common.screws` and `geometry/set_screw.py`; the only
+      new part is the angle — aim the screw at the middle of a space (hub slot) so it bottoms on the
+      shaft's root (the shaft's minor) rather than a tooth flank. Common code for every splined part.
+- [ ] **Clamp hub** (slot + screw boss): a slot through the hub wall and a tangential screw across it —
+      holds the part axially and takes out backlash at once; best for printed gears. The most work:
+      the boss, the slot through a spline, screw sizes from `cct_common.screws`. Common code.
+- [ ] small_step: §7 + §8 of SMALL_STEP_HANDOFF (splined bore, fitted, with the ring counterbore)
+- [ ] STEP of the sample shaft and the splined washer (both are extrusions; see §8)
+- [ ] A metal flange plate or separate top flange over the ring's face: warned today; cut the plate /
+      flange with the counterbore instead?
+
 ## small_step known issues
 Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
 - [ ] FreeCAD rejects complex pulley profiles — small_step emits no SURFACE_CURVE/PCURVE (§5, "open obligation"). Fusion/eDrawings are fine.

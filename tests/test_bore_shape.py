@@ -55,10 +55,13 @@ def test_spline_of_and_the_bore(client):
     assert _spline_of({'bore': '8'}) is None
     s = _spline_of(STRAIGHT)
     assert (s['kind'], s['n'], s['minor'], s['major'], s['width']) == ('straight', 6, 23, 26, 6)
-    assert _get_bore(STRAIGHT, 'bore') == 23                       # the minor, not the typed 8
+    # the hole's minor at the default fit (ADR-017), not the typed 8: ISO 14's
+    # H7 on 23 mm is 0..+0.021, drawn at its middle
+    assert _get_bore(STRAIGHT, 'bore') == pytest.approx(23.0105)
     p2 = {f'p2_{k}': v for k, v in INVOLUTE.items()}
-    assert _spline_of(p2, 'p2_')['minor'] == pytest.approx(1.5 * 15)
-    assert _get_bore(p2, 'p2_bore') == pytest.approx(22.5)
+    inv = SPLINES['involute'][1]
+    assert _spline_of(p2, 'p2_')['minor'] == pytest.approx(inv.minor)
+    assert _get_bore(p2, 'p2_bore') == pytest.approx(spl.hole(inv).inner, abs=1e-4)
 
 
 def test_one_bore_shape_at_a_time():
@@ -114,7 +117,8 @@ def test_dxf_draws_the_spline_as_lines_and_arcs(client):
     kinds = sorted({e.dxftype() for e in bore})
     assert kinds == ['ARC', 'LINE'] and len(bore) == 24               # per slot: 2 walls, bottom, land
     radii = sorted({round(e.dxf.radius, 6) for e in bore if e.dxftype() == 'ARC'})
-    assert radii == [11.5, 13.0]
+    hole = spl.hole(SPLINES['straight'][1])                           # the default fit
+    assert radii == pytest.approx([hole.inner / 2, hole.outer / 2])
 
 
 def test_small_step_refuses_a_spline(client, monkeypatch):
@@ -148,8 +152,10 @@ def test_dimensions_show_the_spline_and_warn_on_reach(client):
          'spline_m': '2', 'spline_z': '12', 'spline_pa': '45', 'spline_root': 'fillet', 'hub_od': '25'}
     d = client.get('/api/dimensions', query_string=q).get_json()
     p = d['pulleys'][0]
-    assert p['spline_minor'] == pytest.approx(2 * 11.4) and p['spline_major'] == pytest.approx(2 * 13.2)
-    assert 'spline_minor' in p['approx'] and 'spline_major' not in p['approx']   # 45°: minor is EST
+    hole = spl.hole(spl.involute(2, 12, 45, 'fillet'))                # the default fit
+    assert p['spline_minor'] == pytest.approx(hole.inner, abs=1e-4)
+    assert p['spline_major'] == pytest.approx(hole.outer, abs=1e-4)
+    assert not p['approx']                                # ISO 4156's worksheet: all computed
     w = ' | '.join(d['warnings'])
     assert 'tooth root' in w and 'hub' in w
     ok = client.get('/api/dimensions', query_string={**BASE, **STRAIGHT}).get_json()

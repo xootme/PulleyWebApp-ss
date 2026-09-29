@@ -1229,3 +1229,5 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
 .spline-grid { display: grid; grid-template-columns: 1fr 90px; gap: 4px 8px; align-items: center; margin: 4px 0; }
 .spline-grid label { margin: 0; }
 .spline-grid input, .spline-grid select { width: 100%; }
+.spline-check { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; cursor: pointer; }
+.spline-check input { width: auto; margin: 0; accent-color: #0078d4; }

@@ -120,7 +120,8 @@ def _subtract_bore_profile(mesh, bore_mm, flat_depth_mm=0.0, keyway_w_mm=0.0, ke
     flange bore profile is guaranteed to match the pulley body's bore profile.
     """
     from exporters.step_exporter import _build_bore_2d
-    bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline)
+    bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline,
+                             printed=True)
     if bore_2d is None:
         return mesh
     try:

@@ -216,11 +216,44 @@ def _d_bore_polygon(R_bore: float, flat_depth_mm: float, sections: int = 64) -> 
 
 def _as_spline(spline):
     """A splined bore (cct_common.splines.Spline) from its fields — a dict
-    travels through the STEP worker as JSON — or None."""
+    travels through the STEP worker as JSON — or None. The dict may carry
+    more than the spline (the print offset, the ring's counterbore): those are
+    read where they apply."""
     if not spline:
         return None
     from cct_common import splines as _spl
-    return spline if isinstance(spline, _spl.Spline) else _spl.Spline(**spline)
+    if isinstance(spline, _spl.Spline):
+        return spline
+    import dataclasses
+    names = {f.name for f in dataclasses.fields(_spl.Spline)}
+    return _spl.Spline(**{k: v for k, v in spline.items() if k in names})
+
+
+def _spline_print(spline) -> float:
+    """The 3D-print offset for a splined bore's printed parts (STL only)."""
+    return float(spline.get('print', 0.0)) if isinstance(spline, dict) else 0.0
+
+
+def _cut_counterbore(mesh, spline, printed: bool = True):
+    """The retaining ring's counterbore (cct_common.retaining_rings): a
+    cylinder `depth` deep into the part's top or bottom face, on the bore's
+    axis (x = y = 0). For an STL the recess grows by the print offset, as the
+    bore does. Cutting it again changes nothing, so every builder may."""
+    rt = spline.get('retainer') if isinstance(spline, dict) else None
+    if not rt or mesh is None or not getattr(mesh, 'is_volume', False):
+        return mesh
+    r = rt['cb_d'] / 2.0 + (_spline_print(spline) if printed else 0.0)
+    depth = rt['cb_depth']
+    z_lo, z_hi = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
+    over = 1.0                               # past the face, so the cut opens it cleanly
+    cyl = trimesh.creation.cylinder(radius=r, height=depth + over, sections=_BORE_SECTIONS)
+    z0 = z_hi - depth if rt['face'] == 'top' else z_lo - over
+    cyl.apply_translation([0.0, 0.0, z0 + (depth + over) / 2.0])
+    try:
+        cut = trimesh.boolean.difference([mesh, cyl], engine='manifold')
+        return cut if len(cut.faces) else mesh
+    except Exception:
+        return mesh
 
 
 def _spline_slot_h(spline, bore_mm: float) -> float:
@@ -233,7 +266,7 @@ def _spline_slot_h(spline, bore_mm: float) -> float:
 
 def _build_bore_2d(bore_mm: float, flat_depth_mm: float = 0.0,
                    keyway_w_mm: float = 0.0, keyway_h_mm: float = 0.0,
-                   sections: int = _BORE_SECTIONS, spline=None):
+                   sections: int = _BORE_SECTIONS, spline=None, printed: bool = False):
     """Return a Shapely polygon for the full bore cross-section.
 
     Starts as a circle (or D-flat chord if flat_depth_mm > 0), then unions a
@@ -248,7 +281,10 @@ def _build_bore_2d(bore_mm: float, flat_depth_mm: float = 0.0,
     sp = _as_spline(spline)
     if sp is not None:
         from cct_common import splines as _spl
-        return shapely_orient(ShapelyPolygon(_spl.sample_closed(_spl.path(sp), 0.02)), sign=1.0)
+        pts = _spl.sample_closed(_spl.path(sp), 0.02)          # the hole at the default fit
+        if printed:
+            pts = _spl.printed(pts, _spline_print(spline), hole=True)
+        return shapely_orient(ShapelyPolygon(pts), sign=1.0)
     R_bore = bore_mm / 2.0
     if R_bore <= 0.5:
         return None
@@ -610,7 +646,8 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
     # ── Bore + keyway (_build_bore_2d is the single source of truth) ─────────
     if R_bore > 0.5:
-        bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline)
+        bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline,
+                                 printed=True)
         if bore_2d is not None:
             extra  = 0.5
             bore_h = total_height + extra * 2
@@ -715,7 +752,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                 pocket.fix_normals()
                 body = trimesh.boolean.difference([body, pocket], engine='manifold')
 
-    return body
+    return _cut_counterbore(body, spline)
 
 
 def generate_pulley_stl(
@@ -1342,6 +1379,15 @@ def generate_pulley_step(
                          .translate((0.0, 0.0, belt_height_mm - _sock_h)))
                 result = result.cut(_sock, clean=False)
 
+    rt = spline.get('retainer') if isinstance(spline, dict) else None
+    if rt:
+        bb = result.val().BoundingBox()
+        over = 1.0
+        z0 = bb.zmax - rt['cb_depth'] if rt['face'] == 'top' else bb.zmin - over
+        result = result.cut(cq.Workplane('XY').workplane(offset=z0)
+                            .circle(rt['cb_d'] / 2.0).extrude(rt['cb_depth'] + over, clean=False),
+                            clean=False)
+
     if _return_cq:
         return result
 
@@ -1928,7 +1974,8 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
 
     # ── 2D bore cross-section (D-shaped / keyway / round) ────────────────────
-    bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline)
+    bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline,
+                             printed=True)
 
     # ── Belt section: outer toothed profile minus bore hole ───────────────────
     outline, _R_OD_mesh, _ = _build_outline_points(
@@ -2154,7 +2201,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                 pocket.fix_normals()
                 body = trimesh.boolean.difference([body, pocket], engine='manifold')
 
-    return body
+    return _cut_counterbore(body, spline)
 
 
 def _dedupe_pts(pts):

@@ -170,17 +170,40 @@ so nothing is exported wrong; this is to lift that.
 - **The hole** is `splines.path(sp)`: closed, counter-clockwise, first
   slot / space on +x, lines and circular arcs only (each involute flank is
   tangent arcs within 0.001 mm). The worker job carries it as
-  `spline = {kind, n, minor, major, width, module, pressure, root}`;
-  `cct_common.splines.Spline(**spline)` rebuilds it. Bore diameter = minor.
+  `spline = {kind, n, minor, major, width, module, pressure, root}`, plus
+  (§8) `bore`, `print` and `retainer`: rebuild the Spline from its own fields
+  (`step_exporter._as_spline` filters them). Bore diameter = `spline['bore']`.
 - **What small_step needs**: a bore profile that isn't a CIRCLE (+ flat /
   key) — a closed wire of LINEs and CIRCLE arcs cut through the pulley and
   any integrated flange. No new entity type: cadquery's STEP of the same
   hole is LINE and CIRCLE edges only.
-- **Set screw**: one screw into the first slot (+x); a captured nut's inner
-  face on the slot bottom, `R = major / 2` (as a keyway's face).
+- **Set screw**: none — superseded by §8 (a spline takes no set screw).
 - **Reference**: the cadquery track's STEP (`PULLEY_STEP_BACKEND=cadquery`)
   cuts it exactly — valid solid, volume within 7e-4 of the STL
   (`tests/test_bore_shape.py`).
+
+## 8. Splined bore: fitted outline, ring counterbore — REQUIRED with §7 (2026-09-29, ADR-017)
+
+When §7 lands, cut these too (cct_common 0.20.0; the cadquery track has them):
+
+- **The hole is the fitted one**: `splines.path(sp)` now returns the hole at
+  the standard's default fit (ISO 14 sliding / ISO 4156 H/h class 6), a few
+  hundredths over nominal. Still LINEs and CIRCLE arcs, no new entity type.
+  Bore diameter = `splines.hole(sp).inner` (the job's `spline['bore']`).
+  STEP is **nominal**: ignore `spline['print']` (that's for the STL).
+- **The ring counterbore**: when `spline['retainer']` is set, a cylinder
+  Ø `cb_d`, `cb_depth` deep, on the axis, into the part's top (`face` =
+  `top`, from the solid's max z) or bottom face — cut after any integrated
+  flange is joined. A plane annulus and a CYLINDRICAL_SURFACE: already in
+  the vocabulary.
+- **No set screw with a spline**: the app sends none (screw fields zeroed),
+  so §7's "one screw into the first slot" no longer applies.
+- **Sample shaft and splined washer**: STL / SVG / DXF only for now; a STEP
+  of either would be an extruded `splines.shaft_path` (with the groove: a
+  cylinder cut, then a smaller one kept) and a disc less `splines.path`.
+- **Reference**: `tests/test_spline_retainer.py` — the cadquery STEP matches
+  the STL's volume within 5e-3 and keeps the nominal counterbore and spline
+  radii with print compensation set.
 
 ## Not STEP-related (nothing to do)
 
