@@ -118,20 +118,26 @@ def test_presets_route(client):
 SCREW = {'hub_od': '34', 'hub_height': '12', 'hub_screw_size': 'M4', 'hub_screw_count': '2'}
 
 
-@pytest.mark.parametrize('hold', ['thread', 'nut', 'insert'])
-def test_a_hex_bar_takes_a_set_screw_on_its_flat(client, hold):
-    """Unlike a spline: one screw (a second at 90 deg would land on a corner),
-    on the flat facing +X, which sits on the bore's radius."""
+@pytest.mark.parametrize('hold, count, angles', [
+    ('thread', 1, {0}), ('nut', 1, {0}), ('insert', 1, {0}),
+    ('thread', 2, {0, 120}), ('nut', 2, {0, 180}), ('insert', 2, {0, 120})])
+def test_a_hex_bar_takes_set_screws_on_its_flats(client, hold, count, angles):
+    """Unlike a spline: one or two screws, each on a flat — the first on +X
+    (the bore's radius), a second 180 deg on with captured nuts, 120 deg for
+    threaded or insert screws (a round bore's 90 deg is a hex's corner)."""
+    import math
     from shapely.geometry import Point
     from app import _parse_hub_params, _set_screw
-    q = {**BASE, **HALF_INCH, **SCREW, 'hub_screw_hold': hold, 'hub_captured_nut': '1' if hold == 'nut' else '0',
+    q = {**BASE, **HALF_INCH, **SCREW, 'hub_screw_count': str(count), 'hub_screw_hold': hold,
+         'hub_captured_nut': '1' if hold == 'nut' else '0',
          **({'hub_screw_hole_dia': '5.4'} if hold == 'insert' else {})}
     _, _, sd, sc, cn, *_ = _parse_hub_params(q)
-    assert (sd, sc, cn) == (4.0, 1, hold == 'nut') and _set_screw(q) is not None
+    assert (sd, sc, cn) == (4.0, count, hold == 'nut') and _set_screw(q) is not None
     m = _stl(client, q)
     assert m.is_watertight and m.volume < _stl(client, {**BASE, **HALF_INCH, 'hub_od': '34', 'hub_height': '12'}).volume
-    sec = _section(m, 17.0)                                        # the hub's middle: the screw's height
-    assert not sec.contains(Point(10, 0)) and sec.contains(Point(-10, 0)) and sec.contains(Point(0, 10))
+    sec = _section(m, 17.0)                                        # the hub's middle: the screws' height
+    at = lambda d: Point(10 * math.cos(math.radians(d)), 10 * math.sin(math.radians(d)))   # noqa: E731
+    assert {d for d in (0, 60, 90, 120, 180, 240, 270) if not sec.contains(at(d))} == angles
 
 
 def test_a_spline_still_takes_none(client):
@@ -144,7 +150,7 @@ def test_a_spline_still_takes_none(client):
 def test_cadquery_step_hex_with_a_captured_nut(client, monkeypatch):
     pytest.importorskip('cadquery')
     from fuzz_pulley import _step_mesh_volume
-    q = {**BASE, **ROUNDED, **SCREW, 'hub_screw_hold': 'nut', 'hub_captured_nut': '1', **RINGS}
+    q = {**BASE, **ROUNDED, **SCREW, 'hub_screw_hold': 'nut', 'hub_captured_nut': '1', **RINGS}   # two nuts
     _, path = _step_solid(client, monkeypatch, q)
     assert _step_mesh_volume(path) == pytest.approx(_stl(client, q).volume, rel=5e-3)
 

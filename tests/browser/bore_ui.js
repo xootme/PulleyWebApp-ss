@@ -271,8 +271,9 @@ async function main() {
   check('hex: Retention is free', !(await js("document.getElementById('hub1_retention').disabled"))
     && !(await shown('#hub1_spline_note')));
   await setSel('#hub1_retention', 'set_screw_std');
-  check('…one screw, on the +X flat', (await js('activeScrew(1).count')) === 1
-    && (await text('#hub1_shape_note')).includes('+X flat') && await js("document.getElementById('hub1_screw_count').disabled"),
+  await setSel('#hub1_screw_count', '2');
+  check('…one or two screws, on its flats', (await js('activeScrew(1).count')) === 2
+    && (await text('#hub1_shape_note')).includes('flats') && !(await js("document.getElementById('hub1_screw_count').disabled")),
     await text('#hub1_shape_note'));
   await setSel('#spline1_type', 'straight');
   check('a spline locks it to None', (await val('#hub1_retention')) === 'none' && await js("document.getElementById('hub1_retention').disabled"));

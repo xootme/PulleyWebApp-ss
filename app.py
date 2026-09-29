@@ -1969,9 +1969,7 @@ def _parse_hub_params(args, prefix=''):
     keyway_h     = max(0.0, num('hub_keyway_h'))
     if args.get(f'{prefix}bore_shape') == 'spline':
         flat_depth = keyway_w = keyway_h = 0.0     # one bore shape at a time
-        if _hex_bore(args, prefix):
-            screw_count = min(screw_count, 1)      # a hex bar: one screw, on its +X flat (ADR-018)
-        else:
+        if not _hex_bore(args, prefix):    # a hex bar keeps its screws, on flats (ADR-018)
             screw_dia, screw_count, captured_nut = 0.0, 0, False   # a spline: none (ADR-017)
     ss = _set_screw(args, prefix)
     if ss is not None:              # a named size (ADR-013) decides these, not the page's copy
@@ -2008,7 +2006,7 @@ def _step_screw_kw(args, prefix=''):
 
 def _hex_bore(args, prefix=''):
     """A hex bar bore (ADR-018): unlike a spline it takes every Retention
-    method — a set screw bears on a flat, as on a D-shaft."""
+    method, one or two screws, each on a flat (step_exporter._std_screw_step)."""
     return (args.get(f'{prefix}bore_shape') == 'spline'
             and args.get(f'{prefix}spline_type') == 'hex')
 

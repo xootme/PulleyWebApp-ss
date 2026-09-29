@@ -287,6 +287,14 @@ def _cut_counterbore(mesh, spline, printed: bool = True):
     return mesh
 
 
+def _std_screw_step(spline) -> float:
+    """The angle between two standard (threaded / insert) set screws: 90°, so
+    they push the shaft to one side; on a hex bar 120°, the next-but-one flat
+    (90° is a corner). Captured nuts go 180° apart, flats on a hex too."""
+    sp = _as_spline(spline)
+    return 2 * math.pi / 3 if sp is not None and sp.kind == 'hex' else math.pi / 2.0
+
+
 def _spline_slot_h(spline, bore_mm: float) -> float:
     """How far a spline's slots reach past the bore (its minor diameter): a
     set screw aims into the first slot (on +x) and a captured nut sits on the
@@ -625,7 +633,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         min_hub_r = 0.0
         need_oblong = False
         eff_r = R_hub
-        step = math.pi / 2.0          # 90° between standard screws
+        step = _std_screw_step(spline)   # 90° between standard screws (a hex bar: 120°)
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
 
@@ -1056,7 +1064,7 @@ def generate_pulley_step(
         min_hub_r   = 0.0
         need_oblong = False
         eff_r = R_hub
-        step  = math.pi / 2.0
+        step  = _std_screw_step(spline)
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
 
@@ -2017,7 +2025,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         min_hub_r   = 0.0
         need_oblong = False
         eff_r = R_hub
-        step  = math.pi / 2.0
+        step  = _std_screw_step(spline)
 
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
 

@@ -22,9 +22,12 @@ turned round inside the flats. The user asked for it beside the splines, metric 
   Clip's catalogue pp. 20-21 and SH data sheet, 1/4"-1-1/2") for inch (`for_spline` picks by kind and
   series). SH-50 on 1/2" hex matches FRC practice (groove .468", width .039"). The counterbore is the
   ring's released clearance diameter (L2), groove-width deep, as DIN's d4.
-- **Every Retention method** (unlike a spline, ADR-017): a set screw bears on the flat facing +X,
-  which sits on the bore's radius — one screw, placed as on a round bore at 0°, the captured nut
-  against the flat. Rings and a screw can go together.
+- **Every Retention method** (unlike a spline, ADR-017), one or two screws, each on a flat: the
+  first facing +X (on the bore's radius, placed as on a round bore at 0°, a captured nut against
+  the flat); a second 180° on for captured nuts, as on a round bore, and 120° on for threaded or
+  insert screws (a round bore's 90° is a hex's corner; 120° keeps them unopposed). First version:
+  one screw only — too strict, the owner asked why two captured nuts weren't allowed.
+  Rings and screws can go together.
 - `Spline` gains an optional `series` field (default ""): old dicts and code keep working.
 
 **Consequences:** cct_common `tests/test_splines.py` / `test_retaining_rings.py` (hex fit, outline,

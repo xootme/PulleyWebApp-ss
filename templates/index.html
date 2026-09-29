@@ -4394,7 +4394,7 @@ function activeScrew(n) {
   if (isSetScrewValue(r)) {
     size = g('screw_size').value; count = parseInt(g('screw_count').value) || 1; type = r;
   } else return null;
-  if (boreShape(n) !== 'round') count = 1;     // one screw, on the flat / key / first slot
+  if (boreShape(n) !== 'round' && !isHexBore(n)) count = 1;   // one screw, on the flat / key; a hex: 1 or 2
   const hold    = SCREW_HOLD[type] || 'thread';
   const holeDia = parseFloat(g('screw_hole_dia').value) || 0;
   const custom  = size === 'Custom';
@@ -5017,10 +5017,12 @@ function onHubChange(n) {
   document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSetScrew);
   // A shaped bore takes one screw, aimed at its flat, key or first slot.
   const shape = boreShape(n);
-  const where = isHexBore(n) ? 'on the hex bar\'s +X flat' : { flat: 'on the D-flat', key: 'into the keyway' }[shape];
+  const where = { flat: 'on the D-flat', key: 'into the keyway' }[shape];
   const shapeNote = document.getElementById(`hub${n}_shape_note`);
-  shapeNote.textContent = where ? `One screw, ${where} (Bore Shape, Size card).` : '';
-  shapeNote.classList.toggle('hidden', !where);
+  shapeNote.textContent = isHexBore(n)
+    ? 'On the hex bar\'s flats: the first on +X, a second 120° on (180° with captured nuts).'
+    : where ? `One screw, ${where} (Bore Shape, Size card).` : '';
+  shapeNote.classList.toggle('hidden', !where && !isHexBore(n));
   document.getElementById(`hub${n}_screw_count`).disabled = !!where;
 
   _syncScrewHole(n);
