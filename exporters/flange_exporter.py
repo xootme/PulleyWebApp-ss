@@ -100,6 +100,11 @@ def _revolve_polygon(
 _BORE_OVERCUT = 0.3
 
 
+def _open_for_ring(mesh, spline, face, printed=True):
+    from exporters.step_exporter import _open_for_ring as _open
+    return _open(mesh, spline, face, printed)
+
+
 def _revolve_through_bore(profile, sections, bore_mm, flat_depth_mm=0.0, keyway_w_mm=0.0,
                           keyway_h_mm=0.0, spline=None):
     """Revolve a flange profile and cut the bore profile through it. Profile
@@ -227,7 +232,11 @@ def generate_3dprint_flange_stl(
     meshes = []
 
     if which in ('top', 'both'):
-        top_mesh = _revolve_polygon(prof, sections)
+        # the bore's own shape through it where its hole is the bore (no hub /
+        # spokes): a spline's or a key's slots go on through, as the bottom's
+        top_mesh = _revolve_through_bore(prof, sections, bore_mm, flat_depth_mm, keyway_w_mm,
+                                         keyway_h_mm, spline)
+        top_mesh = _open_for_ring(top_mesh, spline, 'top')
 
         if nubs_enabled:
             nub_h   = max(1.0, min(nub_height_mm, belt_height_mm / 3.0))
@@ -272,7 +281,7 @@ def generate_3dprint_flange_stl(
 
     if which in ('bottom', 'both'):
         bot_mesh = _revolve_through_bore([(r, -z) for r, z in prof_bot], sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
-        meshes.append(bot_mesh)
+        meshes.append(_open_for_ring(bot_mesh, spline, 'bottom'))
 
     if len(meshes) == 1:
         result = meshes[0]
@@ -336,7 +345,9 @@ def generate_metal_flange_stl(
         r_inner_top = flange_inner_r_metal_top(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                                                r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
         prof_top = profile_metal(r_inner_top, R_OD, rim_mm, angle_deg, plate_t, bend_mm)
-        top_mesh = _revolve_polygon(prof_top, sections)
+        top_mesh = _revolve_through_bore(prof_top, sections, bore_mm, flat_depth_mm, keyway_w_mm,
+                                         keyway_h_mm, spline)
+        top_mesh = _open_for_ring(top_mesh, spline, 'top', printed=False)
         top_mesh.apply_translation([0.0, 0.0, belt_height_mm])
 
         r_inner_bot = flange_inner_r_metal_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
@@ -344,6 +355,7 @@ def generate_metal_flange_stl(
         prof_bot = profile_metal(r_inner_bot, R_OD, rim_mm, angle_deg, plate_t, bend_mm)
         prof_bot_flipped = [(r, -z) for r, z in prof_bot]
         bot_mesh = _revolve_through_bore(prof_bot_flipped, sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
+        bot_mesh = _open_for_ring(bot_mesh, spline, 'bottom', printed=False)
 
         result = trimesh.util.concatenate([top_mesh, bot_mesh])
         return result.export(file_type='stl')
@@ -358,11 +370,14 @@ def generate_metal_flange_stl(
     prof = profile_metal(r_inner, R_OD, rim_mm, angle_deg, plate_t, bend_mm)
 
     if which == 'top':
-        mesh = _revolve_polygon(prof, sections)
+        mesh = _revolve_through_bore(prof, sections, bore_mm, flat_depth_mm, keyway_w_mm,
+                                     keyway_h_mm, spline)
+        mesh = _open_for_ring(mesh, spline, 'top', printed=False)
         mesh.apply_translation([0.0, 0.0, belt_height_mm])
     else:
         prof_flipped = [(r, -z) for r, z in prof]
         mesh = _revolve_through_bore(prof_flipped, sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
+        mesh = _open_for_ring(mesh, spline, 'bottom', printed=False)
 
     return mesh.export(file_type='stl')
 
@@ -737,6 +752,7 @@ def build_flange_meshes(
             prof_bot = profile_3dprint(r_inner_bot, r_tooth_ref, rim_r, angle, f_h)
 
             top = _revolve_polygon(prof, sections)
+            top = _open_for_ring(top, spline, 'top')
 
             # Add nubs to the bottom face of the top flange (in local coords, before translation)
             # Nubs only apply when: 3D print + top is separate + nubs_enabled
@@ -801,7 +817,7 @@ def build_flange_meshes(
             meshes.append(top)
 
             bot = _revolve_through_bore([(r, -z) for r, z in prof_bot], sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
-            meshes.append(bot)
+            meshes.append(_open_for_ring(bot, spline, 'bottom'))
         else:
             plate_t = max(0.3, fp['plate_height_mm'])
             bend_r  = fp['bend_radius_mm'] if fp['bend_radius_mm'] > 0.0 else 1.5 * plate_t
@@ -811,6 +827,7 @@ def build_flange_meshes(
                                                    r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
             prof_top = profile_metal(r_inner_top, R_OD, rim_r, angle, plate_t, bend_r)
             top = _revolve_through_bore(prof_top, sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
+            top = _open_for_ring(top, spline, 'top', printed=False)
             top.apply_translation([0.0, 0.0, belt_height_mm])
             meshes.append(top)
 
@@ -819,7 +836,7 @@ def build_flange_meshes(
             prof_bot = profile_metal(r_inner_bot, R_OD, rim_r, angle, plate_t, bend_r)
             prof_bot = [(r, -z) for r, z in prof_bot]  # flip: bend faces down, contact face at Z=0
             bot = _revolve_through_bore(prof_bot, sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
-            meshes.append(bot)
+            meshes.append(_open_for_ring(bot, spline, 'bottom', printed=False))
 
         return meshes
     except Exception:

@@ -278,15 +278,14 @@ def test_dimensions_show_the_ring_and_warn(client):
     p = d['pulleys'][0]
     assert (p['counterbore_d'], p['counterbore_depth'], p['washer_od']) == (35.5, 2.8, 34.5)
     assert p['shaft_major'] < p['spline_major'] and not [w for w in d['warnings'] if 'counterbore' in w]
-    cases = {'the Ø30 mm hub': {'hub_od': '30', 'hub_height': '10'},
-             'metal flange plate': {'flange_enabled': '1', 'flange_3dprint': '0'},
-             'separate top flange': {'flange_enabled': '1', 'flange_3dprint': '1', 'flange_top_separate': '1'}}
-    for words, extra in cases.items():
-        w = ' | '.join(client.get('/api/dimensions', query_string={**q, **extra}).get_json()['warnings'])
-        assert words in w, (words, w)
-    bottom = client.get('/api/dimensions', query_string={**q, 'spline_ring': 'bottom', 'flange_enabled': '1',
-                                                          'flange_3dprint': '1', 'flange_top_separate': '1'})
-    assert not [w for w in bottom.get_json()['warnings'] if 'counterbore' in w]
+    w = ' | '.join(client.get('/api/dimensions', query_string={**q, 'hub_od': '30', 'hub_height': '10'})
+                   .get_json()['warnings'])
+    assert 'the Ø30 mm hub' in w
+    # a flange or plate over the ring's face carries the counterbore: nothing to warn
+    for extra in ({'flange_enabled': '1', 'flange_3dprint': '0'},
+                  {'flange_enabled': '1', 'flange_3dprint': '1', 'flange_top_separate': '1'}):
+        d = client.get('/api/dimensions', query_string={**q, **extra}).get_json()
+        assert not [x for x in d['warnings'] if 'counterbore' in x], d['warnings']
 
 
 # ── Auto-fix: a spline the part can't hold (bug report 2026-09-29) ───────────
@@ -328,3 +327,100 @@ def test_a_blank_hub_field_is_no_hub(client):
     assert r.status_code == 200
     from app import _parse_hub_params
     assert _parse_hub_params({'hub_od': '', 'hub_screw_count': ''})[:4] == (0.0, 0.0, 0.0, 0)
+
+
+# ── flanges over the ring's face (2026-09-29) ────────────────────────────────
+
+FLANGE = {'flange_enabled': '1', 'flange_angle': '15', 'flange_rim_radius': '3', 'flange_height': '1.5',
+          'flange_plate_height': '1'}
+CB_AREA = math.pi * 35.5 ** 2 / 4
+
+
+def _recess(mesh, face, z_face):
+    """How deep the counterbore goes in from z_face (0.05 mm steps)."""
+    d = 0.0
+    for dz in np.arange(0.05, 6.0, 0.05):
+        z = z_face - dz if face == 'top' else z_face + dz
+        if _hole_area(mesh, z) < 0.9 * CB_AREA:
+            break
+        d = dz
+    return d + 0.025
+
+
+def test_ring_cover_rule():
+    from app import _ring_cover
+    q = {**STRAIGHT, **FLANGE}
+    assert _ring_cover({**q, 'flange_3dprint': '0'}, '', 'bottom') == (1.0, False)
+    assert _ring_cover({**q, 'flange_3dprint': '1', 'flange_top_separate': '1'}, '', 'top') == (1.5, False)
+    assert _ring_cover({**q, 'flange_3dprint': '1', 'flange_top_separate': '0'}, '', 'top') == (1.5, True)
+    assert _ring_cover({**q, 'flange_3dprint': '1'}, '', 'bottom') == (1.5, True)
+    hub = {**q, 'flange_3dprint': '0', 'hub_od': '44', 'hub_height': '12'}
+    assert _ring_cover(hub, '', 'top') == (0.0, False)                           # the hub stands through
+    assert _ring_cover(hub, '', 'bottom') == (1.0, False)
+    assert _ring_cover(STRAIGHT, '', 'top') == (0.0, False)                      # no flanges
+
+
+@pytest.mark.parametrize('extra, face, z_face', [
+    ({'flange_3dprint': '1', 'flange_top_separate': '0', **WASHER}, 'top', None),      # joined
+    ({'flange_3dprint': '1', 'flange_top_separate': '1', **WASHER}, 'top', 'sep'),     # separate
+    ({'flange_3dprint': '1', 'flange_top_separate': '0', 'spline_ring': 'bottom'}, 'bottom', None),
+    ({'flange_3dprint': '0', **WASHER}, 'top', 12.0),                                  # a 1 mm plate on 11
+    ({'flange_3dprint': '0', 'spline_ring': 'bottom'}, 'bottom', -1.0),
+], ids=['joined-top', 'separate-top', 'joined-bottom', 'metal-top', 'metal-bottom'])
+def test_a_flange_over_the_ring_carries_the_counterbore(client, extra, face, z_face):
+    """The counterbore is measured from the part's outer face: a flange or
+    plate there has it through it, the pulley the rest, so the ring sits
+    flush with the outer face whatever covers the pulley."""
+    q = {**BASE, **STRAIGHT, **FLANGE, **extra}
+    rt = __import__('app')._spline_of(q)['retainer']
+    m = _stl(client, q)
+    if z_face == 'sep':                                  # the separate top flange, in place
+        top = _load(client.get('/download/flange-stl', query_string={**q, 'flange_which': 'top'}).data)
+        assert top.is_watertight
+        assert _hole_area(top, float(top.bounds[0][2]) + 0.7) == pytest.approx(CB_AREA, rel=3e-3)
+        m = trimesh.util.concatenate([m, top])
+        z_face = float(top.bounds[1][2])
+    elif z_face is None:
+        z_face = float(m.bounds[1][2] if face == 'top' else m.bounds[0][2])
+    assert _recess(m, face, z_face) == pytest.approx(rt['cb_depth'], abs=0.06)
+
+
+def test_the_top_flange_hole_is_the_bore_shape(client):
+    """A spline's slots and a key's slot go on through the top flange, as
+    through the bottom one, not stopped by a round hole at the bore."""
+    for q in ({**BASE, **STRAIGHT}, {**BASE, 'bore': '12', 'hub_keyway_w': '4', 'hub_keyway_h': '2'}):
+        for sep in ('0', '1'):
+            qq = {**q, **FLANGE, 'flange_3dprint': '1', 'flange_top_separate': sep}
+            m = _stl(client, qq)
+            body = _hole_area(m, 5.0)
+            if sep == '0':
+                assert _hole_area(m, float(m.bounds[1][2]) - 0.5) == pytest.approx(body, rel=3e-3)
+            else:
+                top = _load(client.get('/download/flange-stl', query_string={**qq, 'flange_which': 'top'}).data)
+                assert _hole_area(top, float(top.bounds[0][2]) + 0.7) == pytest.approx(body, rel=3e-3)
+
+
+def test_shaft_length_with_a_hub_through_a_separate_top_flange(client):
+    from exporters.spline_parts import TAIL
+    q = {**BASE, **STRAIGHT, **RING, **FLANGE, 'flange_3dprint': '1', 'flange_top_separate': '1',
+         'hub_od': '44', 'hub_height': '12'}
+    part = _stl(client, q)
+    shaft = _stl(client, {**q, 'part': 'shaft'}, '/download/spline-stl')
+    span = float(part.bounds[1][2] - part.bounds[0][2])
+    assert float(shaft.bounds[1][2] - shaft.bounds[0][2]) == pytest.approx(span + TAIL + 1.7, abs=1e-3)
+
+
+@pytest.mark.parametrize('extra', [
+    {'flange_3dprint': '1', 'flange_top_separate': '0', **WASHER},
+    {'flange_3dprint': '1', 'flange_top_separate': '1', **WASHER},
+    {'flange_3dprint': '0', 'spline_ring': 'bottom'},
+], ids=['joined-top', 'separate-top', 'metal-bottom'])
+def test_cadquery_step_counterbore_under_flanges(client, monkeypatch, extra):
+    pytest.importorskip('cadquery')
+    from fuzz_pulley import _step_mesh_volume
+    q = {**BASE, **STRAIGHT, **FLANGE, **extra}
+    _, path = _step_solid(client, monkeypatch, q)
+    stl = _stl(client, q).volume
+    if extra['flange_3dprint'] == '0':                  # the STL carries the plates, the STEP doesn't
+        stl -= _stl(client, q, '/download/flange-stl').volume
+    assert _step_mesh_volume(path) == pytest.approx(stl, rel=5e-3)

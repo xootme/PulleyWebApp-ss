@@ -714,6 +714,27 @@ def _spline_of(args, prefix=''):
     return out
 
 
+def _ring_cover(args, prefix, face):
+    """(thickness, joined) of a flange or plate over the ring's face, or
+    (0, False): the counterbore is measured from the part's outer face, so a
+    flange there carries the first `thickness` of it (ADR-017). None with a
+    hub on the top face (the hub stands through the top flange) or spokes
+    (the flange stops at the spoke rim). `joined`: a printed flange unioned
+    with the pulley (the bottom one; the top one unless printed separate)."""
+    if args.get(f'{prefix}flange_enabled') != '1':
+        return 0.0, False
+    hub_on = (_safe_float(args.get(f'{prefix}hub_od'), 0.0) > 0
+              and _safe_float(args.get(f'{prefix}hub_height'), 0.0) > 0)
+    sp_en, _sp_hub, rim_depth = _parse_spoke_params(args, prefix)[:3]
+    if (face == 'top' and hub_on) or (sp_en and rim_depth > 0):
+        return 0.0, False
+    fp = _parse_flange_params(args, prefix)
+    if not fp['flange_3dprint']:
+        return max(0.3, fp['plate_height_mm']), False
+    joined = face == 'bottom' or not fp['top_separate']
+    return max(0.1, fp['flange_height_mm']), joined
+
+
 def _retainer_of(args, prefix, sp):
     """The retaining ring on one face (cct_common.retaining_rings), or None."""
     face = args.get(f'{prefix}spline_ring', 'none')
@@ -723,7 +744,8 @@ def _retainer_of(args, prefix, sp):
     ring = rr.for_shaft(splines.shaft(sp).outer)
     washer = rr.WASHER_THICKNESS if args.get(f'{prefix}spline_washer') == '1' else 0.0
     cb = rr.counterbore(ring, washer=washer)
-    return {'face': face, 'ring': ring.label(), 'mcmaster': ring.mcmaster, 'd1': ring.d1,
+    cover, joined = _ring_cover(args, prefix, face)
+    return {'cover': cover, 'cover_joined': joined, 'face': face, 'ring': ring.label(), 'mcmaster': ring.mcmaster, 'd1': ring.d1,
             'd2': ring.d2, 'm': ring.m, 's': ring.s, 'n': ring.n, 'a': ring.a, 'd4': ring.d4,
             'cb_d': cb.diameter, 'cb_depth': cb.depth,
             'washer_od': cb.washer_od, 'washer_t': cb.washer_t}
@@ -1024,7 +1046,8 @@ def _as_spline_obj(sp):
 
 def _counterbore_warnings(args, pfx, who, rt, root_d, three_d):
     """Where the ring's counterbore (ADR-017) can't do its job: too wide for
-    the material around it, or under a plate or flange that covers it."""
+    the material around it. (A flange or plate over its face has the
+    counterbore through it — _ring_cover.)"""
     out, cb = [], rt['cb_d']
     face = 'top' if rt['face'] == 'top' else 'bottom'
     hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0) if three_d else 0.0
@@ -1040,14 +1063,6 @@ def _counterbore_warnings(args, pfx, who, rt, root_d, three_d):
     if cb > wall - 2.0:
         out.append(f'{who}the ring\'s counterbore is Ø{cb:g} mm, leaving under 1 mm to {what}: '
                    f'put the ring on the other face, or pick a smaller spline.')
-    if three_d and args.get(f'{pfx}flange_enabled') == '1':
-        fp = _parse_flange_params(args, pfx)
-        if not fp['flange_3dprint']:
-            out.append(f'{who}the metal flange plate covers the ring\'s counterbore on the {face} '
-                       f'face: the ring can\'t seat. Use printed flanges, or no ring.')
-        elif fp['top_separate'] and face == 'top':
-            out.append(f'{who}the separate top flange covers the ring\'s counterbore: put the ring '
-                       f'on the bottom face, or print the flanges integrated.')
     return out
 
 
@@ -1914,9 +1929,6 @@ def _parse_hub_params(args, prefix=''):
     return hub_od, hub_height, screw_dia, screw_count, captured_nut, flat_depth, keyway_w, keyway_h
 
 
-from exporters.step_exporter import _cut_counterbore   # noqa: E402  (ADR-017)
-
-
 def _printed_as_one(meshes):
     """A 3D-print pulley and the flanges printed with it, as ONE solid. They
     touch face to face (and share the bore's edge ring), so stacked as
@@ -2269,8 +2281,7 @@ def _pulley_stl(args):
             top_mesh = trimesh.load(_io.BytesIO(
                 generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_top_kw)
             ), file_type='stl')
-            stl = _cut_counterbore(_printed_as_one([pulley_mesh, bot_mesh, top_mesh]),
-                                   _spline_of(args, pfx)).export(file_type='stl')
+            stl = _printed_as_one([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
         else:
             # Separate top flange: the preview builder, which can cut nub
             # sockets on the live trimesh mesh, left uncentred (see centre=).
@@ -2301,8 +2312,7 @@ def _pulley_stl(args):
                 generate_3dprint_flange_stl(which='bottom', **_flange_kw)
             ), file_type='stl')
             bot_mesh.apply_translation([0.0, 0.0, z_bottom])
-            stl = _cut_counterbore(_printed_as_one([pulley_mesh, bot_mesh]),
-                                   _spline_of(args, pfx)).export(file_type='stl')
+            stl = _printed_as_one([pulley_mesh, bot_mesh]).export(file_type='stl')
     return stl if isinstance(stl, bytes) else bytes(stl), f'{family}-{pitch}-{num_teeth}T{suffix}', _fl_enabled
 
 
@@ -2974,7 +2984,9 @@ def _part_span(args, pfx):
     if args.get(f'{pfx}flange_enabled') == '1':
         fp = _parse_flange_params(args, pfx)
         if fp['flange_3dprint'] and fp['top_separate']:
-            hi += fp['flange_height_mm']
+            # it sits on the toothed body; a hub stands up through it, higher
+            body_top = _parse_stl_params(q, q['pulley'])[4]
+            hi = max(hi, body_top + max(0.1, fp['flange_height_mm']))
     return lo, hi
 
 

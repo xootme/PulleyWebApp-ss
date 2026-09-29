@@ -192,10 +192,16 @@ When §7 lands, cut these too (cct_common 0.20.0; the cadquery track has them):
   Bore diameter = `splines.hole(sp).inner` (the job's `spline['bore']`).
   STEP is **nominal**: ignore `spline['print']` (that's for the STL).
 - **The ring counterbore**: when `spline['retainer']` is set, a cylinder
-  Ø `cb_d`, `cb_depth` deep, on the axis, into the part's top (`face` =
-  `top`, from the solid's max z) or bottom face — cut after any integrated
-  flange is joined. A plane annulus and a CYLINDRICAL_SURFACE: already in
-  the vocabulary.
+  Ø `cb_d` on the axis, into the solid's top (`face` = `top`, from its max
+  z) or bottom face, cut after any integrated flange is joined. Depth
+  `cb_depth`, less `cover` when `cover_joined` is false (a separate top
+  flange or a metal plate over that face, not in the STEP, carries that
+  much of it). A plane annulus and a CYLINDRICAL_SURFACE: already in the
+  vocabulary.
+- **The integrated top flange's hole is the bore's shape** (spline or
+  keyway), not a round hole at the bore: cut the bore profile through it
+  as through the bottom flange (cadquery: `bore_solid` / `kw_box` again
+  after the top flange's union). Keyways need this too, spline or not.
 - **No set screw with a spline**: the app sends none (screw fields zeroed),
   so §7's "one screw into the first slot" no longer applies.
 - **Sample shaft and splined washer**: STL / SVG / DXF only for now; a STEP

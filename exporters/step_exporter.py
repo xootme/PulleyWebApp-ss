@@ -229,21 +229,50 @@ def _as_spline(spline):
     return _spl.Spline(**{k: v for k, v in spline.items() if k in names})
 
 
+def _open_for_ring(mesh, spline, face: str, printed: bool = True):
+    """A flange or plate over the ring's face (ADR-017): the counterbore goes
+    on into it from its outer face — through it when the counterbore is
+    deeper than it is thick. `mesh` is the flange in its own frame, before
+    it is moved into place: its inner face (on the pulley) at z = 0, its
+    outer face at z = +cover (top) or -cover (bottom)."""
+    rt = spline.get('retainer') if isinstance(spline, dict) else None
+    if not rt or rt['face'] != face or rt.get('cover', 0.0) <= 0 or mesh is None:
+        return mesh
+    t = rt['cover']
+    r = rt['cb_d'] / 2.0 + (_spline_print(spline) if printed else 0.0)
+    depth = min(rt['cb_depth'], t)
+    over = 1.0
+    lo, hi = (t - depth, t + over) if face == 'top' else (-t - over, -t + depth)
+    if depth >= t - 1e-9:                    # through the flange
+        lo, hi = (-over, t + over) if face == 'top' else (-t - over, over)
+    cyl = trimesh.creation.cylinder(radius=r, height=hi - lo, sections=_BORE_SECTIONS)
+    cyl.apply_translation([0.0, 0.0, (lo + hi) / 2.0])
+    try:
+        cut = trimesh.boolean.difference([mesh, cyl], engine='manifold')
+        return cut if len(cut.faces) else mesh
+    except Exception:
+        return mesh
+
+
 def _spline_print(spline) -> float:
     """The 3D-print offset for a splined bore's printed parts (STL only)."""
     return float(spline.get('print', 0.0)) if isinstance(spline, dict) else 0.0
 
 
 def _cut_counterbore(mesh, spline, printed: bool = True):
-    """The retaining ring's counterbore (cct_common.retaining_rings): a
-    cylinder `depth` deep into the part's top or bottom face, on the bore's
-    axis (x = y = 0). For an STL the recess grows by the print offset, as the
-    bore does. Cutting it again changes nothing, so every builder may."""
+    """The retaining ring's counterbore (cct_common.retaining_rings) in the
+    pulley: a cylinder into its top or bottom face, on the bore's axis
+    (x = y = 0). The depth is measured from the part's outer face: a flange
+    or plate over that face (`retainer['cover']` thick) carries the first of
+    it (_open_for_ring), the pulley the rest. For an STL the recess grows by
+    the print offset, as the bore does."""
     rt = spline.get('retainer') if isinstance(spline, dict) else None
     if not rt or mesh is None or not getattr(mesh, 'is_volume', False):
         return mesh
     r = rt['cb_d'] / 2.0 + (_spline_print(spline) if printed else 0.0)
-    depth = rt['cb_depth']
+    depth = rt['cb_depth'] - rt.get('cover', 0.0)
+    if depth <= 1e-6:
+        return mesh                          # the flange over the face holds the whole recess
     z_lo, z_hi = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
     over = 1.0                               # past the face, so the cut opens it cleanly
     cyl = trimesh.creation.cylinder(radius=r, height=depth + over, sections=_BORE_SECTIONS)
@@ -1234,9 +1263,12 @@ def generate_pulley_step(
     # ── 4. Bore: explicit solid cut (more reliable than cutThruAll on splines) ─
     # Extend bore downward by flange depth so it passes through the bottom flange.
     _flange_h_ext = flange_height_mm if _bot_flange_unioned else 0.0
+    # ...and up through an integrated top flange (step 7 cuts it again there)
+    _top_ext = flange_height_mm if (flange_enabled and flange_3dprint and not flange_top_separate) else 0.0
+    bore_solid = kw_box = None
     if R_bore > 0.5:
         extra  = 0.5
-        bore_h = total_height + _flange_h_ext + extra * 2
+        bore_h = total_height + _flange_h_ext + _top_ext + extra * 2
         if spline:
             bore_solid = _cq_spline_solid(spline, bore_h, -extra - _flange_h_ext)
         elif flat_depth_mm > 0.0:
@@ -1262,13 +1294,13 @@ def generate_pulley_step(
     # ── 5. Keyway slot ────────────────────────────────────────────────────────
     if keyway_w_mm > 0.0 and keyway_h_mm > 0.0 and R_bore > 0.5:
         kw_depth = keyway_h_mm
-        kw_h_total = total_height + _flange_h_ext + 1.0
+        kw_h_total = total_height + _flange_h_ext + _top_ext + 1.0
         # From the bore's centre out, like the STL's _build_bore_2d: the same
         # cut normally, but a key wider than the bore leaves no slivers.
         kw_len = R_bore + kw_depth
         kw_box = (cq.Workplane('XY')
                   .box(kw_len, keyway_w_mm, kw_h_total, clean=False)
-                  .translate((kw_len / 2.0, 0.0, (total_height - _flange_h_ext) / 2.0)))
+                  .translate((kw_len / 2.0, 0.0, (total_height - _flange_h_ext + _top_ext) / 2.0)))
         result = result.cut(kw_box, clean=False)
 
     # ── 6. Set-screw holes + nut pockets ──────────────────────────────────────
@@ -1361,6 +1393,11 @@ def generate_pulley_step(
             _top_flange = _revolve_rz_profile(_top_prof)
             _top_flange = _top_flange.translate((0.0, 0.0, belt_height_mm))
             result = result.union(_top_flange, clean=False)
+            # the bore's own shape on through it, as through the bottom one:
+            # a spline's slots and a key's slot don't stop at a round hole
+            for _cutter in (bore_solid, kw_box):
+                if _cutter is not None:
+                    result = result.cut(_cutter, clean=False)
 
         # Cut socket holes into the pulley top face when nubs are enabled
         if flange_top_separate and nubs_enabled:
@@ -1379,13 +1416,17 @@ def generate_pulley_step(
                          .translate((0.0, 0.0, belt_height_mm - _sock_h)))
                 result = result.cut(_sock, clean=False)
 
+    # The ring's counterbore, from the solid's face: an integrated flange is
+    # part of this solid, so it is cut with the rest; a separate flange or a
+    # metal plate isn't, and carries its share itself (ADR-017).
     rt = spline.get('retainer') if isinstance(spline, dict) else None
-    if rt:
+    depth = (rt['cb_depth'] - (0.0 if rt.get('cover_joined') else rt.get('cover', 0.0))) if rt else 0.0
+    if rt and depth > 1e-6:
         bb = result.val().BoundingBox()
         over = 1.0
-        z0 = bb.zmax - rt['cb_depth'] if rt['face'] == 'top' else bb.zmin - over
+        z0 = bb.zmax - depth if rt['face'] == 'top' else bb.zmin - over
         result = result.cut(cq.Workplane('XY').workplane(offset=z0)
-                            .circle(rt['cb_d'] / 2.0).extrude(rt['cb_depth'] + over, clean=False),
+                            .circle(rt['cb_d'] / 2.0).extrude(depth + over, clean=False),
                             clean=False)
 
     if _return_cq:

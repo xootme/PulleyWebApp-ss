@@ -297,8 +297,8 @@ settings fitted with warning + Auto-fit (ADR-010), 3D Print Compensation as a tr
       the boss, the slot through a spline, screw sizes from `cct_common.screws`. Common code.
 - [ ] small_step: §7 + §8 of SMALL_STEP_HANDOFF (splined bore, fitted, with the ring counterbore)
 - [ ] STEP of the sample shaft and the splined washer (both are extrusions; see §8)
-- [ ] A metal flange plate or separate top flange over the ring's face: warned today; cut the plate /
-      flange with the counterbore instead?
+- [x] A metal flange plate or separate top flange over the ring's face — DONE 2026-09-29: the flange
+      has the counterbore through it, depth measured from the outer face (ADR-017)
 
 ## small_step known issues
 Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.

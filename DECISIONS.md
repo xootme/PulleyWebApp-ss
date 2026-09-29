@@ -33,8 +33,15 @@ McMaster-Carr's DIN 471 rings (98541A…, 3–29 mm, all match).
   washer**; STL / SVG / DXF (`/download/spline-stl|svg|dxf?part=shaft|washer`), no STEP yet.
 - **The page takes the figures from the server** (`/api/spline`): the fitted hole and shaft, the fit's
   source, the ring (label, McMaster PN), counterbore and washer. The Dimensions panel lists them and
-  warns when the counterbore leaves under 1 mm to the hub / spoke hub / tooth root, or sits under a
-  metal plate or a separate top flange.
+  warns when the counterbore leaves under 1 mm to the hub / spoke hub / tooth root.
+- **The counterbore's depth is from the part's outer face.** A flange or plate over the ring's face
+  (no hub there — a hub stands up through the top flange — and no spokes) has the counterbore through
+  it, as deep as it is thick; the pulley takes the rest (`_ring_cover`, `_open_for_ring`). A joined
+  printed flange is cut with the pulley; a separate top flange and a metal plate carry their share
+  themselves, and the STEP (which leaves them out) cuts only the rest. Asked for as an Auto-fix
+  ("flange ID = counterbore OD"), made the rule instead: there is no flange-ID setting to fix.
+- **The top flange's hole is the bore's shape** (STL and STEP), as the bottom's always was: a round
+  hole at the bore closed a spline's slots and a key's slot for the flange's thickness.
 - **Auto-fix for a spline the part can't hold** (first bug report, 2026-09-29: a 25 mm hub round a
   6 × 23 × 26 spline and its 35.5 mm counterbore): 1 mm of wall round the spline's reach and the
   counterbore; Hub OD grows up to the tooth root less 1 mm a side, else the largest smaller spline of
