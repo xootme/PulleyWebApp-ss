@@ -1039,6 +1039,28 @@ let previewTimer       = null;
 let clearanceAuto = true;
 let ratioSnapTimer     = null;
 let beltCorrectionTimer = null;
+// Settings the page is about to correct — a centre distance waiting to snap
+// to a whole belt, teeth under the minimum, a ratio or OD waiting to snap,
+// Pulley 2 waiting for Lock Ratio: while any is pending no undo step is
+// recorded, so Undo can never return to a state the page was about to fix.
+// The settled result is one step. A scheduled fix holds by name (timerHolds);
+// a fix running holds by depth (fixDepth), so nested fixes can't release
+// each other's hold.
+const timerHolds = new Set();
+let fixDepth = 0;
+const stepsHeld = () => timerHolds.size > 0 || fixDepth > 0;
+function holdStep(k) { timerHolds.add(k); }
+function _settled() { if (!stepsHeld()) saveSettings(); }   // record the settled state
+async function settleThen(k, fn) {
+  try { return await fn(); } finally { timerHolds.delete(k); _settled(); }
+}
+// A page fix-up: nothing it passes through is a step.
+function heldFix(fn) {
+  return async function (...args) {
+    fixDepth++;
+    try { return await fn.apply(this, args); } finally { fixDepth--; _settled(); }
+  };
+}
 let _lastValidBeltTeeth = null;   // last belt_teeth value that returned a valid center dist
 let teethTimer1  = null;
 let teethTimer2  = null;
@@ -1605,6 +1627,7 @@ function sameSettings(a, b) {
 }
 
 function recordUndoStep(now) {
+  if (stepsHeld() && !restoringHistory) { refreshUndoUI(); return; }   // not settled yet
   if (!historyReady || currentStep === null || restoringHistory || foldNextStep
       || sameSettings(currentStep, now) || (gestureActive && gestureRecorded)) {
     currentStep = now;                        // the same step, as it stands now
@@ -1620,7 +1643,13 @@ function recordUndoStep(now) {
   refreshUndoUI();
 }
 
+function dropPendingFixes() {
+  for (const t of [beltCorrectionTimer, teethTimer1, teethTimer2, odTimer1, odTimer2, ratioSnapTimer]) clearTimeout(t);
+  timerHolds.clear();
+}
+
 async function applyHistory(step) {
+  dropPendingFixes();
   restoringHistory = true;
   try {
     const s = { ...step };
@@ -1645,7 +1674,10 @@ async function applyHistory(step) {
 }
 
 function undo() {
-  if (!undoStack.length || !currentStep || restoringHistory) return;
+  if (restoringHistory) return;
+  // Undo while a change is still settling goes back to where it started.
+  if (stepsHeld() && currentStep) { applyHistory(currentStep); return; }
+  if (!undoStack.length || !currentStep) return;
   redoStack.push(currentStep);
   applyHistory(undoStack.pop());
 }
@@ -1695,8 +1727,10 @@ function refreshUndoUI() {
   const u = document.getElementById('undo_btn'), r = document.getElementById('redo_btn');
   if (!u || !r) return;
   const top = undoStack[undoStack.length - 1];
-  u.disabled = !top;
-  u.title = top ? `Undo ${describeChange(top, currentStep)} (Ctrl+Z)` : 'Nothing to undo (Ctrl+Z)';
+  const settling = stepsHeld() && !restoringHistory;
+  u.disabled = !top && !settling;
+  u.title = settling ? 'Undo the change in progress (Ctrl+Z)'
+          : top ? `Undo ${describeChange(top, currentStep)} (Ctrl+Z)` : 'Nothing to undo (Ctrl+Z)';
   const next = redoStack[redoStack.length - 1];
   r.disabled = !next;
   r.title = next ? `Redo ${describeChange(currentStep, next)} (Ctrl+Y)` : 'Nothing to redo (Ctrl+Y)';
@@ -1949,7 +1983,7 @@ function updateBeltTeethFromCenter() {
   const R2   = t2 * pitchMm / (2 * Math.PI);
   const Ceff = Math.max(C, R1 + R2);
   const L    = openBeltLength(R1, R2, Ceff);
-  const n = Math.ceil(L / pitchMm);
+  const n = Math.ceil(L / pitchMm - 0.01);   // the server's BELT_TOOTH_SLACK: a rounded centre isn't a tooth more
   document.getElementById('belt_teeth').value = n;
   _lastValidBeltTeeth = n;
   _clearBeltError();
@@ -1962,7 +1996,8 @@ function onCenterDistanceInput() {
   updateBeltTeethFromCenter();
   // Cancel any pending correction and reschedule for 3 s
   clearTimeout(beltCorrectionTimer);
-  beltCorrectionTimer = setTimeout(correctCenterDistance, 3000);
+  holdStep('belt');
+  beltCorrectionTimer = setTimeout(() => settleThen('belt', correctCenterDistance), 3000);
   schedulePreview();
 }
 
@@ -1985,6 +2020,9 @@ async function correctCenterDistance() {
   updateBeltLengthDisplay();
   schedulePreview();
 }
+
+correctCenterDistance = heldFix(correctCenterDistance);
+setDefaultCenterDistance = heldFix(setDefaultCenterDistance);
 
 // Shared: fetch belt geometry from current belt_teeth value and apply results
 async function _applyBeltTeeth() {
@@ -2021,7 +2059,8 @@ async function _applyBeltTeeth() {
 function onBeltTeethInput() {
   updateBeltLengthDisplay();
   clearTimeout(beltCorrectionTimer);
-  beltCorrectionTimer = setTimeout(_applyBeltTeeth, 3000);
+  holdStep('belt');
+  beltCorrectionTimer = setTimeout(() => settleThen('belt', _applyBeltTeeth), 3000);
   schedulePreview();
 }
 
@@ -2038,7 +2077,8 @@ function updateBeltLengthDisplay() {
 function onBeltLengthInput() {
   _clearBeltError();
   clearTimeout(beltCorrectionTimer);
-  beltCorrectionTimer = setTimeout(correctBeltLength, 3000);
+  holdStep('belt');
+  beltCorrectionTimer = setTimeout(() => settleThen('belt', correctBeltLength), 3000);
 }
 
 async function correctBeltLength() {
@@ -2097,8 +2137,9 @@ async function onPitchChange() {
 // Debounce: wait 1000 ms after last keystroke before firing the API call so the
 // user can finish typing without the field being overwritten mid-entry.
 function onTeethChange(n) {
-  if (n === 1) { clearTimeout(teethTimer1); teethTimer1 = setTimeout(() => _doTeethChange(1), 1000); }
-  else         { clearTimeout(teethTimer2); teethTimer2 = setTimeout(() => _doTeethChange(2), 1000); }
+  holdStep('teeth' + n);
+  if (n === 1) { clearTimeout(teethTimer1); teethTimer1 = setTimeout(() => settleThen('teeth1', () => _doTeethChange(1)), 1000); }
+  else         { clearTimeout(teethTimer2); teethTimer2 = setTimeout(() => settleThen('teeth2', () => _doTeethChange(2)), 1000); }
 }
 
 async function _doTeethChange(n) {
@@ -2143,8 +2184,9 @@ async function _doTeethChange(n) {
 }
 
 function onODChange(n) {
-  if (n === 1) { clearTimeout(odTimer1); odTimer1 = setTimeout(() => _doODChange(1), 1000); }
-  else         { clearTimeout(odTimer2); odTimer2 = setTimeout(() => _doODChange(2), 1000); }
+  holdStep('od' + n);
+  if (n === 1) { clearTimeout(odTimer1); odTimer1 = setTimeout(() => settleThen('od1', () => _doODChange(1)), 1000); }
+  else         { clearTimeout(odTimer2); odTimer2 = setTimeout(() => settleThen('od2', () => _doODChange(2)), 1000); }
 }
 
 async function _doODChange(n) {
@@ -2279,12 +2321,14 @@ function onGearRatioChange() {
   applyRatioToP2(t1, false);
   // Snap to true ratio 3 seconds after the user stops typing
   clearTimeout(ratioSnapTimer);
-  ratioSnapTimer = setTimeout(() => {
+  holdStep('ratio');
+  ratioSnapTimer = setTimeout(() => settleThen('ratio', () => {
     const t2 = parseInt(document.getElementById('p2_teeth').value) || 1;
     document.getElementById('gear_ratio').value = (t2 / t1).toFixed(3);
-  }, 3000);
+  }), 3000);
 }
 
+applyRatioToP2 = heldFix(applyRatioToP2);
 async function applyRatioToP2(t1, snapRatioDisplay = true) {
   const ratio = parseFloat(document.getElementById('gear_ratio').value) || 1;
   const t2    = Math.max(1, Math.round(ratio * t1));

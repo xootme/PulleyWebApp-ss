@@ -134,6 +134,44 @@ async function main() {
   check('…with the Pulley 2 panel to match',
     (await js("document.getElementById('panel2').classList.contains('hidden')")) === !dualWas);
 
+  // ── a state the page is about to correct is never a step ──
+  // Min sets a rounded-up centre, then snaps it to a whole belt 3 s later:
+  // only the settled centre is a step, and Undo goes back to before Min.
+  await js("(() => { const d = document.getElementById('dual_enable'); if (!d.checked) d.click(); })()");
+  await sleep(5000);
+  await type('#center_distance', '150');
+  await sleep(4500);                                       // the 3 s snap lands
+  const cBefore = await val('#center_distance'), sMin = await steps();
+  await click('#min_distance_btn');
+  await sleep(600);
+  check('while the snap is pending, Undo offers the change in progress',
+    (await js("document.getElementById('undo_btn').title")).includes('in progress'), await js("document.getElementById('undo_btn').title"));
+  check('…and no step is recorded yet', (await steps()) === sMin, [sMin, await steps()]);
+  await sleep(4500);
+  check('Min is one step once it settles', (await steps()) === sMin + 1, [sMin, await steps()]);
+  const cMin = await val('#center_distance');
+  check('…at the snapped centre', parseFloat(cMin) < parseFloat(cBefore), [cBefore, cMin]);
+  await click('#undo_btn'); await idle(); await sleep(1500);
+  check('Undo returns to the centre before Min', (await val('#center_distance')) === cBefore, [cBefore, await val('#center_distance')]);
+  await click('#redo_btn'); await idle(); await sleep(1500);
+  check('Redo returns to the snapped centre, not the rounded one', (await val('#center_distance')) === cMin, [cMin, await val('#center_distance')]);
+  // Undo while the snap is still pending drops the change entirely
+  const sPend = await steps();
+  await click('#min_distance_btn');
+  await sleep(400);
+  await click('#undo_btn'); await idle(); await sleep(4500);
+  check('Undo during a pending snap drops the change', (await val('#center_distance')) === cMin && (await steps()) === sPend,
+        [cMin, await val('#center_distance'), sPend, await steps()]);
+
+  // Teeth under the minimum are clamped a second later: one step, the clamped one
+  const t0 = await val('#teeth'), sT = await steps();
+  await type('#teeth', '3');
+  await sleep(4500);
+  const tMin = await val('#teeth');
+  check('teeth under the minimum settle to the minimum as one step', tMin !== '3' && (await steps()) === sT + 1, [tMin, sT, await steps()]);
+  await click('#undo_btn'); await idle(); await sleep(1500);
+  check('Undo goes back to the teeth before, never to 3', (await val('#teeth')) === t0, [t0, await val('#teeth')]);
+
   // ── the automatic clearance height folds into the change that moved it ──
   await js("localStorage.clear()");
   await load(BASE + '/?family=Imperial&pitch=MXL&teeth=20&bore=5');

@@ -2017,6 +2017,9 @@ def open_belt_length(R_left: float, R_right: float, C: float) -> float:
     return straight + arc_left + arc_right
 
 
+BELT_TOOTH_SLACK = 0.01   # teeth
+
+
 def correct_center_distance(pitch_mm: float, left_teeth: int, right_teeth: int,
                              nominal_center: float):
     """
@@ -2030,10 +2033,12 @@ def correct_center_distance(pitch_mm: float, left_teeth: int, right_teeth: int,
     C_nom   = max(float(nominal_center), R_left + R_right)
     L_nom   = open_belt_length(R_left, R_right, C_nom)
 
-    n_belt   = math.ceil(L_nom / pitch_mm)
+    # A centre shown to 0.01 mm reads a hair over its whole belt; without the
+    # slack, re-correcting a snapped centre jumped a tooth (49.07 -> 51.61).
+    n_belt   = math.ceil(L_nom / pitch_mm - BELT_TOOTH_SLACK)
     L_target = n_belt * pitch_mm
 
-    C_lo = C_nom
+    C_lo = R_left + R_right          # the slack can put the target just under L_nom
     C_hi = C_nom * 2.0
     while open_belt_length(R_left, R_right, C_hi) < L_target:
         C_hi *= 2.0
