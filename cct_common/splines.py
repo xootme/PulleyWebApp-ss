@@ -7,12 +7,13 @@ Timing Pulleys'.
 
     sp = splines.straight(6, 23, 26, 6)          # ISO 14: N × d × D × B
     sp = splines.involute(1.5, 20, 30, "flat")   # ISO 4156: m, z, pressure angle, root
+    sp = splines.hex_bar(12.7, series="inch")    # hex bar: across flats (+ rounded corners)
     segs = splines.path(sp)                      # the hole, at the default fit: lines and arcs
     shaft = splines.shaft_path(sp)               # the mating shaft, at the default fit
     pts = splines.sample_closed(segs, 0.05)      # or points, for a mesh or a polygon
     pts = splines.printed(pts, 0.2, hole=True)   # 3D printing: the bore grows, a shaft shrinks
 
-Two kinds:
+Three kinds:
 
 * **Straight-sided, ISO 14:1982** — N equal slots of width B from the minor
   diameter d (the hub centres on it) out to the major diameter D. Table 1's
@@ -24,11 +25,20 @@ Two kinds:
   external minor m(z − 1.5 / 1.8 / 1.4 / 1.2); internal minor
   D_Fe max + 2c_F, the external form diameter plus twice the form clearance
   0.1m (ISO 4156-1:2005, as its design worksheet computes them).
+* **Hex bar** — a hexagonal shaft, across flats AF (the Spline's minor),
+  sharp corners (across corners AF / cos 30°) or rounded to a circle (the
+  major: "rounded hex" stock, e.g. REV's 1/2" at 13.75 mm). A flat faces +x.
+  `series` says which retaining rings go on it: "metric" (DIN 471) or "inch"
+  (SH / 5100) — the ring for a shaft the across-flats size, whose groove then
+  runs round inside the flats (retaining_rings.for_spline).
 
 **The default fit** (the only one offered): each part is drawn at the middle
 of its tolerance zone, so the pair has the fit's mean clearance.
 * ISO 14 **sliding**: hole B H9, D H10, d H7 (not treated after broaching);
   shaft B d10, D a11, d f7 (ISO 14:1982 Table 2; zones from ISO 286).
+* Hex bar: **H11 hole on an h11 bar**, across flats and across corners —
+  EN 10278 gives bright hexagon bar h11 up to 80 mm (h12 above); no standard
+  covers the hole, so it takes the matching H11 (ISO 286-2).
 * ISO 4156 **H/h, tolerance class 6**: the space width and tooth thickness
   each vary by T + λ = 2.5 (10 i* + 40 i**) µm, i* = 0.45 ∛D + 0.001 D and
   i** = 0.45 ∛(πm/2) + 0.001 πm/2 (which reproduces the worksheet's 0.034 /
@@ -49,7 +59,7 @@ from dataclasses import dataclass
 
 FLANK_TOL = 0.001          # mm: the arcs' furthest from the true involute
 
-TYPES = ("straight", "involute")
+TYPES = ("straight", "involute", "hex")
 
 # How a figure is known: the standard's own, a secondary source, or an
 # estimate (the looser published value) that an app marks approximate.
@@ -179,6 +189,20 @@ ISO14_FIT = {"hole": {"B": "H9", "D": "H10", "d": "H7"},
 ISO14_FIT_SOURCE = "ISO 14:1982 Table 2, sliding (zones: ISO 286-2)"
 INVOLUTE_CLASS = 6          # tolerance class of the default H/h fit
 
+# Hex bar: EN 10278 bright hexagon bar h11 to 80 mm; the hole the matching H11.
+HEX_FIT = {"hole": "H11", "shaft": "h11"}
+HEX_FIT_SOURCE = "EN 10278 hexagon bar h11, H11 hole (zones: ISO 286-2)"
+HEX_MAX_AF = 80.0
+HEX_SERIES = ("metric", "inch")
+# Common stock, across flats. Metric (mm): bright hex bar sizes; inch: the
+# fractional sizes (FRC robots: 3/8" and 1/2"). Presets only — any AF can be typed.
+HEX_METRIC = [5, 6, 8, 10, 12, 13, 14, 17, 19, 22, 24, 27, 30, 32]
+HEX_INCH = [("1/4", 0.25), ("5/16", 0.3125), ("3/8", 0.375), ("7/16", 0.4375), ("1/2", 0.5),
+            ("9/16", 0.5625), ("5/8", 0.625), ("3/4", 0.75), ("7/8", 0.875), ("1", 1.0)]
+# Rounded hex stock with a published across-corners figure: (name, AF mm, AC mm, series).
+HEX_ROUNDED = [("REV 1/2\" rounded hex", 12.7, 13.75, "inch")]    # docs.revrobotics.com
+SQRT3 = math.sqrt(3.0)
+
 
 def _form_diameter(m: float, z: int, pressure: float) -> float:
     """D_Fe max: the external spline's form diameter at the h fit (es_v = 0),
@@ -214,14 +238,25 @@ class Spline:
     module: float = 0.0        # involute
     pressure: float = 30.0
     root: str = "flat"
+    series: str = ""           # hex bar: "metric" / "inch" — which retaining rings
 
     @property
     def pitch_diameter(self) -> float:
         return self.module * self.n
 
+    @property
+    def rounded(self) -> bool:
+        """A hex bar whose corners are turned to a circle (major < sharp)."""
+        return self.kind == "hex" and self.major < self.minor * 2 / SQRT3 - 1e-6
+
     def label(self) -> str:
         if self.kind == "straight":
             return f"{self.n} × {self.minor:g} × {self.major:g} (B {self.width:g})"
+        if self.kind == "hex":
+            af = self.minor
+            name = next((f'{f}"' for f, inch in HEX_INCH if abs(inch * 25.4 - af) < 1e-6), None)
+            size = f"hex {name} ({af:g} mm AF)" if name else f"hex {af:g} mm AF"
+            return size + (f", rounded Ø{self.major:g}" if self.rounded else "")
         return f"m {self.module:g} × {self.n}T, {self.pressure:g}° {self.root} root"
 
 
@@ -248,19 +283,39 @@ def involute(m: float, z: int, pressure: float = 30.0, root: str = "flat") -> Sp
                   pressure=pressure, root=key[1])
 
 
+def hex_bar(af: float, ac: float | None = None, series: str = "metric") -> Spline:
+    """A hex bar: across flats `af` (mm); `ac` its across-corners diameter
+    when the corners are rounded (None: sharp, af / cos 30°)."""
+    if series not in HEX_SERIES:
+        raise ValueError("a hex bar's rings are metric (DIN 471) or inch (SH / 5100)")
+    if not 0 < af <= HEX_MAX_AF:
+        raise ValueError(f"a hex bar is up to {HEX_MAX_AF:g} mm across flats (EN 10278 h11)")
+    sharp = af * 2 / SQRT3
+    if ac is None or ac >= sharp - 1e-6:
+        ac = sharp
+    elif ac <= af + 1e-6:
+        raise ValueError(f"rounded corners must be wider than the {af:g} mm across flats")
+    return Spline("hex", 6, af, ac, series=series)
+
+
 def basis(sp: Spline) -> dict[str, tuple[str, str]]:
     """Which figures are the standard's, and which are approximate:
     {"major": (STD/SEC/EST, source), "minor": (...)}."""
     if sp.kind == "straight":
         return {"major": (STD, ISO14_SOURCE), "minor": (STD, ISO14_SOURCE)}
+    if sp.kind == "hex":
+        return {"major": (STD, HEX_FIT_SOURCE), "minor": (STD, HEX_FIT_SOURCE)}
     return {"major": (STD, INVOLUTE_SOURCES[STD]), "minor": (STD, INVOLUTE_SOURCES[STD])}
 
 
 def presets() -> dict:
-    """The page's choices: ISO 14's series and ISO 4156's modules."""
+    """The page's choices: ISO 14's series, ISO 4156's modules, hex bar stock."""
     return {"straight": {"light": ISO14_LIGHT, "medium": ISO14_MEDIUM, "source": ISO14_SOURCE},
             "involute": {"modules": {str(k): v for k, v in MODULES.items()},
-                         "pressure_angles": [30, 37.5, 45]}}
+                         "pressure_angles": [30, 37.5, 45]},
+            "hex": {"metric": HEX_METRIC,
+                    "inch": [[name, round(inch * 25.4, 4)] for name, inch in HEX_INCH],
+                    "rounded": [list(r) for r in HEX_ROUNDED], "fit": HEX_FIT_SOURCE}}
 
 
 # ── Outlines ──────────────────────────────────────────────────────────────────
@@ -281,8 +336,19 @@ class Profile:
     pressure: float = 30.0
 
 
+def _hex_profile(sp: Spline, zone: str) -> Profile:
+    """A hex bar's hole (H11) or bar (h11), each size at the middle of its zone;
+    sharp corners stay sharp."""
+    from . import iso286
+    af = sp.minor + iso286.middle(sp.minor, zone)
+    ac = sp.major + iso286.middle(sp.major, zone) if sp.rounded else af * 2 / SQRT3
+    return Profile("hex", 6, af, ac, 0.0)
+
+
 def hole(sp: Spline) -> Profile:
     """The bore at the default fit (the middle of each tolerance zone)."""
+    if sp.kind == "hex":
+        return _hex_profile(sp, HEX_FIT["hole"])
     if sp.kind == "straight":
         from . import iso286
         z = ISO14_FIT["hole"]
@@ -296,6 +362,8 @@ def hole(sp: Spline) -> Profile:
 
 def shaft(sp: Spline) -> Profile:
     """The mating shaft at the default fit."""
+    if sp.kind == "hex":
+        return _hex_profile(sp, HEX_FIT["shaft"])
     if sp.kind == "straight":
         from . import iso286
         z = ISO14_FIT["shaft"]
@@ -309,8 +377,28 @@ def shaft(sp: Spline) -> Profile:
 
 
 def fit_source(sp: Spline) -> str:
+    if sp.kind == "hex":
+        return HEX_FIT_SOURCE
     return (ISO14_FIT_SOURCE if sp.kind == "straight"
             else f"ISO 4156-1:2005 H/h, tolerance class {INVOLUTE_CLASS}")
+
+
+def _hex_path(pr: Profile) -> list[Segment]:
+    """Six flats pr.inner apart, the first facing +x; where pr.outer is under
+    the sharp corners, each corner an arc on that circle."""
+    a, R = pr.inner / 2, pr.outer / 2
+    sharp = R >= a * 2 / SQRT3 - 1e-9
+    d = math.pi / 6 if sharp else math.acos(a / R)     # half the angle a flat spans
+    rc = a * 2 / SQRT3 if sharp else R
+    out: list[Segment] = []
+    for k in range(6):
+        c = k * math.pi / 3                            # the flat's normal
+        p0 = (rc * math.cos(c - d), rc * math.sin(c - d))
+        p1 = (rc * math.cos(c + d), rc * math.sin(c + d))
+        out.append(Line(p0, p1))
+        if not sharp:
+            out.append(Arc((0.0, 0.0), R, c + d, math.pi / 3 - 2 * d))
+    return out
 
 
 def _straight_path(sp: Profile) -> list[Segment]:
@@ -429,6 +517,8 @@ def _involute_path(sp: Profile) -> list[Segment]:
 
 
 def outline(pr: Profile) -> list[Segment]:
+    if pr.kind == "hex":
+        return _hex_path(pr)
     return _straight_path(pr) if pr.kind == "straight" else _involute_path(pr)
 
 

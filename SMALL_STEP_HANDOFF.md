@@ -191,12 +191,12 @@ When §7 lands, cut these too (cct_common 0.20.0; the cadquery track has them):
   hundredths over nominal. Still LINEs and CIRCLE arcs, no new entity type.
   Bore diameter = `splines.hole(sp).inner` (the job's `spline['bore']`).
   STEP is **nominal**: ignore `spline['print']` (that's for the STL).
-- **The ring counterbore**: when `spline['retainer']` is set, a cylinder
-  Ø `cb_d` on the axis, into the solid's top (`face` = `top`, from its max
-  z) or bottom face, cut after any integrated flange is joined. Depth
-  `cb_depth`, less `cover` when `cover_joined` is false (a separate top
-  flange or a metal plate over that face, not in the STEP, carries that
-  much of it). A plane annulus and a CYLINDRICAL_SURFACE: already in the
+- **The ring counterbores**: when `spline['retainer']` is set, for each
+  face in `retainer['faces']` (`top`, `bottom` or both) a cylinder Ø `cb_d`
+  on the axis, into the solid's top (from its max z) or bottom face, cut
+  after any integrated flange is joined. Depth `cb_depth`, less
+  `cover[face]` when `cover_joined[face]` is false (a separate top flange
+  or a metal plate over that face, not in the STEP, carries that much). A plane annulus and a CYLINDRICAL_SURFACE: already in the
   vocabulary.
 - **The integrated top flange's hole is the bore's shape** (spline or
   keyway), not a round hole at the bore: cut the bore profile through it
@@ -210,6 +210,10 @@ When §7 lands, cut these too (cct_common 0.20.0; the cadquery track has them):
 - **Reference**: `tests/test_spline_retainer.py` — the cadquery STEP matches
   the STL's volume within 5e-3 and keeps the nominal counterbore and spline
   radii with print compensation set.
+
+- **Hex bar** (ADR-018): `kind = "hex"` in the same job dict — `splines.path`
+  gives six LINEs (sharp) or six LINEs and six CIRCLE arcs (rounded hex);
+  cut it exactly as a spline, rings and counterbores included.
 
 ## Not STEP-related (nothing to do)
 

@@ -180,15 +180,31 @@ def _add_spline(r: random.Random, cfg: dict) -> None:
     from cct_common import splines
     pre = splines.presets()
     cfg['bore_shape'] = 'spline'
-    if r.random() < 0.5:
+    kind = r.random()
+    if kind < 0.35:
         n, d, D, B = r.choice([x for x in pre['straight']['light'] + pre['straight']['medium'] if x[2] <= 40])
         cfg.update(spline_type='straight', spline_n=n, spline_minor=d, spline_major=D, spline_width=B)
+    elif kind < 0.65:                  # a hex bar (ADR-018): metric or inch, sharp or rounded
+        series = r.choice(['metric', 'inch'])
+        af = (r.choice(pre['hex']['inch'])[1] if series == 'inch'
+              else float(r.choice(pre['hex']['metric'])))
+        cfg.update(spline_type='hex', spline_af=af, spline_series=series)
+        if r.random() < 0.3:
+            cfg.update(spline_rounded='1', spline_ac=round(r.uniform(af * 1.03, af * 1.15), 2))
     else:
         pa = r.choice([30, 37.5, 45])
         mods = [m for m in pre['involute']['modules'][str(pa)] if m <= 2]     # sizes a pulley can hold
         cfg.update(spline_type='involute', spline_pa=pa, spline_m=r.choice(mods), spline_z=r.randint(6, 30), spline_root=r.choice(['flat', 'fillet']) if pa == 30 else 'fillet')
-    cfg['spline_ring'] = r.choice(['top', 'bottom', 'none'])
-    if cfg['spline_ring'] != 'none' and r.random() < 0.5:
+    # rings on either or both faces (the Spline card); now and then the older
+    # single choice, as a saved design or link would send it
+    if r.random() < 0.2:
+        cfg['spline_ring'] = r.choice(['top', 'bottom', 'none'])
+        ringed = cfg['spline_ring'] != 'none'
+    else:
+        cfg['spline_ring_top'] = r.choice(['0', '1'])
+        cfg['spline_ring_bottom'] = r.choice(['0', '1'])
+        ringed = '1' in (cfg['spline_ring_top'], cfg['spline_ring_bottom'])
+    if ringed and r.random() < 0.5:
         cfg['spline_washer'] = '1'
     if r.random() < 0.5:
         cfg['print_extra'] = 0.0
@@ -243,11 +259,11 @@ def _make_config(r: random.Random, max_attempts: int = 30) -> dict:
                 rt = sp['retainer']
                 if rt and rt['cb_d'] / 2 >= R_tr - 1.0:
                     raise ValueError('ring counterbore reaches the tooth root')
-                if rt and rt['face'] == 'top' and float(raw.get('hub_od', 0)) > 0 \
+                if rt and 'top' in rt['faces'] and float(raw.get('hub_od', 0)) > 0 \
                         and rt['cb_d'] >= float(raw['hub_od']) - 2.0:
                     raise ValueError('ring counterbore wider than the hub')
-                if rt and rt['cb_depth'] >= belt_h + float(raw.get('hub_height', 0)) - 1.0:
-                    raise ValueError('ring counterbore deeper than the part')
+                if rt and len(rt['faces']) * rt['cb_depth'] >= belt_h + float(raw.get('hub_height', 0)) - 1.0:
+                    raise ValueError('ring counterbores deeper than the part')
             hub_od, hub_h, sd, sc, cn, fd, kw, kh = _parse_hub_params(qs, '')
             if qs.get('bore_shape') == 'spline' and hub_od > 0 and hub_od <= reach * 2 + 2.0:
                 raise ValueError('hub wall too thin round the spline')

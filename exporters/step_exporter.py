@@ -236,9 +236,9 @@ def _open_for_ring(mesh, spline, face: str, printed: bool = True):
     it is moved into place: its inner face (on the pulley) at z = 0, its
     outer face at z = +cover (top) or -cover (bottom)."""
     rt = spline.get('retainer') if isinstance(spline, dict) else None
-    if not rt or rt['face'] != face or rt.get('cover', 0.0) <= 0 or mesh is None:
+    if not rt or face not in rt['faces'] or rt['cover'][face] <= 0 or mesh is None:
         return mesh
-    t = rt['cover']
+    t = rt['cover'][face]
     r = rt['cb_d'] / 2.0 + (_spline_print(spline) if printed else 0.0)
     depth = min(rt['cb_depth'], t)
     over = 1.0
@@ -260,29 +260,31 @@ def _spline_print(spline) -> float:
 
 
 def _cut_counterbore(mesh, spline, printed: bool = True):
-    """The retaining ring's counterbore (cct_common.retaining_rings) in the
-    pulley: a cylinder into its top or bottom face, on the bore's axis
-    (x = y = 0). The depth is measured from the part's outer face: a flange
-    or plate over that face (`retainer['cover']` thick) carries the first of
-    it (_open_for_ring), the pulley the rest. For an STL the recess grows by
-    the print offset, as the bore does."""
+    """The retaining rings' counterbores (cct_common.retaining_rings) in the
+    pulley: a cylinder into its top and / or bottom face (`retainer['faces']`),
+    on the bore's axis (x = y = 0). Each depth is measured from the part's
+    outer face: a flange or plate over that face (`retainer['cover'][face]`
+    thick) carries the first of it (_open_for_ring), the pulley the rest.
+    For an STL the recess grows by the print offset, as the bore does."""
     rt = spline.get('retainer') if isinstance(spline, dict) else None
     if not rt or mesh is None or not getattr(mesh, 'is_volume', False):
         return mesh
     r = rt['cb_d'] / 2.0 + (_spline_print(spline) if printed else 0.0)
-    depth = rt['cb_depth'] - rt.get('cover', 0.0)
-    if depth <= 1e-6:
-        return mesh                          # the flange over the face holds the whole recess
     z_lo, z_hi = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
     over = 1.0                               # past the face, so the cut opens it cleanly
-    cyl = trimesh.creation.cylinder(radius=r, height=depth + over, sections=_BORE_SECTIONS)
-    z0 = z_hi - depth if rt['face'] == 'top' else z_lo - over
-    cyl.apply_translation([0.0, 0.0, z0 + (depth + over) / 2.0])
-    try:
-        cut = trimesh.boolean.difference([mesh, cyl], engine='manifold')
-        return cut if len(cut.faces) else mesh
-    except Exception:
-        return mesh
+    for face in rt['faces']:
+        depth = rt['cb_depth'] - rt['cover'][face]
+        if depth <= 1e-6:
+            continue                         # the flange over the face holds the whole recess
+        cyl = trimesh.creation.cylinder(radius=r, height=depth + over, sections=_BORE_SECTIONS)
+        z0 = z_hi - depth if face == 'top' else z_lo - over
+        cyl.apply_translation([0.0, 0.0, z0 + (depth + over) / 2.0])
+        try:
+            cut = trimesh.boolean.difference([mesh, cyl], engine='manifold')
+            mesh = cut if len(cut.faces) else mesh
+        except Exception:
+            pass
+    return mesh
 
 
 def _spline_slot_h(spline, bore_mm: float) -> float:
@@ -290,7 +292,9 @@ def _spline_slot_h(spline, bore_mm: float) -> float:
     set screw aims into the first slot (on +x) and a captured nut sits on the
     slot bottom, as they do on a keyway's face. 0 without a spline."""
     sp = _as_spline(spline)
-    return (sp.major - bore_mm) / 2.0 if sp else 0.0
+    if sp is None or sp.kind == 'hex':
+        return 0.0          # a hex bar's +x flat is on the bore's radius: a screw lands as on a round bore
+    return (sp.major - bore_mm) / 2.0
 
 
 def _build_bore_2d(bore_mm: float, flat_depth_mm: float = 0.0,
@@ -1420,14 +1424,17 @@ def generate_pulley_step(
     # part of this solid, so it is cut with the rest; a separate flange or a
     # metal plate isn't, and carries its share itself (ADR-017).
     rt = spline.get('retainer') if isinstance(spline, dict) else None
-    depth = (rt['cb_depth'] - (0.0 if rt.get('cover_joined') else rt.get('cover', 0.0))) if rt else 0.0
-    if rt and depth > 1e-6:
+    if rt:
         bb = result.val().BoundingBox()
         over = 1.0
-        z0 = bb.zmax - depth if rt['face'] == 'top' else bb.zmin - over
-        result = result.cut(cq.Workplane('XY').workplane(offset=z0)
-                            .circle(rt['cb_d'] / 2.0).extrude(depth + over, clean=False),
-                            clean=False)
+        for face in rt['faces']:
+            depth = rt['cb_depth'] - (0.0 if rt['cover_joined'][face] else rt['cover'][face])
+            if depth <= 1e-6:
+                continue
+            z0 = bb.zmax - depth if face == 'top' else bb.zmin - over
+            result = result.cut(cq.Workplane('XY').workplane(offset=z0)
+                                .circle(rt['cb_d'] / 2.0).extrude(depth + over, clean=False),
+                                clean=False)
 
     if _return_cq:
         return result
@@ -2347,6 +2354,7 @@ def generate_drive_stl_preview(
     rim_depth_mm2: float = 0.0,
     spoke_height_mm2: float = 0.0,
     part: str = 'all',
+    place: dict = None,
     flange1: dict = None,
     flange2: dict = None,
     clearance_height_mm: float = 0.0,
@@ -2508,6 +2516,12 @@ def generate_drive_stl_preview(
     # ── Compute centroid from the full scene (pulleys + belt + flanges) ───────
     all_meshes = [p1, p2] + ([belt_mesh] if belt_mesh else []) + fl_meshes1 + fl_meshes2
     offset = -trimesh.util.concatenate(all_meshes).centroid
+
+    if place is not None:          # where each pulley's own frame (bore on the axis, z = 0 at its
+        place['origin1'] = [cx1 + offset[0], offset[1], offset[2]]      # bottom) is in the scene
+        place['origin2'] = [cx2 + offset[0], offset[1], offset[2]]
+        place['bounds1'] = (float(p1.bounds[0][2]), float(p1.bounds[1][2]))
+        place['bounds2'] = (float(p2.bounds[0][2]), float(p2.bounds[1][2]))
 
     # Apply the shared offset to every part so all responses share one origin
     p1.apply_translation(offset)

@@ -8,6 +8,7 @@ splined bore (Timing Pulleys first; sprockets and gears to follow).
     ring = rr.for_shaft(26.0)          # DIN 471 26 x 1.2: groove Ø24.9, width 1.3
     cb = rr.counterbore(ring)          # recess Ø35.5 x 1.3 deep in the part's face
     cb = rr.counterbore(ring, washer=1.5)   # a washer under the ring: 2.8 deep
+    ring = rr.for_spline(sp)           # the ring for a spline or hex bar (by kind / series)
 
 The ring clips into a groove round the shaft next to the part. The part's
 face gets a **counterbore** — a short, wider hole at the mouth of the bore —
@@ -23,6 +24,18 @@ A splined shaft's ring is sized to the spline's outside diameter: the groove
 then cuts the tooth tops only and the ring slides on exactly as designed. (A
 ring small enough for its groove to run round the spline's roots would have to
 open over the teeth well past its design spread.)
+
+A hex bar's ring is the round-shaft ring for its across-flats size (DIN 471
+metric, or the inch SH / 5100 series): its groove is smaller than the flats, so
+it runs round the bar unbroken — standard practice on FRC robots' 1/2" hex.
+Where no ring has exactly that size, the largest under it. The ring opens over
+the corners to go on (15 % past the flats on sharp hex; rounded hex less).
+
+Inch rings: Rotor Clip SH series (interchangeable with Truarc 5100 — SH-50 is
+5100-50), from Rotor Clip's catalogue pages 20-21 (1/4" - 1-1/8") and its SH
+data sheet (1-3/16" - 1-1/2"): groove diameter and width, ring thickness,
+lug height H as `a`, the released clearance diameter L2 as `d4`, the edge
+margin Y as `n`. Stored in mm.
 """
 from __future__ import annotations
 
@@ -43,8 +56,13 @@ class Ring:
     n: float         # edge margin: minimum shaft beyond the groove
     d4: float        # clearance diameter the ring needs while it's fitted (d1 + 2.1 a)
     mcmaster: str = ""   # McMaster-Carr part number, where listed
+    series: str = "DIN 471"   # or "SH" (inch, Rotor Clip SH = Truarc 5100)
+    number: str = ""     # SH: the ring number, e.g. "SH-50"
+    inch: str = ""       # SH: the shaft size as the catalogue names it, e.g. '1/2"'
 
     def label(self) -> str:
+        if self.series == "SH":
+            return f"{self.number} / 5100-{self.number[3:]} ({self.inch})"
         return f"DIN 471 {self.d1:g} × {self.s:g}"
 
 
@@ -128,6 +146,52 @@ MCMASTER = {
 
 RINGS = [Ring(*row, mcmaster=MCMASTER.get(row[0], "")) for row in _TABLE]
 
+INCH_SOURCE = "Rotor Clip SH series (= Truarc 5100), catalogue pp. 20-21 and SH data sheet"
+# number, shaft Ds, groove Dg, groove width W, groove depth d, free diameter Df,
+# thickness T, lug height H, released clearance L2, edge margin Y — inches, as printed.
+_INCH_TABLE = [
+    ("SH-25", '1/4"', .250, .230, .029, .010, .225, .025, .080, .43, .030),
+    ("SH-27", "7.0 mm", .276, .255, .029, .010, .250, .025, .081, .46, .031),
+    ("SH-28", '9/32"', .281, .261, .029, .010, .256, .025, .080, .47, .030),
+    ("SH-31", '5/16"', .312, .290, .029, .011, .281, .025, .087, .52, .033),
+    ("SH-34", '11/32"', .344, .321, .029, .011, .309, .025, .087, .55, .033),
+    ("SH-35", "9.0 mm", .354, .330, .029, .012, .320, .025, .087, .57, .036),
+    ("SH-37", '3/8"', .375, .352, .029, .012, .338, .025, .088, .59, .036),
+    ("SH-39", "10.0 mm", .394, .369, .029, .012, .354, .025, .087, .60, .037),
+    ("SH-40", '13/32"', .406, .382, .029, .012, .366, .025, .087, .61, .036),
+    ("SH-43", '7/16"', .438, .412, .029, .013, .395, .025, .088, .64, .039),
+    ("SH-46", '15/32"', .469, .443, .029, .013, .428, .025, .088, .66, .039),
+    ("SH-50", '1/2"', .500, .468, .039, .016, .461, .035, .108, .74, .048),
+    ("SH-55", "14.0 mm", .551, .519, .039, .016, .509, .035, .108, .78, .048),
+    ("SH-56", '9/16"', .562, .530, .039, .016, .521, .035, .108, .79, .048),
+    ("SH-59", '19/32"', .594, .559, .039, .017, .550, .035, .109, .83, .052),
+    ("SH-62", '5/8"', .625, .588, .039, .018, .579, .035, .110, .87, .055),
+    ("SH-66", "17.0 mm", .669, .629, .039, .020, .621, .035, .110, .89, .060),
+    ("SH-68", '11/16"', .688, .646, .046, .021, .635, .042, .136, .97, .063),
+    ("SH-75", '3/4"', .750, .704, .046, .023, .693, .042, .136, 1.05, .069),
+    ("SH-78", '25/32"', .781, .733, .046, .024, .722, .042, .136, 1.08, .072),
+    ("SH-81", '13/16"', .812, .762, .046, .025, .751, .042, .136, 1.10, .075),
+    ("SH-84", "21.4 mm", .844, .791, .046, .026, .780, .042, .137, 1.13, .078),
+    ("SH-87", '7/8"', .875, .821, .046, .027, .810, .042, .137, 1.16, .081),
+    ("SH-93", '15/16"', .938, .882, .046, .028, .867, .042, .166, 1.29, .084),
+    ("SH-98", '63/64"', .984, .926, .046, .029, .910, .042, .167, 1.34, .087),
+    ("SH-100", '1"', 1.000, .940, .046, .030, .925, .042, .167, 1.35, .090),
+    ("SH-102", "26.0 mm", 1.023, .961, .046, .031, .946, .042, .168, 1.37, .093),
+    ("SH-106", '1-1/16"', 1.062, .998, .056, .032, .982, .050, .181, 1.44, .096),
+    ("SH-112", '1-1/8"', 1.125, 1.059, .056, .033, 1.041, .050, .182, 1.49, .099),
+    ("SH-118", '1-3/16"', 1.188, 1.118, .056, .035, 1.098, .050, .182, 1.54, .105),
+    ("SH-125", '1-1/4"', 1.250, 1.176, .056, .037, 1.156, .050, .183, 1.62, .111),
+    ("SH-131", '1-5/16"', 1.312, 1.232, .056, .040, 1.214, .050, .183, 1.67, .120),
+    ("SH-137", '1-3/8"', 1.375, 1.291, .056, .042, 1.272, .050, .184, 1.72, .126),
+    ("SH-143", '1-7/16"', 1.438, 1.350, .056, .044, 1.333, .050, .184, 1.79, .132),
+    ("SH-150", '1-1/2"', 1.500, 1.406, .056, .047, 1.387, .050, .214, 1.90, .141),
+]
+_IN = 25.4
+INCH_RINGS = [Ring(round(ds * _IN, 4), round(t * _IN, 4), round(df * _IN, 4), round(h * _IN, 4),
+                   round(dg * _IN, 4), round(w * _IN, 4), round(d * _IN, 4), round(y * _IN, 4),
+                   round(l2 * _IN, 4), series="SH", number=no, inch=name)
+              for no, name, ds, dg, w, d, df, t, h, l2, y in _INCH_TABLE]
+
 # Clearances for a printed or cut part round the ring (mm).
 WASHER_CLEARANCE = 0.5      # washer OD this much under the counterbore, each side
 WASHER_THICKNESS = 1.5      # default splined washer: a common sheet / print thickness
@@ -148,6 +212,28 @@ def for_shaft(outside_diameter: float) -> Ring:
         if r.d1 >= outside_diameter - 1e-9:
             return r
     raise ValueError(f"DIN 471 goes up to {RINGS[-1].d1:g} mm; no ring for {outside_diameter:g} mm")
+
+
+def for_hex(across_flats: float, series: str = "metric") -> Ring:
+    """The ring for a hex bar: the round-shaft ring for its across-flats size
+    (DIN 471, or SH / 5100 for "inch"), else the largest under it — its groove
+    then runs round inside the flats. (An SH shaft size printed .312 is 5/16":
+    sizes within 0.02 mm count as the same.)"""
+    rings = INCH_RINGS if series == "inch" else RINGS
+    fits = [r for r in rings if r.d1 <= across_flats + 0.02]
+    if not fits:
+        raise ValueError(f"no {'SH' if series == 'inch' else 'DIN 471'} ring for a "
+                         f"{across_flats:g} mm hex bar")
+    return fits[-1]
+
+
+def for_spline(sp) -> Ring:
+    """The ring for a cct_common.splines.Spline: a hex bar's by its across
+    flats and series, a spline's by its shaft's outside diameter (for_shaft)."""
+    from . import splines
+    if sp.kind == "hex":
+        return for_hex(sp.minor, sp.series or "metric")
+    return for_shaft(splines.shaft(sp).outer)
 
 
 @dataclass(frozen=True)

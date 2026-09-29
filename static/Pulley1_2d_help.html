@@ -91,29 +91,43 @@ select <strong>RPP</strong>; if it starts with <code>S</code> (e.g. <code>S8M</c
             <strong>Minor d</strong>, <strong>Major D</strong> and slot <strong>Width B</strong>.
             <strong>Involute (ISO 4156)</strong>: <strong>Pressure angle</strong> 30&deg;, 37.5&deg; or
             45&deg;, <strong>Root</strong> (30&deg; only), <strong>Module m</strong> and <strong>Teeth z</strong>.
+            <strong>Hex bar</strong>: pick the <strong>Stock</strong> — metric, inch (1/4&Prime;&ndash;1&Prime;,
+            FRC's 3/8&Prime; and 1/2&Prime;) or rounded hex (REV's 1/2&Prime;, 13.75 mm across corners) — or
+            type <strong>Across flats</strong>, the <strong>Rings</strong> that go on it (DIN 471, or inch SH /
+            5100) and, for rounded stock, <strong>Across corners</strong>. A flat faces +X. It's far easier to
+            print than a spline and carries the torque on its own.
             A spline replaces the round bore: <strong>Bore Diameter</strong> becomes the hole's minor diameter
             and can't be typed until Bore Shape is Round again. Its major diameter is how far the bore reaches,
             for the wall checks and the Dimensions panel.
             <ul>
               <li><strong>The fit</strong> is the standard's default, and the line under the sizes gives it:
                   ISO 14's sliding fit (hole H9 / H10 / H7 on B / D / d, shaft d10 / a11 / f7, from
-                  ISO 286-2), or ISO 4156's H/h, tolerance class 6. The hole and a <strong>sample
-                  shaft</strong> that fits it are each drawn at the middle of their tolerance zone.</li>
-              <li><strong>Retaining Ring</strong> (Top face / Bottom face / None) — a DIN 471 external ring
-                  (McMaster's 98541A…), the size for the shaft's outside diameter, holds the pulley on the
-                  shaft. That face gets a <strong>counterbore</strong> DIN 471's d4 wide (the room the
-                  ring's lugs need) and the groove's width deep, so the ring sits flush; the sample shaft
-                  carries the groove. The depth is measured from the part's <em>outer</em> face: a flange
+                  ISO 286-2), or ISO 4156's H/h, tolerance class 6. A hex bar: an H11 hole on the
+                  h11 that EN 10278 gives bright hex bar (to 80 mm), across flats and across corners.
+                  The hole and a <strong>sample shaft</strong> that fits it are each drawn at the middle
+                  of their tolerance zone.</li>
+              <li>In 3D Mode, the <strong>Spline</strong> card (under Spokes) holds the rest.
+                  <strong>Retaining ring, top face</strong> / <strong>bottom face</strong> — either or
+                  both: a DIN 471 external ring (McMaster's 98541A…), the size for the shaft's outside
+                  diameter — on a hex bar, the round-shaft ring for its across flats (DIN 471 metric, SH /
+                  5100 inch; SH-50 on 1/2&Prime; hex): its groove runs round inside the flats, unbroken.
+                  One ring stops the pulley one way (a shoulder on the shaft takes the other);
+                  a ring on each face holds it both ways. Each ringed face gets a
+                  <strong>counterbore</strong> DIN 471's d4 wide (the room the ring's lugs need) and the
+                  groove's width deep, so the ring sits flush; the sample shaft carries a groove there. The depth is measured from the part's <em>outer</em> face: a flange
                   or metal plate on that face (with no hub there) has the counterbore through it, and the
                   pulley takes the rest. A separate printed top flange with that larger hole locates on
                   its nubs rather than on the shaft.</li>
-              <li><strong>Splined washer under the ring</strong> — a thin washer with the same spline
+              <li><strong>Splined washer under each ring</strong> — a thin washer with the same spline
                   (d4 &minus; 1 mm across, 1.5 mm thick) between the pulley and the ring: it turns with the
                   shaft, so the ring rubs the washer, not the pulley. The counterbore gets deeper by its
                   thickness.</li>
+              <li><strong>Show sample shaft</strong> — the 3D view draws the sample shaft (grey) through
+                  the bore, with the rings (dark) and washers (blue) where they sit.</li>
             </ul>
             A spline drives the pulley itself, so it takes no set screw: <strong>Retention</strong> (Hub, in
-            3D Mode) is None while Bore Shape is Spline.</li>
+            3D Mode) is None while Bore Shape is Spline. A hex bar takes any Retention — one set screw on
+            its +X flat, as on a D-shaft — with or without rings.</li>
       </ul>
       <div class="note">Every feature sits on the +X side (0&deg;): the flat, the key slot, the first spline slot.
       In 3D Mode a set screw (Hub &rarr; Retention) then goes on a flat or key — one screw.</div>
@@ -123,14 +137,16 @@ select <strong>RPP</strong>; if it starts with <code>S</code> (e.g. <code>S8M</c
       shrink, the shaft's groove widens. SVG, DXF and STEP are the nominal fit. The small_step STEP
       can't build a splined bore yet and says so.</div>
       <div class="note">The <strong>Download</strong> window then lists the <strong>sample splined
-      shaft</strong> (as long as the pulley, 5 mm past the far face, DIN 471's n past the groove) and,
-      with the box ticked, the <strong>splined washer</strong> — STL, SVG and DXF.</div>
+      shaft</strong> (as long as the pulley, DIN 471's n past each ringed face and 5 mm past any other)
+      and, with the box ticked, the <strong>splined washer</strong> — STL, SVG and DXF.</div>
       <a class="figure" href="/static/help/bore_shape.svg" target="_blank" title="Open full size">
         <img src="/static/help/bore_shape.svg" alt="The same pulley's bore as Round, D-flat, Keyway and Spline"/></a>
       <a class="figure" href="/static/help/spline_straight.svg" target="_blank" title="Open full size">
         <img src="/static/help/spline_straight.svg" alt="An ISO 14 straight-sided spline, 6 x 23 x 26 (B 6), with N, d, D and B marked"/></a>
       <a class="figure" href="/static/help/spline_involute.svg" target="_blank" title="Open full size">
         <img src="/static/help/spline_involute.svg" alt="An ISO 4156 involute spline, m 1.5 x 16 teeth, with its minor, pitch and major circles"/></a>
+      <a class="figure" href="/static/help/spline_hex.svg" target="_blank" title="Open full size">
+        <img src="/static/help/spline_hex.svg" alt="A hex bar bore: REV's 1/2 inch rounded hex, across flats and the rounded corners, with the sharp hex dashed"/></a>
       <a class="figure" href="/static/help/spline_ring.svg" target="_blank" title="Open full size">
         <img src="/static/help/spline_ring.svg" alt="A section through a splined pulley on its sample shaft: the DIN 471 ring in the counterbore on the top face, the splined washer under it"/></a>
   </li>

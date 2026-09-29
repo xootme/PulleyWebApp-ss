@@ -14,7 +14,10 @@ fetched fresh through the app's test client each run:
   involute   bore_shape=spline&spline_type=involute&spline_m=1.5&spline_z=16
              &spline_pa=30&spline_root=flat                 (ISO 4156 m 1.5 x 16T, 30°)
 
-Output: static/help/bore_shape.svg, spline_straight.svg, spline_involute.svg
+  hex        bore_shape=spline&spline_type=hex&spline_af=12.7&spline_series=inch
+             &spline_rounded=1&spline_ac=13.75              (REV 1/2" rounded hex)
+
+Output: static/help/bore_shape.svg, spline_straight.svg, spline_involute.svg, spline_hex.svg
 (hover pictures on Bore Shape and the spline fields, and the Pulley help pages).
 """
 import math
@@ -46,6 +49,8 @@ SOURCES = {
                      spline_major="26", spline_width="6"),
     "involute": dict(bore_shape="spline", spline_type="involute", spline_m="1.5", spline_z="16",
                      spline_pa="30", spline_root="flat"),
+    "hex": dict(bore_shape="spline", spline_type="hex", spline_af="12.7", spline_series="inch",
+                spline_rounded="1", spline_ac="13.75"),                  # REV 1/2" rounded hex
 }
 
 
@@ -187,11 +192,39 @@ def spline_involute(src):
          TOP + px + 20 * len(caps) + 30, "spline_involute.svg", caps)
 
 
+def spline_hex(src):
+    """Hex bar: across flats, across corners (rounded stock), the sharp hex dashed."""
+    from cct_common import splines as spl
+    sp = spl.hex_bar(12.7, 13.75, "inch")
+    h = spl.hole(sp)
+    af, ac = h.inner, h.outer
+    px, half = 460, 9.5
+    s = px / (2 * half)
+    w, fs = 1.0 / s, 15 / s
+    r_sharp = af / math.sqrt(3)
+    sharp = " ".join(f"{r_sharp * math.cos(math.radians(30 + 60 * k)):.4f},"
+                     f"{-r_sharp * math.sin(math.radians(30 + 60 * k)):.4f}" for k in range(6))
+    extra = [f'<polygon points="{sharp}" fill="none" stroke="{GREY}" stroke-width="{w:.4f}" '
+             f'stroke-dasharray="{4 * w:.4f} {3 * w:.4f}"/>',
+             circle(ac / 2, 1.2 * w, BLUE),
+             dim(-af / 2, 1.5, af / 2, 1.5, 1.6 * w, CALLOUT),
+             text(0, 0.6, f"across flats {af:.3f}", fs, CALLOUT, 700, halo=True),
+             text(0, -ac / 2 - 0.8, f"rounded corners Ø{ac:.3f}", fs, BLUE, 700, halo=True),
+             text(0, ac / 2 + 1.6, "sharp hex (dashed): across corners = AF / cos 30°", fs * 0.8, GREY, 700,
+                  halo=True)]
+    parts = [panel((PAGE_W - px) / 2, TOP, px, half, src["hex"], "".join(extra))]
+    caps = ["Hex bar, here REV's 1/2\" rounded hex (13.75 mm across corners); sharp hex keeps sharp",
+            "corners. The hole is H11 on EN 10278's h11 bar, across flats and corners; a flat faces +X.",
+            "Metric bar takes a DIN 471 ring, inch bar an SH / 5100 ring, sized to the across flats."]
+    page("Hex bar", "".join(parts), PAGE_W, TOP + px + 20 * len(caps) + 30, "spline_hex.svg", caps)
+
+
 def main():
     src = fetch()
     bore_shape(src)
     spline_straight(src)
     spline_involute(src)
+    spline_hex(src)
 
 
 if __name__ == "__main__":

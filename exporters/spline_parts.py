@@ -4,9 +4,11 @@ splined shaft that fits it, and the splined washer that sits under the
 retaining ring. Geometry from cct_common (splines at the default fit,
 retaining_rings for the ring's groove); this module only builds the files.
 
-    shaft_stl(spline, length, groove_at)   the shaft standing on z = 0, its ring
-                                           groove `groove_at` mm below the top
+    shaft_stl(spline, span)                the shaft for a part `span` long, standing
+                                           on z = 0: a ring's groove at each ringed face
     washer_stl(spline)                     the washer, OD × thickness from the ring
+    preview_parts(spline, span)            shaft, rings, washers where they sit, for
+                                           the 3D view (the part's faces at 0 and span)
     shaft_svg / shaft_dxf / washer_svg / washer_dxf   the exact outlines (2D)
 
 STL parts carry the print compensation (the shaft and washer OD shrink, the
@@ -33,36 +35,99 @@ def _polygon(points):
     return shapely_orient(ShapelyPolygon(points), sign=1.0)
 
 
-def shaft_stl(spline, length: float, groove_at: float) -> bytes:
-    """The sample shaft: the mating external spline, `length` long, with the
-    ring's groove (DIN 471: width m, diameter d2 — cut across the tooth tops)
-    whose outer wall is `groove_at` mm below the top end."""
+def _faces(spline):
+    rt = spline.get('retainer') if isinstance(spline, dict) else None
+    return (rt, rt['faces']) if rt else (None, [])
+
+
+def ends(spline):
+    """(below, above): how far the shaft runs past the part's bottom and top
+    faces — DIN 471's edge margin n past a ring's groove, else TAIL."""
+    rt, faces = _faces(spline)
+    return (rt['n'] if 'bottom' in faces else TAIL, rt['n'] if 'top' in faces else TAIL)
+
+
+def shaft_mesh(spline, span: float):
+    """The sample shaft for a part whose faces are at z = 0 and z = span: the
+    mating external spline (printed), running ends() past them, with a ring's
+    groove at each ringed face (DIN 471: width m, floor d2 — across the tooth
+    tops), its outer wall on the face."""
     sp = _as_spline(spline)
     c = _spline_print(spline)
-    rt = spline.get('retainer') if isinstance(spline, dict) else None
+    rt, faces = _faces(spline)
+    below, above = ends(spline)
     pts = spl.printed(spl.sample_closed(spl.shaft_path(sp), 0.02), c, hole=False)
-    mesh = trimesh.creation.extrude_polygon(_polygon(pts), length)
-    if rt:
-        m = rt['m'] + 2 * c                                   # a pocket grows...
+    mesh = trimesh.creation.extrude_polygon(_polygon(pts), span + below + above)
+    mesh.apply_translation([0.0, 0.0, -below])
+    for face in faces:
+        w = rt['m'] + 2 * c                                   # a pocket grows...
         r_groove = rt['d2'] / 2.0 - c                         # ...its floor comes in
-        outer = trimesh.creation.cylinder(radius=spl.shaft(sp).outer, height=m, sections=_SECTIONS)
-        inner = trimesh.creation.cylinder(radius=r_groove, height=m + 1.0, sections=_SECTIONS)
+        outer = trimesh.creation.cylinder(radius=spl.shaft(sp).outer, height=w, sections=_SECTIONS)
+        inner = trimesh.creation.cylinder(radius=r_groove, height=w + 1.0, sections=_SECTIONS)
         groove = trimesh.boolean.difference([outer, inner], engine='manifold')
-        groove.apply_translation([0.0, 0.0, length - groove_at - m / 2.0])
+        groove.apply_translation([0.0, 0.0, span - rt['m'] / 2.0 if face == 'top' else rt['m'] / 2.0])
         mesh = trimesh.boolean.difference([mesh, groove], engine='manifold')
+    return mesh
+
+
+def shaft_stl(spline, span: float) -> bytes:
+    """The sample shaft's STL, standing on z = 0."""
+    mesh = shaft_mesh(spline, span)
+    mesh.apply_translation([0.0, 0.0, -float(mesh.bounds[0][2])])
     return mesh.export(file_type='stl')
 
 
-def washer_stl(spline) -> bytes:
-    """The splined washer: the ring's washer OD and thickness, the bore's
-    spline for its hole (so it keys to the shaft and can't turn)."""
+def _ring_mesh(rt, gap_deg: float = 40.0):
+    """A retaining ring as it sits in its groove: an open ring from d2 out
+    to its lugs (a past the groove), s thick, standing on z = 0."""
+    from shapely.geometry import Polygon as _P
+    r_in, r_out = rt['d2'] / 2.0, rt['d2'] / 2.0 + rt['a']
+    ring = ShapelyPoint(0, 0).buffer(r_out, resolution=32).difference(
+        ShapelyPoint(0, 0).buffer(r_in, resolution=32))
+    half = math.radians(gap_deg / 2.0)
+    wedge = _P([(0, 0), (2 * r_out * math.cos(half), 2 * r_out * math.sin(half)),
+                (2 * r_out * math.cos(half), -2 * r_out * math.sin(half))])
+    return trimesh.creation.extrude_polygon(shapely_orient(ring.difference(wedge), sign=1.0), rt['s'])
+
+
+def _washer_mesh(spline):
     sp = _as_spline(spline)
     c = _spline_print(spline)
     rt = spline['retainer']
     hole = spl.printed(spl.sample_closed(spl.path(sp), 0.02), c, hole=True)
     disc = ShapelyPoint(0, 0).buffer(rt['washer_od'] / 2.0 - c, resolution=_SECTIONS // 4)
     ring = shapely_orient(disc.difference(ShapelyPolygon(hole)), sign=1.0)
-    return trimesh.creation.extrude_polygon(ring, rt['washer_t']).export(file_type='stl')
+    return trimesh.creation.extrude_polygon(ring, rt['washer_t'])
+
+
+def preview_parts(spline, span: float) -> dict:
+    """What the 3D view shows through a splined part whose faces are at z = 0
+    and z = span: the sample shaft, a ring on each ringed face (on its washer,
+    at the groove's inner wall) and the washers — {'shaft', 'rings',
+    'washers'}, each a mesh or None."""
+    rt, faces = _faces(spline)
+    out = {'shaft': shaft_mesh(spline, span), 'rings': None, 'washers': None}
+    rings, washers = [], []
+    for face in faces:
+        wall = span - rt['m'] if face == 'top' else rt['m']      # the groove's inner wall
+        r = _ring_mesh(rt)
+        r.apply_translation([0.0, 0.0, wall if face == 'top' else wall - rt['s']])
+        rings.append(r)
+        if rt['washer_t'] > 0:
+            w = _washer_mesh(spline)
+            w.apply_translation([0.0, 0.0, wall - rt['washer_t'] if face == 'top' else wall])
+            washers.append(w)
+    if rings:
+        out['rings'] = trimesh.util.concatenate(rings)
+    if washers:
+        out['washers'] = trimesh.util.concatenate(washers)
+    return out
+
+
+def washer_stl(spline) -> bytes:
+    """The splined washer: the ring's washer OD and thickness, the bore's
+    spline for its hole (so it keys to the shaft and can't turn)."""
+    return _washer_mesh(spline).export(file_type='stl')
 
 
 # ── 2D: exact outlines ──────────────────────────────────────────────────────

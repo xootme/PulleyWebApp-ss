@@ -83,7 +83,7 @@ def test_spline_of_carries_the_bore_print_and_ring():
     rt = s['retainer']
     ring = rr.for_shaft(spl.shaft(SP['straight']).outer)
     assert rt['ring'] == ring.label() == 'DIN 471 26 × 1.2' and rt['mcmaster'] == '98541A128'
-    assert rt['face'] == 'top' and rt['cb_d'] == ring.d4 == 35.5
+    assert rt['faces'] == ['top'] and rt['cb_d'] == ring.d4 == 35.5
     assert rt['cb_depth'] == pytest.approx(ring.m + rr.WASHER_THICKNESS)
     assert rt['washer_od'] == pytest.approx(ring.d4 - 2 * rr.WASHER_CLEARANCE)
     assert _spline_of({**STRAIGHT, **RING})['retainer']['cb_depth'] == pytest.approx(ring.m)
@@ -424,3 +424,119 @@ def test_cadquery_step_counterbore_under_flanges(client, monkeypatch, extra):
     if extra['flange_3dprint'] == '0':                  # the STL carries the plates, the STEP doesn't
         stl -= _stl(client, q, '/download/flange-stl').volume
     assert _step_mesh_volume(path) == pytest.approx(stl, rel=5e-3)
+
+
+# ── rings on either or both faces: the Spline card (2026-09-29) ──────────────
+
+BOTH = {'spline_ring_top': '1', 'spline_ring_bottom': '1'}
+
+
+def test_ring_faces_new_keys_and_old_links():
+    from app import _ring_faces
+    assert _ring_faces(BOTH, '') == ['top', 'bottom']
+    assert _ring_faces({'spline_ring_top': '0', 'spline_ring_bottom': '1'}, '') == ['bottom']
+    assert _ring_faces({'spline_ring_top': '0', 'spline_ring_bottom': '0', 'spline_ring': 'top'}, '') == []
+    assert _ring_faces({'spline_ring': 'bottom'}, '') == ['bottom']            # a design saved before
+    assert _ring_faces({'spline_ring': 'none'}, '') == []
+    assert _ring_faces({'p2_spline_ring_top': '1'}, 'p2_') == ['top']
+
+
+def test_both_faces_counterbored(client):
+    q = {**BASE, **STRAIGHT, **BOTH, 'spline_washer': '1'}
+    m = _stl(client, q)
+    assert m.is_watertight
+    lo, hi = float(m.bounds[0][2]), float(m.bounds[1][2])
+    bore = Polygon(spl.sample_closed(spl.path(SP['straight']), 0.01)).area
+    for z in (hi - 2.6, lo + 2.6):
+        assert _hole_area(m, z) == pytest.approx(CB_AREA, rel=3e-3)
+    assert _hole_area(m, (lo + hi) / 2) == pytest.approx(bore, rel=3e-3)
+
+
+def test_shaft_with_two_rings(client):
+    """A groove at each face, DIN's n past each; no TAIL."""
+    q = {**BASE, **STRAIGHT, **BOTH}
+    part = _stl(client, q)
+    shaft = _stl(client, {**q, 'part': 'shaft'}, '/download/spline-stl')
+    span = float(part.bounds[1][2] - part.bounds[0][2])
+    length = float(shaft.bounds[1][2] - shaft.bounds[0][2])
+    assert length == pytest.approx(span + 2 * 1.7, abs=1e-3)
+    body = _section(shaft, length / 2).area
+    for z in (1.7 + 1.3 / 2, length - 1.7 - 1.3 / 2):                     # each groove
+        assert _section(shaft, z).area < body - 5
+    assert _section(shaft, 1.7 + 1.3 + 0.1).area == pytest.approx(body, rel=3e-3)
+
+
+def test_shaft_groove_on_a_metal_plates_flat_face(client):
+    """The ring sits on the plate's flat face, not on its bent lip (which
+    stands higher): the groove's outer wall is on the flat face."""
+    from app import _ring_face_z
+    q = {**BASE, **STRAIGHT, **RING, **FLANGE, 'flange_3dprint': '0'}
+    assert _ring_face_z(q, '', 0.0, 11.0) == (-1.0, 12.0)
+    shaft = _stl(client, {**q, 'part': 'shaft'}, '/download/spline-stl')
+    from exporters.spline_parts import TAIL
+    assert float(shaft.bounds[1][2] - shaft.bounds[0][2]) == pytest.approx(13.0 + TAIL + 1.7, abs=1e-3)
+
+
+@pytest.mark.parametrize('extra', [{}, {**FLANGE, 'flange_3dprint': '1', 'flange_top_separate': '0'}],
+                         ids=['plain', 'flanged'])
+def test_cadquery_step_both_faces(client, monkeypatch, extra):
+    pytest.importorskip('cadquery')
+    from fuzz_pulley import _step_mesh_volume
+    q = {**BASE, **STRAIGHT, **BOTH, 'spline_washer': '1', **extra}
+    _, path = _step_solid(client, monkeypatch, q)
+    assert _step_mesh_volume(path) == pytest.approx(_stl(client, q).volume, rel=5e-3)
+
+
+def _parts(client, q):
+    import base64
+    d = client.get('/api/preview-stl', query_string=q).get_json()
+    return {k: (_load_any(base64.b64decode(v)) if v else None) for k, v in d.items()}
+
+
+def _load_any(data):
+    return trimesh.load(io.BytesIO(data), file_type='stl')
+
+
+def test_preview_parts_sit_in_the_pulley(client):
+    """The 3D view's shaft, rings and washers are placed as the preview
+    placed the pulley: through its bore, the rings flush in the counterbores."""
+    q = {**BASE, **STRAIGHT, **BOTH, 'spline_washer': '1', 'hub_od': '44', 'hub_height': '12'}
+    pulley = _load_any(client.get('/api/preview-stl', query_string=q).data)
+    parts = _parts(client, {**q, 'part': 'spline'})
+    lo, hi = float(pulley.bounds[0][2]), float(pulley.bounds[1][2])
+    sh = parts['shaft']
+    assert sh.is_watertight
+    assert float(sh.bounds[0][2]) == pytest.approx(lo - 1.7, abs=0.01)
+    assert float(sh.bounds[1][2]) == pytest.approx(hi + 1.7, abs=0.01)
+    assert np.allclose(sh.bounds.mean(axis=0)[:2], pulley.bounds.mean(axis=0)[:2], atol=0.05)
+    rings, washers = parts['rings'], parts['washers']
+    assert float(rings.bounds[1][2]) == pytest.approx(hi - 1.3 + 1.2, abs=0.01)     # s under the face
+    assert float(rings.bounds[0][2]) == pytest.approx(lo + 1.3 - 1.2, abs=0.01)
+    assert float(washers.bounds[1][2]) == pytest.approx(hi - 1.3, abs=0.01)
+    assert float(washers.bounds[0][2]) == pytest.approx(lo + 1.3, abs=0.01)
+    # no ring, no washer: the shaft alone
+    parts = _parts(client, {**q, 'spline_ring_top': '0', 'spline_ring_bottom': '0', 'part': 'spline'})
+    assert parts['shaft'] is not None and parts['rings'] is None and parts['washers'] is None
+
+
+def test_preview_parts_in_a_drive(client):
+    q = {**BASE, 'dual': 'true', 'p2_teeth': '30', 'center_distance': '80', 'p2_bore': '8',
+         **{f'p2_{k}': v for k, v in {**INVOLUTE, **BOTH}.items()}}
+    p2 = _load_any(client.get('/api/preview-stl', query_string={**q, 'part': 'p2'}).data)
+    sh = _parts(client, {**q, 'part': 'spline2'})['shaft']
+    assert np.allclose(sh.bounds.mean(axis=0)[:2], p2.bounds.mean(axis=0)[:2], atol=0.05)
+    assert _parts(client, {**q, 'part': 'spline1'}) == {'shaft': None, 'rings': None, 'washers': None}
+
+
+def test_spokes_flanges_and_a_ringed_spline(client):
+    """Spokes + flanges + a ringed spline recursed (_ring_cover -> the spoke
+    fit -> the bore -> _spline_of -> _ring_cover) until the stack ran out —
+    found by the fuzzer, 2026-09-29."""
+    q = {**BASE, 'teeth': '40', **STRAIGHT, **BOTH, **FLANGE, 'flange_3dprint': '1', 'flange_top_separate': '0',
+         'spokes_enabled': '1', 'spokes_hub_od': '40', 'spokes_rim_depth': '3', 'spokes_width': '5',
+         'spokes_count': '5', 'spokes_fillet_tip': '1', 'spokes_fillet_base': '1.5'}
+    from app import _ring_cover
+    assert _ring_cover(q, '', 'top') == (0.0, False)          # the flange stops at the spoke rim
+    assert _stl(client, q).is_watertight
+    assert client.get('/api/dimensions', query_string={**q, 'feature_build': '1'}).status_code == 200
+    assert client.get('/api/preview-stl', query_string={**q, 'part': 'spline'}).status_code == 200

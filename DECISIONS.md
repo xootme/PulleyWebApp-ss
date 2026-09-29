@@ -1,5 +1,36 @@
 # Architectural Decision Records
 
+## ADR-018 — Hex bar bores, metric and inch, with their retaining rings (cct_common 0.21.0)
+**Date:** 2026-09-29
+**Status:** Active (2D, STL, cadquery STEP); small_step STEP pending (as splines, ADR-014)
+
+**Context:** A hex bar carries the torque on its own, prints far more easily than a spline and is
+forgiving of fit; FRC robots use 1/2" hex with ordinary 1/2" round-shaft retaining rings, the groove
+turned round inside the flats. The user asked for it beside the splines, metric and inch.
+
+**Decision:**
+- **A third spline type, Hex bar** (`cct_common.splines.hex_bar(af, ac, series)`), so it has
+  everything a spline has: the rings and counterbores, the washer, the sample shaft (a grooved hex
+  bar), the Spline card, the 3D view, SVG/DXF/STEP. A flat faces +X; lines and arcs only.
+- **Sizes**: metric stock 5-32 mm and inch 1/4"-1" across flats as presets, any AF typed (to 80 mm);
+  **rounded hex** optional, its across-corners circle typed or from a preset with a published figure
+  (REV 1/2" rounded hex, 13.75 mm, docs.revrobotics.com). Sharp corners are the default.
+- **Fit: H11 hole on an h11 bar**, across flats and across corners, each at its zone's middle —
+  EN 10278 gives bright hexagon bar h11 up to 80 mm (h12 above); no standard covers the hole.
+- **Rings**: the round-shaft ring for the across-flats size, else the largest under it — DIN 471 for
+  metric, the **inch SH series** (Rotor Clip SH = Truarc 5100; new in `retaining_rings`, from Rotor
+  Clip's catalogue pp. 20-21 and SH data sheet, 1/4"-1-1/2") for inch (`for_spline` picks by kind and
+  series). SH-50 on 1/2" hex matches FRC practice (groove .468", width .039"). The counterbore is the
+  ring's released clearance diameter (L2), groove-width deep, as DIN's d4.
+- **Every Retention method** (unlike a spline, ADR-017): a set screw bears on the flat facing +X,
+  which sits on the bore's radius — one screw, placed as on a round bore at 0°, the captured nut
+  against the flat. Rings and a screw can go together.
+- `Spline` gains an optional `series` field (default ""): old dicts and code keep working.
+
+**Consequences:** cct_common `tests/test_splines.py` / `test_retaining_rings.py` (hex fit, outline,
+labels; the SH table, rings for hex); here `tests/test_spline_retainer.py` hex cases and
+`tests/browser/bore_ui.js`. Help picture `spline_hex.svg`. The fuzzer draws hex bars too.
+
 ## ADR-017 — A splined bore's fit, sample shaft and retaining ring (cct_common 0.20.0)
 **Date:** 2026-09-29
 **Status:** Active (2D, STL, cadquery STEP); small_step STEP pending (it refuses splines, ADR-014)
@@ -20,8 +51,15 @@ McMaster-Carr's DIN 471 rings (98541A…, 3–29 mm, all match).
 - **Print compensation on printed parts only** (STL): `print_extra` grows the bore and counterbore and
   shrinks the sample shaft and the washer's OD (`splines.printed`, a mitred offset); the shaft's groove
   widens by 2c and its floor comes in by c. SVG, DXF and STEP stay at the nominal fit.
-- **Retention: a DIN 471 ring** (`cct_common.retaining_rings`), `spline_ring` = top / bottom / none,
-  default top — the smallest d1 ≥ the shaft's outside diameter. The face gets a **counterbore**
+- **Retention: DIN 471 rings** (`cct_common.retaining_rings`) on either or both faces — the smallest
+  d1 ≥ the shaft's outside diameter; one ring holds the part one way, a ring on each face both ways.
+  The **Spline card** (3D Mode, shown with a splined bore) sets them: `spline_ring_top` /
+  `spline_ring_bottom` (= 1), default top; the older `spline_ring` = top / bottom / none (saved designs,
+  links) still reads. It also has **Show sample shaft**: the 3D view draws the shaft grey, rings dark,
+  washers blue, placed like the pulley (`/api/preview-stl?part=spline|spline1|spline2`, JSON of STLs).
+  The sample shaft runs DIN's n past each ringed face (its groove's outer wall on the face) and 5 mm
+  past any other. The faces are the bare pulley's and a flange's flat thickness over them
+  (`_ring_face_z`) — a metal plate's bent lip stands higher, but the ring sits on the flat. The face gets a **counterbore**
   Ø d4 (DIN's clearance for the lugs) and m deep, so the ring sits flush with the groove's outer wall at
   the face; a cylinder on the axis, cut after flanges are joined on (`_cut_counterbore`), and in the
   cadquery STEP. **Splined washer** (`spline_washer=1`): Ø d4 − 1, 1.5 mm, the bore's spline for its

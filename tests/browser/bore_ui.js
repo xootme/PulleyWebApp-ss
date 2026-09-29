@@ -132,9 +132,10 @@ async function main() {
 
   // ── the retaining ring and washer; Retention ──
   p = await params();
-  check('the ring on the top face by default, no washer', p.spline_ring === 'top' && !('spline_washer' in p), p);
+  check('the ring on the top face by default, no washer', p.spline_ring_top === '1' && p.spline_ring_bottom === '0'
+    && !('spline_washer' in p), p);
   check('…named, with its counterbore', (await text('#spline1_ring_info')).includes('DIN 471')
-    && (await text('#spline1_ring_info')).includes('McMaster') && (await text('#spline1_ring_info')).includes('counterbore'),
+    && (await text('#spline1_ring_info')).includes('counterbore'),
     await text('#spline1_ring_info'));
   await js("document.getElementById('spline1_washer').click()");
   await settle();
@@ -150,12 +151,19 @@ async function main() {
     && files[1].path === '/download/spline-dxf' && files[1].params.part === 'washer', files);
   const shaft = await js(`fetch('/download/spline-stl?' + new URLSearchParams(_dlFiles('sh1', 'stl')[0].params)).then(r => r.status)`);
   check('…and the shaft downloads', shaft === 200, shaft);
-  await setSel('#spline1_ring', 'none');
+  const tick = id => js(`document.getElementById('${id}').click()`);
+  await tick('spline1_ring_top');                                          // off: no ring at all
   check('no ring: the washer box is off, and no washer part', await js("document.getElementById('spline1_washer').disabled")
     && !(await js('_dlParts(true).map(x => x.id)')).includes('wa1'));
-  await setSel('#spline1_ring', 'bottom');
+  await tick('spline1_ring_top'); await tick('spline1_ring_bottom');       // both faces
   await settle();
-  check('bottom face', (await params()).spline_ring === 'bottom' && (await text('#spline1_ring_info')).includes('bottom face'));
+  p = await params();
+  check('rings on both faces', p.spline_ring_top === '1' && p.spline_ring_bottom === '1'
+    && (await text('#spline1_ring_info')).includes('2 ×') && (await text('#spline1_ring_info')).includes('each face'),
+    await text('#spline1_ring_info'));
+  await tick('spline1_ring_top');                                          // the bottom only
+  await settle();
+  check('bottom face', (await params()).spline_ring_top === '0' && (await text('#spline1_ring_info')).includes('bottom face'));
 
   // ── saved and restored ──
   await js('saveSettings()');
@@ -163,8 +171,9 @@ async function main() {
   await settle();
   check('reload keeps the involute spline', (await val('#bore1_shape')) === 'spline' && (await val('#spline1_type')) === 'involute'
     && (await val('#spline1_m')) === '1.5' && (await val('#bore')) === '28.6718', [await val('#bore1_shape'), await val('#spline1_m'), await val('#bore')]);
-  check('…and its ring and washer', (await val('#spline1_ring')) === 'bottom' && await js("document.getElementById('spline1_washer').checked")
-    && (await val('#hub1_retention')) === 'none');
+  check('…and its ring and washer', !(await js("document.getElementById('spline1_ring_top').checked"))
+    && await js("document.getElementById('spline1_ring_bottom').checked")
+    && await js("document.getElementById('spline1_washer').checked") && (await val('#hub1_retention')) === 'none');
   await setSel('#bore1_shape', 'round');
   check('back to Round: the bore can be typed again', !(await js("document.getElementById('bore').disabled")) && !(await shown('#bore1_note')));
   check('…and Retention is free again', !(await js("document.getElementById('hub1_retention').disabled")) && !(await shown('#hub1_spline_note')));
@@ -179,7 +188,8 @@ async function main() {
   await settle();
   check('new link: the spline and its bore', (await val('#bore1_shape')) === 'spline' && (await val('#spline1_minor')) === '26'
     && (await val('#bore')) === '26.0105' && (await val('#spline1_preset')) === '6,26,30,6', await val('#bore'));
-  check('…its ring and washer', (await val('#spline1_ring')) === 'bottom' && await js("document.getElementById('spline1_washer').checked"));
+  check('…an older link\'s single ring (spline_ring=bottom) and washer', !(await js("document.getElementById('spline1_ring_top').checked"))
+    && await js("document.getElementById('spline1_ring_bottom').checked") && await js("document.getElementById('spline1_washer').checked"));
 
   // ── a design saved before Bore Shape ──
   await js(`localStorage.setItem('pulley_last', JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('pulley_last') || '{}'),
@@ -201,7 +211,7 @@ async function main() {
   await settle();
   p = await params();
   check('Pulley 2: its own spline, prefixed', p.p2_bore_shape === 'spline' && p.p2_spline_type === 'straight'
-    && p.p2_spline_ring === 'top' && (await val('#p2_bore')) === '23.0105', [p, await val('#p2_bore')]);
+    && p.p2_spline_ring_top === '1' && (await val('#p2_bore')) === '23.0105', [p, await val('#p2_bore')]);
   check('Pulley 2: its own sample shaft', (await js('_dlParts(true).map(x => x.id)')).includes('sh2'));
 
   // ── Auto-fix: a spline the part can't hold (bug report 2026-09-29) ──
@@ -225,6 +235,71 @@ async function main() {
     (await val('#spline1_preset')) === '6,16,20,4' && (await val('#spline1_minor')) === '16' && (await val('#hub1_od')) === '30.5',
     [await val('#spline1_preset'), await val('#hub1_od')]);
   check('…and the bore follows', (await val('#bore')).startsWith('16.0'), await val('#bore'));
+
+  // ── hex bar (ADR-018) ──
+  await js("localStorage.clear()");
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=40&bore=8');
+  await js("(() => { const d = document.getElementById('dual_enable'); if (d.checked) d.click(); const f = document.getElementById('feature_build'); if (f.checked) f.click(); })()");
+  await setSel('#bore1_shape', 'spline');
+  await setSel('#spline1_type', 'hex');
+  check('Hex bar shows its fields', await shown('#spline1_hex') && !(await shown('#spline1_straight')) && !(await shown('#spline1_involute')));
+  const hexOpts = await js("[...document.querySelectorAll('#spline1_hex_preset option')].map(o => o.value)");
+  check('hex stock: metric, inch and rounded', hexOpts.includes('metric:17') && hexOpts.includes('inch:12.7')
+    && hexOpts.includes('inch:12.7:13.75'), hexOpts);
+  await setSel('#spline1_hex_preset', 'inch:12.7');
+  await settle();
+  p = await params();
+  check('1/2" hex: sent, and the bore is H11 across flats', p.spline_type === 'hex' && p.spline_af === '12.7'
+    && p.spline_series === 'inch' && !('spline_rounded' in p) && (await val('#bore')) === '12.755', [p, await val('#bore')]);
+  check('…its ring is SH-50', (await text('#spline1_ring_info')).includes('SH-50')
+    && !(await text('#spline1_ring_info')).includes('McMaster'), await text('#spline1_ring_info'));
+  await setSel('#spline1_hex_preset', 'inch:12.7:13.75');
+  await settle();
+  p = await params();
+  check('REV rounded hex: corners sent', await js("document.getElementById('spline1_rounded').checked")
+    && await shown('#spline1_ac_row') && p.spline_rounded === '1' && p.spline_ac === '13.75', p);
+  await setSel('#spline1_af', '12');
+  check('a typed size shows Custom', (await val('#spline1_hex_preset')) === '');
+  await setSel('#spline1_hex_preset', 'metric:17');
+  await settle();
+  check('17 mm hex: DIN 471 17, sharp', (await val('#spline1_series')) === 'metric'
+    && !(await js("document.getElementById('spline1_rounded').checked")) && (await text('#spline1_ring_info')).includes('DIN 471 17'),
+    await text('#spline1_ring_info'));
+  const hexSvg = await js(`fetch('/download/svg?' + new URLSearchParams(buildParams())).then(r => r.status)`);
+  check('the hex draws', hexSvg === 200, hexSvg);
+  // every Retention method on a hex bar: one screw, on the +X flat
+  check('hex: Retention is free', !(await js("document.getElementById('hub1_retention').disabled"))
+    && !(await shown('#hub1_spline_note')));
+  await setSel('#hub1_retention', 'set_screw_std');
+  check('…one screw, on the +X flat', (await js('activeScrew(1).count')) === 1
+    && (await text('#hub1_shape_note')).includes('+X flat') && await js("document.getElementById('hub1_screw_count').disabled"),
+    await text('#hub1_shape_note'));
+  await setSel('#spline1_type', 'straight');
+  check('a spline locks it to None', (await val('#hub1_retention')) === 'none' && await js("document.getElementById('hub1_retention').disabled"));
+  await setSel('#spline1_type', 'hex');
+  check('…and back to hex brings the screw back', (await val('#hub1_retention')) === 'set_screw_std'
+    && !(await js("document.getElementById('hub1_retention').disabled")), await val('#hub1_retention'));
+  await js('saveSettings()');
+  await load(BASE + '/');
+  check('reload keeps the hex bar', (await val('#spline1_type')) === 'hex' && (await val('#spline1_af')) === '17'
+    && (await val('#spline1_hex_preset')) === 'metric:17', [await val('#spline1_type'), await val('#spline1_af'), await val('#spline1_hex_preset')]);
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=40&bore=8&bore_shape=spline&spline_type=hex&spline_af=12.7&spline_series=inch&spline_rounded=1&spline_ac=13.75');
+  await settle();
+  check('a hex link', (await val('#spline1_hex_preset')) === 'inch:12.7:13.75' && (await val('#bore')) === '12.755',
+    [await val('#spline1_hex_preset'), await val('#bore')]);
+
+  // ── the Spline card in 3D Mode: the shaft, rings and washers in the view ──
+  await js("localStorage.clear()");
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=40&bore=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=23&spline_major=26&spline_width=6&spline_ring_top=1&spline_ring_bottom=1&spline_washer=1&hub_od=44&hub_height=12');
+  await js("(() => { const d = document.getElementById('dual_enable'); if (d.checked) d.click(); const f = document.getElementById('feature_build'); if (!f.checked) f.click(); })()");
+  check('the Spline card shows in 3D Mode', await js("getComputedStyle(document.getElementById('spline1_card')).display !== 'none'"));
+  check('…its rings from the link', await js("document.getElementById('spline1_ring_top').checked && document.getElementById('spline1_ring_bottom').checked"));
+  check('the shaft, rings and washers load in the 3D view', await waitFor('threeSplineParts.length === 3', 20000),
+        await js('threeSplineParts.length'));
+  await js("document.getElementById('spline1_show_shaft').click()");
+  check('Show sample shaft off: gone', await waitFor('threeSplineParts.length === 0 && threeModel !== null', 20000));
+  await setSel('#bore1_shape', 'round');
+  check('no spline: no Spline card', await js("getComputedStyle(document.getElementById('spline1_card')).display === 'none'"));
 
   finish(errors);
   ws.close(); chrome.kill();

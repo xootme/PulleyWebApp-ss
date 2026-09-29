@@ -43,6 +43,7 @@
         <select id="spline{{ n }}_type" onchange="onBoreShapeChange({{ n }})">
           <option value="straight">Straight-sided (ISO 14)</option>
           <option value="involute">Involute (ISO 4156)</option>
+          <option value="hex">Hex bar</option>
         </select>
         <div id="spline{{ n }}_straight">
           <label for="spline{{ n }}_preset">Size</label>
@@ -74,20 +75,63 @@
             <input type="number" id="spline{{ n }}_z" min="6" max="100" step="1" value="20" oninput="onBoreShapeChange({{ n }})">
           </div>
         </div>
+        <div id="spline{{ n }}_hex" class="hidden">
+          <label for="spline{{ n }}_hex_preset">Stock</label>
+          <select id="spline{{ n }}_hex_preset" onchange="onHexPreset({{ n }})"></select>
+          <div class="spline-grid">
+            <label for="spline{{ n }}_af">Across flats (mm)</label>
+            <input type="number" id="spline{{ n }}_af" min="1" max="80" step="0.05" value="12.7" oninput="onHexSize({{ n }})">
+            <label for="spline{{ n }}_series">Rings</label>
+            <select id="spline{{ n }}_series" onchange="onHexSize({{ n }})">
+              <option value="metric">DIN 471</option><option value="inch" selected>Inch SH</option>
+            </select>
+          </div>
+          <label for="spline{{ n }}_rounded" class="spline-check">
+            <input type="checkbox" id="spline{{ n }}_rounded" onchange="onHexSize({{ n }})">
+            Rounded corners
+          </label>
+          <div class="spline-grid hidden" id="spline{{ n }}_ac_row">
+            <label for="spline{{ n }}_ac">Across corners (mm)</label>
+            <input type="number" id="spline{{ n }}_ac" min="1" max="100" step="0.05" value="13.75" oninput="onHexSize({{ n }})">
+          </div>
+        </div>
         <div class="hub-info" id="spline{{ n }}_info"></div>
-        <!-- ADR-017: a DIN 471 ring on the shaft, in a counterbore in one face -->
-        <label for="spline{{ n }}_ring">Retaining Ring</label>
-        <select id="spline{{ n }}_ring" onchange="onBoreShapeChange({{ n }})">
-          <option value="top">Top face</option>
-          <option value="bottom">Bottom face</option>
-          <option value="none">None</option>
-        </select>
+        <div class="hub-info fb-3d">Retaining rings and the sample shaft: the Spline card.</div>
+      </div>
+{%- endmacro %}
+
+{#- The Spline card (3D Mode, ADR-017): shown while Bore Shape is Spline -#}
+{% macro spline_card(n) -%}
+    <section class="card fb-3d hidden" id="spline{{ n }}_card">
+      <div class="hub-header" onclick="toggleSplineCard({{ n }})">
+        <span style="display:flex;align-items:center;gap:7px;">
+          Spline
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Pulley1_2d_help.html')" title="Spline help">&#9432;</button>
+        </span>
+        <span class="hub-arrow open" id="spline{{ n }}-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body open" id="spline{{ n }}-body">
+        <!-- DIN 471 rings on the shaft, each in a counterbore in its face -->
+        <label for="spline{{ n }}_ring_top" class="spline-check">
+          <input type="checkbox" id="spline{{ n }}_ring_top" checked onchange="onBoreShapeChange({{ n }})">
+          Retaining ring, top face
+        </label>
+        <label for="spline{{ n }}_ring_bottom" class="spline-check">
+          <input type="checkbox" id="spline{{ n }}_ring_bottom" onchange="onBoreShapeChange({{ n }})">
+          Retaining ring, bottom face
+        </label>
         <label for="spline{{ n }}_washer" class="spline-check">
           <input type="checkbox" id="spline{{ n }}_washer" onchange="onBoreShapeChange({{ n }})">
-          Splined washer under the ring
+          Splined washer under each ring
         </label>
         <div class="hub-info" id="spline{{ n }}_ring_info"></div>
+        <label for="spline{{ n }}_show_shaft" class="spline-check">
+          <input type="checkbox" id="spline{{ n }}_show_shaft" checked onchange="onSplineShowChange({{ n }})">
+          Show sample shaft
+        </label>
+        <div class="hub-info">In the 3D view: the shaft grey, rings dark, washers blue.</div>
       </div>
+    </section>
 {%- endmacro %}
 
 {% macro screw_size_options() -%}
@@ -477,6 +521,8 @@
       </div>
     </section>
 
+    {{ spline_card(1) }}
+
     <section class="card download-card">
       <h2>Download</h2>
       <button class="btn-download" onclick="openDownloadWindow()">⬇ Download</button>
@@ -801,6 +847,8 @@
         <div class="hub-info fb-3d">0 = full belt height</div>
       </div>
     </section>
+
+    {{ spline_card(2) }}
 
     <section class="card download-card">
       <h2>Download</h2>
@@ -2740,7 +2788,7 @@ function _dlParts(threeD) {
   for (const n of dual ? [1, 2] : [1]) {
     if (boreShape(n) !== 'spline') continue;
     parts.push({ id: `sh${n}`, label: `Pulley ${n} sample splined shaft`, note: threeD ? 'no STEP' : '' });
-    if (_sv(n, 'ring') !== 'none' && document.getElementById(`spline${n}_washer`).checked)
+    if ((_ck(n, 'ring_top') || _ck(n, 'ring_bottom')) && _ck(n, 'washer'))
       parts.push({ id: `wa${n}`, label: `Pulley ${n} splined washer`, note: threeD ? 'no STEP' : '' });
   }
   return parts;
@@ -3591,6 +3639,7 @@ let threeControls = null;
 let threeModel    = null;
 let threeModel2   = null;
 let threeBelt     = null;
+let threeSplineParts = [];      // the splined bores' shaft, rings, washers (ADR-017)
 let three3dTimer  = null;
 let _loadGen      = 0;   // increments on every load3DModel call; callbacks check this to discard stale meshes
 
@@ -3846,6 +3895,35 @@ async function init3D() {
   animate();
 }
 
+// A splined bore's sample shaft (grey), rings (dark) and washers (blue), for
+// each pulley that has one with Show sample shaft ticked: the preview route's
+// part=spline / spline1 / spline2 answers with them placed like the pulley.
+const SPLINE_MATS = { shaft: 0x9aa3ad, rings: 0x1e293b, washers: 0x5b9bd5 };
+function _loadSplineParts(url, gen, isDual) {
+  const THREE = window._THREE, STLLoader = window._STLLoader;
+  for (const n of isDual ? [1, 2] : [1]) {
+    if (boreShape(n) !== 'spline' || !_ck(n, 'show_shaft')) continue;
+    fetch(url + (isDual ? `&part=spline${n}` : '&part=spline'))
+      .then(r => r.ok ? r.json() : null)
+      .then(parts => {
+        if (!parts || _loadGen !== gen) return;               // stale: a newer preview is loading
+        const loader = new STLLoader();
+        for (const [name, b64] of Object.entries(parts)) {
+          if (!b64) continue;
+          const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+          const geo = loader.parse(bytes.buffer);
+          geo.computeVertexNormals();
+          const mat = new THREE.MeshStandardMaterial({ color: SPLINE_MATS[name] || 0x9aa3ad,
+            metalness: name === 'rings' ? 0.5 : 0.1, roughness: 0.6, side: THREE.DoubleSide });
+          const mesh = new THREE.Mesh(geo, mat);
+          threeScene.add(mesh);
+          threeSplineParts.push(mesh);
+        }
+      })
+      .catch(e => console.error('spline parts', e));
+  }
+}
+
 function _loadSTL(url, material, onLoaded, onError) {
   const STLLoader = window._STLLoader;
   const THREE     = window._THREE;
@@ -3955,10 +4033,13 @@ function load3DModel(url) {
   if (threeModel)  { threeScene.remove(threeModel);  threeModel  = null; }
   if (threeModel2) { threeScene.remove(threeModel2); threeModel2 = null; }
   if (threeBelt)   { threeScene.remove(threeBelt);   threeBelt   = null; }
+  for (const m of threeSplineParts) threeScene.remove(m);
+  threeSplineParts = [];
 
   document.getElementById('preview-footer').textContent = 'Loading 3D…';
 
   const isDual = url.includes('dual=true');
+  _loadSplineParts(url, gen, isDual);
   const pulleyMat  = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55, side: THREE.DoubleSide });
   const pulley2Mat = new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.10, roughness: 0.55, side: THREE.DoubleSide });
   const beltMat    = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.05, roughness: 0.80, side: THREE.DoubleSide });
@@ -4015,6 +4096,10 @@ const _sv = (n, k) => document.getElementById(`spline${n}_${k}`).value;
 // the wall checks, until /api/spline answers with the fitted figures.
 function splineOf(n) {
   if (boreShape(n) !== 'spline') return null;
+  if (_sv(n, 'type') === 'hex') {
+    const af = parseFloat(_sv(n, 'af')) || 0, ac = parseFloat(_sv(n, 'ac')) || 0;
+    return { minor: af, major: _ck(n, 'rounded') && ac > af ? Math.min(ac, af * 2 / Math.sqrt(3)) : af * 2 / Math.sqrt(3) };
+  }
   if (_sv(n, 'type') === 'involute') {
     const m = parseFloat(_sv(n, 'm')) || 1, z = parseInt(_sv(n, 'z')) || 20;
     const pa = parseFloat(_sv(n, 'pa')) || 30, root = pa === 30 ? _sv(n, 'root') : 'fillet';
@@ -4042,18 +4127,30 @@ function boreParams(p, n, prefix) {
     p[`${prefix}bore_shape`] = 'spline';
     const t = _sv(n, 'type');
     p[`${prefix}spline_type`] = t;
-    const keys = t === 'involute' ? ['m', 'z', 'pa', 'root'] : ['n', 'minor', 'major', 'width'];
+    const keys = t === 'involute' ? ['m', 'z', 'pa', 'root']
+               : t === 'hex' ? ['af', 'series'] : ['n', 'minor', 'major', 'width'];
     for (const k of keys) p[`${prefix}spline_${k}`] = _sv(n, k);
-    p[`${prefix}spline_ring`] = _sv(n, 'ring');
-    if (document.getElementById(`spline${n}_washer`).checked) p[`${prefix}spline_washer`] = '1';
+    if (t === 'hex' && _ck(n, 'rounded')) { p[`${prefix}spline_rounded`] = '1'; p[`${prefix}spline_ac`] = _sv(n, 'ac'); }
+    // the Spline card (3D Mode): rings on either or both faces, the washer
+    for (const f of ['top', 'bottom']) p[`${prefix}spline_ring_${f}`] = _ck(n, `ring_${f}`) ? '1' : '0';
+    if (_ck(n, 'washer')) p[`${prefix}spline_washer`] = '1';
   }
 }
 
-const SPLINE_KEYS = ['type', 'preset', 'n', 'minor', 'major', 'width', 'pa', 'root', 'm', 'z', 'ring'];
+const SPLINE_KEYS = ['type', 'preset', 'n', 'minor', 'major', 'width', 'pa', 'root', 'm', 'z',
+                     'hex_preset', 'af', 'series', 'ac'];
+const SPLINE_CHECKS = ['ring_top', 'ring_bottom', 'washer', 'show_shaft', 'rounded'];   // + the Spline card
+const _ck = (n, k) => document.getElementById(`spline${n}_${k}`).checked;
+// A design saved or linked before the Spline card had one ring: top / bottom / none.
+function _oldRing(n, v) {
+  if (v === undefined || v === null) return;
+  document.getElementById(`spline${n}_ring_top`).checked = v === 'top';
+  document.getElementById(`spline${n}_ring_bottom`).checked = v === 'bottom';
+}
 function boreSettings(n) {
   const out = { [`bore${n}_shape`]: boreShape(n) };
   for (const k of SPLINE_KEYS) out[`spline${n}_${k}`] = _sv(n, k);
-  out[`spline${n}_washer`] = document.getElementById(`spline${n}_washer`).checked;
+  for (const k of SPLINE_CHECKS) out[`spline${n}_${k}`] = _ck(n, k);
   return out;
 }
 function applyBoreSettings(n, s) {
@@ -4065,8 +4162,9 @@ function applyBoreSettings(n, s) {
     if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) el.dataset.want = v;   // filled later
     el.value = v;
   }
-  if (s[`spline${n}_washer`] !== undefined)
-    document.getElementById(`spline${n}_washer`).checked = !!s[`spline${n}_washer`];
+  _oldRing(n, s[`spline${n}_ring`]);
+  for (const k of SPLINE_CHECKS)
+    if (s[`spline${n}_${k}`] !== undefined) document.getElementById(`spline${n}_${k}`).checked = !!s[`spline${n}_${k}`];
   showBoreShape(n);
 }
 function boreFromLink(p, n, pre) {
@@ -4080,6 +4178,11 @@ function boreFromLink(p, n, pre) {
       if (f.tagName === 'SELECT' && f.value !== p.get(`${pre}spline_${k}`)) f.dataset.want = p.get(`${pre}spline_${k}`);
     }
     document.getElementById(`spline${n}_washer`).checked = p.get(`${pre}spline_washer`) === '1';
+    document.getElementById(`spline${n}_rounded`).checked = p.get(`${pre}spline_rounded`) === '1';
+    if (p.has(`${pre}spline_ring_top`) || p.has(`${pre}spline_ring_bottom`)) {
+      for (const f of ['top', 'bottom'])
+        document.getElementById(`spline${n}_ring_${f}`).checked = p.get(`${pre}spline_ring_${f}`) === '1';
+    } else _oldRing(n, p.get(`${pre}spline_ring`));
   } else if (p.has(`${pre}hub_flat_depth`)) {
     el.value = 'flat';
     document.getElementById(`hub${n}_flat_depth`).value = p.get(`${pre}hub_flat_depth`);
@@ -4100,8 +4203,12 @@ function showBoreShape(n) {
     document.getElementById(`bore${n}_${k}_fields`).classList.toggle('hidden', shape !== k);
   const inv = _sv(n, 'type') === 'involute';
   onSplineSizeQuiet(n);                 // the Size menu names the sizes, whoever set them
-  document.getElementById(`spline${n}_straight`).classList.toggle('hidden', inv);
+  const hex = _sv(n, 'type') === 'hex';
+  onHexSizeQuiet(n);
+  document.getElementById(`spline${n}_straight`).classList.toggle('hidden', inv || hex);
   document.getElementById(`spline${n}_involute`).classList.toggle('hidden', !inv);
+  document.getElementById(`spline${n}_hex`).classList.toggle('hidden', !hex);
+  document.getElementById(`spline${n}_ac_row`).classList.toggle('hidden', !_ck(n, 'rounded'));
   const flatRoot = parseFloat(_sv(n, 'pa')) === 30;
   document.getElementById(`spline${n}_root`).disabled = !flatRoot;
   if (!flatRoot) document.getElementById(`spline${n}_root`).value = 'fillet';
@@ -4116,11 +4223,22 @@ function showBoreShape(n) {
     document.getElementById(`spline${n}_info`).textContent = '';   // /api/spline fills it
   }
   note.classList.toggle('hidden', !sp);
+  document.getElementById(`spline${n}_card`).classList.toggle('hidden', shape !== 'spline');
   const washer = document.getElementById(`spline${n}_washer`);
-  washer.disabled = _sv(n, 'ring') === 'none';
+  washer.disabled = !_ck(n, 'ring_top') && !_ck(n, 'ring_bottom');
   washer.parentElement.style.opacity = washer.disabled ? '0.45' : '';
   if (sp) _fetchSplineFit(n);
   _lockRetentionForSpline(n);
+}
+
+function toggleSplineCard(n) {
+  const open = document.getElementById(`spline${n}-body`).classList.toggle('open');
+  document.getElementById(`spline${n}-arrow`).classList.toggle('open', open);
+}
+// Show sample shaft: only the 3D view changes
+function onSplineShowChange(n) {
+  saveSettings();
+  schedulePreview();
 }
 
 // The fitted figures (ADR-017) come from the server — /api/spline, the same
@@ -4151,9 +4269,12 @@ function _fetchSplineFit(n) {
       `Set by the spline: the bore is the hole's minor diameter at the default fit, ${fit.bore.toFixed(3)} mm. ` +
       'Change the spline below, or set Bore Shape to Round to type a bore.';
     const rt = fit.retainer;
+    const where = rt ? (rt.faces.length === 2 ? 'each face' : `the ${rt.faces[0]} face`) : '';
     out.textContent = rt
-      ? `${rt.ring} (McMaster ${rt.mcmaster || '—'}) · counterbore Ø${rt.cb_d} × ${+rt.cb_depth.toFixed(2)} mm ` +
-        `in the ${rt.face} face` + (rt.washer_t > 0 ? ` · washer Ø${rt.washer_od} × ${rt.washer_t} mm` : '')
+      ? `${rt.faces.length === 2 ? '2 × ' : ''}${rt.ring}${rt.mcmaster ? ` (McMaster ${rt.mcmaster})` : ''} · counterbore ` +
+        `Ø${rt.cb_d} × ${+rt.cb_depth.toFixed(2)} mm in ${where}` +
+        (rt.washer_t > 0 ? ` · washer Ø${rt.washer_od} × ${rt.washer_t} mm` : '') +
+        (rt.faces.length === 1 ? ' · one ring holds it one way; a shoulder on the shaft the other' : '')
       : 'No ring: nothing holds the pulley on the shaft.';
   }, 150);
 }
@@ -4210,13 +4331,49 @@ function onSplineSizeQuiet(n) {
   const sel = document.getElementById(`spline${n}_preset`);
   sel.value = [...sel.options].some(o => o.value === key) ? key : '';
 }
+// Hex bar stock: metric and inch across-flats sizes, and rounded stock with a
+// published across-corners figure. A value is series:af[:ac].
+function fillHexPresets(n) {
+  if (!SPLINES || !SPLINES.hex) return;
+  const sel = document.getElementById(`spline${n}_hex_preset`);
+  const want = sel.dataset.want || sel.value;
+  const hx = SPLINES.hex;
+  sel.innerHTML = '<option value="">Custom</option>'
+    + `<optgroup label="Metric (DIN 471 rings)">${hx.metric.map(af => `<option value="metric:${af}">${af} mm</option>`).join('')}</optgroup>`
+    + `<optgroup label="Inch (SH / 5100 rings)">${hx.inch.map(([nm, af]) => `<option value="inch:${af}">${nm}" (${af} mm)</option>`).join('')}</optgroup>`
+    + `<optgroup label="Rounded hex">${hx.rounded.map(([nm, af, ac, ser]) => `<option value="${ser}:${af}:${ac}">${nm} (Ø${ac})</option>`).join('')}</optgroup>`;
+  if (want) sel.value = want;
+  delete sel.dataset.want;
+  onHexSizeQuiet(n);
+}
+function onHexPreset(n) {
+  const v = _sv(n, 'hex_preset');
+  if (v) {
+    const [series, af, ac] = v.split(':');
+    document.getElementById(`spline${n}_af`).value = af;
+    document.getElementById(`spline${n}_series`).value = series;
+    document.getElementById(`spline${n}_rounded`).checked = !!ac;
+    if (ac) document.getElementById(`spline${n}_ac`).value = ac;
+  }
+  onBoreShapeChange(n);
+}
+function onHexSize(n) { onHexSizeQuiet(n); onBoreShapeChange(n); }
+// Typed sizes: the Stock menu shows the matching row, or Custom.
+function onHexSizeQuiet(n) {
+  const sel = document.getElementById(`spline${n}_hex_preset`);
+  const key = `${_sv(n, 'series')}:${+_sv(n, 'af')}` + (_ck(n, 'rounded') ? `:${+_sv(n, 'ac')}` : '');
+  sel.value = [...sel.options].some(o => o.value === key) ? key : '';
+}
+
 async function loadSplines() {
   try { SPLINES = await (await fetch('/api/splines')).json(); } catch (e) { return; }
-  for (const n of [1, 2]) { fillSplinePresets(n); fillSplineModules(n); showBoreShape(n); }
+  for (const n of [1, 2]) { fillSplinePresets(n); fillSplineModules(n); fillHexPresets(n); showBoreShape(n); }
 }
 function _splinePic(label) {
   const n = label.htmlFor.includes('spline2') ? 2 : 1;
-  return _sv(n, 'type') === 'involute' ? '/static/help/spline_involute.svg' : '/static/help/spline_straight.svg';
+  const t = _sv(n, 'type');
+  return t === 'involute' ? '/static/help/spline_involute.svg'
+       : t === 'hex' ? '/static/help/spline_hex.svg' : '/static/help/spline_straight.svg';
 }
 
 // ── Hub section ───────────────────────────────────────────────────────────────
@@ -4819,11 +4976,13 @@ function _triggerDownload(url) {
 }
 
 // A splined bore holds the pulley itself (ADR-017): Retention is None and
-// locked while Bore Shape is Spline; the choice before comes back after.
+// locked while Bore Shape is Spline; the choice before comes back after. A hex
+// bar takes every Retention method (ADR-018): a set screw bears on a flat.
+const isHexBore = n => boreShape(n) === 'spline' && _sv(n, 'type') === 'hex';
 function _lockRetentionForSpline(n) {
   const ret = document.getElementById(`hub${n}_retention`);
   const note = document.getElementById(`hub${n}_spline_note`);
-  const spline = boreShape(n) === 'spline';
+  const spline = boreShape(n) === 'spline' && !isHexBore(n);
   if (spline) {
     if (!ret.disabled) ret.dataset.before = ret.value;
     ret.value = 'none';                  // even if a restore set it since
@@ -4858,7 +5017,7 @@ function onHubChange(n) {
   document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSetScrew);
   // A shaped bore takes one screw, aimed at its flat, key or first slot.
   const shape = boreShape(n);
-  const where = { flat: 'on the D-flat', key: 'into the keyway' }[shape];
+  const where = isHexBore(n) ? 'on the hex bar\'s +X flat' : { flat: 'on the D-flat', key: 'into the keyway' }[shape];
   const shapeNote = document.getElementById(`hub${n}_shape_note`);
   shapeNote.textContent = where ? `One screw, ${where} (Bore Shape, Size card).` : '';
   shapeNote.classList.toggle('hidden', !where);
@@ -4932,7 +5091,7 @@ function _validateHub(n) {
     lines.push(`⚠ Hub OD (${hubOD} mm) must be ≥ bore + 1 mm = ${(bore + 1).toFixed(1)} mm`);
   // a retaining ring on the top face sits in a counterbore in the hub (ADR-017)
   const rt = boreShape(n) === 'spline' && SPLINE_FIT[n] ? SPLINE_FIT[n].retainer : null;
-  if (rt && rt.face === 'top' && hubOD < rt.cb_d + 2)
+  if (rt && rt.faces.includes('top') && hubOD < rt.cb_d + 2)
     lines.push(`⚠ Hub OD (${hubOD} mm) must be ≥ ${rt.cb_d + 2} mm round the ring's Ø${rt.cb_d} mm ` +
                'counterbore (Auto-fix, under the preview)');
 
@@ -5473,8 +5632,15 @@ function onAdvBothToggle(n) {
     spline_root:            '/static/help/spline_involute.svg',
     spline_m:               '/static/help/spline_involute.svg',
     spline_z:               '/static/help/spline_involute.svg',
-    spline_ring:            '/static/help/spline_ring.svg',
+    spline_hex_preset:      '/static/help/spline_hex.svg',
+    spline_af:              '/static/help/spline_hex.svg',
+    spline_series:          '/static/help/spline_hex.svg',
+    spline_rounded:         '/static/help/spline_hex.svg',
+    spline_ac:              '/static/help/spline_hex.svg',
+    spline_ring_top:        '/static/help/spline_ring.svg',
+    spline_ring_bottom:     '/static/help/spline_ring.svg',
     spline_washer:          '/static/help/spline_ring.svg',
+    spline_show_shaft:      '/static/help/spline_ring.svg',
     hub_flat_depth:         '/static/help/hub_flat_depth.svg',
     hub_keyway_w:           '/static/help/hub_keyway_w.svg',
     hub_keyway_h:           '/static/help/hub_keyway_h.svg',
