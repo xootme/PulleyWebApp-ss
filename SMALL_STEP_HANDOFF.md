@@ -159,61 +159,12 @@ spokes like every other export; spoke-void arcs in the STL are drawn within
 0.01 mm; a merged printed top flange overlaps the hub 0.1 mm so the STL is
 watertight.
 
-## 7. Splined bores — REQUIRED for STEP (2026-09-28, ADR-014)
+## 7–8. Splined and hex bores, flanges, ring counterbores, hex set screws — see the report
 
-Bore Shape can now be a spline (ISO 14 straight-sided, ISO 4156 involute),
-from `cct_common.splines` — the same module Sprocket Designer's bores use
-(its handoff has the same obligation). The app's STEP download refuses a
-spline today (`_run_ss_worker`: "STEP can't carry a splined bore yet"),
-so nothing is exported wrong; this is to lift that.
-
-- **The hole** is `splines.path(sp)`: closed, counter-clockwise, first
-  slot / space on +x, lines and circular arcs only (each involute flank is
-  tangent arcs within 0.001 mm). The worker job carries it as
-  `spline = {kind, n, minor, major, width, module, pressure, root}`, plus
-  (§8) `bore`, `print` and `retainer`: rebuild the Spline from its own fields
-  (`step_exporter._as_spline` filters them). Bore diameter = `spline['bore']`.
-- **What small_step needs**: a bore profile that isn't a CIRCLE (+ flat /
-  key) — a closed wire of LINEs and CIRCLE arcs cut through the pulley and
-  any integrated flange. No new entity type: cadquery's STEP of the same
-  hole is LINE and CIRCLE edges only.
-- **Set screw**: none — superseded by §8 (a spline takes no set screw).
-- **Reference**: the cadquery track's STEP (`PULLEY_STEP_BACKEND=cadquery`)
-  cuts it exactly — valid solid, volume within 7e-4 of the STL
-  (`tests/test_bore_shape.py`).
-
-## 8. Splined bore: fitted outline, ring counterbore — REQUIRED with §7 (2026-09-29, ADR-017)
-
-When §7 lands, cut these too (cct_common 0.20.0; the cadquery track has them):
-
-- **The hole is the fitted one**: `splines.path(sp)` now returns the hole at
-  the standard's default fit (ISO 14 sliding / ISO 4156 H/h class 6), a few
-  hundredths over nominal. Still LINEs and CIRCLE arcs, no new entity type.
-  Bore diameter = `splines.hole(sp).inner` (the job's `spline['bore']`).
-  STEP is **nominal**: ignore `spline['print']` (that's for the STL).
-- **The ring counterbores**: when `spline['retainer']` is set, for each
-  face in `retainer['faces']` (`top`, `bottom` or both) a cylinder Ø `cb_d`
-  on the axis, into the solid's top (from its max z) or bottom face, cut
-  after any integrated flange is joined. Depth `cb_depth`, less
-  `cover[face]` when `cover_joined[face]` is false (a separate top flange
-  or a metal plate over that face, not in the STEP, carries that much). A plane annulus and a CYLINDRICAL_SURFACE: already in the
-  vocabulary.
-- **The integrated top flange's hole is the bore's shape** (spline or
-  keyway), not a round hole at the bore: cut the bore profile through it
-  as through the bottom flange (cadquery: `bore_solid` / `kw_box` again
-  after the top flange's union). Keyways need this too, spline or not.
-- **No set screw with a spline**: the app sends none (screw fields zeroed),
-  so §7's "one screw into the first slot" no longer applies.
-- **Sample shaft and splined washer**: STL / SVG / DXF only for now; a STEP
-  of either would be an extruded `splines.shaft_path` (with the groove: a
-  cylinder cut, then a smaller one kept) and a disc less `splines.path`.
-- **Reference**: `tests/test_spline_retainer.py` — the cadquery STEP matches
-  the STL's volume within 5e-3 and keeps the nominal counterbore and spline
-  radii with print compensation set.
-
-- **Hex bar** (ADR-018): `kind = "hex"` in the same job dict — `splines.path`
-  gives six LINEs (sharp) or six LINEs and six CIRCLE arcs (rounded hex);
-  cut it exactly as a spline, rings and counterbores included.
+Superseded by **`SMALL_STEP_REPORT_2026-09-29.md`**: the full list of what
+small_step needs for the 2026-09-28 / 29 features (a bore from any LINE /
+ARC loop, flanges taking the bore's shape — a keyway bug today too — ring
+counterbores, set screws on a hex bar, and the app-side follow-up).
 
 ## Not STEP-related (nothing to do)
 
