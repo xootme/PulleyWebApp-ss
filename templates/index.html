@@ -3749,7 +3749,8 @@ function applyDimsFix() {
     const el = document.getElementById(id);
     if (!el) continue;
     el.value = value;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    // a menu (the spline's Size) acts on change, a number field on input
+    el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
   }
   schedulePreview();
 }
@@ -4126,6 +4127,7 @@ function showBoreShape(n) {
 // cct_common code the exports use: the bore at the default fit, the sample
 // shaft, and the ring's counterbore and washer.
 const _splineFitTimer = {};
+const SPLINE_FIT = {};                  // pulley -> the last /api/spline answer
 function _fetchSplineFit(n) {
   clearTimeout(_splineFitTimer[n]);
   _splineFitTimer[n] = setTimeout(async () => {
@@ -4139,6 +4141,8 @@ function _fetchSplineFit(n) {
       if (!r.ok) { out.textContent = `⚠ ${fit.error || 'Spline error'}`; return; }
     } catch (e) { return; }
     if (!fit || boreShape(n) !== 'spline') return;
+    SPLINE_FIT[n] = fit;
+    _validateHub(n);                    // the Hub card checks the counterbore too
     document.getElementById(_bid(n)).value = fit.bore;
     document.getElementById(`spline${n}_info`).textContent =
       `Hole ${fit.bore.toFixed(3)} × ${fit.hole_major.toFixed(3)} mm · sample shaft ` +
@@ -4926,6 +4930,11 @@ function _validateHub(n) {
 
   if (hubOD < bore + 1)
     lines.push(`⚠ Hub OD (${hubOD} mm) must be ≥ bore + 1 mm = ${(bore + 1).toFixed(1)} mm`);
+  // a retaining ring on the top face sits in a counterbore in the hub (ADR-017)
+  const rt = boreShape(n) === 'spline' && SPLINE_FIT[n] ? SPLINE_FIT[n].retainer : null;
+  if (rt && rt.face === 'top' && hubOD < rt.cb_d + 2)
+    lines.push(`⚠ Hub OD (${hubOD} mm) must be ≥ ${rt.cb_d + 2} mm round the ring's Ø${rt.cb_d} mm ` +
+               'counterbore (Auto-fix, under the preview)');
 
   info.textContent = lines.join(' · ');
 }

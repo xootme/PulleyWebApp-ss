@@ -287,3 +287,44 @@ def test_dimensions_show_the_ring_and_warn(client):
     bottom = client.get('/api/dimensions', query_string={**q, 'spline_ring': 'bottom', 'flange_enabled': '1',
                                                           'flange_3dprint': '1', 'flange_top_separate': '1'})
     assert not [w for w in bottom.get_json()['warnings'] if 'counterbore' in w]
+
+
+# ── Auto-fix: a spline the part can't hold (bug report 2026-09-29) ───────────
+
+REPORTED = {'family': 'STD', 'pitch': '8M', 'teeth': '22', 'bore': '23.0105', 'print_extra': '0',
+            **STRAIGHT, **RING, 'hub_od': '25', 'hub_height': '10', 'clearance_height': '10',
+            'belt_height': '10', 'feature_build': '1'}
+
+
+def _fix(client, q):
+    return client.get('/api/dimensions', query_string=q).get_json()['fix'] or {'set': {}, 'changes': []}
+
+
+def test_autofix_grows_the_hub_round_the_spline_and_ring(client):
+    """STD 8M 22T, 6 x 23 x 26 with a top ring in a 25 mm hub: the spline and the
+    35.5 mm counterbore cut through it. The hub grows to counterbore + 2 mm."""
+    f = _fix(client, REPORTED)
+    assert f['set'] == {'hub1_od': 37.5} and 'hub OD 25 → 37.5' in f['changes'][0]
+    assert not _fix(client, {**REPORTED, 'hub_od': '37.5'})['set']
+    # the ring on the bottom face: the hub only needs to clear the spline
+    assert _fix(client, {**REPORTED, 'spline_ring': 'bottom'})['set'] == {'hub1_od': 28.5}
+
+
+def test_autofix_shrinks_a_spline_the_part_cannot_hold(client):
+    small = {**REPORTED, 'family': 'HTD', 'pitch': '5M', 'teeth': '24', 'clearance_height': '10'}
+    f = _fix(client, small)
+    assert f['set'] == {'spline1_preset': '6,16,20,4', 'hub1_od': 30.5}, f
+    f = _fix(client, {**small, 'spline_ring': 'bottom'})
+    assert f['set'] == {'spline1_preset': '6,18,22,5'}, f            # the hub already clears 22
+    inv = {**small, **INVOLUTE, 'spline_m': '1.25', 'spline_z': '30', **RING}
+    f = _fix(client, inv)
+    assert set(f['set']) == {'spline1_z', 'hub1_od'} and f['set']['spline1_z'] < 30, f
+    # nothing smaller fits: warnings only
+    assert not _fix(client, {**small, 'teeth': '16'})['set'].keys() - {'clearance_height'}
+
+
+def test_a_blank_hub_field_is_no_hub(client):
+    r = client.get('/api/preview-stl', query_string={**REPORTED, 'hub_od': '', 'hub_height': ''})
+    assert r.status_code == 200
+    from app import _parse_hub_params
+    assert _parse_hub_params({'hub_od': '', 'hub_screw_count': ''})[:4] == (0.0, 0.0, 0.0, 0)

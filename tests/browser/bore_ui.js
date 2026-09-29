@@ -204,6 +204,28 @@ async function main() {
     && p.p2_spline_ring === 'top' && (await val('#p2_bore')) === '23.0105', [p, await val('#p2_bore')]);
   check('Pulley 2: its own sample shaft', (await js('_dlParts(true).map(x => x.id)')).includes('sh2'));
 
+  // ── Auto-fix: a spline the part can't hold (bug report 2026-09-29) ──
+  const fixBtn = "!document.getElementById('dims_fix').classList.contains('hidden')";
+  await js("localStorage.clear()");
+  await load(BASE + '/?family=STD&pitch=8M&teeth=22&bore=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=23&spline_major=26&spline_width=6&spline_ring=top&hub_od=25&hub_height=10');
+  await js("(() => { const d = document.getElementById('dual_enable'); if (d.checked) d.click(); const f = document.getElementById('feature_build'); if (!f.checked) f.click(); const h = document.getElementById('hub1_enabled'); if (!h.checked) h.click(); })()");
+  await settle();
+  check('the Hub card names the counterbore', (await text('#hub1_info')).includes('counterbore'), await text('#hub1_info'));
+  check('Auto-fix is offered', await waitFor(fixBtn, 8000));
+  await js("document.getElementById('dims_fix').click()");
+  await settle();
+  check('…and grows the hub round the ring', (await val('#hub1_od')) === '37.5', await val('#hub1_od'));
+  check('…which clears the Hub card', !(await text('#hub1_info')).includes('⚠'), await text('#hub1_info'));
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=24&bore=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=23&spline_major=26&spline_width=6&spline_ring=top&hub_od=25&hub_height=10');
+  await settle();
+  check('a pulley too small for the spline: Auto-fix offered', await waitFor(fixBtn, 8000));
+  await js("document.getElementById('dims_fix').click()");
+  await settle();
+  check('…picks the largest ISO 14 size that fits, and the hub for it',
+    (await val('#spline1_preset')) === '6,16,20,4' && (await val('#spline1_minor')) === '16' && (await val('#hub1_od')) === '30.5',
+    [await val('#spline1_preset'), await val('#hub1_od')]);
+  check('…and the bore follows', (await val('#bore')).startsWith('16.0'), await val('#bore'));
+
   finish(errors);
   ws.close(); chrome.kill();
 }

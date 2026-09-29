@@ -1051,6 +1051,83 @@ def _counterbore_warnings(args, pfx, who, rt, root_d, three_d):
     return out
 
 
+SPLINE_WALL = 1.0     # mm of material round a spline's reach or a ring counterbore
+
+
+def _spline_fix(args, pfx, n, sp_obj, root_d, three_d):
+    """Auto-fix for a splined bore the part can't hold (1 mm of wall round the
+    spline's reach and the ring's counterbore): a bigger Hub OD, up to the
+    tooth root less 1 mm a side; failing that, the largest smaller spline of
+    the same kind (an ISO 14 size, or fewer involute teeth) that fits, with
+    the Hub OD it needs. Returns ({element id: value}, [change text]) — empty
+    when nothing needs fixing or nothing smaller fits."""
+    from cct_common import splines as _spl
+    hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0) if three_d else 0.0
+    hub_h = _safe_float(args.get(f'{pfx}hub_height'), 0.0) if three_d else 0.0
+    hub_on = hub_od > 0 and hub_h > 0
+    spokes = _parse_spoke_params(args, pfx)[:2] if three_d else (False, 0.0)
+    body = spokes[1] if spokes[0] and spokes[1] > 0 else root_d   # the material round the bore
+    hub_max = math.floor((root_d - 2 * SPLINE_WALL) * 2) / 2
+    wall = 2 * SPLINE_WALL
+
+    def needs(cand):
+        """(Hub OD it needs, body Ø it needs) for a candidate spline."""
+        reach = _spl.hole(cand).outer
+        rt = _retainer_of(args, pfx, cand)
+        hub_need = body_need = reach + wall
+        if rt and rt['face'] == 'top' and hub_on:
+            hub_need = max(hub_need, rt['cb_d'] + wall)
+        elif rt:
+            body_need = max(body_need, rt['cb_d'] + wall)
+        return math.ceil(hub_need * 2 - 1e-9) / 2, body_need
+
+    def fits(cand):
+        hub_need, body_need = needs(cand)
+        return body_need <= body + 1e-9 and (not hub_on or hub_need <= hub_max)
+
+    hub_need, body_need = needs(sp_obj)
+    if body_need <= body + 1e-9 and (not hub_on or hub_od >= hub_need - 1e-9):
+        return {}, []                                        # nothing to fix
+    who = f'Pulley {n}: ' if pfx else ''
+    if fits(sp_obj):                                         # only the hub is short
+        return ({f'hub{n}_od': hub_need},
+                [f'{who}hub OD {hub_od:g} → {hub_need:g} mm (round the spline and its ring)'])
+
+    # a smaller spline of the same kind
+    if sp_obj.kind == 'straight':
+        pre = _spl.presets()['straight']
+        rows = sorted({tuple(r) for r in pre['light'] + pre['medium']}, key=lambda r: (r[2], r[1]),
+                      reverse=True)
+        for N, d, D, B in rows:
+            if D >= sp_obj.major and d >= sp_obj.minor:
+                continue
+            cand = _spl.straight(N, d, D, B)
+            if fits(cand):
+                fix = {f'spline{n}_preset': f'{N},{d},{D},{B}'}
+                change = [f'{who}spline {sp_obj.label()} → {cand.label()} (the part can\'t hold the larger one)']
+                break
+        else:
+            return {}, []
+    else:
+        root = sp_obj.root
+        for z in range(sp_obj.n - 1, 5, -1):
+            try:
+                cand = _spl.involute(sp_obj.module, z, sp_obj.pressure, root)
+            except ValueError:
+                continue
+            if fits(cand):
+                fix = {f'spline{n}_z': z}
+                change = [f'{who}spline teeth {sp_obj.n} → {z} (the part can\'t hold the larger one)']
+                break
+        else:
+            return {}, []
+    new_hub = needs(cand)[0]
+    if hub_on and hub_od < new_hub - 1e-9:
+        fix[f'hub{n}_od'] = new_hub
+        change.append(f'{who}hub OD {hub_od:g} → {new_hub:g} mm')
+    return fix, change
+
+
 @app.route('/api/dimensions')
 def api_dimensions():
     """The Dimensions panel under the 2D view (the Sprocket app's): each
@@ -1117,6 +1194,9 @@ def api_dimensions():
                     if rt['washer_t'] > 0:
                         p.update(washer_od=rt['washer_od'], washer_t=rt['washer_t'])
                     warnings += _counterbore_warnings(args, pfx, who, rt, root_d, three_d)
+                sp_fix, sp_changes = _spline_fix(args, pfx, n, sp_obj, root_d, three_d)
+                fix_set.update(sp_fix)
+                changes += sp_changes
 
             flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
             p['flanged'] = flanged
@@ -1815,14 +1895,16 @@ def _parse_stl_params(args, pulley='1'):
 
 def _parse_hub_params(args, prefix=''):
     """Return (hub_od_mm, hub_height_mm, screw_dia_mm, screw_count, captured_nut, flat_depth_mm, keyway_w_mm, keyway_h_mm) from request args."""
-    hub_od       = max(0.0, float(args.get(f'{prefix}hub_od',           0.0)))
-    hub_height   = max(0.0, float(args.get(f'{prefix}hub_height',       0.0)))
-    screw_dia    = max(0.0, float(args.get(f'{prefix}hub_screw_dia',    0.0)))
-    screw_count  = max(0,   int(float(args.get(f'{prefix}hub_screw_count', 0))))
+    # a field cleared while typing arrives blank: read it as 0 (no hub), not a crash
+    num = lambda key: _safe_float(args.get(f'{prefix}{key}'), 0.0)   # noqa: E731
+    hub_od       = max(0.0, num('hub_od'))
+    hub_height   = max(0.0, num('hub_height'))
+    screw_dia    = max(0.0, num('hub_screw_dia'))
+    screw_count  = max(0,   int(num('hub_screw_count')))
     captured_nut = args.get(f'{prefix}hub_captured_nut', '0') == '1'
-    flat_depth   = max(0.0, float(args.get(f'{prefix}hub_flat_depth',   0.0)))
-    keyway_w     = max(0.0, float(args.get(f'{prefix}hub_keyway_w',     0.0)))
-    keyway_h     = max(0.0, float(args.get(f'{prefix}hub_keyway_h',     0.0)))
+    flat_depth   = max(0.0, num('hub_flat_depth'))
+    keyway_w     = max(0.0, num('hub_keyway_w'))
+    keyway_h     = max(0.0, num('hub_keyway_h'))
     if args.get(f'{prefix}bore_shape') == 'spline':
         flat_depth = keyway_w = keyway_h = 0.0     # one bore shape at a time
         screw_dia, screw_count, captured_nut = 0.0, 0, False   # and no set screw (ADR-017)

@@ -35,6 +35,11 @@ McMaster-Carr's DIN 471 rings (98541A…, 3–29 mm, all match).
   source, the ring (label, McMaster PN), counterbore and washer. The Dimensions panel lists them and
   warns when the counterbore leaves under 1 mm to the hub / spoke hub / tooth root, or sits under a
   metal plate or a separate top flange.
+- **Auto-fix for a spline the part can't hold** (first bug report, 2026-09-29: a 25 mm hub round a
+  6 × 23 × 26 spline and its 35.5 mm counterbore): 1 mm of wall round the spline's reach and the
+  counterbore; Hub OD grows up to the tooth root less 1 mm a side, else the largest smaller spline of
+  the same kind that fits (ISO 14 size / fewer involute teeth), with the hub it needs. The Hub card
+  names the counterbore too. A blank hub field is no hub, not a 500.
 - **Later** (ToDo): a set screw that lands in a spline root, and a clamp hub (slot + screw boss).
 
 **Consequences:** `tests/test_spline_retainer.py` (22), `tests/test_bore_shape.py` on the fitted
