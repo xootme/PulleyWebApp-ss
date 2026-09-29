@@ -5,10 +5,78 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=43">
+  <link rel="stylesheet" href="/static/style.css?v=44">
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
+{% macro bore_shape_fields(n) -%}
+      <!-- Bore Shape (the Sprocket app's): one bore at a time, used by every export -->
+      <div class="hub-info hidden" id="bore{{ n }}_note"></div>
+      <label for="bore{{ n }}_shape">Bore Shape</label>
+      <select id="bore{{ n }}_shape" onchange="onBoreShapeChange({{ n }})">
+        <option value="round">Round</option>
+        <option value="flat">D-flat</option>
+        <option value="key">Keyway</option>
+        <option value="spline">Spline</option>
+      </select>
+      <div id="bore{{ n }}_flat_fields" class="hidden">
+        <label for="hub{{ n }}_flat_depth">Flat Depth (mm)</label>
+        <input type="number" id="hub{{ n }}_flat_depth" value="0.5" min="0.1" max="10" step="0.05" oninput="onBoreShapeChange({{ n }})" style="width:100%">
+        <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
+      </div>
+      <div id="bore{{ n }}_key_fields" class="hidden">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="hub{{ n }}_keyway_w" style="margin:0;flex:1">Key Width W (mm)</label>
+          <input type="number" id="hub{{ n }}_keyway_w" value="4" min="2" max="30" step="0.5" oninput="onBoreShapeChange({{ n }})" style="width:70px">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="hub{{ n }}_keyway_h" style="margin:0;flex:1">Hub Depth (mm)</label>
+          <input type="number" id="hub{{ n }}_keyway_h" value="2" min="0.5" max="30" step="0.1" oninput="onBoreShapeChange({{ n }})" style="width:70px">
+        </div>
+        <button type="button" onclick="applyISO773Default({{ n }})"
+                style="margin-top:2px;padding:3px 10px;font-size:12px;cursor:pointer;">Default Key</button>
+        <div class="hub-info" style="margin-top:4px">ISO 773 hub depth t&#x2082; + R corner clearance per shaft size</div>
+      </div>
+      <div id="bore{{ n }}_spline_fields" class="hidden">
+        <label for="spline{{ n }}_type">Spline</label>
+        <select id="spline{{ n }}_type" onchange="onBoreShapeChange({{ n }})">
+          <option value="straight">Straight-sided (ISO 14)</option>
+          <option value="involute">Involute (ISO 4156)</option>
+        </select>
+        <div id="spline{{ n }}_straight">
+          <label for="spline{{ n }}_preset">Size</label>
+          <select id="spline{{ n }}_preset" onchange="onSplinePreset({{ n }})"></select>
+          <div class="spline-grid">
+            <label for="spline{{ n }}_n">Splines N</label>
+            <input type="number" id="spline{{ n }}_n" min="3" max="20" step="1" value="6" oninput="onSplineSize({{ n }})">
+            <label for="spline{{ n }}_minor">Minor d (mm)</label>
+            <input type="number" id="spline{{ n }}_minor" min="1" step="0.5" value="23" oninput="onSplineSize({{ n }})">
+            <label for="spline{{ n }}_major">Major D (mm)</label>
+            <input type="number" id="spline{{ n }}_major" min="1" step="0.5" value="26" oninput="onSplineSize({{ n }})">
+            <label for="spline{{ n }}_width">Width B (mm)</label>
+            <input type="number" id="spline{{ n }}_width" min="0.5" step="0.5" value="6" oninput="onSplineSize({{ n }})">
+          </div>
+        </div>
+        <div id="spline{{ n }}_involute" class="hidden">
+          <div class="spline-grid">
+            <label for="spline{{ n }}_pa">Pressure angle</label>
+            <select id="spline{{ n }}_pa" onchange="onSplinePressure({{ n }})">
+              <option value="30">30°</option><option value="37.5">37.5°</option><option value="45">45°</option>
+            </select>
+            <label for="spline{{ n }}_root" id="spline{{ n }}_root_label">Root</label>
+            <select id="spline{{ n }}_root" onchange="onBoreShapeChange({{ n }})">
+              <option value="flat">Flat</option><option value="fillet">Fillet</option>
+            </select>
+            <label for="spline{{ n }}_m">Module m</label>
+            <select id="spline{{ n }}_m" onchange="onBoreShapeChange({{ n }})"></select>
+            <label for="spline{{ n }}_z">Teeth z</label>
+            <input type="number" id="spline{{ n }}_z" min="6" max="100" step="1" value="20" oninput="onBoreShapeChange({{ n }})">
+          </div>
+        </div>
+        <div class="hub-info" id="spline{{ n }}_info"></div>
+      </div>
+{%- endmacro %}
+
 {% macro screw_size_options() -%}
 {% for group in ['Metric', 'Inch'] %}<optgroup label="{{ group }}">{% for sz in screw_sizes if sz.group == group %}<option value="{{ sz.name }}"{% if sz.name == 'M5' %} selected{% endif %}>{{ sz.name }}</option>{% endfor %}</optgroup>{% endfor %}<option value="Custom">Custom…</option>
 {%- endmacro %}
@@ -147,6 +215,7 @@
       </span>
       <label for="bore">Bore Diameter (mm)</label>
       <input type="number" id="bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(1)">
+      {{ bore_shape_fields(1) }}
       <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
       <div id="bore-warn-1" style="display:none;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;margin-top:4px;"></div>
     </section>
@@ -216,8 +285,6 @@
           <option value="set_screw_nut">Set Screw (captured nut)</option>
           <option value="set_screw_std">Set Screw (threaded)</option>
           <option value="set_screw_insert">Set Screw (heat-set insert)</option>
-          <option value="d_shaft">D-Shaft</option>
-          <option value="keyway">Keyway</option>
           <option value="none">None</option>
         </select>
 
@@ -231,61 +298,7 @@
             <option value="1">1</option>
             <option value="2" selected>2 (90° std / 180° captured)</option>
           </select>
-        </div>
-
-        <div id="hub1_dshaft_opts" class="hidden">
-          <label for="hub1_flat_depth">Flat Depth (mm)</label>
-          <input type="number" id="hub1_flat_depth" value="0.5" min="0.1" max="10" step="0.05" oninput="onHubChange(1)" style="width:100%">
-          <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
-
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
-            <input type="checkbox" id="hub1_dshaft_screw" onchange="onHubChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
-            Add set screw
-          </label>
-
-          <div id="hub1_dshaft_screw_opts" class="hidden">
-            <label for="hub1_dshaft_screw_type">Screw Type</label>
-            <select id="hub1_dshaft_screw_type" onchange="onHubChange(1)">
-              <option value="set_screw_std">Threaded</option>
-              <option value="set_screw_nut">Captured nut</option>
-              <option value="set_screw_insert">Heat-set insert</option>
-            </select>
-            <label for="hub1_dshaft_screw_size">Screw Size</label>
-            <select id="hub1_dshaft_screw_size" onchange="onHubChange(1)">
-              {{ screw_size_options() }}
-            </select>
-          </div>
-        </div>
-
-        <div id="hub1_keyway_opts" class="hidden">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-            <label for="hub1_keyway_w" style="margin:0;flex:1">Width W (mm)</label>
-            <input type="number" id="hub1_keyway_w" value="4" min="2" max="30" step="0.5" oninput="onHubChange(1)" style="width:70px">
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-            <label for="hub1_keyway_h" style="margin:0;flex:1">Hub Depth (mm)</label>
-            <input type="number" id="hub1_keyway_h" value="2" min="0.5" max="30" step="0.1" oninput="onHubChange(1)" style="width:70px">
-          </div>
-          <button type="button" onclick="applyISO773Default(1)"
-                  style="margin-top:2px;padding:3px 10px;font-size:12px;cursor:pointer;">Default Key</button>
-          <div class="hub-info" style="margin-top:4px">ISO 773 hub depth t&#x2082; + R corner clearance per shaft size</div>
-
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
-            <input type="checkbox" id="hub1_keyway_screw" onchange="onHubChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
-            Add set screw
-          </label>
-          <div id="hub1_keyway_screw_opts" class="hidden">
-            <label for="hub1_keyway_screw_type">Screw Type</label>
-            <select id="hub1_keyway_screw_type" onchange="onHubChange(1)">
-              <option value="set_screw_std">Threaded</option>
-              <option value="set_screw_nut">Captured nut</option>
-              <option value="set_screw_insert">Heat-set insert</option>
-            </select>
-            <label for="hub1_keyway_screw_size">Screw Size</label>
-            <select id="hub1_keyway_screw_size" onchange="onHubChange(1)">
-              {{ screw_size_options() }}
-            </select>
-          </div>
+          <div class="hub-info hidden" id="hub1_shape_note"></div>
         </div>
 
         <div id="hub1_screw_hole_row" class="hidden">
@@ -537,6 +550,7 @@
       </span>
       <label for="p2_bore">Bore Diameter (mm)</label>
       <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(2)">
+      {{ bore_shape_fields(2) }}
       <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
       <div id="bore-warn-2" style="display:none;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;margin-top:4px;"></div>
     </section>
@@ -606,8 +620,6 @@
           <option value="set_screw_nut">Set Screw (captured nut)</option>
           <option value="set_screw_std">Set Screw (threaded)</option>
           <option value="set_screw_insert">Set Screw (heat-set insert)</option>
-          <option value="d_shaft">D-Shaft</option>
-          <option value="keyway">Keyway</option>
           <option value="none">None</option>
         </select>
 
@@ -621,61 +633,7 @@
             <option value="1">1</option>
             <option value="2" selected>2 (90° std / 180° captured)</option>
           </select>
-        </div>
-
-        <div id="hub2_dshaft_opts" class="hidden">
-          <label for="hub2_flat_depth">Flat Depth (mm)</label>
-          <input type="number" id="hub2_flat_depth" value="0.5" min="0.1" max="10" step="0.05" oninput="onHubChange(2)" style="width:100%">
-          <div class="hub-info">Default 0.5 mm — measure your actual shaft</div>
-
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
-            <input type="checkbox" id="hub2_dshaft_screw" onchange="onHubChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
-            Add set screw
-          </label>
-
-          <div id="hub2_dshaft_screw_opts" class="hidden">
-            <label for="hub2_dshaft_screw_type">Screw Type</label>
-            <select id="hub2_dshaft_screw_type" onchange="onHubChange(2)">
-              <option value="set_screw_std">Threaded</option>
-              <option value="set_screw_nut">Captured nut</option>
-              <option value="set_screw_insert">Heat-set insert</option>
-            </select>
-            <label for="hub2_dshaft_screw_size">Screw Size</label>
-            <select id="hub2_dshaft_screw_size" onchange="onHubChange(2)">
-              {{ screw_size_options() }}
-            </select>
-          </div>
-        </div>
-
-        <div id="hub2_keyway_opts" class="hidden">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-            <label for="hub2_keyway_w" style="margin:0;flex:1">Width W (mm)</label>
-            <input type="number" id="hub2_keyway_w" value="4" min="1" max="30" step="0.5" oninput="onHubChange(2)" style="width:70px">
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-            <label for="hub2_keyway_h" style="margin:0;flex:1">Hub Depth (mm)</label>
-            <input type="number" id="hub2_keyway_h" value="2" min="0.5" max="30" step="0.1" oninput="onHubChange(2)" style="width:70px">
-          </div>
-          <button type="button" onclick="applyISO773Default(2)"
-                  style="margin-top:2px;padding:3px 10px;font-size:12px;cursor:pointer;">Default Key</button>
-          <div class="hub-info" style="margin-top:4px">ISO 773 hub depth t&#x2082; + R corner clearance per shaft size</div>
-
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;">
-            <input type="checkbox" id="hub2_keyway_screw" onchange="onHubChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
-            Add set screw
-          </label>
-          <div id="hub2_keyway_screw_opts" class="hidden">
-            <label for="hub2_keyway_screw_type">Screw Type</label>
-            <select id="hub2_keyway_screw_type" onchange="onHubChange(2)">
-              <option value="set_screw_std">Threaded</option>
-              <option value="set_screw_nut">Captured nut</option>
-              <option value="set_screw_insert">Heat-set insert</option>
-            </select>
-            <label for="hub2_keyway_screw_size">Screw Size</label>
-            <select id="hub2_keyway_screw_size" onchange="onHubChange(2)">
-              {{ screw_size_options() }}
-            </select>
-          </div>
+          <div class="hub-info hidden" id="hub2_shape_note"></div>
         </div>
 
         <div id="hub2_screw_hole_row" class="hidden">
@@ -1172,42 +1130,25 @@ function _applyUrlParams(p) {
     document.getElementById(`hub${n}_od`)._userSet = true;
     if (p.has(`${pre}height`)) document.getElementById(`hub${n}_height`)._userSet = true;
 
-    const hasKeyway = p.has(`${pre}keyway_w`);
-    const hasDShaft = p.has(`${pre}flat_depth`);
     const hasScrewD = p.has(`${pre}screw_dia`) || p.has(`${pre}screw_size`);
     const captNut   = p.get(`${pre}captured_nut`);
     const hold      = p.get(`${pre}screw_hold`) || (captNut === '1' ? 'nut' : 'thread');
     const screwType = hold === 'nut' ? 'set_screw_nut' : hold === 'insert' ? 'set_screw_insert' : 'set_screw_std';
     const sz        = p.get(`${pre}screw_size`) || screwSizeOf(p.get(`${pre}screw_dia`));
     if (p.has(`${pre}screw_hole_dia`)) setv(`hub${n}_screw_hole_dia`, p.get(`${pre}screw_hole_dia`));
-    let retention   = 'none';
-    if (hasKeyway)      retention = 'keyway';
-    else if (hasDShaft) retention = 'd_shaft';
-    else if (hasScrewD) retention = screwType;
+    const retention = hasScrewD ? screwType : 'none';
     const retEl = document.getElementById(`hub${n}_retention`);
     if (retEl) retEl.value = retention;
 
     if (isSetScrewValue(retention)) {
       if (sz) setv(`hub${n}_screw_size`, sz);
       set(`hub${n}_screw_count`, `${pre}screw_count`);
-    } else if (retention === 'd_shaft') {
-      set(`hub${n}_flat_depth`, `${pre}flat_depth`);
-      if (hasScrewD) {
-        chk(`hub${n}_dshaft_screw`, true);
-        if (sz) setv(`hub${n}_dshaft_screw_size`, sz);
-        setv(`hub${n}_dshaft_screw_type`, screwType);
-      }
-    } else if (retention === 'keyway') {
-      set(`hub${n}_keyway_w`, `${pre}keyway_w`);
-      set(`hub${n}_keyway_h`, `${pre}keyway_h`);
-      if (hasScrewD) {
-        chk(`hub${n}_keyway_screw`, true);
-        if (sz) setv(`hub${n}_keyway_screw_size`, sz);
-        setv(`hub${n}_keyway_screw_type`, screwType);
-      }
     }
     onHubChange(n);
   };
+  // The bore's shape: its own keys, or (older links) a D-flat / keyway on the hub
+  boreFromLink(p, 1, '');
+  if (isDual) boreFromLink(p, 2, 'p2_');
   restoreHub(1, 'hub_');
   if (isDual) restoreHub(2, 'p2_hub_');
 
@@ -1335,14 +1276,8 @@ function collectSettings() {
     hub1_screw_size:          document.getElementById('hub1_screw_size').value,
     hub1_screw_count:         document.getElementById('hub1_screw_count').value,
     hub1_flat_depth:          document.getElementById('hub1_flat_depth').value,
-    hub1_dshaft_screw:        document.getElementById('hub1_dshaft_screw').checked,
-    hub1_dshaft_screw_type:   document.getElementById('hub1_dshaft_screw_type').value,
-    hub1_dshaft_screw_size:   document.getElementById('hub1_dshaft_screw_size').value,
     hub1_keyway_w:            document.getElementById('hub1_keyway_w').value,
     hub1_keyway_h:            document.getElementById('hub1_keyway_h').value,
-    hub1_keyway_screw:        document.getElementById('hub1_keyway_screw').checked,
-    hub1_keyway_screw_type:   document.getElementById('hub1_keyway_screw_type').value,
-    hub1_keyway_screw_size:   document.getElementById('hub1_keyway_screw_size').value,
     hub1_height:              document.getElementById('hub1_height').value,
     hub1_od:                  document.getElementById('hub1_od').value,
     hub1_screw_hole_dia:      document.getElementById('hub1_screw_hole_dia').value,
@@ -1352,17 +1287,13 @@ function collectSettings() {
     hub2_screw_size:          document.getElementById('hub2_screw_size').value,
     hub2_screw_count:         document.getElementById('hub2_screw_count').value,
     hub2_flat_depth:          document.getElementById('hub2_flat_depth').value,
-    hub2_dshaft_screw:        document.getElementById('hub2_dshaft_screw').checked,
-    hub2_dshaft_screw_type:   document.getElementById('hub2_dshaft_screw_type').value,
-    hub2_dshaft_screw_size:   document.getElementById('hub2_dshaft_screw_size').value,
     hub2_keyway_w:            document.getElementById('hub2_keyway_w').value,
     hub2_keyway_h:            document.getElementById('hub2_keyway_h').value,
-    hub2_keyway_screw:        document.getElementById('hub2_keyway_screw').checked,
-    hub2_keyway_screw_type:   document.getElementById('hub2_keyway_screw_type').value,
-    hub2_keyway_screw_size:   document.getElementById('hub2_keyway_screw_size').value,
     hub2_height:              document.getElementById('hub2_height').value,
     hub2_od:                  document.getElementById('hub2_od').value,
     hub2_screw_hole_dia:      document.getElementById('hub2_screw_hole_dia').value,
+    ...boreSettings(1),
+    ...boreSettings(2),
     // Spokes P1
     spokes1_enabled:      document.getElementById('spokes1_enabled').checked ? '1' : '0',
     spokes1_hub_od:       document.getElementById('spokes1_hub_od').value,
@@ -1508,18 +1439,22 @@ async function applySettings(s) {
       document.getElementById(`hub${n}-body`).classList.add('open');
       document.getElementById(`hub${n}-arrow`).classList.add('open');
     }
-    _val(`hub${n}_retention`,        s[`hub${n}_retention`]);
-    _val(`hub${n}_screw_size`,       s[`hub${n}_screw_size`]);
+    // Designs saved before Bore Shape kept the D-flat / keyway in Retention,
+    // with an optional screw of their own: the shape moves to Bore Shape and
+    // the screw, if any, becomes the Retention.
+    let ret = s[`hub${n}_retention`], size = s[`hub${n}_screw_size`];
+    if (ret === 'd_shaft' || ret === 'keyway') {
+      const k = ret === 'd_shaft' ? 'dshaft' : 'keyway';
+      if (s[`bore${n}_shape`] === undefined) s[`bore${n}_shape`] = ret === 'd_shaft' ? 'flat' : 'key';
+      if (s[`hub${n}_${k}_screw`]) { ret = s[`hub${n}_${k}_screw_type`]; size = s[`hub${n}_${k}_screw_size`]; }
+      else ret = 'none';
+    }
+    _val(`hub${n}_retention`,        ret);
+    _val(`hub${n}_screw_size`,       size);
     _val(`hub${n}_screw_count`,      s[`hub${n}_screw_count`]);
     _val(`hub${n}_flat_depth`,       s[`hub${n}_flat_depth`]);
-    _chk(`hub${n}_dshaft_screw`,     s[`hub${n}_dshaft_screw`]);
-    _val(`hub${n}_dshaft_screw_type`,s[`hub${n}_dshaft_screw_type`]);
-    _val(`hub${n}_dshaft_screw_size`,s[`hub${n}_dshaft_screw_size`]);
     _val(`hub${n}_keyway_w`,         s[`hub${n}_keyway_w`]);
     _val(`hub${n}_keyway_h`,         s[`hub${n}_keyway_h`]);
-    _chk(`hub${n}_keyway_screw`,     s[`hub${n}_keyway_screw`]);
-    _val(`hub${n}_keyway_screw_type`,s[`hub${n}_keyway_screw_type`]);
-    _val(`hub${n}_keyway_screw_size`,s[`hub${n}_keyway_screw_size`]);
     _val(`hub${n}_screw_hole_dia`,   s[`hub${n}_screw_hole_dia`]);
     if (s[`hub${n}_height`] !== undefined) {
       const hEl = document.getElementById(`hub${n}_height`);
@@ -1531,17 +1466,9 @@ async function applySettings(s) {
       odEl.value = s[`hub${n}_od`];
       odEl._userSet = true;
     }
-    // Restore top-level section visibility
-    const ret = document.getElementById(`hub${n}_retention`).value;
-    const isSS = isSetScrewValue(ret);
-    document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSS);
-    document.getElementById(`hub${n}_dshaft_opts`).classList.toggle('hidden', ret !== 'd_shaft');
-    document.getElementById(`hub${n}_keyway_opts`).classList.toggle('hidden', ret !== 'keyway');
-    // Restore sub-option visibility
-    const dsScrew = document.getElementById(`hub${n}_dshaft_screw`).checked;
-    document.getElementById(`hub${n}_dshaft_screw_opts`).classList.toggle('hidden', !dsScrew);
-    const kwScrew = document.getElementById(`hub${n}_keyway_screw`).checked;
-    document.getElementById(`hub${n}_keyway_screw_opts`).classList.toggle('hidden', !kwScrew);
+    applyBoreSettings(n, s);
+    document.getElementById(`hub${n}_setscrew_opts`).classList.toggle(
+      'hidden', !isSetScrewValue(document.getElementById(`hub${n}_retention`).value));
   }
 
   // Spokes P1
@@ -1695,7 +1622,7 @@ function fieldName(key) {
   const lab = document.querySelector(`label[for="${id}"]`) || (el ? el.closest('label') : null);
   let name = lab ? lab.textContent : '';
   name = name.replace(/\(.*?\)/g, '').replace(/\s+/g, ' ').trim();
-  if (!name) name = key.replace(/^p2_/, '').replace(/^(hub|spokes|flange)\d_?/, '$1 ').replace(/_/g, ' ').trim();
+  if (!name) name = key.replace(/^p2_/, '').replace(/^(hub|spokes|flange|bore|spline)\d_?/, '$1 ').replace(/_/g, ' ').trim();
   name = name.charAt(0).toUpperCase() + name.slice(1);
   const dual = document.getElementById('dual_enable').checked;
   const which = /^(p2_|hub2|spokes2|flange2)/.test(key) ? 'Pulley 2 '
@@ -1772,6 +1699,7 @@ function resetSettings() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.onload = async () => {
   populatePitches('HTD');
+  await loadSplines();
   const restored = await loadSettings();
   loadParamsFromUrl();   // URL params override saved settings when present
   if (!_threadFromDesign) applyThreadDefault();   // a new design starts from your default
@@ -1869,7 +1797,7 @@ function _validateBore(n) {
   const warnEl  = document.getElementById(`bore-warn-${n}`);
   if (!warnEl || !boreEl) return;
 
-  const bore    = parseFloat(boreEl.value) || 0;
+  const bore    = boreReach(n);          // a spline's slots reach its major diameter
   const od      = parseFloat(document.getElementById(n === 1 ? 'od' : 'p2_od').value) || 0;
   const spec    = n === 1 ? currentSpec : (currentSpec2 || currentSpec);
 
@@ -2486,15 +2414,8 @@ function buildParams() {
     backlash_preset:  bp,
     backlash_custom:  document.getElementById('backlash_custom').value,
   };
-  // Bore profile (D-flat / keyway) is always included so 2D preview reflects hub bore
-  // even when 3D Features is toggled off.
-  const _r1 = document.getElementById('hub1_retention').value;
-  if (_r1 === 'd_shaft') {
-    p.hub_flat_depth = parseFloat(document.getElementById('hub1_flat_depth').value) || 0.5;
-  } else if (_r1 === 'keyway') {
-    p.hub_keyway_w = parseFloat(document.getElementById('hub1_keyway_w').value) || 4;
-    p.hub_keyway_h = parseFloat(document.getElementById('hub1_keyway_h').value) || 2;
-  }
+  // The bore's shape (Size card) goes with every request, 2D and 3D.
+  boreParams(p, 1, '');
   if (fb && document.getElementById('hub1_enabled').checked) {
     p.hub_od     = document.getElementById('hub1_od').value;
     p.hub_height = document.getElementById('hub1_height').value;
@@ -2514,14 +2435,7 @@ function buildParams() {
       p2_backlash_preset:  bp2,
       p2_backlash_custom:  document.getElementById('p2_backlash_custom').value,
     });
-    // P2 bore profile always included
-    const _r2 = document.getElementById('hub2_retention').value;
-    if (_r2 === 'd_shaft') {
-      p.p2_hub_flat_depth = parseFloat(document.getElementById('hub2_flat_depth').value) || 0.5;
-    } else if (_r2 === 'keyway') {
-      p.p2_hub_keyway_w = parseFloat(document.getElementById('hub2_keyway_w').value) || 4;
-      p.p2_hub_keyway_h = parseFloat(document.getElementById('hub2_keyway_h').value) || 2;
-    }
+    boreParams(p, 2, 'p2_');
     if (fb && document.getElementById('hub2_enabled').checked) {
       p.p2_hub_od     = document.getElementById('hub2_od').value;
       p.p2_hub_height = document.getElementById('hub2_height').value;
@@ -3660,6 +3574,8 @@ const DIM_ROWS = [
   ['root_diameter',          'Root diameter'],
   ['tooth_height',           'Groove depth'],
   ['pitch_line_diff',        'Pitch line differential'],
+  ['spline_minor',           'Spline minor (the bore)'],
+  ['spline_major',           'Spline major (its reach)'],
   ['belt_width',             'Belt width'],
   ['face_width',             'Face width (belt + clearance)'],
   ['face_width_min',         'Minimum face width'],
@@ -4038,6 +3954,179 @@ function load3DModel(url) {
   }
 }
 
+// ── Bore Shape (the Sprocket app's; splines from cct_common via /api/splines) ─
+// Round, D-flat, Keyway or Spline, per pulley, in the Size card; every export
+// cuts the same bore. A spline replaces the round bore and sets Bore
+// Diameter to its minor diameter (the field can't be typed in then); its
+// major diameter is how far the bore reaches, for every wall check.
+let SPLINES = null;                     // /api/splines: ISO 14 sizes, ISO 4156 modules
+const boreShape = n => document.getElementById(`bore${n}_shape`).value;
+const _bid = n => (n === 1 ? 'bore' : 'p2_bore');
+const _sv = (n, k) => document.getElementById(`spline${n}_${k}`).value;
+
+// The spline as the server builds it — minor and major — or null.
+function splineOf(n) {
+  if (boreShape(n) !== 'spline') return null;
+  if (_sv(n, 'type') === 'involute') {
+    const m = parseFloat(_sv(n, 'm')) || 1, z = parseInt(_sv(n, 'z')) || 20;
+    const pa = parseFloat(_sv(n, 'pa')) || 30, root = pa === 30 ? _sv(n, 'root') : 'fillet';
+    const k = { '30flat': [1.5, 1.0], '30fillet': [1.8, 1.0], '37.5fillet': [1.4, 0.8], '45fillet': [1.2, 0.6] }[`${pa}${root}`];
+    return { minor: m * (z - k[1]), major: m * (z + k[0]), estimated: pa !== 30 };
+  }
+  return { minor: parseFloat(_sv(n, 'minor')) || 0, major: parseFloat(_sv(n, 'major')) || 0, estimated: false };
+}
+// How far the bore reaches: a spline's major diameter, else the bore.
+function boreReach(n) {
+  const sp = splineOf(n);
+  return sp ? sp.major : (parseFloat(document.getElementById(_bid(n)).value) || 0);
+}
+
+// The query keys: the hub_ names the exports have always read for a D-flat
+// or keyway; bore_shape + spline_* for a spline.
+function boreParams(p, n, prefix) {
+  const shape = boreShape(n), g = id => document.getElementById(`hub${n}_${id}`).value;
+  if (shape === 'flat') {
+    p[`${prefix}hub_flat_depth`] = parseFloat(g('flat_depth')) || 0.5;
+  } else if (shape === 'key') {
+    p[`${prefix}hub_keyway_w`] = parseFloat(g('keyway_w')) || 4;
+    p[`${prefix}hub_keyway_h`] = parseFloat(g('keyway_h')) || 2;
+  } else if (shape === 'spline') {
+    p[`${prefix}bore_shape`] = 'spline';
+    const t = _sv(n, 'type');
+    p[`${prefix}spline_type`] = t;
+    const keys = t === 'involute' ? ['m', 'z', 'pa', 'root'] : ['n', 'minor', 'major', 'width'];
+    for (const k of keys) p[`${prefix}spline_${k}`] = _sv(n, k);
+  }
+}
+
+const SPLINE_KEYS = ['type', 'preset', 'n', 'minor', 'major', 'width', 'pa', 'root', 'm', 'z'];
+function boreSettings(n) {
+  const out = { [`bore${n}_shape`]: boreShape(n) };
+  for (const k of SPLINE_KEYS) out[`spline${n}_${k}`] = _sv(n, k);
+  return out;
+}
+function applyBoreSettings(n, s) {
+  if (s[`bore${n}_shape`] !== undefined) document.getElementById(`bore${n}_shape`).value = s[`bore${n}_shape`];
+  for (const k of SPLINE_KEYS) {
+    const v = s[`spline${n}_${k}`];
+    if (v === undefined) continue;
+    const el = document.getElementById(`spline${n}_${k}`);
+    if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) el.dataset.want = v;   // filled later
+    el.value = v;
+  }
+  showBoreShape(n);
+}
+function boreFromLink(p, n, pre) {
+  const el = document.getElementById(`bore${n}_shape`);
+  if (p.get(`${pre}bore_shape`) === 'spline') {
+    el.value = 'spline';
+    for (const k of SPLINE_KEYS) {
+      if (!p.has(`${pre}spline_${k}`)) continue;
+      const f = document.getElementById(`spline${n}_${k}`);
+      f.value = p.get(`${pre}spline_${k}`);
+      if (f.tagName === 'SELECT' && f.value !== p.get(`${pre}spline_${k}`)) f.dataset.want = p.get(`${pre}spline_${k}`);
+    }
+  } else if (p.has(`${pre}hub_flat_depth`)) {
+    el.value = 'flat';
+    document.getElementById(`hub${n}_flat_depth`).value = p.get(`${pre}hub_flat_depth`);
+  } else if (p.has(`${pre}hub_keyway_w`)) {
+    el.value = 'key';
+    document.getElementById(`hub${n}_keyway_w`).value = p.get(`${pre}hub_keyway_w`);
+    if (p.has(`${pre}hub_keyway_h`)) document.getElementById(`hub${n}_keyway_h`).value = p.get(`${pre}hub_keyway_h`);
+  } else if (p.has(`${pre}bore`)) {
+    el.value = 'round';
+  }
+  showBoreShape(n);
+}
+
+// Show the fields of the chosen shape; a spline sets and locks the bore.
+function showBoreShape(n) {
+  const shape = boreShape(n);
+  for (const k of ['flat', 'key', 'spline'])
+    document.getElementById(`bore${n}_${k}_fields`).classList.toggle('hidden', shape !== k);
+  const inv = _sv(n, 'type') === 'involute';
+  onSplineSizeQuiet(n);                 // the Size menu names the sizes, whoever set them
+  document.getElementById(`spline${n}_straight`).classList.toggle('hidden', inv);
+  document.getElementById(`spline${n}_involute`).classList.toggle('hidden', !inv);
+  const flatRoot = parseFloat(_sv(n, 'pa')) === 30;
+  document.getElementById(`spline${n}_root`).disabled = !flatRoot;
+  if (!flatRoot) document.getElementById(`spline${n}_root`).value = 'fillet';
+  const boreEl = document.getElementById(_bid(n));
+  const note = document.getElementById(`bore${n}_note`);
+  const sp = splineOf(n);
+  boreEl.disabled = !!sp;
+  if (sp && sp.minor > 0) {
+    boreEl.value = +sp.minor.toFixed(3);
+    note.textContent = `Set by the spline: the bore is its minor diameter, ${sp.minor.toFixed(2)} mm. ` +
+      'Change the spline below, or set Bore Shape to Round to type a bore.';
+    document.getElementById(`spline${n}_info`).textContent =
+      `minor ${sp.minor.toFixed(2)} mm${sp.estimated ? ' ≈' : ''} · major ${sp.major.toFixed(2)} mm` +
+      (sp.estimated ? ' — ≈ the looser published minor; ISO 4156\'s table isn\'t public' : '');
+  }
+  note.classList.toggle('hidden', !sp);
+}
+
+function onBoreShapeChange(n) {
+  showBoreShape(n);
+  _validateBore(n);
+  _onBoreChangeHub(n);
+  onHubChange(n);            // the screw note and count follow the shape
+  schedulePreview();
+}
+// A preset fills N × d × D × B.
+function onSplinePreset(n) {
+  const v = _sv(n, 'preset');
+  if (v) {
+    const [N, d, D, B] = v.split(',').map(Number);
+    for (const [k, x] of [['n', N], ['minor', d], ['major', D], ['width', B]])
+      document.getElementById(`spline${n}_${k}`).value = x;
+  }
+  onBoreShapeChange(n);
+}
+// Typed sizes: the preset shows the matching row, or none.
+function onSplineSize(n) {
+  const key = ['n', 'minor', 'major', 'width'].map(k => +_sv(n, k)).join(',');
+  const sel = document.getElementById(`spline${n}_preset`);
+  sel.value = [...sel.options].some(o => o.value === key) ? key : '';
+  onBoreShapeChange(n);
+}
+// The module list follows the pressure angle (ISO 4156: 45° stops at 2.5).
+function onSplinePressure(n) {
+  fillSplineModules(n);
+  onBoreShapeChange(n);
+}
+function fillSplineModules(n) {
+  if (!SPLINES) return;
+  const sel = document.getElementById(`spline${n}_m`);
+  const want = sel.dataset.want || sel.value || '1';
+  const mods = SPLINES.involute.modules[String(parseFloat(_sv(n, 'pa')) || 30)] || [];
+  sel.innerHTML = mods.map(m => `<option value="${m}">${m}</option>`).join('');
+  sel.value = mods.map(String).includes(String(want)) ? String(want) : String(mods[Math.min(2, mods.length - 1)]);
+  delete sel.dataset.want;
+}
+function fillSplinePresets(n) {
+  if (!SPLINES) return;
+  const sel = document.getElementById(`spline${n}_preset`);
+  const row = r => `<option value="${r.join(',')}">${r[0]} × ${r[1]} × ${r[2]} (B ${r[3]})</option>`;
+  sel.innerHTML = '<option value="">Custom</option>'
+    + `<optgroup label="ISO 14 light">${SPLINES.straight.light.map(row).join('')}</optgroup>`
+    + `<optgroup label="ISO 14 medium">${SPLINES.straight.medium.map(row).join('')}</optgroup>`;
+  onSplineSizeQuiet(n);
+}
+function onSplineSizeQuiet(n) {
+  const key = ['n', 'minor', 'major', 'width'].map(k => +_sv(n, k)).join(',');
+  const sel = document.getElementById(`spline${n}_preset`);
+  sel.value = [...sel.options].some(o => o.value === key) ? key : '';
+}
+async function loadSplines() {
+  try { SPLINES = await (await fetch('/api/splines')).json(); } catch (e) { return; }
+  for (const n of [1, 2]) { fillSplinePresets(n); fillSplineModules(n); showBoreShape(n); }
+}
+function _splinePic(label) {
+  const n = label.htmlFor.includes('spline2') ? 2 : 1;
+  return _sv(n, 'type') === 'involute' ? '/static/help/spline_involute.svg' : '/static/help/spline_straight.svg';
+}
+
 // ── Hub section ───────────────────────────────────────────────────────────────
 
 // ── Set screws (ADR-013) ────────────────────────────────────────────────────
@@ -4055,11 +4144,8 @@ function activeScrew(n) {
   let size, count, type;
   if (isSetScrewValue(r)) {
     size = g('screw_size').value; count = parseInt(g('screw_count').value) || 1; type = r;
-  } else if (r === 'd_shaft' && g('dshaft_screw').checked) {
-    size = g('dshaft_screw_size').value; count = 1; type = g('dshaft_screw_type').value;
-  } else if (r === 'keyway' && g('keyway_screw').checked) {
-    size = g('keyway_screw_size').value; count = 1; type = g('keyway_screw_type').value;
   } else return null;
+  if (boreShape(n) !== 'round') count = 1;     // one screw, on the flat / key / first slot
   const hold    = SCREW_HOLD[type] || 'thread';
   const holeDia = parseFloat(g('screw_hole_dia').value) || 0;
   const custom  = size === 'Custom';
@@ -4237,7 +4323,7 @@ function applyISO773Default(n) {
   const hubDepth = Math.round((t2 + r) * 10) / 10;
   document.getElementById(`hub${n}_keyway_w`).value = W;
   document.getElementById(`hub${n}_keyway_h`).value = hubDepth;
-  onHubChange(n);
+  onBoreShapeChange(n);
 }
 
 function toggleAdvanced(n) {
@@ -4657,25 +4743,14 @@ function onHubChange(n) {
 
   _clampHubInput(document.getElementById(`hub${n}_height`));
   _clampHubInput(document.getElementById(`hub${n}_od`));
-  const ssOpts    = document.getElementById(`hub${n}_setscrew_opts`);
-  const dsOpts    = document.getElementById(`hub${n}_dshaft_opts`);
-  const kwOpts    = document.getElementById(`hub${n}_keyway_opts`);
-
-  ssOpts.classList.toggle('hidden', !isSetScrew);
-  dsOpts.classList.toggle('hidden', retention !== 'd_shaft');
-  kwOpts.classList.toggle('hidden', retention !== 'keyway');
-
-  // D-shaft set screw sub-options
-  if (retention === 'd_shaft') {
-    const dsScrew = document.getElementById(`hub${n}_dshaft_screw`).checked;
-    document.getElementById(`hub${n}_dshaft_screw_opts`).classList.toggle('hidden', !dsScrew);
-  }
-
-  // Keyway set screw sub-options
-  if (retention === 'keyway') {
-    const kwScrew = document.getElementById(`hub${n}_keyway_screw`).checked;
-    document.getElementById(`hub${n}_keyway_screw_opts`).classList.toggle('hidden', !kwScrew);
-  }
+  document.getElementById(`hub${n}_setscrew_opts`).classList.toggle('hidden', !isSetScrew);
+  // A shaped bore takes one screw, aimed at its flat, key or first slot.
+  const shape = boreShape(n);
+  const where = { flat: 'on the D-flat', key: 'into the keyway', spline: 'into the first spline slot' }[shape];
+  const shapeNote = document.getElementById(`hub${n}_shape_note`);
+  shapeNote.textContent = where ? `One screw, ${where} (Bore Shape, Size card).` : '';
+  shapeNote.classList.toggle('hidden', !where);
+  document.getElementById(`hub${n}_screw_count`).disabled = !!where;
 
   _syncScrewHole(n);
   _validateHub(n);
@@ -4717,7 +4792,7 @@ function onHubEnabledChange(n) {
 
 function _validateHub(n) {
   const info    = document.getElementById(`hub${n}_info`);
-  const bore    = parseFloat(document.getElementById(n === 1 ? 'bore' : 'p2_bore').value) || 0;
+  const bore    = boreReach(n);          // a spline's major: its slots reach that far
   const hubOD   = parseFloat(document.getElementById(`hub${n}_od`).value) || 0;
   const hubH    = parseFloat(document.getElementById(`hub${n}_height`).value) || 0;
   const retention = document.getElementById(`hub${n}_retention`).value;
@@ -4736,8 +4811,8 @@ function _validateHub(n) {
       lines.push(`⚠ Wall too thin (need ≥ ${minWallToBore} mm for ${screwSize})`);
     if (hubH < minHubH)
       lines.push(`⚠ Hub height too short (need ≥ ${minHubH} mm for ${screwSize})`);
-  } else if (retention === 'd_shaft') {
-    const wall = (hubOD - bore) / 2;
+  } else if (boreShape(n) !== 'round') {
+    const wall = (hubOD - boreReach(n)) / 2;
     lines.push(`Wall: ${wall.toFixed(1)} mm`);
   }
 
@@ -5265,12 +5340,22 @@ function onAdvBothToggle(n) {
     hub_od:                 '/static/help/hub_size.svg',
     hub_retention:          '/static/help/hub_retention.svg',
     hub_screw_size:         '/static/help/hub_screw_size.svg',
-    hub_dshaft_screw_size:  '/static/help/hub_screw_size.svg',
-    hub_keyway_screw_size:  '/static/help/hub_screw_size.svg',
     // depends on the pulley's Retention Method (standard screws 90°, captured nuts 180°)
     hub_screw_count: label =>
       document.getElementById(label.htmlFor.replace('screw_count', 'retention')).value === 'set_screw_nut'
         ? '/static/help/hub_screw_count_nut.svg' : '/static/help/hub_screw_count_std.svg',
+    // Bore Shape, Size card (bore1_* / spline1_*, and 2)
+    bore_shape:             '/static/help/bore_shape.svg',
+    spline_type:            label => _splinePic(label),
+    spline_preset:          '/static/help/spline_straight.svg',
+    spline_n:               '/static/help/spline_straight.svg',
+    spline_minor:           '/static/help/spline_straight.svg',
+    spline_major:           '/static/help/spline_straight.svg',
+    spline_width:           '/static/help/spline_straight.svg',
+    spline_pa:              '/static/help/spline_involute.svg',
+    spline_root:            '/static/help/spline_involute.svg',
+    spline_m:               '/static/help/spline_involute.svg',
+    spline_z:               '/static/help/spline_involute.svg',
     hub_flat_depth:         '/static/help/hub_flat_depth.svg',
     hub_keyway_w:           '/static/help/hub_keyway_w.svg',
     hub_keyway_h:           '/static/help/hub_keyway_h.svg',
@@ -5330,7 +5415,7 @@ function onAdvBothToggle(n) {
   // that wraps its checkbox and so has no for= to look up.
   for (const label of document.querySelectorAll('label[for], label[data-picture]')) {
     const src = label.dataset.picture
-             || PICTURES[label.htmlFor.replace(/^p2_/, '').replace(/^(spokes|hub|flange)[12]_/, '$1_')];
+             || PICTURES[label.htmlFor.replace(/^p2_/, '').replace(/^(spokes|hub|flange|bore|spline)[12]_/, '$1_')];
     if (!src) continue;
     label.classList.add('has-picture');
     label.addEventListener('mouseenter', () => show(label, src));

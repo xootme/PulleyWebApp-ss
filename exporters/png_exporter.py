@@ -602,6 +602,7 @@ def generate_png(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spline=None,
 ) -> bytes:
     """Rasterise the SVG export to PNG.  Falls back to legacy Pillow renderer if Cairo unavailable."""
     if _check_cairosvg():
@@ -615,6 +616,7 @@ def generate_png(
             fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
             include_data=False,
             flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
+            spline=spline,
         )
         return _svg_to_png(svg, size_px)
     return _generate_png_legacy(
@@ -626,6 +628,7 @@ def generate_png(
         fillet_base_mm=fillet_base_mm, size_px=size_px,
         bg_color=bg_color, groove_color=groove_color, bore_color=bore_color,
         flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
+        spline=spline,
     )
 
 
@@ -650,6 +653,7 @@ def _generate_png_legacy(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spline=None,
 ) -> bytes:
     """Legacy Pillow-based renderer — kept for reference."""
     key = _profile_key(family, pitch)
@@ -711,9 +715,9 @@ def _generate_png_legacy(
     BORE_SAMPLES = max(64, num_teeth * 4)
     bore_px = []
     if R_bore > 0:
-        if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+        if spline or flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
             from exporters.step_exporter import _build_bore_2d
-            _bp = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+            _bp = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline)
             if _bp is not None:
                 bore_px = [to_px(x, y) for x, y in list(_bp.exterior.coords)[:-1]]
         if not bore_px:
@@ -836,6 +840,8 @@ def generate_png_dual(
     flat_depth_mm2: float = 0.0,
     keyway_w_mm2: float = 0.0,
     keyway_h_mm2: float = 0.0,
+    spline1=None,
+    spline2=None,
 ) -> bytes:
     """Rasterise the dual SVG export to PNG.  Falls back to legacy Pillow renderer if Cairo unavailable."""
     if _check_cairosvg():
@@ -858,6 +864,7 @@ def generate_png_dual(
             include_data=False,
             flat_depth_mm1=flat_depth_mm1, keyway_w_mm1=keyway_w_mm1, keyway_h_mm1=keyway_h_mm1,
             flat_depth_mm2=flat_depth_mm2, keyway_w_mm2=keyway_w_mm2, keyway_h_mm2=keyway_h_mm2,
+            spline1=spline1, spline2=spline2,
         )
         return _svg_to_png(svg, size_px)
     return _generate_png_dual_legacy(
@@ -879,6 +886,7 @@ def generate_png_dual(
         groove_color=groove_color, bore_color=bore_color,
         flat_depth_mm1=flat_depth_mm1, keyway_w_mm1=keyway_w_mm1, keyway_h_mm1=keyway_h_mm1,
         flat_depth_mm2=flat_depth_mm2, keyway_w_mm2=keyway_w_mm2, keyway_h_mm2=keyway_h_mm2,
+        spline1=spline1, spline2=spline2,
     )
 
 
@@ -918,6 +926,8 @@ def _generate_png_dual_legacy(
     flat_depth_mm2: float = 0.0,
     keyway_w_mm2: float = 0.0,
     keyway_h_mm2: float = 0.0,
+    spline1=None,
+    spline2=None,
 ) -> bytes:
     """Legacy Pillow-based dual renderer — kept for reference."""
     wrapped1, R_OD1, edge_a1, spec1 = _build_pulley_poly(
@@ -1096,17 +1106,17 @@ def _generate_png_dual_legacy(
         draw.line(sp + [sp[0]], fill=PULLEY_STROKE, width=line_w, joint='curve')
 
     BORE_SAMPLES_D = max(64, 4 * max(num_teeth1, num_teeth2))
-    for bore_mm, flat_depth, kw_w, kw_h, cx_off in (
-        (bore_mm1, flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, cx1),
-        (bore_mm2, flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, cx2),
+    for bore_mm, flat_depth, kw_w, kw_h, cx_off, spline in (
+        (bore_mm1, flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, cx1, spline1),
+        (bore_mm2, flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, cx2, spline2),
     ):
         R_bore = bore_mm / 2.0
         if R_bore <= 0:
             continue
         bore_pts_mm = []
-        if flat_depth > 0.0 or (kw_w > 0.0 and kw_h > 0.0):
+        if spline or flat_depth > 0.0 or (kw_w > 0.0 and kw_h > 0.0):
             from exporters.step_exporter import _build_bore_2d
-            _bp = _build_bore_2d(bore_mm, flat_depth, kw_w, kw_h)
+            _bp = _build_bore_2d(bore_mm, flat_depth, kw_w, kw_h, spline=spline)
             if _bp is not None:
                 bore_pts_mm = [(x + cx_off, y) for x, y in list(_bp.exterior.coords)[:-1]]
         if not bore_pts_mm:

@@ -159,6 +159,29 @@ spokes like every other export; spoke-void arcs in the STL are drawn within
 0.01 mm; a merged printed top flange overlaps the hub 0.1 mm so the STL is
 watertight.
 
+## 7. Splined bores — REQUIRED for STEP (2026-09-28, ADR-014)
+
+Bore Shape can now be a spline (ISO 14 straight-sided, ISO 4156 involute),
+from `cct_common.splines` — the same module Sprocket Designer's bores use
+(its handoff has the same obligation). The app's STEP download refuses a
+spline today (`_run_ss_worker`: "STEP can't carry a splined bore yet"),
+so nothing is exported wrong; this is to lift that.
+
+- **The hole** is `splines.path(sp)`: closed, counter-clockwise, first
+  slot / space on +x, lines and circular arcs only (each involute flank is
+  tangent arcs within 0.001 mm). The worker job carries it as
+  `spline = {kind, n, minor, major, width, module, pressure, root}`;
+  `cct_common.splines.Spline(**spline)` rebuilds it. Bore diameter = minor.
+- **What small_step needs**: a bore profile that isn't a CIRCLE (+ flat /
+  key) — a closed wire of LINEs and CIRCLE arcs cut through the pulley and
+  any integrated flange. No new entity type: cadquery's STEP of the same
+  hole is LINE and CIRCLE edges only.
+- **Set screw**: one screw into the first slot (+x); a captured nut's inner
+  face on the slot bottom, `R = major / 2` (as a keyway's face).
+- **Reference**: the cadquery track's STEP (`PULLEY_STEP_BACKEND=cadquery`)
+  cuts it exactly — valid solid, volume within 7e-4 of the STL
+  (`tests/test_bore_shape.py`).
+
 ## Not STEP-related (nothing to do)
 
 The Threaded screw holes dialog and your-default / design values, hub OD

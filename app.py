@@ -189,6 +189,14 @@ _SS_BIN = os.path.normpath(_SS_BIN)
 _SS_AVAILABLE = os.path.isfile(_SS_BIN)
 
 
+def _has_spline(obj) -> bool:
+    """A STEP job with a splined bore anywhere in it (dual and all-parts
+    jobs nest their pulleys' settings)."""
+    if isinstance(obj, dict):
+        return bool(obj.get('spline')) or any(_has_spline(v) for v in obj.values())
+    return False
+
+
 def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
     """Run the small_step worker; return STEP bytes.
 
@@ -200,6 +208,11 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
     """
     if os.environ.get('PULLEY_STEP_BACKEND', '').strip().lower() == 'cadquery':
         return _run_cadquery_worker(worker_kw, timeout=timeout)
+    if _has_spline(worker_kw):
+        # small_step builds a bore only from a circle (+ flat / key) today
+        # (SMALL_STEP_HANDOFF); say so rather than export a round hole.
+        raise RuntimeError("STEP can't carry a splined bore yet — download the STL, "
+                           "or the DXF / SVG for the exact spline outline.")
     if getattr(sys, 'frozen', False):
         from exporters.step_worker_ss import run as _ss_run
         try:
@@ -655,11 +668,39 @@ def _resolve_key(family, pitch):
 
 
 def _get_bore(args, key='bore', default=8.0):
-    """Parse bore diameter from request args, clamped to minimum 1 mm."""
+    """Parse bore diameter from request args, clamped to minimum 1 mm. A
+    splined bore is its spline's minor diameter, whatever the bore field says."""
+    sp = _spline_of(args, key[:-len('bore')])
+    if sp:
+        return sp['minor']
     try:
         return max(1.0, float(args.get(key, default)))
     except (ValueError, TypeError):
         return default
+
+
+def _spline_of(args, prefix=''):
+    """The pulley's splined bore (cct_common.splines) as its fields — JSON for
+    the STEP worker, rebuilt by the exporters — or None unless Bore Shape is
+    Spline: {prefix}bore_shape=spline, then {prefix}spline_type straight
+    (spline_n, spline_minor, spline_major, spline_width: ISO 14's N x d x D x B)
+    or involute (spline_m, spline_z, spline_pa, spline_root: ISO 4156). A size
+    the standard can't make raises ValueError, which the routes answer as 400."""
+    if args.get(f'{prefix}bore_shape') != 'spline':
+        return None
+    import dataclasses
+    from cct_common import splines
+    g = lambda k, d: args.get(f'{prefix}spline_{k}', d)     # noqa: E731
+    try:
+        if g('type', 'straight') == 'involute':
+            sp = splines.involute(float(g('m', 1.0)), int(float(g('z', 20))),
+                                  float(g('pa', 30)), g('root', 'flat'))
+        else:
+            sp = splines.straight(int(float(g('n', 6))), float(g('minor', 23)),
+                                  float(g('major', 26)), float(g('width', 6)))
+    except (TypeError, ValueError) as e:
+        raise ValueError(f'Spline: {e}') from None
+    return dataclasses.asdict(sp)
 
 
 def _get_preset_value(spec, preset_type, preset_key, custom_val):
@@ -782,6 +823,7 @@ def api_onshape_import():
             **_step_screw_kw(args, pfx),
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spline=_spline_of(args, pfx),
             spoke_count=sp_c if sp_en else 0,
             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
             rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
@@ -920,6 +962,14 @@ def api_belt():
         return jsonify({'n_belt': n_belt, 'center_dist_mm': round(C_corr, 4)})
 
 
+@app.route('/api/splines')
+def api_splines():
+    """The Bore Shape menu's spline choices (cct_common.splines): ISO 14's
+    light and medium series, and ISO 4156's modules per pressure angle."""
+    from cct_common import splines
+    return jsonify(splines.presets())
+
+
 @app.route('/api/dimensions')
 def api_dimensions():
     """The Dimensions panel under the 2D view (the Sprocket app's): each
@@ -955,6 +1005,25 @@ def api_dimensions():
                  'outside_diameter_built': 2 * R_OD, 'root_diameter': od - 2 * tooth_ht,
                  'tooth_height': tooth_ht, 'pitch_line_diff': spec['pitch_line_diff'],
                  'belt_width': belt_w, 'face_width': face_w, 'approx': {}}
+
+            # A splined bore: its minor diameter is the bore, its major the
+            # reach every wall is measured to (Sprocket's ADR-021).
+            sp = _spline_of(args, pfx)
+            if sp:
+                from cct_common import splines as _spl
+                sp_obj = _spl.Spline(**sp)
+                p.update(spline=sp_obj.label(), spline_minor=sp['minor'], spline_major=sp['major'])
+                for which, (tag, src) in _spl.basis(sp_obj).items():
+                    if tag == _spl.EST:
+                        p['approx'][f'spline_{which}'] = src
+                root_d = od - 2 * tooth_ht
+                if sp['major'] > root_d - 2.0:
+                    warnings.append(f'{who}the spline reaches Ø{sp["major"]:g} mm, within 1 mm of the '
+                                    f'tooth root (Ø{root_d:.2f} mm): pick a smaller spline or more teeth.')
+                hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0)
+                if three_d and hub_od > 0 and sp['major'] > hub_od - 2.0:
+                    warnings.append(f'{who}the spline reaches Ø{sp["major"]:g} mm, leaving under 1 mm '
+                                    f'of wall in the Ø{hub_od:g} mm hub.')
 
             flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
             p['flanged'] = flanged
@@ -1141,6 +1210,7 @@ def download_dxf():
             flat_depth_mm = max(0.0, float(request.args.get('p2_hub_flat_depth', 0.0)))
             keyway_w_mm   = max(0.0, float(request.args.get('p2_hub_keyway_w',   0.0)))
             keyway_h_mm   = max(0.0, float(request.args.get('p2_hub_keyway_h',   0.0)))
+            spline = _spline_of(request.args, 'p2_')
             filename = f'{family}-{pitch}-{num_teeth}T-P2.dxf'
         else:
             num_teeth = max(spec['min_teeth'], int(request.args.get('teeth', spec['min_teeth'])))
@@ -1154,6 +1224,7 @@ def download_dxf():
             flat_depth_mm = max(0.0, float(request.args.get('hub_flat_depth', 0.0)))
             keyway_w_mm   = max(0.0, float(request.args.get('hub_keyway_w',   0.0)))
             keyway_h_mm   = max(0.0, float(request.args.get('hub_keyway_h',   0.0)))
+            spline = _spline_of(request.args, '')
             filename = f'{family}-{pitch}-{num_teeth}T.dxf'
 
         dxf = generate_dxf(
@@ -1164,6 +1235,7 @@ def download_dxf():
             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub_od,
             rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
             flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
+            spline=spline,
         )
         dxf = _embed_dxf(dxf if isinstance(dxf, bytes) else dxf.encode(), request.args)
         _mirror_to_addins(dxf, filename)
@@ -1301,6 +1373,7 @@ def _build_png_from_request(args, size_px=480):
         flat_depth_mm=flat_depth_mm,
         keyway_w_mm=keyway_w_mm,
         keyway_h_mm=keyway_h_mm,
+        spline=_spline_of(args, ''),
     )
 
 
@@ -1341,6 +1414,7 @@ def _build_svg_from_request(args):
         include_data=include_data,
         include_callouts=include_callouts,
         flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
+        spline=_spline_of(args, ''),
     )
 
 
@@ -1382,6 +1456,7 @@ def _build_svg_from_request_p2(args):
         include_data=include_data,
         include_callouts=include_callouts,
         flat_depth_mm=flat_depth_mm, keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm,
+        spline=_spline_of(args, 'p2_'),
     )
 
 
@@ -1434,6 +1509,7 @@ def _build_png_dual_from_request(args, size_px=480):
         fillet_tip_mm2=sp2_ft, fillet_base_mm2=sp2_fb,
         flat_depth_mm1=flat1, keyway_w_mm1=kw1, keyway_h_mm1=kh1,
         flat_depth_mm2=flat2, keyway_w_mm2=kw2, keyway_h_mm2=kh2,
+        spline1=_spline_of(args, ''), spline2=_spline_of(args, 'p2_'),
     )
 
 
@@ -1654,6 +1730,8 @@ def _parse_hub_params(args, prefix=''):
     flat_depth   = max(0.0, float(args.get(f'{prefix}hub_flat_depth',   0.0)))
     keyway_w     = max(0.0, float(args.get(f'{prefix}hub_keyway_w',     0.0)))
     keyway_h     = max(0.0, float(args.get(f'{prefix}hub_keyway_h',     0.0)))
+    if args.get(f'{prefix}bore_shape') == 'spline':
+        flat_depth = keyway_w = keyway_h = 0.0     # one bore shape at a time
     ss = _set_screw(args, prefix)
     if ss is not None:              # a named size (ADR-013) decides these, not the page's copy
         screw_dia, captured_nut = ss.major, ss.hold == 'nut'
@@ -1835,6 +1913,7 @@ def api_preview_stl():
                 flat_depth_mm1=fd1, flat_depth_mm2=fd2,
                 keyway_w_mm1=kw_w1, keyway_h_mm1=kw_h1,
                 keyway_w_mm2=kw_w2, keyway_h_mm2=kw_h2,
+                spline1=_spline_of(request.args, ''), spline2=_spline_of(request.args, 'p2_'),
                 spoke_count1=sp_cnt if sp_en else 0,
                 spoke_width_mm1=sp_w, spoke_hub_od_mm1=sp_hub,
                 fillet_tip_mm1=sp_ft, fillet_base_mm1=sp_fb, rim_depth_mm1=sp_rim,
@@ -1869,6 +1948,7 @@ def api_preview_stl():
                     spokes_enabled=sp_en, spoke_hub_od_mm=sp_hub,
                     rim_depth_mm=sp_rim,
                     flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                    spline=_spline_of(request.args, ''),
                 )
                 if fp.get('nubs_enabled') and fp.get('flange_3dprint') and fp.get('top_separate'):
                     _socket_meshes = build_socket_meshes(
@@ -1884,6 +1964,7 @@ def api_preview_stl():
             stl = generate_pulley_stl_preview(
                 family, pitch, num_teeth, bore_mm, belt_height,
                 cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+                spline=_spline_of(request.args, ''),
                 spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
                 fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
                 spoke_height_mm=sp_h if sp_en else 0.0,
@@ -1941,6 +2022,7 @@ def download_stl():
         stl = generate_pulley_stl(
             family, pitch, num_teeth, bore_mm, belt_height,
             cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+            spline=_spline_of(request.args, pfx),
             spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
             fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
             spoke_height_mm=sp_h if sp_en else 0.0,
@@ -1964,6 +2046,7 @@ def download_stl():
                 hub_od_mm=hub_od, spokes_enabled=sp_en,
                 spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
                 flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                spline=_spline_of(request.args, pfx),
             )
             flange_mesh = trimesh.load(_io.BytesIO(flange_bytes), file_type='stl')
             stl = trimesh.util.concatenate([pulley_mesh, flange_mesh]).export(file_type='stl')
@@ -1984,6 +2067,7 @@ def download_stl():
                 hub_od_mm=eff_hub_od, spokes_enabled=sp_en,
                 spoke_hub_od_mm=sp_hub, rim_depth_mm=sp_rim,
                 flat_depth_mm=fd, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                spline=_spline_of(request.args, pfx),
             )
 
             if not fp.get('top_separate'):
@@ -2020,6 +2104,7 @@ def download_stl():
                 stl_preview = generate_pulley_stl_preview(
                     family, pitch, num_teeth, bore_mm, belt_height,
                     cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+                    spline=_spline_of(request.args, pfx),
                     spoke_count=sp_count, spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
                     fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb, rim_depth_mm=sp_rim,
                     spoke_height_mm=sp_h if sp_en else 0.0,
@@ -2083,6 +2168,7 @@ def download_step():
             **_step_screw_kw(request.args, pfx),
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spline=_spline_of(request.args, pfx),
             spoke_count=sp_c if sp_en else 0,
             spoke_width_mm=sp_w,
             spoke_hub_od_mm=sp_hub,
@@ -2213,6 +2299,7 @@ def download_all_step():
                 **_step_screw_kw(request.args, pfx),
                 captured_nut=cn, flat_depth_mm=fd,
                 keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                spline=_spline_of(request.args, pfx),
                 spoke_count=sp_c if sp_en else 0,
                 spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
                 rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
@@ -2449,6 +2536,7 @@ def download_all_dxf():
             flat_depth_mm2=float(request.args.get('p2_hub_flat_depth', 0.0)),
             keyway_w_mm2=float(request.args.get('p2_hub_keyway_w',     0.0)),
             keyway_h_mm2=float(request.args.get('p2_hub_keyway_h',     0.0)),
+            spline1=_spline_of(request.args, ''), spline2=_spline_of(request.args, 'p2_'),
             center_dist_mm=center_dist,
         )
         dxf_bytes = _embed_dxf(dxf_bytes, request.args)
@@ -2731,6 +2819,7 @@ def download_flange_stl():
                 nub_height_mm=fp.get('nub_height_mm', 2.0),
                 nub_allowance_mm=fp.get('nub_allowance_mm', 0.2),
                 flat_depth_mm=flat_d, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                spline=_spline_of(args, ''),
             )
             suffix    = '-upper-flange' if which == 'top' else '-lower-flange'
         else:
@@ -2747,6 +2836,7 @@ def download_flange_stl():
                 spoke_hub_od_mm=spoke_hub_od,
                 rim_depth_mm=spoke_rim_depth,
                 flat_depth_mm=flat_d, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                spline=_spline_of(args, ''),
             )
             suffix = '-flanges'
 
@@ -2897,6 +2987,7 @@ def download_flange_assembly():
         pulley_bytes = generate_pulley_stl(
             family, pitch, num_teeth, bore_mm, belt_h,
             cl_mm, bl_mm, pe_mm, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
+            spline=_spline_of(args, ''),
             spoke_count=sp_cnt if sp_en else 0,
             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
             fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
@@ -3207,6 +3298,7 @@ def api_download_step_async():
                         **_step_screw_kw(query_params, pfx),
                         captured_nut=cn, flat_depth_mm=fd,
                         keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                        spline=_spline_of(query_params, pfx),
                         spoke_count=sp_c if sp_en else 0,
                         spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
                         rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
@@ -3348,6 +3440,7 @@ def api_download_all_step_async():
                             **_step_screw_kw(query_params, pfx),
                             captured_nut=cn, flat_depth_mm=fd,
                             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+                            spline=_spline_of(query_params, pfx),
                             spoke_count=sp_c if sp_en else 0,
                             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
                             rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
@@ -3631,6 +3724,7 @@ def api_download_step():
             **_step_screw_kw(params_dict, pfx),
             captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spline=_spline_of(params_dict, pfx),
             spoke_count=sp_c if sp_en else 0,
             spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
             rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
@@ -3750,6 +3844,7 @@ def api_download_stl():
             hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
             screw_dia_mm=sd, screw_count=sc, captured_nut=cn, flat_depth_mm=fd,
             keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+            spline=_spline_of(params_dict, pfx),
             spoke_count=sp_c if sp_en else 0, spoke_hub_od_mm=sp_hub,
             rim_depth_mm=sp_rim, spoke_width_mm=sp_w,
             fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,

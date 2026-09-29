@@ -214,18 +214,41 @@ def _d_bore_polygon(R_bore: float, flat_depth_mm: float, sections: int = 64) -> 
     return ShapelyPolygon(pts)
 
 
+def _as_spline(spline):
+    """A splined bore (cct_common.splines.Spline) from its fields — a dict
+    travels through the STEP worker as JSON — or None."""
+    if not spline:
+        return None
+    from cct_common import splines as _spl
+    return spline if isinstance(spline, _spl.Spline) else _spl.Spline(**spline)
+
+
+def _spline_slot_h(spline, bore_mm: float) -> float:
+    """How far a spline's slots reach past the bore (its minor diameter): a
+    set screw aims into the first slot (on +x) and a captured nut sits on the
+    slot bottom, as they do on a keyway's face. 0 without a spline."""
+    sp = _as_spline(spline)
+    return (sp.major - bore_mm) / 2.0 if sp else 0.0
+
+
 def _build_bore_2d(bore_mm: float, flat_depth_mm: float = 0.0,
                    keyway_w_mm: float = 0.0, keyway_h_mm: float = 0.0,
-                   sections: int = _BORE_SECTIONS):
+                   sections: int = _BORE_SECTIONS, spline=None):
     """Return a Shapely polygon for the full bore cross-section.
 
     Starts as a circle (or D-flat chord if flat_depth_mm > 0), then unions a
-    keyway rectangle outward from the bore wall.  This is the single source of
-    truth used by both the pulley body and the bottom flange so their profiles
-    are guaranteed to match.
+    keyway rectangle outward from the bore wall — or, for a splined bore, the
+    spline's own outline (cct_common.splines, sampled to 0.02 mm chords),
+    which replaces the round bore. This is the single source of truth used by
+    both the pulley body and the bottom flange so their profiles are
+    guaranteed to match.
 
     Returns None when bore_mm <= 1.0 mm.
     """
+    sp = _as_spline(spline)
+    if sp is not None:
+        from cct_common import splines as _spl
+        return shapely_orient(ShapelyPolygon(_spl.sample_closed(_spl.path(sp), 0.02)), sign=1.0)
     R_bore = bore_mm / 2.0
     if R_bore <= 0.5:
         return None
@@ -454,7 +477,8 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                       hub_z_start: float = None,
                       flange_ext_mm: float = 0.0,
                       set_screw=None,
-                      lobe_cone_mm: float = 0.0) -> trimesh.Trimesh:
+                      lobe_cone_mm: float = 0.0,
+                      spline=None) -> trimesh.Trimesh:
     """
     Union a hub boss onto `body`, subtract the bore through the full height,
     then optionally drill radial set-screw holes and (for captured_nut=True)
@@ -586,7 +610,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
     # ── Bore + keyway (_build_bore_2d is the single source of truth) ─────────
     if R_bore > 0.5:
-        bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+        bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline)
         if bore_2d is not None:
             extra  = 0.5
             bore_h = total_height + extra * 2
@@ -604,6 +628,7 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
     # Keyway:  screw at angle=0, nut pocket against keyway slot outer face.
     # (Same as _build_pulley_mesh; the D-flat case was missing here, which left
     # a wall between the flat and the pocket in the downloaded STL.)
+    keyway_h_mm = keyway_h_mm or _spline_slot_h(spline, bore_mm)   # a spline's slot: as a key
     if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
         screw_angles = [0.0]
 
@@ -720,6 +745,7 @@ def generate_pulley_stl(
     flange_enabled: bool = False,
     flange_height_mm: float = 0.0,
     set_screw=None,
+    spline=None,
 ) -> bytes:
     """
     Return binary STL bytes of an extruded timing pulley solid.
@@ -832,8 +858,25 @@ def generate_pulley_stl(
                                hub_z_start=hub_z_start_stl,
                                flange_ext_mm=_flange_ext_stl,
                                set_screw=set_screw,
-                               lobe_cone_mm=_lobe_cone_stl)
+                               lobe_cone_mm=_lobe_cone_stl,
+                               spline=spline)
     return result.export(file_type='stl')
+
+
+def _cq_spline_solid(spline, height: float, z0: float):
+    """A splined bore's cutter: its exact outline (cct_common.splines) —
+    lines, and arcs through their midpoints, so the STEP carries true LINE
+    and CIRCLE edges — extruded height from z0."""
+    import cadquery as cq
+    from cct_common import splines as spl
+    segs = spl.path(_as_spline(spline))
+    wp = cq.Workplane('XY').moveTo(*segs[0].start)
+    for seg in segs:
+        if isinstance(seg, spl.Line):
+            wp = wp.lineTo(*seg.end)
+        else:
+            wp = wp.threePointArc(seg.point_at(seg.start_angle + seg.sweep / 2), seg.end)
+    return wp.close().extrude(height, clean=False).translate((0.0, 0.0, z0))
 
 
 def _cq_screw_profile(wp, r_nominal: float, screw_hole: dict = None):
@@ -891,6 +934,7 @@ def generate_pulley_step(
     nub_height_mm: float = 2.0,
     nub_allowance_mm: float = 0.2,
     screw_hole: dict = None,
+    spline=None,
     screw_nut=None,
     _return_cq: bool = False,
 ) -> bytes:
@@ -1156,7 +1200,9 @@ def generate_pulley_step(
     if R_bore > 0.5:
         extra  = 0.5
         bore_h = total_height + _flange_h_ext + extra * 2
-        if flat_depth_mm > 0.0:
+        if spline:
+            bore_solid = _cq_spline_solid(spline, bore_h, -extra - _flange_h_ext)
+        elif flat_depth_mm > 0.0:
             # Build D-bore with a true arc + one straight line so the STEP file
             # carries an exact circle edge rather than a tessellated polyline.
             flat_x    = R_bore - flat_depth_mm
@@ -1189,6 +1235,7 @@ def generate_pulley_step(
         result = result.cut(kw_box, clean=False)
 
     # ── 6. Set-screw holes + nut pockets ──────────────────────────────────────
+    keyway_h_mm = keyway_h_mm or _spline_slot_h(spline, bore_mm)   # a spline's slot: as a key
     if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
         screw_angles = [0.0]
 
@@ -1337,6 +1384,7 @@ def generate_flange_step(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spline=None,
     tooth_root_radius: float = None,
     _return_cq: bool = False,
 ) -> bytes:
@@ -1450,7 +1498,9 @@ def generate_flange_step(
         # bore circle edge in the STEP file is an exact OCCT cylinder (same as
         # the pulley body), not the revolved inner face.  When r_inner > R_bore
         # this also trims the flange down to bore diameter.
-        if R_bore > 0.5 and (r_inner >= R_bore or flat_depth_mm > 0.0 or keyway_w_mm > 0.0):
+        if R_bore > 0.5 and spline:
+            flange = flange.cut(_cq_spline_solid(spline, 200.0, -200.0 + 0.5), clean=False)
+        elif R_bore > 0.5 and (r_inner >= R_bore or flat_depth_mm > 0.0 or keyway_w_mm > 0.0):
             cut_h = 200.0
             bore_cyl = (cq.Workplane('XY').circle(R_bore)
                         .extrude(cut_h, clean=False)
@@ -1520,6 +1570,7 @@ def _flange_kw_from_pulley_kw(kw: dict) -> dict:
         flat_depth_mm    = kw.get('flat_depth_mm', 0.0),
         keyway_w_mm      = kw.get('keyway_w_mm', 0.0),
         keyway_h_mm      = kw.get('keyway_h_mm', 0.0),
+        spline           = kw.get('spline'),
     )
 
 
@@ -1840,7 +1891,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                        spoke_count=0, spoke_width_mm=0.0, spoke_hub_od_mm=0.0,
                        fillet_tip_mm=0.0, fillet_base_mm=0.0, rim_depth_mm=0.0,
                        spoke_height_mm=0.0, flange_enabled=False, flange_height_mm=0.0,
-                       set_screw=None):
+                       set_screw=None, spline=None):
     """
     Build a single watertight pulley trimesh solid.
 
@@ -1877,7 +1928,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
     screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
 
     # ── 2D bore cross-section (D-shaped / keyway / round) ────────────────────
-    bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
+    bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline)
 
     # ── Belt section: outer toothed profile minus bore hole ───────────────────
     outline, _R_OD_mesh, _ = _build_outline_points(
@@ -2038,6 +2089,7 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
     # ── Set-screw holes + nut pockets (boolean — radial features) ────────────
     # D-shaft: force screw at angle=0 (aligned with flat), nut against flat face.
     # Keyway:  force screw at angle=0 (into keyway slot), nut against slot outer face.
+    keyway_h_mm = keyway_h_mm or _spline_slot_h(spline, bore_mm)   # a spline's slot: as a key
     if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
         screw_angles = [0.0]
 
@@ -2190,6 +2242,8 @@ def generate_drive_stl_preview(
     keyway_h_mm1: float = 0.0,
     keyway_w_mm2: float = 0.0,
     keyway_h_mm2: float = 0.0,
+    spline1=None,
+    spline2=None,
     spoke_count1: int = 0,
     spoke_width_mm1: float = 0.0,
     spoke_hub_od_mm1: float = 0.0,
@@ -2248,6 +2302,7 @@ def generate_drive_stl_preview(
                             screw_dia_mm=screw_dia_mm1, screw_count=screw_count1,
                             captured_nut=captured_nut1, flat_depth_mm=flat_depth_mm1,
                             keyway_w_mm=keyway_w_mm1, keyway_h_mm=keyway_h_mm1,
+                            spline=spline1,
                             spoke_count=spoke_count1, spoke_width_mm=spoke_width_mm1,
                             spoke_hub_od_mm=spoke_hub_od_mm1, fillet_tip_mm=fillet_tip_mm1,
                             fillet_base_mm=fillet_base_mm1, rim_depth_mm=rim_depth_mm1,
@@ -2264,6 +2319,7 @@ def generate_drive_stl_preview(
                             screw_dia_mm=screw_dia_mm2, screw_count=screw_count2,
                             captured_nut=captured_nut2, flat_depth_mm=flat_depth_mm2,
                             keyway_w_mm=keyway_w_mm2, keyway_h_mm=keyway_h_mm2,
+                            spline=spline2,
                             spoke_count=spoke_count2, spoke_width_mm=spoke_width_mm2,
                             spoke_hub_od_mm=spoke_hub_od_mm2, fillet_tip_mm=fillet_tip_mm2,
                             fillet_base_mm=fillet_base_mm2, rim_depth_mm=rim_depth_mm2,
@@ -2300,7 +2356,8 @@ def generate_drive_stl_preview(
                                          rim_depth_mm=rim_depth_mm1,
                                          flat_depth_mm=flat_depth_mm1,
                                          keyway_w_mm=keyway_w_mm1,
-                                         keyway_h_mm=keyway_h_mm1):
+                                         keyway_h_mm=keyway_h_mm1,
+                                         spline=spline1):
                 m.apply_translation([cx1, 0.0, 0.0])
                 fl_meshes1.append(m)
             # Subtract socket holes from p1 when nubs are active
@@ -2335,7 +2392,8 @@ def generate_drive_stl_preview(
                                          rim_depth_mm=rim_depth_mm2,
                                          flat_depth_mm=flat_depth_mm2,
                                          keyway_w_mm=keyway_w_mm2,
-                                         keyway_h_mm=keyway_h_mm2):
+                                         keyway_h_mm=keyway_h_mm2,
+                                         spline=spline2):
                 m.apply_translation([cx2, 0.0, 0.0])
                 fl_meshes2.append(m)
             # Subtract socket holes from p2 when nubs are active
@@ -2418,6 +2476,7 @@ def generate_pulley_stl_preview(
     socket_meshes: list = None,
     set_screw=None,
     centre: bool = True,
+    spline=None,
 ) -> bytes:
     """
     Same as generate_pulley_stl but centres the mesh at the origin so
@@ -2441,7 +2500,7 @@ def generate_pulley_stl_preview(
         fillet_base_mm=fillet_base_mm, rim_depth_mm=rim_depth_mm,
         spoke_height_mm=spoke_height_mm,
         flange_enabled=flange_enabled, flange_height_mm=flange_height_mm,
-        set_screw=set_screw,
+        set_screw=set_screw, spline=spline,
     )
     if socket_meshes:
         # Union sockets first so overlapping cylinders are resolved into one solid

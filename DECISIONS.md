@@ -1,5 +1,93 @@
 # Architectural Decision Records
 
+## ADR-016 — Undo / redo: settings snapshots; a state the page is about to correct is never a step
+**Date:** 2026-09-28
+**Status:** Active
+
+**Context:** Sprocket Designer added undo/redo (its ADR-022, EBoxDesigner's pattern). The pulley page
+corrects some settings after a pause — a centre distance snapped to a whole belt 3 s after typing or
+**Min**, teeth under the minimum, a ratio / OD / belt length snapped, Pulley 2 set by Lock Ratio — and a
+first version recorded the uncorrected value as a step, so Undo could return to an invalid state.
+
+**Decision:**
+- **A step is a snapshot of the page's settings as saved** (`collectSettings`; `applySettings`
+  restores it through the same path startup uses). One gesture is one step: a visit to a field
+  however many edits, one click with its knock-ons; the page's own follow-ups (an automatic clearance
+  height) fold into the step that caused them. Panel open/closed isn't part of a step.
+- **Pending fix-ups hold recording**: a scheduled correction holds by name, a running one by depth
+  (so nested fixes can't release each other); the settled result is recorded as one step. Undo while a
+  correction is pending drops that change.
+- ↶ / ↷ in the top bar, Ctrl+Z / Ctrl+Y outside text fields, tooltips naming the change.
+- Found with it: re-snapping a centre shown to 0.01 mm read a hair over its belt and added a tooth
+  (49.07 → 51.61) on Redo and on reload. `correct_center_distance` and the page allow 0.01 tooth of
+  slack (`BELT_TOOTH_SLACK`).
+
+**Consequences:** `tests/browser/undo_ui.js` (27 checks, real mouse and key events);
+`tests/test_center_distance.py` (re-snapping 2 000 random drives keeps the belt).
+
+## ADR-015 — Dimensions panel with spec warnings; a new design's clearance meets the spec
+**Date:** 2026-09-28
+**Status:** Active
+
+**Context:** Sprocket Designer shows a Dimensions table under its drawing with warnings where a
+recommended spec is broken. The belt standards and manuals are in `Pdf/` (ISO 13050, ISO 5294, ISO 17396
+preview, Gates Light Power & Precision, Fenner precision belting).
+
+**Decision:**
+- **The panel** (`/api/dimensions`, `geometry/belt_specs.py`) lists each pulley's diameters, groove
+  depth, pitch differential, belt / face width, spline and flange figures, and for two pulleys the drive:
+  belt, centre, ratio, wrap and teeth in mesh on the smaller pulley, free span.
+- **Warnings name their source**: face width (ISO 13050 Tables 8/17/26/34, ISO 5294 Table 4, Gates
+  Table 23), flange height past the OD (ISO 13050 Annex D ht + a, ISO 5294 Annex A, Gates Table 22),
+  flange angle 8–25°, teeth in mesh under 6 (Gates torque factors), wrap under 60°, flanging a
+  two-pulley drive and long spans (Gates). **Auto-fix** sets clearance height, flange rim radius and
+  angle. No published figure → the rule on the app's own data, marked ≈, or no check (T, AT and
+  STD 2/3/5 face width).
+- **A new design's Clearance Height makes the face the spec's minimum** (belt ÷ 20 where there is no
+  figure) and follows the profile, belt width and flanges until the user types one; saved designs and
+  links keep theirs (`clearance_auto` in the saved settings).
+- A printed flange on a spoked pulley measures its rim from the tooth root (as built), so the panel
+  reports its real reach past the OD.
+
+**Consequences:** `tests/test_dimensions.py`; `tests/browser/dims_ui.js` (20 checks).
+
+## ADR-014 — Bore Shape in the Size card, splines included (cct_common.splines)
+**Date:** 2026-09-28
+**Status:** Active (2D, STL, cadquery STEP); small_step STEP pending
+
+**Context:**
+The bore's shape lived in the 3D hub's Retention menu (D-Shaft, Keyway, each with an optional set
+screw of its own), so a 2D-only user (laser / waterjet) couldn't cut a D-flat or keyway, and there
+was no spline. Sprocket Designer puts **Bore Shape** — Round, D-flat, Keyway, Spline — under Bore
+Diameter in its Size card (its ADR-021), and its spline geometry moved to `cct_common.splines`
+(0.19.0) so both apps draw the same holes.
+
+**Decision:**
+- **Bore Shape is a Size-card setting** (per pulley), used by every export, 2D and 3D. D-flat and
+  keyway keep their fields and their `hub_flat_depth` / `hub_keyway_w` / `hub_keyway_h` query keys;
+  a spline sends `bore_shape=spline` and `spline_type` (straight: `spline_n`, `spline_minor`,
+  `spline_major`, `spline_width`; involute: `spline_m`, `spline_z`, `spline_pa`, `spline_root`),
+  prefixed `p2_` for Pulley 2. One shape at a time: a spline zeroes the flat and key server-side.
+- **Retention is the set screw only** (threaded / captured nut / insert / none). With a shaped bore
+  it is one screw, on the flat, into the key slot or into the first spline slot (all on +X); the
+  captured nut sits on that face — for a spline, the slot bottom (major diameter), as for a key.
+- **A spline replaces the round bore** and sets Bore Diameter to its minor diameter (`_get_bore`);
+  the page locks the field and says why. Its major diameter is the bore's reach for every wall
+  check, and the Dimensions panel warns when it comes within 1 mm of the tooth root or the hub OD.
+- **Exact where the format allows**: SVG paths and DXF LINE/ARC entities straight from
+  `splines.path`; cadquery STEP builds the same lines and three-point arcs (LINE and CIRCLE edges —
+  no new STEP entity type); STL and the preview sample it at 0.02 mm chords.
+- **small_step can't cut a spline yet**, so its STEP download refuses with that reason (400) rather
+  than export a round hole (SMALL_STEP_HANDOFF §7).
+- **Old designs move over**: a saved design with D-Shaft / Keyway retention becomes Bore Shape D-flat /
+  Keyway, its screw (if it had one) becoming the Retention; old links with `hub_flat_depth` /
+  `hub_keyway_w` open as D-flat / Keyway, with or without a hub.
+
+**Consequences:** `tests/test_bore_shape.py` and `tests/browser/bore_ui.js` (26 checks);
+`cct_common/tests/test_splines.py` for the geometry. Help pictures `bore_shape.svg`,
+`spline_straight.svg`, `spline_involute.svg` (`build_bore_shape.py`), `hub_retention.svg` without
+the D-Shaft / Keyway columns.
+
 ## ADR-013 — Set-screw holes sized by how the screw holds (cct_common.screws)
 **Date:** 2026-09-27
 **Status:** Active (STL); STEP pending

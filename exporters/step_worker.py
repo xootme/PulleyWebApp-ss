@@ -80,6 +80,7 @@ def main():
             captured_nut      = params.get('captured_nut', False),
             screw_hole        = params.get('screw_hole'),
             screw_nut         = params.get('screw_nut'),
+            spline            = params.get('spline'),
             flat_depth_mm     = params.get('flat_depth_mm', 0.0),
             keyway_w_mm       = params.get('keyway_w_mm', 0.0),
             keyway_h_mm       = params.get('keyway_h_mm', 0.0),

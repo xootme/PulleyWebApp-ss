@@ -28,16 +28,19 @@
 <h2>&#9881; 3D Features Guide</h2>
 
 <h3>Belt Height (mm)</h3>
-<p>Axial thickness of both pulleys and the belt body in the 3D preview. Set to match your belt's nominal
-width, then add 0.5–1 mm so the belt does not rub on any flange or hub step.</p>
+<p>Your belt's width: the belt body in the 3D preview, and the part of each pulley it runs on. Set it
+to your belt's nominal width; Clearance Height adds the extra width the pulley needs.</p>
 <p>Belt Height is <strong>shared by both pulleys</strong> — it is set once in the drive bar and applies
 to the entire assembly. Common belt widths: 6 mm, 9 mm, 10 mm, 15 mm.</p>
 
 <h3>Clearance Height (mm)</h3>
 <p>Extra axial height added to the pulley body beyond the belt height. Provides a small shoulder on
 each face so the belt sits inside the pulley rather than flush with the top face.</p>
-<p>Default: Belt Height ÷ 20 (e.g. 0.5 mm for a 10 mm belt). Set to <code>0</code> to match belt
-height exactly.</p>
+<p>Default: whatever makes the pulley face the minimum width the belt's standard asks for (ISO 13050,
+ISO 5294 or Gates — the Dimensions panel's <em>Minimum face width</em>); Belt Height ÷ 20 for a profile
+with no published figure (T, AT, STD 2/3/5M). It follows the profile, belt width and flanges until you type
+a value of your own; a saved design or link keeps its own. Set to <code>0</code> to match belt height
+exactly.</p>
 
 </body>
 </html>

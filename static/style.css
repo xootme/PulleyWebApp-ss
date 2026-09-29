@@ -1224,3 +1224,8 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
 }
 .undo-btn:hover:not(:disabled) { background: #e2e8f0; border-color: #94a3b8; }
 .undo-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Bore Shape's spline fields (Size card): label / field pairs in two columns */
+.spline-grid { display: grid; grid-template-columns: 1fr 90px; gap: 4px 8px; align-items: center; margin: 4px 0; }
+.spline-grid label { margin: 0; }
+.spline-grid input, .spline-grid select { width: 100%; }

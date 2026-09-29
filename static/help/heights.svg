@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="842" height="340"
-     viewBox="0 0 842 340" font-family="system-ui,Segoe UI,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="842" height="359"
+     viewBox="0 0 842 359" font-family="system-ui,Segoe UI,sans-serif">
 <defs>
   <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6"
           orient="auto-start-reverse" markerUnits="strokeWidth">
     <path d="M0,1 L9,5 L0,9 z" fill="#0078d4"/>
   </marker>
 </defs>
-<rect width="842" height="340" fill="#fff"/>
+<rect width="842" height="359" fill="#fff"/>
 
 <text x="30" y="34" font-size="22" font-weight="700" fill="#0078d4">Belt Height and Clearance Height</text>
 <text x="30" y="58" font-size="13" fill="#475569">Side view of a pulley's teeth, with the belt wrapped around them (diagram)</text>
@@ -26,5 +26,5 @@
 <line x1="180" y1="264.0" x2="690" y2="264.0" stroke="#94a3b8" stroke-dasharray="3 3"/>
 <line x1="480" y1="110.0" x2="498" y2="110.0" stroke="#94a3b8" stroke-dasharray="3 3"/>
 <line x1="480" y1="250.0" x2="498" y2="250.0" stroke="#94a3b8" stroke-dasharray="3 3"/>
-<text x="30" y="306.0" font-size="13" fill="#475569">Belt Height: set it to your belt's width. Clearance Height adds to the pulley's height, half on each face, so the belt sits inside it.</text><text x="30" y="325.0" font-size="13" fill="#475569">Clearance is drawn at 2 mm so it shows; the default is Belt Height ÷ 20 (0.5 mm for a 10 mm belt). Both apply to the whole drive.</text>
+<text x="30" y="306.0" font-size="13" fill="#475569">Belt Height: set it to your belt's width. Clearance Height adds to the pulley's height, half on each face, so the belt sits inside it.</text><text x="30" y="325.0" font-size="13" fill="#475569">Clearance is drawn at 2 mm so it shows. By default it makes the pulley as wide as the belt’s standard asks (the Dimensions panel’s</text><text x="30" y="344.0" font-size="13" fill="#475569">Minimum face width); Belt Height ÷ 20 where no figure is published. Both apply to the whole drive.</text>
 </svg>

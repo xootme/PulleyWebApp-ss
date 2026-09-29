@@ -639,6 +639,29 @@ def _profile_key(family: str, pitch: str) -> str:
     return PROFILE_KEY_PREFIX.get(family, '') + pitch
 
 
+def _spline_bore_d(spline, cx: float = 0.0):
+    """A splined bore's outline as an SVG path (exact L and A commands, from
+    cct_common.splines), centred at (cx, 0), y flipped as the drawing is —
+    which turns a counter-clockwise arc into sweep-flag 0. None without one."""
+    from exporters.step_exporter import _as_spline
+    from cct_common import splines as spl
+    sp = _as_spline(spline)
+    if sp is None:
+        return None
+    segs = spl.path(sp)
+    x0, y0 = segs[0].start
+    parts = [f"M {cx + x0:.4f} {-y0:.4f}"]
+    for seg in segs:
+        x, y = seg.end
+        if isinstance(seg, spl.Line):
+            parts.append(f"L {cx + x:.4f} {-y:.4f}")
+        else:
+            large = 1 if abs(seg.sweep) > math.pi else 0
+            flag = 0 if seg.sweep > 0 else 1
+            parts.append(f"A {seg.radius:.4f} {seg.radius:.4f} 0 {large} {flag} {cx + x:.4f} {-y:.4f}")
+    return " ".join(parts) + " Z"
+
+
 def generate_svg(
     family: str,
     pitch: str,
@@ -661,6 +684,7 @@ def generate_svg(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spline=None,
 ) -> str:
     """
     Returns an SVG string: full pulley profile + optional info panel.
@@ -710,7 +734,10 @@ def generate_svg(
     path_d = " ".join(d_parts)
 
     sw = max(0.15, R_OD * 2.0 * 0.004)   # stroke width scaled to pulley size
-    if R_bore > 0:
+    _spline_d = _spline_bore_d(spline) if R_bore > 0 else None
+    if _spline_d:
+        bore_el = f'<path d="{_spline_d}" fill="none" stroke="#1a1a1a" stroke-width="{sw:.3f}"/>'
+    elif R_bore > 0:
         if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
             from exporters.step_exporter import _build_bore_2d
             _bore_poly = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
@@ -1094,6 +1121,8 @@ def generate_svg_dual(
     flat_depth_mm2: float = 0.0,
     keyway_w_mm2: float = 0.0,
     keyway_h_mm2: float = 0.0,
+    spline1=None,
+    spline2=None,
 ) -> str:
     """
     SVG of two pulleys with the belt wrapped around them.
@@ -1291,9 +1320,12 @@ def generate_svg_dual(
             f'stroke-linejoin="round"/>'
         )
 
-    def _bore_el(bore_mm, cx_off, flat_depth, kw_w, kw_h, sw):
+    def _bore_el(bore_mm, cx_off, flat_depth, kw_w, kw_h, sw, spline=None):
         if bore_mm <= 0:
             return ''
+        _sd = _spline_bore_d(spline, cx_off)
+        if _sd:
+            return f'<path d="{_sd}" fill="none" stroke="#1a1a1a" stroke-width="{sw:.4f}"/>'
         if flat_depth > 0.0 or (kw_w > 0.0 and kw_h > 0.0):
             from exporters.step_exporter import _build_bore_2d
             _bp = _build_bore_2d(bore_mm, flat_depth, kw_w, kw_h)
@@ -1307,8 +1339,8 @@ def generate_svg_dual(
         return (f'<circle cx="{cx_off:.4f}" cy="{cy:.4f}" r="{bore_mm/2:.4f}" '
                 f'fill="none" stroke="#1a1a1a" stroke-width="{sw:.4f}"/>')
 
-    bore1_el = _bore_el(bore_mm1, cx1, flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, sw1)
-    bore2_el = _bore_el(bore_mm2, cx2, flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, sw2)
+    bore1_el = _bore_el(bore_mm1, cx1, flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, sw1, spline1)
+    bore2_el = _bore_el(bore_mm2, cx2, flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, sw2, spline2)
 
     # ── Spoke voids (dual) ────────────────────────────────────────────────────
     def _dual_spokes(wrapped_pts, R_OD, bore_mm, cx_off,

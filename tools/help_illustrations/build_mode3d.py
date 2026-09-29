@@ -109,13 +109,15 @@ def heights():
 {dims}
 """
     width = xd + 188 + 150
-    height = top + body_h + 76
-    body += (f'<text x="{GAP}" y="{height - 34}" font-size="13" fill="#475569">Belt Height: set it to '
+    height = top + body_h + 95
+    body += (f'<text x="{GAP}" y="{height - 53}" font-size="13" fill="#475569">Belt Height: set it to '
              f'your belt\'s width. Clearance Height adds to the pulley\'s height, half on each face, '
              f'so the belt sits inside it.</text>'
-             f'<text x="{GAP}" y="{height - 15}" font-size="13" fill="#475569">Clearance is drawn at '
-             f'{clear:g} mm so it shows; the default is Belt Height ÷ 20 (0.5 mm for a 10 mm belt). '
-             f'Both apply to the whole drive.</text>')
+             f'<text x="{GAP}" y="{height - 34}" font-size="13" fill="#475569">Clearance is drawn at '
+             f'{clear:g} mm so it shows. By default it makes the pulley as wide as the belt’s standard '
+             f'asks (the Dimensions panel’s</text>'
+             f'<text x="{GAP}" y="{height - 15}" font-size="13" fill="#475569">Minimum face width); '
+             f'Belt Height ÷ 20 where no figure is published. Both apply to the whole drive.</text>')
     (HELP / "heights.svg").write_text(svg_page(width, height, body), encoding="utf-8")
     print("wrote static/help/heights.svg", f"{width:.0f} x {height:.0f}")
 

@@ -45,6 +45,6 @@
 <text x="0" y="8.4" dy="0.35em" text-anchor="middle" font-size="2.068" font-weight="700" fill="#0078d4" paint-order="stroke" stroke="#fff" stroke-width="0.620" font-family="system-ui,Segoe UI,sans-serif">Ø 12 mm</text>
 </svg>
 <text x="390" y="332" text-anchor="middle" font-size="13"
-      fill="#475569">The bore is the hole for the shaft. Match it to your shaft; a D-flat or
-keyway can be added under Hub in 3D Mode.</text>
+      fill="#475569">The bore is the hole for the shaft. Match it to your shaft; Bore Shape,
+just below, makes it a D-flat, keyway or spline.</text>
 </svg>

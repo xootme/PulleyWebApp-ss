@@ -211,6 +211,36 @@ When unchecked, only Pulley 1 is shown.</p>
       The Gear Ratio field rounds to three decimal places; tooth counts here are the ground truth.</li>
 </ul>
 
+<h3>Undo and Redo</h3>
+<p><strong>&#8630;</strong> and <strong>&#8631;</strong> in the top bar (or <strong>Ctrl+Z</strong> /
+<strong>Ctrl+Y</strong> outside a text field) step back and forward through your changes. Each step is
+one change: a visit to a field however many edits, or one click with what it sets off (Two Pulley Drive
+brings Pulley 2's panel). Hover a button to see which change it undoes or redoes.</p>
+<ul>
+  <li>A setting the page is about to correct is never a step — a centre distance waiting to snap to a
+      whole belt (after <strong>Min</strong> or typing), teeth below the minimum, a ratio or OD waiting
+      to snap. The corrected result is the step, so Undo can't return to a state that wasn't valid.</li>
+  <li>Pressing Undo while such a correction is still pending drops that change.</li>
+  <li>A new change after Undo drops the Redo steps. Opening the page, and opening or closing panels,
+      aren't steps.</li>
+</ul>
+
+<h3>Drive Dimensions and Warnings</h3>
+<p>With two pulleys, the <strong>Dimensions</strong> table under the preview has a column per pulley
+and a <strong>Drive</strong> table: the belt (teeth and length), centre distance, ratio, the wrap and
+the teeth in mesh on the smaller pulley, and the free span. The warnings check the drive against the
+Gates design manual:</p>
+<ul>
+  <li><strong>Teeth in mesh</strong> under 6 on the smaller pulley — the belt's torque rating falls
+      to &times;0.8, 0.6, 0.4 at 5, 4, 3; fewer than 3 needs a redesign (more teeth, a smaller ratio,
+      a longer centre or an idler).</li>
+  <li><strong>Wrap</strong> under 60&deg; on a loaded pulley.</li>
+  <li><strong>Flanges</strong> — a two-pulley drive with neither pulley flanged (flange one on both
+      sides); spans over 12 &times; the smaller pulley want both flanged.</li>
+</ul>
+<p>See the <a href="/static/Pulley1_2d_help.html" target="_blank">Pulley 1 guide</a> for the per-pulley
+figures and warnings.</p>
+
 <h3>Reset Button</h3>
 <p>Clears all saved settings from browser storage and reloads the page with factory defaults.</p>
 <div class="warn">All customisations (both pulleys, centre distance, ratio) will be lost. This cannot be undone.</div>

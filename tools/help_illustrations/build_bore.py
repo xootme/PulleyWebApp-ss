@@ -73,8 +73,8 @@ def main():
 <text x="{GAP}" y="30" font-size="22" font-weight="700" fill="{BLUE}">Bore Diameter</text>
 {chr(10).join(parts)}
 <text x="{width / 2:.0f}" y="{height - 16}" text-anchor="middle" font-size="13"
-      fill="#475569">The bore is the hole for the shaft. Match it to your shaft; a D-flat or
-keyway can be added under Hub in 3D Mode.</text>
+      fill="#475569">The bore is the hole for the shaft. Match it to your shaft; Bore Shape,
+just below, makes it a D-flat, keyway or spline.</text>
 </svg>"""
     OUT.write_text(out, encoding="utf-8")
     print("wrote", OUT.relative_to(HERE.parent.parent), f"{width} x {height}")

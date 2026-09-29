@@ -79,6 +79,9 @@ async function main() {
   await sleep(500);
   await hover('label[for="hub1_retention"]', '/static/help/hub_retention.svg'); // hub_ keys
   await hover('label[for="hub2_height"]', '/static/help/hub_size.svg');
+  await hover('label[for="bore1_shape"]', '/static/help/bore_shape.svg');         // bore_ keys (a macro)
+  await hover('label[for="spline1_minor"]', '/static/help/spline_straight.svg');  // spline_ keys
+  await hover('label[for="spline2_m"]', '/static/help/spline_involute.svg');
   // Number of Screws shows the picture for the selected Retention Method
   for (const [method, pic] of [['set_screw_nut', 'hub_screw_count_nut'], ['set_screw_std', 'hub_screw_count_std']]) {
     await js(`(() => { const r = document.getElementById('hub1_retention'); r.value = '${method}';

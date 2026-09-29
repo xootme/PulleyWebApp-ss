@@ -176,6 +176,27 @@ def _write_seg(msp, dxf_seg, attribs):
 # Public API
 # ---------------------------------------------------------------------------
 
+def _spline_bore_to_dxf(msp, spline, cx: float = 0.0, cy: float = 0.0, phi: float = 0.0) -> bool:
+    """A splined bore as exact LINE and ARC entities (cct_common.splines) on
+    the BORE layer, turned by phi and moved to (cx, cy). False without one."""
+    from exporters.step_exporter import _as_spline
+    from cct_common import splines as spl
+    sp = _as_spline(spline)
+    if sp is None:
+        return False
+    c, s_ = math.cos(phi), math.sin(phi)
+    at = lambda x, y: (c * x - s_ * y + cx, s_ * x + c * y + cy)   # noqa: E731
+    attribs = {'layer': 'BORE'}
+    for seg in spl.path(sp):
+        if isinstance(seg, spl.Line):
+            msp.add_line(at(*seg.start), at(*seg.end), dxfattribs=attribs)
+        else:
+            a0, a1 = (seg.start_angle, seg.end_angle) if seg.sweep > 0 else (seg.end_angle, seg.start_angle)
+            msp.add_arc(at(*seg.center), seg.radius, math.degrees(a0 + phi), math.degrees(a1 + phi),
+                        dxfattribs=attribs)
+    return True
+
+
 def generate_dxf(
     family: str,
     pitch: str,
@@ -193,6 +214,7 @@ def generate_dxf(
     flat_depth_mm: float = 0.0,
     keyway_w_mm: float = 0.0,
     keyway_h_mm: float = 0.0,
+    spline=None,
 ) -> bytes:
     """
     Return a DXF file as bytes.
@@ -227,8 +249,8 @@ def generate_dxf(
 
     # ── Bore (circle, D-flat, or keyway) ────────────────────────────────────
     if bore_mm > 0:
-        _bore_drawn = False
-        if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+        _bore_drawn = _spline_bore_to_dxf(msp, spline)
+        if not _bore_drawn and (flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0)):
             from exporters.step_exporter import _build_bore_2d
             _bp = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
             if _bp is not None:
@@ -360,6 +382,8 @@ def generate_combined_layout_dxf(
     keyway_w_mm2: float = 0.0,
     keyway_h_mm2: float = 0.0,
     center_dist_mm: float = 100.0,
+    spline1=None,
+    spline2=None,
 ) -> bytes:
     """
     Combined drive-assembly DXF: P1 tooth profile at origin, P2 at center_dist_mm,
@@ -395,15 +419,16 @@ def generate_combined_layout_dxf(
     def _draw_pulley(cx, cy, num_teeth, bore_mm, clearance_mm, backlash_mm,
                      print_extra_mm, spoke_count, spoke_width_mm, spoke_hub_od_mm,
                      rim_depth_mm, fillet_tip_mm, fillet_base_mm,
-                     flat_depth_mm, keyway_w_mm, keyway_h_mm, phi=0.0):
+                     flat_depth_mm, keyway_w_mm, keyway_h_mm, phi=0.0, spline=None):
         segs, R_OD, _edge_a, wrapped = pulley_outline_segments(
             family, pitch, num_teeth, clearance_mm, backlash_mm, print_extra_mm)
         segs = _rotate_segs(segs, phi)
         _segs_to_dxf(msp, _shift_segs(segs, cx, cy), {'layer': 'PROFILE'})
 
         if bore_mm > 0:
-            _bore_drawn = False
-            if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+            # unturned by phi, like the D-flat and key: features on +x
+            _bore_drawn = _spline_bore_to_dxf(msp, spline, cx, cy)
+            if not _bore_drawn and (flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0)):
                 from exporters.step_exporter import _build_bore_2d
                 _bp = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm)
                 if _bp is not None:
@@ -442,13 +467,13 @@ def generate_combined_layout_dxf(
     _draw_pulley(0.0, 0.0, num_teeth1, bore_mm1, clearance_mm1, backlash_mm1,
                  print_extra_mm1, spoke_count1, spoke_width_mm1, spoke_hub_od_mm1,
                  rim_depth_mm1, fillet_tip_mm1, fillet_base_mm1,
-                 flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, phi=phi_left)
+                 flat_depth_mm1, keyway_w_mm1, keyway_h_mm1, phi=phi_left, spline=spline1)
 
     if num_teeth2 > 0:
         _draw_pulley(center_dist_mm, 0.0, num_teeth2, bore_mm2, clearance_mm2, backlash_mm2,
                      print_extra_mm2, spoke_count2, spoke_width_mm2, spoke_hub_od_mm2,
                      rim_depth_mm2, fillet_tip_mm2, fillet_base_mm2,
-                     flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, phi=phi_right)
+                     flat_depth_mm2, keyway_w_mm2, keyway_h_mm2, phi=phi_right, spline=spline2)
 
     # Belt wraps around P1 at x=0 and P2 at x=center_dist_mm — no shift needed
     try:

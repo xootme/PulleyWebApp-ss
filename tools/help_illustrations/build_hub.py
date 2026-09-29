@@ -310,13 +310,11 @@ def hub_retention():
              [("none", "None", "plain round bore"),
               ("screw_std", "Threaded", "self-tapping holes"),
               ("screw_nut", "Captured Nut", "nut pocket + hole"),
-              ("screw_insert", "Heat-set Insert", "insert holes"),
-              ("dshaft", "D-Shaft", "flat in the bore"),
-              ("keyway", "Keyway", "slot for a key")],
+              ("screw_insert", "Heat-set Insert", "insert holes")],
              "hub_retention.svg",
              ["Top: the 3D preview. Bottom: the hub cut across at the set-screw height.",
-              "Holes and slots point right (0°) and up (90°); M5 screws, 12 mm bore.",
-              "Threaded, Captured Nut and Heat-set Insert are the three Set Screw choices."],
+              "Holes point right (0°) and up (90°); M5 screws, 12 mm bore.",
+              "A D-flat, keyway or spline is the Bore Shape (Size card); one screw then goes on it."],
              col_w=150, row_label=("cut at", "screw height"))
 
 
@@ -382,7 +380,7 @@ def hub_flat_depth():
                 dim(xf, 0, R_BORE, 0, 2 * w) +
                 text((xf + R_BORE) / 2, -1.0, f"{f:g} mm", 17 / s, BLUE, 700, halo=True))
 
-    _columns("Flat Depth (D-Shaft)",
+    _columns("Flat Depth (Bore Shape: D-flat)",
              [(f"flat_{d}", f"Flat Depth {d} mm", None) for d in depths],
              "hub_flat_depth.svg",
              ["Measured from the round bore (dashed) in to the flat. Measure your shaft:",

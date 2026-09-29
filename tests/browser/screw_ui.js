@@ -73,8 +73,11 @@ async function main() {
   // ── sizes ──
   const opts = await js("[...document.querySelectorAll('#hub1_screw_size option')].map(o => o.value)");
   check('size list: metric, inch and Custom', ['M2', 'M2.5', 'M10', '#2-56', '1/4-20', 'Custom'].every(v => opts.includes(v)), opts);
-  check('same list on the D-shaft and keyway screws',
-    JSON.stringify(await js("[...document.querySelectorAll('#hub2_keyway_screw_size option')].map(o => o.value)")) === JSON.stringify(opts));
+  check('same list on Pulley 2',
+    JSON.stringify(await js("[...document.querySelectorAll('#hub2_screw_size option')].map(o => o.value)")) === JSON.stringify(opts));
+  check('Retention is the set screw only: D-Shaft and Keyway moved to Bore Shape',
+    JSON.stringify(await js("[...document.querySelectorAll('#hub1_retention option')].map(o => o.value)"))
+      === '["set_screw_nut","set_screw_std","set_screw_insert","none"]');
   check('grouped Metric / Inch', JSON.stringify(await js("[...document.querySelectorAll('#hub1_screw_size optgroup')].map(g => g.label)")) === '["Metric","Inch"]');
 
   // ── threaded ──
@@ -148,12 +151,16 @@ async function main() {
   check('Custom sends its hole as the diameter', p.hub_screw_size === 'Custom' && p.hub_screw_hole_dia === 3 && p.hub_screw_dia === 3, p);
   check('hub wall note uses the Custom diameter', (await text('#hub1_info')).includes('Min height: 6 mm'), await text('#hub1_info'));
 
-  // ── D-shaft screw ──
-  await setSel('#hub1_retention', 'd_shaft');
-  await js("(() => { const c = document.getElementById('hub1_dshaft_screw'); if (!c.checked) c.click(); })()");
-  await setSel('#hub1_dshaft_screw_type', 'set_screw_insert'); await setSel('#hub1_dshaft_screw_size', '#6-32');
+  // ── a D-flat bore (Size card) with its screw (Retention) ──
+  await setSel('#bore1_shape', 'flat');
+  await setSel('#hub1_retention', 'set_screw_insert'); await setSel('#hub1_screw_size', '#6-32');
   p = await params();
-  check('D-shaft screw: inch size, insert', p.hub_screw_size === '#6-32' && p.hub_screw_hold === 'insert' && p.hub_screw_count === 1, p);
+  check('D-flat + screw: inch size, insert, one screw on the flat',
+    p.hub_screw_size === '#6-32' && p.hub_screw_hold === 'insert' && p.hub_screw_count === 1 && p.hub_flat_depth > 0, p);
+  check('…the count is fixed at one and says where',
+    await js("document.getElementById('hub1_screw_count').disabled")
+    && (await text('#hub1_shape_note')).includes('on the D-flat'), await text('#hub1_shape_note'));
+  await setSel('#bore1_shape', 'round');
 
   // ── saved and restored ──
   await setSel('#hub1_retention', 'set_screw_std'); await setSel('#hub1_screw_size', '#8-32');

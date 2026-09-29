@@ -81,17 +81,17 @@ without changing the input field.</p>
       with a hot soldering iron, and the set screw threads into the insert. Enter <strong>Insert hole
       &#8960;</strong> from your insert's datasheet (it starts at about 1.35 &times; the screw size).
       The strongest choice for a screw you will tighten hard or often.</li>
-  <li><strong>D-Shaft</strong> — A flat chord is cut in the bore to match a D-profile motor shaft.
-      See <em>D-Shaft Retention</em> below.</li>
-  <li><strong>Keyway</strong> — A rectangular slot is cut through the bore to accept a standard parallel
-      key (ISO 773 / DIN 6885). See <em>Keyway Retention</em> below.</li>
 </ul>
+<div class="note">A <strong>D-flat</strong>, <strong>keyway</strong> or <strong>spline</strong> is the
+<strong>Bore Shape</strong>, in the pulley's Size card (2D), not a Retention choice: the bore is cut the
+same with or without a hub. With one, a set screw here is a single screw, aimed at the flat, into the key
+slot or into the first spline slot, and the captured nut sits against that face.</div>
 <a class="figure" href="/static/help/hub_retention.svg" target="_blank" title="Open full size">
   <img src="/static/help/hub_retention.svg"
-       alt="The retention methods — none, threaded, captured nut, heat-set insert, D-shaft, keyway: each hub in 3D above a cut across it at the set-screw height"/>
+       alt="The retention methods — none, threaded, captured nut, heat-set insert: each hub in 3D above a cut across it at the set-screw height"/>
 </a>
 <p class="caption">Click the picture to open it full size. Top: the 3D preview; bottom: the hub cut
-across at the set-screw height, showing the holes, nut pocket, flat and key slot.</p>
+across at the set-screw height, showing the holes and the nut pocket.</p>
 
 <h3>Set Screw Size and Number of Screws</h3>
 <p><strong>Set Screw Size</strong>: metric M2–M10 or inch #2-56 to 1/4-20. The hole cut depends on
@@ -157,18 +157,18 @@ downloads still show every set-screw hole at the screw's nominal size.</p>
 </a>
 <p class="caption">Click the picture to open it full size.</p>
 
-<h3>D-Shaft Retention</h3>
-<p>A D-profile shaft has one flat face milled along part of its length. Selecting D-Shaft adds a
-matching flat chord cut in the bore so the pulley cannot rotate on the shaft.</p>
+<h3>D-flat (Bore Shape)</h3>
+<p>A D-profile shaft has one flat face milled along part of its length. Bore Shape <strong>D-flat</strong>
+(Size card) adds a matching flat chord cut in the bore so the pulley cannot rotate on the shaft.</p>
 <ul>
   <li><strong>Flat Depth (mm)</strong> — Distance from the bore wall inward to the flat face.
       Measure your actual shaft with calipers; a typical value for small motor shafts (5–8 mm) is
       <code>0.5 mm</code>.
       <div class="note">The flat is oriented at 0&deg; (+X direction in the cross-section). Rotate the pulley in your slicer to match a specific orientation.</div>
   </li>
-  <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the flat
-      face (at 0&deg;). Choose <strong>Threaded</strong> for a hole from the outside of the hub in to
-      the flat, <strong>Captured nut</strong> for a top-pocket nut, or <strong>Heat-set insert</strong>.</li>
+  <li><strong>With a set screw</strong> — pick it in <strong>Retention</strong> above: one radial
+      screw aligned with the flat (at 0&deg;), threaded, through a captured nut against the flat, or into
+      a heat-set insert.</li>
 </ul>
 <a class="figure" href="/static/help/hub_flat_depth.svg" target="_blank" title="Open full size">
   <img src="/static/help/hub_flat_depth.svg"
@@ -176,7 +176,7 @@ matching flat chord cut in the bore so the pulley cannot rotate on the shaft.</p
 </a>
 <p class="caption">Click the picture to open it full size.</p>
 
-<h3>Keyway Retention</h3>
+<h3>Keyway (Bore Shape)</h3>
 <p>A rectangular slot cut through the bore that accepts a standard parallel key (ISO 773 / DIN 6885-1).
 The key sits half in the shaft keyway and half in the hub keyway, transmitting torque through shear
 rather than friction.</p>
@@ -189,9 +189,9 @@ rather than friction.</p>
   </li>
   <li><strong>Default Key Button</strong> — Looks up your bore in the ISO 773 table and fills in Width W
       and Hub Depth. Covers bore diameters 6–170 mm; if between entries, the next-larger standard size is used.</li>
-  <li><strong>Add Set Screw</strong> — Optionally adds a radial set screw hole aligned with the keyway.
-      <strong>Threaded</strong> = a hole from the outside in to the slot; <strong>Captured nut</strong> = top-opening pocket with the
-      nut inner face against the keyway slot outer face; <strong>Heat-set insert</strong> = the insert hole you enter.
+  <li><strong>With a set screw</strong> — pick it in <strong>Retention</strong> above: one screw aligned
+      with the keyway — threaded in to the slot, a captured nut against the slot's outer face, or a
+      heat-set insert.
       <div class="note">A set screw over the keyway prevents axial movement even when the key alone would allow it.</div>
   </li>
   <li><strong>Keyway Orientation</strong> — Always at 0&deg; (+X direction). Rotate in your slicer or CAD tool to match a specific shaft clock position.</li>

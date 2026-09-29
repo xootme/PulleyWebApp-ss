@@ -52,12 +52,14 @@ def _picture_table():
 
 
 def test_every_hover_key_matches_a_control_label():
-    fors = set(re.findall(r'<label for="([\w-]+)"', INDEX))
+    # labels in a per-pulley macro (bore_shape_fields) read for="bore{{ n }}_shape"
+    fors = set().union(*(re.findall(r'<label for="([\w-]+)"', INDEX.replace('{{ n }}', n))
+                         for n in ('1', '2')))
     for key in _picture_table():
         # the page drops the pulley number: spokes1_x -> spokes_x, hub2_x -> hub_x,
-        # flange1_x -> flange_x, p2_x -> x
+        # flange1_x -> flange_x, bore1_x -> bore_x, spline1_x -> spline_x, p2_x -> x
         candidates = {key, 'p2_' + key}
-        for panel in ('spokes', 'hub', 'flange'):
+        for panel in ('spokes', 'hub', 'flange', 'bore', 'spline'):
             if key.startswith(panel + '_'):
                 candidates |= {key.replace(panel + '_', f'{panel}{n}_', 1) for n in (1, 2)}
         assert candidates & fors, f'no <label for=...> for hover key {key!r}'
