@@ -124,10 +124,23 @@ def test_small_step_hex_takes_set_screws_and_keeps_its_hub(client, monkeypatch):
 
 
 @ss_only
-def test_small_step_refuses_a_captured_nut_in_a_shaped_bore(client, monkeypatch):
-    """Still unsupported, and it must SAY so rather than lose the hub."""
+def test_small_step_captured_nut_in_a_shaped_bore_keeps_its_hub(client, monkeypatch):
+    """A captured nut in a hex bore, which also used to lose the hub.
+
+    Its stub takes the POCKET path rather than the radial-screw one, so the
+    fix that made plain set screws work did not cover it: the same rim built
+    cylinder-against-cylinder where the bore is a PLANE, and the same silent
+    result -- one solid instead of two, OCCT calling it valid. It was
+    refused by name for one commit and then routed through the same
+    negative-`bore_arg` mechanism gap 57 already had for a D-flat.
+
+    Two solids is the assertion that matters, as it is for plain screws.
+    """
     q = {**BASE, **HEX, **SCREWS, 'hub_screw_hold': 'nut',
          'hub_captured_nut': '1'}
     r = _step(client, monkeypatch, q)
-    assert r.status_code != 200
-    assert b'captured nut' in r.data
+    assert r.status_code == 200, r.data[:200]
+    n, ok, vol = _solids(r.data)
+    assert n == 2 and ok
+    stl = _load(client.get('/download/stl', query_string=q).data).volume
+    assert vol == pytest.approx(stl, rel=5e-3)
