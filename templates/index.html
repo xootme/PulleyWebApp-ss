@@ -153,6 +153,14 @@
       <span class="header-title">Timing Pulley Generator</span>
       <span class="header-version">Ver. {{ app_version }}</span>
     </div>
+    <span class="header-spacer"></span>
+    <!-- The page-wide actions, in the title bar as PCB Importer has them. -->
+    <div class="header-actions">
+      <button class="undo-btn" id="undo_btn" type="button" onclick="undo()" title="Nothing to undo (Ctrl+Z)" disabled>&#8630; Undo</button>
+      <button class="undo-btn" id="redo_btn" type="button" onclick="redo()" title="Nothing to redo (Ctrl+Y)" disabled>&#8631; Redo</button>
+      <button class="reset-btn fb-2d" type="button" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
+      <button class="btn-bug-report" type="button" onclick="openBugReport()" title="Report a bug">&#9888;</button>
+    </div>
     <div id="cct-account" class="cct-account" hidden></div>
     <div id="session-timer-box" style="display: none; margin-left: auto; background: #dc3545; border-radius: 6px; padding: 8px 16px; min-width: 140px;">
       <div style="text-align: center; font-size: 11px; color: white; margin-bottom: 4px; font-weight: 500;">
@@ -216,9 +224,6 @@
     <span class="drive-note" id="ratio_note"></span>
   </div>
   <div class="drive-bar-right">
-    <button class="undo-btn" id="undo_btn" type="button" onclick="undo()" title="Nothing to undo (Ctrl+Z)" disabled>&#8630;</button>
-    <button class="undo-btn" id="redo_btn" type="button" onclick="redo()" title="Nothing to redo (Ctrl+Y)" disabled>&#8631;</button>
-    <button class="reset-btn fb-2d" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
     <button class="import-btn fb-2d" onclick="openImportDialog()" title="Import design from an exported STEP, DXF, SVG, or STL file">&#128194; Import</button>
     <button class="drive-info-btn fb-3d" onclick="openThreadDialog()"
             title="How tight a hole set screws cut their own thread into, for your printer">Threaded screw holes</button>
@@ -230,7 +235,6 @@
             data-help2d="/static/TwoPulleyDrive_2d_help.html"
             data-help3d="/static/TwoPulleyDrive_3d_help.html"
             onclick="openHelp(this, event)" title="Help">&#9432;</button>
-    <button class="btn-bug-report" onclick="openBugReport()" title="Report a bug">&#9888;</button>
   </div>
 </div>
 
