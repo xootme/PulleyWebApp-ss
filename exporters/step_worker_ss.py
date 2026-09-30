@@ -373,7 +373,12 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
 
     # Retaining-ring counterbores, one per ringed face (report section 3).
     retainer = (spline or {}).get('retainer') or {}
-    for face in retainer.get('faces') or []:
+    # `cb_faces`, not `faces`: a ring's counterbore is optional per face as of
+    # 2.0.1, and `faces` is every ringed face. Looping `faces` would cut a
+    # recess the user turned off -- and the STL keeps that material, so the
+    # STEP would quietly disagree with it rather than fail. The fallback keeps
+    # designs and links from before the choice, which carry no `cb_faces`.
+    for face in retainer.get('cb_faces', retainer.get('faces')) or []:
         cb_d = float(retainer.get('cb_d') or 0.0)
         cb_depth = float(retainer.get('cb_depth') or 0.0)
         if cb_d > 0.0 and cb_depth > 0.0:

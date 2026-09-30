@@ -144,3 +144,28 @@ def test_small_step_captured_nut_in_a_shaped_bore_keeps_its_hub(client, monkeypa
     assert n == 2 and ok
     stl = _load(client.get('/download/stl', query_string=q).data).volume
     assert vol == pytest.approx(stl, rel=5e-3)
+
+
+@ss_only
+@pytest.mark.parametrize('cb', [{'spline_cb_top': '0', 'spline_cb_bottom': '0'},
+                                {'spline_cb_bottom': '0'}],
+                         ids=['neither', 'top-only'])
+def test_small_step_counterbore_is_optional(client, monkeypatch, cb):
+    """"Make counterbore" off on a face: small_step gets no --counterbore for
+    it, and the STEP is still the STL — which keeps the recess's material.
+
+    The last assertion is the one that matters. Volume-against-STL alone
+    would pass if the worker looped `faces` and cut BOTH recesses, because
+    both exports would be wrong together; comparing against the
+    counterbore-on volume is what catches a recess the user turned off.
+    """
+    q = {**BASE, **STRAIGHT, 'spline_ring_top': '1', 'spline_ring_bottom': '1',
+         'spline_washer': '1'}
+    r = _step(client, monkeypatch, {**q, **cb})
+    assert r.status_code == 200, r.data[:200]
+    n, ok, vol = _solids(r.data)
+    assert n == 1 and ok
+    stl = _load(client.get('/download/stl', query_string={**q, **cb}).data).volume
+    assert vol == pytest.approx(stl, rel=5e-3)
+    both = _load(client.get('/download/stl', query_string=q).data).volume
+    assert vol > both + 100                     # the counterbores' material is there
