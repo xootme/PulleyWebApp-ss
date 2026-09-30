@@ -408,14 +408,14 @@ def hub_keyway():
     _columns("Keyway Width W",
              [(f"kw_w_{w}", f"W = {w} mm", None) for w in ("3", "4", "6")],
              "hub_keyway_w.svg",
-             ["The slot's width — the key's width b (ISO 773). Default Key fills it in",
+             ["The slot's width — the key's width b (ISO 773). ISO Key fills it in",
               "for your bore. Hub Depth 2.6 mm here; 12 mm bore."],
              col_w=220, snaps=False, half=half, extra=w_dim)
     _columns("Keyway Hub Depth",
              [(f"kw_h_{h}", f"Hub Depth {h} mm", None) for h in ("1.5", "2.6", "4")],
              "hub_keyway_h.svg",
              ["How far the slot goes out from the round bore (dashed): ISO 773 t2 + r.",
-              "Default Key fills it in for your bore. Width 4 mm here; 12 mm bore."],
+              "ISO Key fills it in for your bore. Width 4 mm here; 12 mm bore."],
              col_w=220, snaps=False, half=half, extra=h_dim)
 
 

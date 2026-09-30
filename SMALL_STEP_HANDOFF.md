@@ -118,7 +118,7 @@ What small_step needs, in `crates/ss-pulley/src/lib.rs`:
   `--keyway 4 1.96` on a 12 mm bore — the depth measured from the chord at
   the slot edge (√(6² − 2²) + 1.96). The STL and cadquery put it at 7.96 —
   bore radius + depth, at the slot's centre (ISO 773 t₂ + r, which the
-  app's Default Key fills in). Match the app.
+  app's ISO Key fills in). Match the app.
 
 ## 6. STEP/STL parity fixes from the cadquery fuzz — CHECK each (2026-09-27)
 
