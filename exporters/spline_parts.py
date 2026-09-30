@@ -40,18 +40,28 @@ def _faces(spline):
     return (rt, rt['faces']) if rt else (None, [])
 
 
+def _span_z(face, span, lo_hi):
+    """A (inner, outer) span measured outward from a face (the retainer's
+    `stack`, cct_common.retaining_rings) as (z low, z high) for a part whose
+    faces are at z = 0 (bottom) and z = span (top)."""
+    lo, hi = lo_hi
+    return (span + lo, span + hi) if face == 'top' else (-hi, -lo)
+
+
 def ends(spline):
     """(below, above): how far the shaft runs past the part's bottom and top
-    faces — DIN 471's edge margin n past a ring's groove, else TAIL."""
+    faces — DIN 471's edge margin n past a ring's groove (which stands out
+    with its washer and ring when the face has no counterbore), else TAIL."""
     rt, faces = _faces(spline)
-    return (rt['n'] if 'bottom' in faces else TAIL, rt['n'] if 'top' in faces else TAIL)
+    return tuple(rt['stack'][f]['shaft_end'] if f in faces else TAIL for f in ('bottom', 'top'))
 
 
 def shaft_mesh(spline, span: float):
     """The sample shaft for a part whose faces are at z = 0 and z = span: the
     mating external spline (printed), running ends() past them, with a ring's
     groove at each ringed face (DIN 471: width m, floor d2 — across the tooth
-    tops), its outer wall on the face."""
+    tops) where the retainer's `stack` puts it: its outer wall on the face in
+    a counterbore, further out without one."""
     sp = _as_spline(spline)
     c = _spline_print(spline)
     rt, faces = _faces(spline)
@@ -65,7 +75,8 @@ def shaft_mesh(spline, span: float):
         outer = trimesh.creation.cylinder(radius=spl.shaft(sp).outer, height=w, sections=_SECTIONS)
         inner = trimesh.creation.cylinder(radius=r_groove, height=w + 1.0, sections=_SECTIONS)
         groove = trimesh.boolean.difference([outer, inner], engine='manifold')
-        groove.apply_translation([0.0, 0.0, span - rt['m'] / 2.0 if face == 'top' else rt['m'] / 2.0])
+        z_lo, z_hi = _span_z(face, span, rt['stack'][face]['groove'])
+        groove.apply_translation([0.0, 0.0, (z_lo + z_hi) / 2.0])
         mesh = trimesh.boolean.difference([mesh, groove], engine='manifold')
     return mesh
 
@@ -109,13 +120,13 @@ def preview_parts(spline, span: float) -> dict:
     out = {'shaft': shaft_mesh(spline, span), 'rings': None, 'washers': None}
     rings, washers = [], []
     for face in faces:
-        wall = span - rt['m'] if face == 'top' else rt['m']      # the groove's inner wall
+        st = rt['stack'][face]                                   # in the counterbore or on the face
         r = _ring_mesh(rt)
-        r.apply_translation([0.0, 0.0, wall if face == 'top' else wall - rt['s']])
+        r.apply_translation([0.0, 0.0, _span_z(face, span, st['ring'])[0]])
         rings.append(r)
-        if rt['washer_t'] > 0:
+        if st['washer']:
             w = _washer_mesh(spline)
-            w.apply_translation([0.0, 0.0, wall - rt['washer_t'] if face == 'top' else wall])
+            w.apply_translation([0.0, 0.0, _span_z(face, span, st['washer'])[0]])
             washers.append(w)
     if rings:
         out['rings'] = trimesh.util.concatenate(rings)

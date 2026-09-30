@@ -111,14 +111,23 @@
         <span class="hub-arrow open" id="spline{{ n }}-arrow">&#9660;</span>
       </div>
       <div class="hub-body open" id="spline{{ n }}-body">
-        <!-- DIN 471 rings on the shaft, each in a counterbore in its face -->
+        <!-- DIN 471 rings on the shaft; each face's counterbore is optional
+             (without one the washer and ring sit on the face) -->
         <label for="spline{{ n }}_ring_top" class="spline-check">
           <input type="checkbox" id="spline{{ n }}_ring_top" checked onchange="onBoreShapeChange({{ n }})">
           Retaining ring, top face
         </label>
+        <label for="spline{{ n }}_cb_top" class="spline-check spline-sub">
+          <input type="checkbox" id="spline{{ n }}_cb_top" checked onchange="onBoreShapeChange({{ n }})">
+          Make counterbore
+        </label>
         <label for="spline{{ n }}_ring_bottom" class="spline-check">
           <input type="checkbox" id="spline{{ n }}_ring_bottom" onchange="onBoreShapeChange({{ n }})">
           Retaining ring, bottom face
+        </label>
+        <label for="spline{{ n }}_cb_bottom" class="spline-check spline-sub">
+          <input type="checkbox" id="spline{{ n }}_cb_bottom" checked onchange="onBoreShapeChange({{ n }})">
+          Make counterbore
         </label>
         <label for="spline{{ n }}_washer" class="spline-check">
           <input type="checkbox" id="spline{{ n }}_washer" onchange="onBoreShapeChange({{ n }})">
@@ -4135,15 +4144,19 @@ function boreParams(p, n, prefix) {
                : t === 'hex' ? ['af', 'series'] : ['n', 'minor', 'major', 'width'];
     for (const k of keys) p[`${prefix}spline_${k}`] = _sv(n, k);
     if (t === 'hex' && _ck(n, 'rounded')) { p[`${prefix}spline_rounded`] = '1'; p[`${prefix}spline_ac`] = _sv(n, 'ac'); }
-    // the Spline card (3D Mode): rings on either or both faces, the washer
-    for (const f of ['top', 'bottom']) p[`${prefix}spline_ring_${f}`] = _ck(n, `ring_${f}`) ? '1' : '0';
+    // the Spline card (3D Mode): rings on either or both faces, each with or
+    // without its counterbore, the washer
+    for (const f of ['top', 'bottom']) {
+      p[`${prefix}spline_ring_${f}`] = _ck(n, `ring_${f}`) ? '1' : '0';
+      if (_ck(n, `ring_${f}`)) p[`${prefix}spline_cb_${f}`] = _ck(n, `cb_${f}`) ? '1' : '0';
+    }
     if (_ck(n, 'washer')) p[`${prefix}spline_washer`] = '1';
   }
 }
 
 const SPLINE_KEYS = ['type', 'preset', 'n', 'minor', 'major', 'width', 'pa', 'root', 'm', 'z',
                      'hex_preset', 'af', 'series', 'ac'];
-const SPLINE_CHECKS = ['ring_top', 'ring_bottom', 'washer', 'show_shaft', 'rounded'];   // + the Spline card
+const SPLINE_CHECKS = ['ring_top', 'ring_bottom', 'cb_top', 'cb_bottom', 'washer', 'show_shaft', 'rounded'];   // + the Spline card
 const _ck = (n, k) => document.getElementById(`spline${n}_${k}`).checked;
 // A design saved or linked before the Spline card had one ring: top / bottom / none.
 function _oldRing(n, v) {
@@ -4187,6 +4200,8 @@ function boreFromLink(p, n, pre) {
       for (const f of ['top', 'bottom'])
         document.getElementById(`spline${n}_ring_${f}`).checked = p.get(`${pre}spline_ring_${f}`) === '1';
     } else _oldRing(n, p.get(`${pre}spline_ring`));
+    for (const f of ['top', 'bottom'])      // a link from before the choice had counterbores
+      document.getElementById(`spline${n}_cb_${f}`).checked = p.get(`${pre}spline_cb_${f}`) !== '0';
   } else if (p.has(`${pre}hub_flat_depth`)) {
     el.value = 'flat';
     document.getElementById(`hub${n}_flat_depth`).value = p.get(`${pre}hub_flat_depth`);
@@ -4228,6 +4243,8 @@ function showBoreShape(n) {
   }
   note.classList.toggle('hidden', !sp);
   document.getElementById(`spline${n}_card`).classList.toggle('hidden', shape !== 'spline');
+  for (const f of ['top', 'bottom'])      // "Make counterbore" shows under a ticked ring
+    document.getElementById(`spline${n}_cb_${f}`).parentElement.classList.toggle('hidden', !_ck(n, `ring_${f}`));
   const washer = document.getElementById(`spline${n}_washer`);
   washer.disabled = !_ck(n, 'ring_top') && !_ck(n, 'ring_bottom');
   washer.parentElement.style.opacity = washer.disabled ? '0.45' : '';
@@ -4273,10 +4290,13 @@ function _fetchSplineFit(n) {
       `Set by the spline: the bore is the hole's minor diameter at the default fit, ${fit.bore.toFixed(3)} mm. ` +
       'Change the spline below, or set Bore Shape to Round to type a bore.';
     const rt = fit.retainer;
-    const where = rt ? (rt.faces.length === 2 ? 'each face' : `the ${rt.faces[0]} face`) : '';
+    const cbf = rt ? (rt.cb_faces || rt.faces) : [];
+    const where = cbf.length === 2 ? 'each face' : `the ${cbf[0]} face`;
+    const flat = rt ? rt.faces.filter(f => !cbf.includes(f)) : [];
     out.textContent = rt
-      ? `${rt.faces.length === 2 ? '2 × ' : ''}${rt.ring}${rt.mcmaster ? ` (McMaster ${rt.mcmaster})` : ''} · counterbore ` +
-        `Ø${rt.cb_d} × ${+rt.cb_depth.toFixed(2)} mm in ${where}` +
+      ? `${rt.faces.length === 2 ? '2 × ' : ''}${rt.ring}${rt.mcmaster ? ` (McMaster ${rt.mcmaster})` : ''}` +
+        (cbf.length ? ` · counterbore Ø${rt.cb_d} × ${+rt.cb_depth.toFixed(2)} mm in ${where}` : '') +
+        (flat.length ? ` · on the ${flat.join(' and ')} face${flat.length === 2 ? 's' : ''}, no counterbore` : '') +
         (rt.washer_t > 0 ? ` · washer Ø${rt.washer_od} × ${rt.washer_t} mm` : '') +
         (rt.faces.length === 1 ? ' · one ring holds it one way; a shoulder on the shaft the other' : '')
       : 'No ring: nothing holds the pulley on the shaft.';
@@ -5097,7 +5117,7 @@ function _validateHub(n) {
     lines.push(`⚠ Hub OD (${hubOD} mm) must be ≥ bore + 1 mm = ${(bore + 1).toFixed(1)} mm`);
   // a retaining ring on the top face sits in a counterbore in the hub (ADR-017)
   const rt = boreShape(n) === 'spline' && SPLINE_FIT[n] ? SPLINE_FIT[n].retainer : null;
-  if (rt && rt.faces.includes('top') && hubOD < rt.cb_d + 2)
+  if (rt && (rt.cb_faces || rt.faces).includes('top') && hubOD < rt.cb_d + 2)
     lines.push(`⚠ Hub OD (${hubOD} mm) must be ≥ ${rt.cb_d + 2} mm round the ring's Ø${rt.cb_d} mm ` +
                'counterbore (Auto-fix, under the preview)');
 
@@ -5645,6 +5665,8 @@ function onAdvBothToggle(n) {
     spline_ac:              '/static/help/spline_hex.svg',
     spline_ring_top:        '/static/help/spline_ring.svg',
     spline_ring_bottom:     '/static/help/spline_ring.svg',
+    spline_cb_top:          '/static/help/spline_counterbore.svg',
+    spline_cb_bottom:       '/static/help/spline_counterbore.svg',
     spline_washer:          '/static/help/spline_ring.svg',
     spline_show_shaft:      '/static/help/spline_ring.svg',
     hub_flat_depth:         '/static/help/hub_flat_depth.svg',

@@ -164,6 +164,16 @@ async function main() {
   await tick('spline1_ring_top');                                          // the bottom only
   await settle();
   check('bottom face', (await params()).spline_ring_top === '0' && (await text('#spline1_ring_info')).includes('bottom face'));
+  // "Make counterbore": under a ticked ring only, on by default, optional
+  const cbShown = f => js(`!document.getElementById('spline1_cb_${f}').parentElement.classList.contains('hidden')`);
+  check('Make counterbore shows under the ticked ring only', await cbShown('bottom') && !(await cbShown('top'))
+    && await js("document.getElementById('spline1_cb_bottom').checked"));
+  await tick('spline1_cb_bottom');
+  await settle();
+  p = await params();
+  check('no counterbore: sent, and the ring sits on the face', p.spline_cb_bottom === '0' && !('spline_cb_top' in p)
+    && (await text('#spline1_ring_info')).includes('no counterbore') && !(await text('#spline1_ring_info')).includes('counterbore Ø'),
+    [p, await text('#spline1_ring_info')]);
 
   // ── saved and restored ──
   await js('saveSettings()');
@@ -174,6 +184,7 @@ async function main() {
   check('…and its ring and washer', !(await js("document.getElementById('spline1_ring_top').checked"))
     && await js("document.getElementById('spline1_ring_bottom').checked")
     && await js("document.getElementById('spline1_washer').checked") && (await val('#hub1_retention')) === 'none');
+  check('…and no counterbore on that face', !(await js("document.getElementById('spline1_cb_bottom').checked")));
   await setSel('#bore1_shape', 'round');
   check('back to Round: the bore can be typed again', !(await js("document.getElementById('bore').disabled")) && !(await shown('#bore1_note')));
   check('…and Retention is free again', !(await js("document.getElementById('hub1_retention').disabled")) && !(await shown('#hub1_spline_note')));
@@ -190,6 +201,11 @@ async function main() {
     && (await val('#bore')) === '26.0105' && (await val('#spline1_preset')) === '6,26,30,6', await val('#bore'));
   check('…an older link\'s single ring (spline_ring=bottom) and washer', !(await js("document.getElementById('spline1_ring_top').checked"))
     && await js("document.getElementById('spline1_ring_bottom').checked") && await js("document.getElementById('spline1_washer').checked"));
+  check('…with its counterbore (links from before the choice had one)', await js("document.getElementById('spline1_cb_bottom').checked"));
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=40&bore=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=26&spline_major=30&spline_width=6&spline_ring_top=1&spline_ring_bottom=1&spline_cb_top=0');
+  await settle();
+  check('a link without the top counterbore', !(await js("document.getElementById('spline1_cb_top').checked"))
+    && await js("document.getElementById('spline1_cb_bottom').checked") && (await params()).spline_cb_top === '0');
 
   // ── a design saved before Bore Shape ──
   await js(`localStorage.setItem('pulley_last', JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('pulley_last') || '{}'),

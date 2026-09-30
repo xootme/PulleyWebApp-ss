@@ -229,6 +229,12 @@ def _as_spline(spline):
     return _spl.Spline(**{k: v for k, v in spline.items() if k in names})
 
 
+def _cb_faces(rt) -> list:
+    """The ringed faces with a counterbore (ADR-017: optional per face; a
+    retainer without the list is from before the choice — every face)."""
+    return rt.get('cb_faces', rt['faces']) if rt else []
+
+
 def _open_for_ring(mesh, spline, face: str, printed: bool = True):
     """A flange or plate over the ring's face (ADR-017): the counterbore goes
     on into it from its outer face — through it when the counterbore is
@@ -236,7 +242,7 @@ def _open_for_ring(mesh, spline, face: str, printed: bool = True):
     it is moved into place: its inner face (on the pulley) at z = 0, its
     outer face at z = +cover (top) or -cover (bottom)."""
     rt = spline.get('retainer') if isinstance(spline, dict) else None
-    if not rt or face not in rt['faces'] or rt['cover'][face] <= 0 or mesh is None:
+    if not rt or face not in _cb_faces(rt) or rt['cover'][face] <= 0 or mesh is None:
         return mesh
     t = rt['cover'][face]
     r = rt['cb_d'] / 2.0 + (_spline_print(spline) if printed else 0.0)
@@ -261,7 +267,7 @@ def _spline_print(spline) -> float:
 
 def _cut_counterbore(mesh, spline, printed: bool = True):
     """The retaining rings' counterbores (cct_common.retaining_rings) in the
-    pulley: a cylinder into its top and / or bottom face (`retainer['faces']`),
+    pulley: a cylinder into its top and / or bottom face (`_cb_faces`),
     on the bore's axis (x = y = 0). Each depth is measured from the part's
     outer face: a flange or plate over that face (`retainer['cover'][face]`
     thick) carries the first of it (_open_for_ring), the pulley the rest.
@@ -272,7 +278,7 @@ def _cut_counterbore(mesh, spline, printed: bool = True):
     r = rt['cb_d'] / 2.0 + (_spline_print(spline) if printed else 0.0)
     z_lo, z_hi = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
     over = 1.0                               # past the face, so the cut opens it cleanly
-    for face in rt['faces']:
+    for face in _cb_faces(rt):
         depth = rt['cb_depth'] - rt['cover'][face]
         if depth <= 1e-6:
             continue                         # the flange over the face holds the whole recess
@@ -1435,7 +1441,7 @@ def generate_pulley_step(
     if rt:
         bb = result.val().BoundingBox()
         over = 1.0
-        for face in rt['faces']:
+        for face in _cb_faces(rt):
             depth = rt['cb_depth'] - (0.0 if rt['cover_joined'][face] else rt['cover'][face])
             if depth <= 1e-6:
                 continue

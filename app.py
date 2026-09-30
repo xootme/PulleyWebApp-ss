@@ -257,7 +257,7 @@ def _run_cadquery_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
 
 
 # ── App version ───────────────────────────────────────────────────────────────
-APP_VERSION        = '2.0.0'   # 2.x: the token model (ADR-008) — accounts, pay per download, hosted only
+APP_VERSION        = '2.0.1'   # 2.x: the token model (ADR-008) — accounts, pay per download, hosted only
 # Increment when a param is renamed, split, or its meaning changes.
 # New optional params never need a bump — missing keys just use form defaults.
 CCT_SCHEMA_VERSION = 1
@@ -762,10 +762,19 @@ def _ring_face_z(args, prefix, bare_lo, bare_hi):
             bare_hi + _ring_cover(args, prefix, 'top')[0])
 
 
+def _counterbore_faces(args, prefix, faces):
+    """The ringed faces that get a counterbore: all of them unless the Spline
+    card's "Make counterbore" is off there ({prefix}spline_cb_top / _bottom =
+    0). Designs from before the choice had one on every ringed face."""
+    return [f for f in faces if args.get(f'{prefix}spline_cb_{f}', '1') != '0']
+
+
 def _retainer_of(args, prefix, sp):
     """The retaining rings (cct_common.retaining_rings) on either or both
-    faces — one size, the shaft's — or None: `faces`, and per face the
-    `cover` of a flange over it and whether that flange is `cover_joined`."""
+    faces — one size, the shaft's — or None: `faces`, `cb_faces` (the ones
+    with a counterbore; without one the washer and ring sit on the face), and
+    per face the `cover` of a flange over it and whether that flange is
+    `cover_joined`."""
     faces = _ring_faces(args, prefix)
     if not faces:
         return None
@@ -774,7 +783,13 @@ def _retainer_of(args, prefix, sp):
     washer = rr.WASHER_THICKNESS if args.get(f'{prefix}spline_washer') == '1' else 0.0
     cb = rr.counterbore(ring, washer=washer)
     covers = {f: _ring_cover(args, prefix, f) for f in ('top', 'bottom')}
-    return {'faces': faces, 'cover': {f: c[0] for f, c in covers.items()},
+    cb_faces = _counterbore_faces(args, prefix, faces)
+    stacks = {f: rr.stack(ring, washer=washer, counterbore=f in cb_faces) for f in faces}
+    return {'faces': faces, 'cb_faces': cb_faces,
+            # where the washer, ring and groove sit, outward from each face (cct_common)
+            'stack': {f: {'washer': st.washer, 'ring': st.ring, 'groove': st.groove,
+                          'shaft_end': st.shaft_end} for f, st in stacks.items()},
+            'cover': {f: c[0] for f, c in covers.items()},
             'cover_joined': {f: c[1] for f, c in covers.items()},
             'ring': ring.label(), 'mcmaster': ring.mcmaster, 'd1': ring.d1,
             'd2': ring.d2, 'm': ring.m, 's': ring.s, 'n': ring.n, 'a': ring.a, 'd4': ring.d4,
@@ -1083,7 +1098,7 @@ def _counterbore_warnings(args, pfx, who, rt, root_d, three_d):
     hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0) if three_d else 0.0
     hub_h = _safe_float(args.get(f'{pfx}hub_height'), 0.0) if three_d else 0.0
     spokes = three_d and _parse_spoke_params(args, pfx)[0]
-    for face in rt['faces']:
+    for face in rt['cb_faces']:
         if face == 'top' and hub_od > 0 and hub_h > 0:
             wall, what = hub_od, f'the Ø{hub_od:g} mm hub'
         elif spokes:
@@ -1121,7 +1136,7 @@ def _spline_fix(args, pfx, n, sp_obj, root_d, three_d):
         reach = _spl.hole(cand).outer
         rt = _retainer_of(args, pfx, cand)
         hub_need = body_need = reach + wall
-        for face in (rt['faces'] if rt else []):
+        for face in (rt['cb_faces'] if rt else []):
             if face == 'top' and hub_on:
                 hub_need = max(hub_need, rt['cb_d'] + wall)
             else:
@@ -1252,8 +1267,9 @@ def api_dimensions():
                 rt = sp['retainer']
                 if rt:
                     p.update(ring=rt['ring'], ring_mcmaster=rt['mcmaster'] or None,
-                             ring_face=' and '.join(rt['faces']),
-                             counterbore_d=rt['cb_d'], counterbore_depth=rt['cb_depth'])
+                             ring_face=' and '.join(rt['faces']))
+                    if rt['cb_faces']:
+                        p.update(counterbore_d=rt['cb_d'], counterbore_depth=rt['cb_depth'])
                     if rt['washer_t'] > 0:
                         p.update(washer_od=rt['washer_od'], washer_t=rt['washer_t'])
                     warnings += _counterbore_warnings(args, pfx, who, rt, root_d, three_d)

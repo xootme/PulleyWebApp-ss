@@ -9,7 +9,9 @@ Radial sizes are drawn to scale; the groove (0.4 mm deep across the tooth
 tops) is to scale too, so it is small — the callout says so.
 
 Output: static/help/spline_ring.svg (hover picture on Retaining Ring and
-Splined washer, and the Pulley help pages).
+Splined washer, and the Pulley help pages), and static/help/spline_counterbore.svg
+(Make counterbore: the same section with it on and off, side by side — Sprocket
+Designer's picture of the same choice, drawn from this app's output).
 """
 import os
 import sys
@@ -28,12 +30,12 @@ QUERY = dict(bore="8", bore_shape="spline", spline_type="straight", spline_n="6"
 FACE, HUB_OD, HUB_H, BODY_R = 11.0, 44.0, 12.0, 27.0     # mm: the pulley around the bore
 
 
-def fetch():
+def fetch(**extra):
     os.environ.setdefault("QUEUE_DISABLED", "1")
     sys.path.insert(0, str(ROOT))
     from app import app
     from exporters.spline_parts import TAIL
-    r = app.test_client().get("/api/spline", query_string=QUERY)
+    r = app.test_client().get("/api/spline", query_string={**QUERY, **extra})
     assert r.status_code == 200, r.data[:200]
     return r.get_json(), TAIL
 
@@ -146,5 +148,87 @@ def main():
     print("wrote static/help/spline_ring.svg", W, "x", height)
 
 
+def _panel(fit, tail, x_left, top, s, title, z_top):
+    """One section (as main()'s) of the top face, placed from the retainer's
+    stack: the washer, ring and groove in the counterbore, or on the face.
+    z_top: the highest shaft end of the panels, so their faces line up."""
+    rt = fit["retainer"]
+    st = rt["stack"]["top"]
+    H = FACE + HUB_H
+    z_lo, z_hi = -tail, H + st["shaft_end"]
+    half = BODY_R * s
+    cx = x_left + half + 10
+    y0 = top + 46 + z_top * s
+    X = lambda r: cx + r * s                   # noqa: E731
+    Y = lambda z: y0 - z * s                   # noqa: E731
+
+    def rect(r0, r1, z0, z1, fill, stroke="#334155"):
+        x0, x1 = sorted((X(r0), X(r1)))
+        y1, y2 = sorted((Y(z0), Y(z1)))
+        return (f'<rect x="{x0:.2f}" y="{y1:.2f}" width="{x1 - x0:.2f}" height="{y2 - y1:.2f}" '
+                f'fill="{fill}" stroke="{stroke}" stroke-width="1"/>')
+
+    hole, sh = fit["hole_major"] / 2, fit["shaft_major"] / 2
+    cb = "top" in rt["cb_faces"]
+    cb_r, cb_z = rt["cb_d"] / 2, H - rt["cb_depth"]
+    ring_out = rt["d1"] / 2 + rt["a"]
+    parts = [text(cx, top + 22, title, 17, BLUE, 700)]
+    g0, g1 = (H + z for z in st["groove"])
+    spts = [(-sh, z_lo), (sh, z_lo), (sh, g0), (rt["d2"] / 2, g0), (rt["d2"] / 2, g1), (sh, g1), (sh, z_hi),
+            (-sh, z_hi), (-sh, g1), (-rt["d2"] / 2, g1), (-rt["d2"] / 2, g0), (-sh, g0)]
+    parts.append('<path d="M ' + " L ".join(f"{X(r):.2f} {Y(z):.2f}" for r, z in spts)
+                 + f' Z" fill="{SHAFT}" stroke="#334155" stroke-width="1.2"/>')
+    for sign in (-1, 1):
+        pts = [(hole, 0), (BODY_R, 0), (BODY_R, FACE), (HUB_OD / 2, FACE), (HUB_OD / 2, H)]
+        pts += [(cb_r, H), (cb_r, cb_z), (hole, cb_z)] if cb else [(hole, H)]
+        parts.append('<path d="M ' + " L ".join(f"{X(sign * r):.2f} {Y(z):.2f}" for r, z in pts)
+                     + f' Z" fill="{MATERIAL}" stroke="#334155" stroke-width="1.2"/>')
+        if st["washer"]:
+            w0, w1 = (H + z for z in st["washer"])
+            parts.append(rect(sign * (hole + 0.05), sign * rt["washer_od"] / 2, w0, w1, WASHER))
+        r0, r1 = (H + z for z in st["ring"])
+        parts.append(rect(sign * rt["d2"] / 2, sign * ring_out, r0, r1, RING, RING))
+    parts.append(f'<line x1="{cx}" y1="{Y(z_lo) + 8:.2f}" x2="{cx}" y2="{Y(z_hi) - 10:.2f}" stroke="{GREY}" '
+                 f'stroke-width="1" stroke-dasharray="10 3 2 3"/>')
+    # what changes, under the section
+    if cb:
+        notes = (f"counterbore Ø{rt['cb_d']:g} × {rt['cb_depth']:g} deep", "the ring sits flush")
+    else:
+        notes = ("nothing cut", f"washer and ring stand {st['ring'][1]:g} mm proud")
+    for i, note in enumerate(notes):
+        parts.append(text(cx, Y(z_lo) + 26 + 19 * i, note, 14, "#1e293b", 700 if i == 0 else 400))
+    return "".join(parts), 2 * half + 20, Y(z_lo) + 56 - top
+
+
+def build_counterbore():
+    """Make counterbore, on and off (as Sprocket Designer shows it): the same
+    pulley, ring and washer, from the app's own /api/spline answers."""
+    s, top, gap = 5.6, 70, 40
+    panels, x, h_max = [], 30, 0.0
+    fits = [(fetch(spline_cb_top=cb), title)
+            for cb, title in (("1", "Make counterbore: on"), ("0", "Make counterbore: off"))]
+    z_top = max(FACE + HUB_H + f["retainer"]["stack"]["top"]["shaft_end"] for (f, _), _ in fits)
+    for (fit, tail), title in fits:
+        xml, w, h = _panel(fit, tail, x, top, s, title, z_top)
+        panels.append(xml)
+        x += w + gap
+        h_max = max(h_max, h)
+    W = int(x - gap + 30)
+    caps = ["On: the face is recessed so the ring sits flush (the hub needs room round it). Off: nothing",
+            "is cut; the ring and washer sit on the face, and the shaft's groove moves out with them."]
+    height = int(top + h_max + 20 + 20 * len(caps) + 10)
+    capy = [height - 16 - 20 * (len(caps) - 1 - i) for i in range(len(caps))]
+    body = "".join(panels) + "".join(text(W / 2, y, c, 14, GREY) for y, c in zip(capy, caps))
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{height}"
+     viewBox="0 0 {W} {height}" {FONT}>
+<rect width="{W}" height="{height}" fill="#fff"/>
+<text x="30" y="36" font-size="24" font-weight="700" fill="{BLUE}">Spline: Make counterbore</text>
+{body}
+</svg>"""
+    (HELP / "spline_counterbore.svg").write_text(svg, encoding="utf-8")
+    print("wrote static/help/spline_counterbore.svg", W, "x", height)
+
+
 if __name__ == "__main__":
     main()
+    build_counterbore()

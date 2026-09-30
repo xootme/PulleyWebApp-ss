@@ -210,6 +210,9 @@ def _add_spline(r: random.Random, cfg: dict) -> None:
         cfg['spline_ring_top'] = r.choice(['0', '1'])
         cfg['spline_ring_bottom'] = r.choice(['0', '1'])
         ringed = '1' in (cfg['spline_ring_top'], cfg['spline_ring_bottom'])
+        for f in ('top', 'bottom'):         # "Make counterbore", mostly on (its default)
+            if cfg[f'spline_ring_{f}'] == '1' and r.random() < 0.35:
+                cfg[f'spline_cb_{f}'] = '0'
     if ringed and r.random() < 0.5:
         cfg['spline_washer'] = '1'
     if r.random() < 0.5:

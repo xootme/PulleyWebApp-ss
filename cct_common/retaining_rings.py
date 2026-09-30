@@ -9,6 +9,7 @@ splined bore (Timing Pulleys first; sprockets and gears to follow).
     cb = rr.counterbore(ring)          # recess Ø35.5 x 1.3 deep in the part's face
     cb = rr.counterbore(ring, washer=1.5)   # a washer under the ring: 2.8 deep
     ring = rr.for_spline(sp)           # the ring for a spline or hex bar (by kind / series)
+    st = rr.stack(ring, washer=1.5, counterbore=False)   # where washer, ring, groove sit
 
 The ring clips into a groove round the shaft next to the part. The part's
 face gets a **counterbore** — a short, wider hole at the mouth of the bore —
@@ -251,3 +252,31 @@ def counterbore(ring: Ring, washer: float = 0.0) -> Counterbore:
     face. The groove on the shaft sits with its outer wall at the face."""
     od = ring.d4 - 2 * WASHER_CLEARANCE if washer > 0 else 0.0
     return Counterbore(ring.d4, ring.m + washer, od, washer)
+
+
+@dataclass(frozen=True)
+class Stack:
+    """Where the parts at one ringed face sit, in mm along the shaft measured
+    outward from the part's face (negative: inside a counterbore). Each span
+    is (inner end, outer end): the washer's (None without one), the ring's,
+    and the shaft's groove (its inner wall, its outer wall). `shaft_end`: how
+    far the shaft must run past the face — DIN 471's edge margin n past the
+    groove's outer wall."""
+    washer: tuple | None
+    ring: tuple
+    groove: tuple
+    shaft_end: float
+
+
+def stack(ring: Ring, washer: float = 0.0, counterbore: bool = True) -> Stack:
+    """The washer, ring and groove at a face. In a counterbore (`counterbore()`,
+    m + washer deep) they are sunk so the ring ends flush and the groove's
+    outer wall is on the face. Without one the washer lies on the face and
+    the ring on it, the groove moved out with them — the part is held all the
+    same, it just stands proud of the face by the stack. The ring sits
+    against the groove's inner wall, as it is pushed when it holds the part."""
+    inner = -ring.m if counterbore else washer     # the groove's inner wall
+    return Stack(washer=(inner - washer, inner) if washer > 0 else None,
+                 ring=(inner, inner + ring.s),
+                 groove=(inner, inner + ring.m),
+                 shaft_end=inner + ring.m + ring.n)

@@ -96,6 +96,16 @@ figures, `tests/browser/bore_ui.js` (42 checks); `cct_common/tests/test_splines.
 (`build_spline_ring.py`); `spline_involute.svg` relabelled. `/download/stl`'s body is `_pulley_stl`,
 which the shaft's length measures. SMALL_STEP_HANDOFF §8.
 
+**Amended 2026-09-30 — the counterbore is optional, per face.** The Spline card's
+"Make counterbore" (under each ticked ring, on by default; `spline_cb_top` / `_bottom` = 0 turns
+it off; links and designs from before have one) leaves that face plain: the washer lies on the
+face and the ring on it, standing proud, the shaft's groove and end moved out with them. Where
+the stack sits is one rule for every splined part, so it is shared:
+`cct_common.retaining_rings.stack(ring, washer, counterbore)` gives the washer, ring and groove
+spans and the shaft's end, measured outward from the face; the retainer carries it per face with
+`cb_faces`. Every cut (the pulley's counterbore, a flange's or plate's share of it, the STEP),
+the counterbore warnings and Auto-fix's wall, and the Hub card's check follow `cb_faces` only.
+
 ## ADR-016 — Undo / redo: settings snapshots; a state the page is about to correct is never a step
 **Date:** 2026-09-28
 **Status:** Active

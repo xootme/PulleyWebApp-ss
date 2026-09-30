@@ -540,3 +540,108 @@ def test_spokes_flanges_and_a_ringed_spline(client):
     assert _stl(client, q).is_watertight
     assert client.get('/api/dimensions', query_string={**q, 'feature_build': '1'}).status_code == 200
     assert client.get('/api/preview-stl', query_string={**q, 'part': 'spline'}).status_code == 200
+
+
+# ── the counterbore is optional, per face (Spline card: "Make counterbore") ──
+NO_CB = {'spline_cb_top': '0', 'spline_cb_bottom': '0'}
+
+
+def test_counterbore_optional_per_face():
+    """spline_cb_<face>=0 drops that face's counterbore; the ring stays. A
+    design from before the choice (no spline_cb_ keys) keeps both."""
+    from app import _spline_of
+    rt = _spline_of({**STRAIGHT, **BOTH, 'spline_washer': '1'})['retainer']
+    assert rt['faces'] == rt['cb_faces'] == ['top', 'bottom']
+    assert rt['stack']['top']['ring'] == pytest.approx((-1.3, -0.1))           # sunk, flush
+    rt = _spline_of({**STRAIGHT, **BOTH, 'spline_washer': '1', 'spline_cb_top': '0'})['retainer']
+    assert rt['faces'] == ['top', 'bottom'] and rt['cb_faces'] == ['bottom']
+    assert rt['stack']['top']['washer'] == pytest.approx((0.0, 1.5))           # on the face
+    assert rt['stack']['top']['ring'] == pytest.approx((1.5, 2.7))
+    assert rt['stack']['top']['shaft_end'] == pytest.approx(1.5 + 1.3 + 1.7)
+    assert _spline_of({**STRAIGHT, 'spline_ring': 'top'})['retainer']['cb_faces'] == ['top']   # old link
+
+
+def test_no_counterbore_stl(client):
+    """Without counterbores the bore runs plain to both faces, and the part
+    keeps the material the counterbores would have taken."""
+    q = {**BASE, **STRAIGHT, **BOTH, 'spline_washer': '1'}
+    with_cb, without = _stl(client, q), _stl(client, {**q, **NO_CB})
+    assert without.is_watertight
+    lo, hi = float(without.bounds[0][2]), float(without.bounds[1][2])
+    bore = Polygon(spl.sample_closed(spl.path(SP['straight']), 0.01)).area
+    for z in (hi - 0.3, lo + 0.3, hi - 2.6, lo + 2.6):
+        assert _hole_area(without, z) == pytest.approx(bore, rel=3e-3)
+    assert without.volume - with_cb.volume == pytest.approx(2 * (CB_AREA - bore) * 2.8, rel=1e-2)
+
+
+def test_one_face_counterbored(client):
+    q = {**BASE, **STRAIGHT, **BOTH, 'spline_washer': '1', 'spline_cb_bottom': '0'}
+    m = _stl(client, q)
+    lo, hi = float(m.bounds[0][2]), float(m.bounds[1][2])
+    bore = Polygon(spl.sample_closed(spl.path(SP['straight']), 0.01)).area
+    assert _hole_area(m, hi - 2.6) == pytest.approx(CB_AREA, rel=3e-3)
+    assert _hole_area(m, lo + 0.3) == pytest.approx(bore, rel=3e-3)
+
+
+def test_no_counterbore_leaves_a_flange_whole(client):
+    """No counterbore, nothing to carry through a flange or plate over the
+    face: its hole stays the bore's shape (the flange-ID rule only follows a
+    counterbore)."""
+    bore = Polygon(spl.sample_closed(spl.path(SP['straight']), 0.01)).area
+    q = {**BASE, **STRAIGHT, **FLANGE, **WASHER, 'flange_3dprint': '0', 'spline_cb_top': '0'}
+    m = _stl(client, q)                                         # a 1 mm plate on the 11 mm pulley
+    assert _hole_area(m, 11.5) == pytest.approx(bore, rel=3e-3)
+    q = {**BASE, **STRAIGHT, **FLANGE, **WASHER, 'flange_3dprint': '1', 'flange_top_separate': '1',
+         'spline_cb_top': '0'}
+    top = _load(client.get('/download/flange-stl', query_string={**q, 'flange_which': 'top'}).data)
+    assert top.is_watertight
+    assert _hole_area(top, float(top.bounds[0][2]) + 0.7) == pytest.approx(bore, rel=3e-3)
+
+
+def test_shaft_and_parts_without_counterbore(client):
+    """The washer on the face, the ring on the washer, the groove moved out
+    with them — and the shaft longer by that much at each face."""
+    q = {**BASE, **STRAIGHT, **BOTH, 'spline_washer': '1', **NO_CB, 'hub_od': '44', 'hub_height': '12'}
+    pulley = _load_any(client.get('/api/preview-stl', query_string=q).data)
+    lo, hi = float(pulley.bounds[0][2]), float(pulley.bounds[1][2])
+    parts = _parts(client, {**q, 'part': 'spline'})
+    end = 1.5 + 1.3 + 1.7                                      # washer, groove, DIN n
+    assert float(parts['shaft'].bounds[0][2]) == pytest.approx(lo - end, abs=0.01)
+    assert float(parts['shaft'].bounds[1][2]) == pytest.approx(hi + end, abs=0.01)
+    assert float(parts['washers'].bounds[1][2]) == pytest.approx(hi + 1.5, abs=0.01)
+    assert float(parts['washers'].bounds[0][2]) == pytest.approx(lo - 1.5, abs=0.01)
+    assert float(parts['rings'].bounds[1][2]) == pytest.approx(hi + 1.5 + 1.2, abs=0.01)
+    assert float(parts['rings'].bounds[0][2]) == pytest.approx(lo - 1.5 - 1.2, abs=0.01)
+    part = _stl(client, q)
+    shaft = _stl(client, {**q, 'part': 'shaft'}, '/download/spline-stl')
+    span = float(part.bounds[1][2] - part.bounds[0][2])
+    length = float(shaft.bounds[1][2] - shaft.bounds[0][2])
+    assert length == pytest.approx(span + 2 * end, abs=1e-3)
+    body = _section(shaft, length / 2).area
+    for z in (1.7 + 1.3 / 2, length - 1.7 - 1.3 / 2):         # each groove, n in from the end
+        assert _section(shaft, z).area < body - 5
+    assert _section(shaft, 1.7 + 1.3 + 0.1).area == pytest.approx(body, rel=3e-3)
+
+
+def test_dimensions_without_counterbore(client):
+    """The ring is listed; no counterbore figures, and no counterbore
+    warning however little material a counterbore would have left."""
+    from app import _counterbore_warnings, _spline_of
+    q = {**BASE, **STRAIGHT, **BOTH, **NO_CB}
+    d = client.get('/api/dimensions', query_string=q).get_json()
+    p1 = d['pulleys'][0] if 'pulleys' in d else d
+    text = str(p1)
+    assert 'DIN 471' in text and 'counterbore_d' not in text
+    rt = _spline_of(q)['retainer']
+    assert _counterbore_warnings(q, '', '', rt, 30.0, True) == []
+    rt_cb = _spline_of({**STRAIGHT, **BOTH})['retainer']
+    assert len(_counterbore_warnings(q, '', '', rt_cb, 30.0, True)) == 2      # the negative control
+
+
+@pytest.mark.parametrize('extra', [NO_CB, {'spline_cb_top': '0'}], ids=['neither', 'bottom-only'])
+def test_cadquery_step_without_counterbore(client, monkeypatch, extra):
+    pytest.importorskip('cadquery')
+    from fuzz_pulley import _step_mesh_volume
+    q = {**BASE, **STRAIGHT, **BOTH, 'spline_washer': '1', **extra}
+    _, path = _step_solid(client, monkeypatch, q)
+    assert _step_mesh_volume(path) == pytest.approx(_stl(client, q).volume, rel=5e-3)

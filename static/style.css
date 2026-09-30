@@ -1245,3 +1245,4 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
 .spline-grid input, .spline-grid select { width: 100%; }
 .spline-check { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; cursor: pointer; }
 .spline-check input { width: auto; margin: 0; accent-color: #0078d4; }
+.spline-sub   { margin: 2px 0 2px 22px; font-size: 12px; }   /* "Make counterbore", under its ring */
