@@ -169,7 +169,13 @@ def _raw_config(r: random.Random) -> dict:
 
 
 def _splines_on() -> bool:
-    return os.environ.get('PULLEY_STEP_BACKEND', '').strip().lower() == 'cadquery'
+    """Both backends now. small_step reads a closed LINE/ARC loop on the
+    BORE layer as of 0.5.0 and carries it through the body, the hub and
+    the flanges, so drawing splines only for the cadquery track would
+    leave the whole feature unfuzzed on the backend that just gained it.
+    What it still cannot do it refuses BY NAME, and a named refusal is
+    something the fuzzer counts rather than a silent wrong answer."""
+    return True
 
 
 def _add_spline(r: random.Random, cfg: dict) -> None:

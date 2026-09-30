@@ -24,11 +24,14 @@ def client():
 @pytest.fixture(scope='session', autouse=True)
 def clear_queue_state():
     """Clear all queue and session state before running tests."""
-    import requests
+    # The import was outside the try, so an environment without `requests`
+    # could not collect ANY test -- the reset is best-effort by design and
+    # the import should be too.
     try:
+        import requests
         requests.post('http://localhost:5001/api/test/reset', timeout=5)
-    except:
-        pass  # Server may not be running for unit tests
+    except Exception:
+        pass  # Server may not be running, or requests may not be installed
     yield
 
 

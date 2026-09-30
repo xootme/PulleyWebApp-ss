@@ -208,11 +208,12 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
     """
     if os.environ.get('PULLEY_STEP_BACKEND', '').strip().lower() == 'cadquery':
         return _run_cadquery_worker(worker_kw, timeout=timeout)
-    if _has_spline(worker_kw):
-        # small_step builds a bore only from a circle (+ flat / key) today
-        # (SMALL_STEP_HANDOFF); say so rather than export a round hole.
-        raise RuntimeError("STEP can't carry a splined bore yet — download the STL, "
-                           "or the DXF / SVG for the exact spline outline.")
+    # A splined or hex bore used to be refused here: small_step built a bore
+    # only from a circle. It now accepts a closed LINE/ARC loop on the BORE
+    # layer and carries it through the body, the hub and the flanges
+    # (small_step 0.5.0, report sections 1 and 2), so the job goes through.
+    # What it still cannot do it refuses BY NAME, and that message reaches
+    # the user as the 400 instead of this blanket one.
     if getattr(sys, 'frozen', False):
         from exporters.step_worker_ss import run as _ss_run
         try:

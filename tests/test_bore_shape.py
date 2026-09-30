@@ -121,11 +121,27 @@ def test_dxf_draws_the_spline_as_lines_and_arcs(client):
     assert radii == pytest.approx([hole.inner / 2, hole.outer / 2])
 
 
-def test_small_step_refuses_a_spline(client, monkeypatch):
+def test_small_step_builds_a_spline(client, monkeypatch):
+    """small_step used to refuse this; as of 0.5.0 it builds it.
+
+    The old assertion (400, "splined bore") is kept in the name of what
+    changed rather than deleted silently: the blanket refusal in
+    `app._run_ss_worker` is gone, because the BORE layer now takes a closed
+    LINE/ARC loop and it is carried through the body, the hub and the
+    flanges. What small_step still cannot do it refuses BY NAME, and that
+    message reaches the user instead.
+
+    Volume and validity are asserted in `test_step_small_step.py`, which
+    skips itself when the binary is absent; this only asserts the route no
+    longer refuses outright, so it is meaningful even without one.
+    """
     monkeypatch.setenv('PULLEY_STEP_BACKEND', '')
     monkeypatch.setenv('QUEUE_DISABLED', '1')
     r = client.get('/download/step', query_string={**BASE, **STRAIGHT})
-    assert r.status_code == 400 and b"splined bore" in r.data
+    assert b'splined bore' not in r.data
+    if r.status_code != 200:
+        # A named refusal is acceptable; the blanket one is not.
+        assert b'not supported yet' in r.data or b'unsupported' in r.data
 
 
 @pytest.mark.parametrize('kind', ['straight', 'involute'])

@@ -48,7 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Minimum compatible small_step binary version (MAJOR, MINOR, PATCH).
 # Bump MINOR when a new subcommand or flag is required; MAJOR on breaking CLI changes.
-SMALL_STEP_MIN_VERSION = (0, 2, 0)
+SMALL_STEP_MIN_VERSION = (0, 5, 0)
 
 _version_checked: dict = {}   # bin_path → True once verified
 
@@ -269,6 +269,7 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
     fillet_tip_mm   = float(params.get('fillet_tip_mm', 0.0))
     fillet_base_mm  = float(params.get('fillet_base_mm', 0.0))
     spoke_height_mm = float(params.get('spoke_height_mm', 0.0))
+    spline          = params.get('spline')
     hub_od_mm       = float(params.get('hub_od_mm', 0.0))
     hub_height_mm   = float(params.get('hub_height_mm', 0.0))
     flat_depth_mm   = float(params.get('flat_depth_mm', 0.0))
@@ -364,6 +365,19 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
             cmd += ['--screws', str(screw_dia_mm), str(screw_count)]
             if captured_nut:
                 cmd += ['--captured-nut']
+            elif (spline or {}).get('kind') == 'hex':
+                # A hex bar's six flats sit at multiples of 60 degrees from
+                # +X, so the 90 default lands on a CORNER and the screw would
+                # meet an edge instead of a face (report section 4).
+                cmd += ['--screw-step', '120']
+
+    # Retaining-ring counterbores, one per ringed face (report section 3).
+    retainer = (spline or {}).get('retainer') or {}
+    for face in retainer.get('faces') or []:
+        cb_d = float(retainer.get('cb_d') or 0.0)
+        cb_depth = float(retainer.get('cb_depth') or 0.0)
+        if cb_d > 0.0 and cb_depth > 0.0:
+            cmd += ['--counterbore', str(face), str(cb_d), str(cb_depth)]
 
     return cmd
 
@@ -393,6 +407,10 @@ def _generate_pulley_bytes(params, ss_bin) -> bytes:
         spoke_width_mm=spoke_width_mm, spoke_hub_od_mm=spoke_hub_od_mm,
         rim_depth_mm=rim_depth_mm, fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm,
         flat_depth_mm=0.0, keyway_w_mm=0.0, keyway_h_mm=0.0,
+        # The bore's own outline when it is a spline or a hex bar: written to
+        # the BORE layer as LINE / ARC entities in place of the circle, which
+        # is what small_step 0.5.0 reads (report section 1).
+        spline=params.get('spline'),
     )
     if isinstance(dxf_bytes, str):
         dxf_bytes = dxf_bytes.encode()
