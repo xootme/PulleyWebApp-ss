@@ -169,3 +169,40 @@ def test_small_step_counterbore_is_optional(client, monkeypatch, cb):
     assert vol == pytest.approx(stl, rel=5e-3)
     both = _load(client.get('/download/stl', query_string=q).data).volume
     assert vol > both + 100                     # the counterbores' material is there
+
+
+FLANGE = {'flange_enabled': '1', 'flange_angle': '15', 'flange_rim_radius': '3',
+          'flange_height': '1.5', 'flange_3dprint': '1'}
+
+
+@ss_only
+@pytest.mark.parametrize('sep,want', [('1', 2), ('0', 1)],
+                         ids=['separate-top', 'joined-top'])
+def test_small_step_separate_top_flange_is_its_own_product(client, monkeypatch,
+                                                           sep, want):
+    """A printed top flange set to print separately is its own STEP PRODUCT.
+
+    Two things are asserted and both matter:
+
+    The STEP must BUILD. The worker sends `--flange-separate top` for this
+    case, and a binary older than it rejects the flag outright -- exit 2,
+    "needs 6 args", because it falls into the metal-flange arm. That shipped
+    briefly: the worker learned the flag while bin/small_step_linux was still
+    0.5.0, so every design with a separate printed top flange (the DEFAULT,
+    `top_separate=True`) would have failed to export. Nothing caught it,
+    which is why this test exists.
+
+    And the product COUNT must change with the setting, or the flag is being
+    sent and ignored.
+    """
+    q = {**BASE, **FLANGE, 'flange_top_separate': sep}
+    r = _step(client, monkeypatch, q)
+    assert r.status_code == 200, r.data[:300]
+    import re
+    products = sorted(set(re.findall(r"PRODUCT\('([^']*)'",
+                                     r.data.decode('utf8', 'replace'))))
+    assert len(products) == want, products
+    if want == 2:
+        assert any('Flange' in p for p in products), products
+    n, ok, _ = _solids(r.data)
+    assert ok and n >= 2            # pulley + flange solids, both sound
