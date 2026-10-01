@@ -352,6 +352,15 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
                     str(flange_rim_r_mm), str(flange_angle_deg),
                     str(plate_height_mm), str(_bend)]
 
+        # A separate top flange is its own piece, so it must be its own
+        # PRODUCT in the STEP rather than folded into the pulley's. Without
+        # this, small_step folds every PRINTED flange in (a metal plate
+        # already got its own), so a flange the user is going to print
+        # separately could not be separated in CAD from the pulley it is not
+        # attached to.
+        if bool(params.get('flange_top_separate', False)):
+            cmd += ['--flange-separate', 'top']
+
     if hub_od_mm > bore_mm and hub_height_mm > 0.0:
         cmd += ['--hub', str(hub_od_mm), str(hub_height_mm)]
         if flat_depth_mm > 0.0:
