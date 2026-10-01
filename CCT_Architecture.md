@@ -548,11 +548,11 @@ export default {
 ### Render Configuration (per tool service)
 - **Repo:** `https://github.com/xootme/PulleyWebApp-ss` (branch `main`)
 - **Runtime:** Python 3
-- **Build Command:** `bash render_build.sh`
+- **Build Command:** the `Dockerfile` (Cloud Run). `render.yaml` / `render_build.sh` were removed 2026-09-30; Render is the rollback only.
 - **Start Command:** `gunicorn app:app`
 - **Custom Domain:** none required — Worker handles routing
 
-`render_build.sh` does three things: `chmod +x bin/small_step_linux`, runs `bin/small_step_linux --version`
+The `Dockerfile` does the same three things `render_build.sh` did: `chmod +x bin/small_step_linux`, runs `bin/small_step_linux --version`
 to verify the binary, then `pip install -r requirements.txt`.
 
 The `small_step` Rust binary is a **pre-compiled musl-static x86_64 Linux binary** committed directly

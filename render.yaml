@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: pulleywebapp
-    env: python
-    buildCommand: bash render_build.sh
-    startCommand: gunicorn app:app --config gunicorn.conf.py
-    pythonVersion: "3.14"

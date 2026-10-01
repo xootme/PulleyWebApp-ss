@@ -1,6 +1,15 @@
 """
 deploy.py — PulleyWebApp-ss deploy checklist runner
 
+!! RENDER-ERA, NOT UPDATED FOR CLOUD RUN !!
+    Steps 5 and 7 `git push origin main`, and main now deploys RENDER, which
+    is only the rollback. Production goes to Cloud Run with
+    `gcloud ... run deploy pulley --source .` and nothing else; the owner
+    triggers it deliberately. Work on token-model and push that.
+    render.yaml, render_build.sh and deploy.sh were removed 2026-09-30; this
+    file was kept for its test/benchmark/desktop steps and its branch and
+    deploy wording still need rewriting by someone who knows the live flow.
+
 Runs all automated steps; pauses at decision points that need human review.
 Usage:
     .venv314/Scripts/python deploy.py [--fast] [--skip-desktop] "commit message"

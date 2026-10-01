@@ -630,7 +630,8 @@ def main():
                 break
         if not ss_bin:
             sys.stderr.write(
-                f'small_step binary not found. Set SMALL_STEP_BIN, or build via render_build.sh.\n'
+                f'small_step binary not found. Set SMALL_STEP_BIN, or rebuild \n'
+                f'bin/small_step_linux per small_step/RELEASE.md (static build).\n'
                 f'Looked at: {_candidates}\n'
             )
             sys.exit(1)

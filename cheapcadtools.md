@@ -68,7 +68,7 @@ c.close()
     *   **Strict `stderr` Handling:** LiteSpeed kills scripts if they output to `stderr` before headers. Enforced `sys.stderr = sys.stdout` and `warnings.filterwarnings("ignore")` in the CGI entry point.
     *   **CGI vs ProxyFix:** `ProxyFix` middleware (Werkzeug) is incompatible/redundant in this CGI environment and was removed to prevent crashes.
     *   **Permissions:** Strict SuExec requires `755` for directories and `644` for files. Stripping `+x` from `venv/bin` binaries breaks deployment.
-*   **Deployment Workflow:** Managed via `deploy.sh` (local) and `provision_remote.sh` (remote).
+*   **Deployment Workflow:** Cloud Run via the `Dockerfile` (`gcloud ... run deploy`). `deploy.sh` was Render-only and removed 2026-09-30.
 
 ## Theme & Architecture
 *   **Theme:** Blockbase (Full Site Editing / Block Theme).
