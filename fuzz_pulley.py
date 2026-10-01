@@ -483,14 +483,30 @@ def run(iterations: int | None, duration: float | None, seed: int | None,
                     metal = cfg.get('flange_enabled') == '1' and cfg.get('flange_3dprint') == '0'
                     stl_problems = [] if (metal or stl_mesh.is_watertight) else \
                         ["stl: not watertight"]   # (a metal-flange STL is three touching parts)
-                    if metal:
-                        # The STL download is the pulley AND its two sheet-metal
-                        # plates; the STEP is the pulley. Compare like with like:
-                        # take the plates (/download/flange-stl) away.
+                    # Compare like with like: the two backends' STEPs hold
+                    # different parts (measured, HTD 5M 40T). The STL download is
+                    # the pulley and, with metal flanges, its two plates. cadquery's
+                    # STEP is the pulley alone, so the plates come off the STL;
+                    # small_step's carries the plates already, and a printed top
+                    # flange made separate as well (the STL leaves that one out).
+                    cadquery = os.environ.get('PULLEY_STEP_BACKEND', '').strip().lower() == 'cadquery'
+                    if metal and cadquery:
                         plates = _load_stl(_fetch('/download/flange-stl', cfg))
                         stl_volume -= plates.volume
                         if not plates.is_watertight:
                             stl_problems.append("stl: metal plates not watertight")
+                    elif metal:
+                        # small_step's STEP carries the plates too, so the STL already matches.
+                        plates = _load_stl(_fetch('/download/flange-stl', cfg))
+                        if not plates.is_watertight:
+                            stl_problems.append("stl: metal plates not watertight")
+                    elif (not cadquery and cfg.get('flange_enabled') == '1'
+                            and str(cfg.get('flange_top_separate', '1')) == '1'):
+                        # (the app's default is separate: fp.get('top_separate', True))
+                        top = _load_stl(_fetch('/download/flange-stl', dict(cfg, flange_which='top')))
+                        stl_volume += top.volume
+                        if not top.is_watertight:
+                            stl_problems.append("stl: top flange not watertight")
 
                     if cfg.get('bore_shape') == 'spline':
                         stl_problems += _spline_part_problems(cfg)
