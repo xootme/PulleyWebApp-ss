@@ -1,5 +1,10 @@
 # PulleyWebApp — Claude Code Project Instructions
 
+> **This repo (PulleyWebApp-ss, branch `token-model`) is the only live Timing Pulley
+> Generator.** The cadquery track (`C:\Users\cmyer\Documents\PulleyWebApp`, branch
+> `cadquery-track`) was abandoned on 2026-10-01 — never develop or run it; its last work was
+> brought over here. Run the dev server from this folder (`.venv314`, port 5003).
+
 ## Python Version
 **Use Python 3.14.** The main Flask venv is `.venv314` (Python 3.14).
 - cadquery has been removed from `requirements.txt` — all runtime STEP export uses the `small_step` Rust binary
