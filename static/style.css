@@ -310,19 +310,6 @@ select:focus, input[type="number"]:focus {
   height: 28px;
 }
 
-/* ── Footer ── */
-footer {
-  background: #1a1a2e;
-  color: #aaa;
-  font-size: 11px;
-  text-align: center;
-  padding: 8px;
-  flex-shrink: 0;
-  height: 36px;
-}
-footer a { color: #6ab3e8; text-decoration: none; }
-footer a:hover { text-decoration: underline; }
-
 /* ── Drive bar ── */
 .drive-bar {
   display: flex;
@@ -1076,8 +1063,6 @@ body:not(.feature-build) .fb-3d { display: none !important; }
   color: #4a6080;
 }
 
-/* ── Footer build info ───────────────────────────────────────────────────── */
-.footer-build { color: #666; }
 
 /* ── Token account box and dialogs (static/tokens.js) ── */
 .cct-account          { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; }

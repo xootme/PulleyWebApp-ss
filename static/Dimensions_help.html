@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dimensions and Warnings — Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; max-width: 100%; display: block; margin: 0; border: none;
+                border-radius: 0; }
+</style>
+</head>
+<body>
+</head>
+<body>
+
+<h2>&#9881; Dimensions and Warnings</h2>
+
+<p>Under the preview, a collapsible <strong>Dimensions</strong> table lists the pulley's figures:
+pitch, outside and root diameters, groove depth, pitch line differential, belt and face width (with
+the minimum the belt's standard asks for), a spline's minor and major diameters with the sample
+shaft's, the retaining ring, its counterbore and the washer, and — with flanges in
+3D Mode — the flange's outside diameter, how far it reaches past the OD, and the minimum flange height.
+A figure that falls short of its minimum is shown red; one with no published figure behind it is
+marked <strong>&asymp;</strong> (hover it for why).</p>
+<p>Above the table, <strong>warnings</strong> say where a published rule is broken, each naming its
+source:</p>
+<ul>
+  <li><strong>Face width</strong> — the pulley narrower than ISO 13050 (HTD, GT 8/14M, STD 8/14M, RPP),
+      ISO 5294 (MXL–XXH) or Gates (GT 2/3/5M) ask for the belt, flanged or unflanged. T, AT and
+      STD 2/3/5M have no published figure here and aren't checked.</li>
+  <li><strong>Flange height</strong> — the flange reaching less far past the OD than ISO 13050 Annex D
+      (belt tooth height + pitch differential), ISO 5294 or Gates Table 22.</li>
+  <li><strong>Flange angle</strong> — outside ISO's 8–25&deg; (it's built at the nearest limit).</li>
+  <li><strong>Spline reach</strong> — a spline's major diameter within 1 mm of the tooth root or the hub OD.</li>
+  <li><strong>Ring counterbore</strong> — within 1 mm of the hub OD (on the top face), the spoke hub or the
+      tooth root.</li>
+</ul>
+<p><strong>Auto-fix</strong>, beside the warnings, applies the settings that clear the ones a setting
+can: clearance height, flange rim radius, flange angle — and for a spline the part can't hold (1 mm of
+wall round its reach and the ring's counterbore), a bigger <strong>Hub OD</strong>, up to the tooth root
+less 1 mm a side; failing that, the largest smaller spline of the same kind (an ISO 14 size, or fewer
+involute teeth) that fits.</p>
+<div class="note">A new design's <strong>Clearance Height</strong> already makes the face the standard's
+minimum width, and follows the profile, belt width and flanges until you type a value of your own.</div>
+
+
+</body>
+</html>

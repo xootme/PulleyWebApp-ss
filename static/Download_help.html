@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Download — Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; max-width: 100%; display: block; margin: 0; border: none;
+                border-radius: 0; }
+</style>
+</head>
+<body>
+</head>
+<body>
+
+<h2>&#9881; Download</h2>
+
+<p><strong>&#11015; Download</strong> (in each pulley's panel) opens one window for the whole design:</p>
+<ul>
+  <li><strong>Parts</strong> — every part the design has, ticked: Pulley 1, Pulley 2 and the
+      <strong>Belt</strong> in a two-pulley drive, the <strong>Whole drive drawing</strong> (DXF only), each
+      pulley's <strong>flanges</strong> in 3D Mode (STL only), and with a splined bore its
+      <strong>sample splined shaft</strong> and <strong>splined washer</strong> (no STEP). Untick what you don't need.</li>
+  <li><strong>Formats</strong>, one section per tier:
+    <ul>
+      <li><strong>CAD shape — STEP</strong> (3D Mode): the true solid, at nominal size, for your CAD program.</li>
+      <li><strong>3D printing shape — STL</strong> (3D Mode): with the 3D Print Compensation applied; open it
+          in your slicer (PrusaSlicer, Cura, Bambu Studio …) and print. The 3D view shows exactly what the
+          STL will be.</li>
+      <li><strong>2D drawings — SVG and DXF</strong>: 1:1 in millimetres with true arcs, for laser, waterjet,
+          CNC or a CAD sketch (Fusion 360: Insert &rarr; Insert SVG / DXF). The belt's DXF has separate
+          <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.</li>
+    </ul></li>
+  <li>Everything ticked comes as <strong>one zip</strong>. When tokens are on, the button shows what the ticks
+      cost: one charge for the whole design at the highest tier ticked (STEP 4 &middot; STL 3 &middot; 2D 2
+      tokens), and downloading the same design again within 24 hours is free.</li>
+</ul>
+<p><strong>Gen. Rim Layer</strong> (2D, with spokes) — adds the toothed rim ring alone as its own 2D file.</p>
+
+<h3>Import Design</h3>
+<p>The <strong>&#128194; Import</strong> button (toolbar, next to Reset) restores a previously
+exported design. Every SVG, DXF, STEP, and STL file downloaded from this tool contains embedded
+design parameters. Clicking Import, then selecting one of those files, reads the parameters
+and repopulates all form fields exactly as they were when the file was exported.</p>
+<div class="note">Only files exported from this tool contain embedded parameters. Files
+from other CAD programs will show an error.</div>
+
+
+</body>
+</html>

@@ -106,7 +106,7 @@
       <div class="hub-header" onclick="toggleSplineCard({{ n }})">
         <span style="display:flex;align-items:center;gap:7px;">
           Spline
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Pulley1_2d_help.html')" title="Spline help">&#9432;</button>
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html#spline')" title="Spline help">&#9432;</button>
         </span>
         <span class="hub-arrow open" id="spline{{ n }}-arrow">&#9660;</span>
       </div>
@@ -160,7 +160,7 @@
     </a>
     <div class="header-title-block">
       <span class="header-title">Timing Pulley Generator</span>
-      <span class="header-version">Ver. {{ app_version }}</span>
+      <span class="header-version">Ver. {{ app_version }} &middot; built {{ build_time }}</span>
     </div>
     <span class="header-spacer"></span>
     <!-- The page-wide actions, in the title bar as PCB Importer has them. -->
@@ -253,16 +253,17 @@
   <aside class="controls-panel" id="panel1">
     <div class="panel-title">
       <span id="panel1-title">Pulley</span>
-      <div style="display:flex;gap:4px;align-items:center;">
-        <button class="btn-help"
-                data-help2d="/static/Pulley1_2d_help.html"
-                data-help3d="/static/Pulley1_3d_help.html"
-                onclick="openHelp(this, event)" title="Help">&#9432;</button>
-      </div>
     </div>
 
     <section class="card fb-2d">
-      <h2>Belt Profile</h2>
+      <div class="hub-header" onclick="toggleCard('belt1')">
+        <span style="display:flex;align-items:center;gap:7px;">
+          Belt Profile
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/BeltProfile_help.html')" title="Belt Profile help">&#9432;</button>
+        </span>
+        <span class="hub-arrow open" id="belt1-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body open" id="belt1-body">
       <span style="display:inline-flex;align-items:center;gap:8px;">
         <label for="family">Family</label>
         <select id="family" onchange="onFamilyChange()" style="width:7rem">
@@ -273,10 +274,18 @@
         <label for="pitch">Pitch</label>
         <select id="pitch" onchange="onPitchChange()"></select>
       </span>
+      </div>
     </section>
 
     <section class="card fb-2d">
-      <h2>Size</h2>
+      <div class="hub-header" onclick="toggleCard('size1')">
+        <span style="display:flex;align-items:center;gap:7px;">
+          Size
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html')" title="Size help">&#9432;</button>
+        </span>
+        <span class="hub-arrow open" id="size1-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body open" id="size1-body">
       <span class="belt-group">
         <label for="teeth">Num. Teeth</label>
         <input type="number" id="teeth" min="10" max="360" value="20" step="1" oninput="onTeethChange(1)">
@@ -288,6 +297,7 @@
       {{ bore_shape_fields(1) }}
       <div class="info-row" id="pitch-circle-info">Pitch diameter: —</div>
       <div id="bore-warn-1" style="display:none;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;margin-top:4px;"></div>
+      </div>
     </section>
 
     <section class="card fb-2d">
@@ -537,7 +547,8 @@
     {{ spline_card(1) }}
 
     <section class="card download-card">
-      <h2>Download</h2>
+      <h2 style="display:flex;align-items:center;gap:7px;">Download
+        <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Download_help.html')" title="Download help">&#9432;</button></h2>
       <button class="btn-download" onclick="openDownloadWindow()">⬇ Download</button>
       <label class="fb-2d" id="rim-layer1-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="rim_layer1_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
@@ -585,7 +596,7 @@
         <ul class="dims-warnings" id="dims-warnings"></ul>
       </div>
       <details id="dims-details" ontoggle="rememberDimsOpen()">
-        <summary>Dimensions</summary>
+        <summary>Dimensions <button class="btn-help" onclick="event.preventDefault(); event.stopPropagation(); openHelpUrl('/static/Dimensions_help.html')" title="Dimensions and warnings help">&#9432;</button></summary>
         <table class="dims" id="dims-table"></table>
         <table class="dims" id="drive-dims"></table>
         <p class="approx-note hidden" id="dims-approx-note">
@@ -601,12 +612,6 @@
   <aside class="controls-panel" id="panel2">
     <div class="panel-title panel-title-p2">
       Pulley 2
-      <div style="display:flex;gap:4px;align-items:center;">
-        <button class="btn-help"
-                data-help2d="/static/Pulley2_2d_help.html"
-                data-help3d="/static/Pulley2_3d_help.html"
-                onclick="openHelp(this, event)" title="Help">&#9432;</button>
-      </div>
     </div>
     <div class="card belt-lock-info fb-2d" id="belt-lock-info">
       Belt: <strong id="p2-belt-label">—</strong><br>
@@ -614,7 +619,14 @@
     </div>
 
     <section class="card fb-2d">
-      <h2>Size</h2>
+      <div class="hub-header" onclick="toggleCard('size2')">
+        <span style="display:flex;align-items:center;gap:7px;">
+          Size
+          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html')" title="Size help">&#9432;</button>
+        </span>
+        <span class="hub-arrow open" id="size2-arrow">&#9660;</span>
+      </div>
+      <div class="hub-body open" id="size2-body">
       <span class="belt-group">
         <label for="p2_teeth">Num. Teeth</label>
         <input type="number" id="p2_teeth" min="10" max="360" value="30" step="1" oninput="onTeethChange(2)">
@@ -626,6 +638,7 @@
       {{ bore_shape_fields(2) }}
       <div class="info-row" id="p2-pitch-circle-info">Pitch diameter: —</div>
       <div id="bore-warn-2" style="display:none;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;margin-top:4px;"></div>
+      </div>
     </section>
 
     <section class="card fb-2d">
@@ -864,7 +877,8 @@
     {{ spline_card(2) }}
 
     <section class="card download-card">
-      <h2>Download</h2>
+      <h2 style="display:flex;align-items:center;gap:7px;">Download
+        <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Download_help.html')" title="Download help">&#9432;</button></h2>
       <button class="btn-download-p2" onclick="openDownloadWindow()">⬇ Download</button>
       <label class="fb-2d" id="rim-layer2-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="rim_layer2_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
@@ -1047,12 +1061,6 @@
   </div>
 </div>
 
-<footer>
-  <a href="https://cheapcadtools.com">cheapcadtools.com</a> &nbsp;|&nbsp;
-  <a href="https://cheapcadtools.com/privacy-policy/Fusion360-privacy-policy">Privacy Policy</a>
-  &nbsp;|&nbsp; &copy; 2026 Myerchin Enterprises Inc.
-  &nbsp;|&nbsp; v{{ app_version }} &nbsp;<span class="footer-build">build {{ build_time }}</span>
-</footer>
 
 <script src="/static/tokens.js?v=8"></script>
 <script>
@@ -4599,6 +4607,23 @@ function applyISO773Default(n) {
   onBoreShapeChange(n);
 }
 
+// Belt Profile and each Size card fold away like the other cards. Folded or
+// not is a view preference remembered in this browser, not a setting (no
+// undo step, not in links or saved designs).
+const FOLD_CARDS = ['belt1', 'size1', 'size2'];
+function toggleCard(id, open) {
+  const body = document.getElementById(`${id}-body`);
+  if (open === undefined) open = !body.classList.contains('open');
+  body.classList.toggle('open', open);
+  document.getElementById(`${id}-arrow`).classList.toggle('open', open);
+  try { localStorage.setItem(`pulley_card_${id}`, open ? '1' : '0'); } catch (e) {}
+}
+for (const id of FOLD_CARDS) {
+  let v = null;
+  try { v = localStorage.getItem(`pulley_card_${id}`); } catch (e) {}
+  if (v === '0') toggleCard(id, false);
+}
+
 function toggleAdvanced(n) {
   const body  = document.getElementById(`advanced${n}_body`);
   const arrow = document.getElementById(`advanced${n}_arrow`);
@@ -5621,6 +5646,8 @@ function onAdvBothToggle(n) {
     clearance_preset: '/static/help/clearance.svg',
     backlash_preset:  '/static/help/backlash.svg',
     print_extra:      '/static/help/print_comp.svg',
+    family:           '/static/help/belt_profile.svg',
+    pitch:            '/static/help/belt_profile.svg',
     bore:             '/static/help/bore.svg',
     // top bar
     center_distance:  '/static/help/centre_distance.svg',

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Belt Profile — Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; max-width: 100%; display: block; margin: 0; border: none;
+                border-radius: 0; }
+</style>
+</head>
+<body>
+</head>
+<body>
+
+<h2>&#9881; Belt Profile</h2>
+
+<p>Select the belt <strong>family</strong> then the <strong>pitch</strong>. The pitch is the
+centre-to-centre distance between adjacent belt teeth in millimetres.</p>
+<table>
+  <tr><th>Family</th><th>Pitches</th><th>Profile shape</th><th>Standard</th></tr>
+  <tr><td>HTD</td><td>3M, 5M, 8M, 14M, 20M</td><td>Curvilinear arc flanks</td><td>ISO 13050:2014</td></tr>
+  <tr><td>GT</td><td>2M, 3M, 5M, 8M, 14M</td><td>Gates PowerGrip GT2/GT3 curvilinear arc flanks</td><td>Gates</td></tr>
+  <tr><td>STD / S-series</td><td>S2M, S3M, S5M, S8M, S14M</td><td>Large-radius arc flanks with intentional tip crush</td><td>ISO 13050:2014 S-series</td></tr>
+  <tr><td>RPP</td><td>R3M, R5M, R8M, R14M, R20M</td><td>Parabolic flanks with tip fillet</td><td>ISO 13050:2014 Section 8</td></tr>
+  <tr><td>Imperial</td><td>MXL, XXL, XL, L, H, XH, XXH</td><td>Trapezoidal flanks, 40°-50° included angle</td><td>ISO 5294:2012</td></tr>
+  <tr><td>T</td><td>T2.5, T5, T10, T20</td><td>Trapezoidal flanks, 40° included angle</td><td>ISO 17396:2017</td></tr>
+  <tr><td>AT</td><td>AT3, AT5, AT10, AT20</td><td>Trapezoidal flanks, 50° included angle</td><td>ISO 17396:2017</td></tr>
+</table>
+<div class="note">Changing the Family resets the Pitch options to only those available for that family.</div>
+<a class="figure" href="/static/help/belt_profile.svg" target="_blank" title="Open full size">
+  <img src="/static/help/belt_profile.svg" alt="Every belt family's tooth shape side by side at a 5 mm pitch — HTD, GT, STD, RPP, T, AT and Imperial — with the other names each is sold under (GT2, 2GT, 2MGT, S5M, R5M, DIN 7721, Synchroflex, PowerGrip) and the Imperial pitches"/></a>
+
+<p><strong>STD / S-series — alternate names</strong></p>
+<p>These profiles appear under several names depending on the manufacturer or region. All refer to the
+same ISO 13050 S-series large-radius arc-flank geometry: <em>S-series</em> (ISO official), <em>STD</em>
+(Super Torque Drive), <em>S-HTD</em>, and <em>Synchroflex S</em> (ContiTech trade name).
+If a belt datasheet lists an S-series pitch code (e.g. <code>S8M</code>), it is compatible with this
+family regardless of the trade name used.</p>
+
+<p><strong>RPP vs STD — not the same profile</strong></p>
+<p>ISO 13050 defines two distinct families: STD/S-series uses a large-radius circular arc flank
+(<code>Rbb</code>); RPP uses a parabolic curve (<code>y' = K·x'²</code>) with a tip fillet.
+Check your belt datasheet — if the pitch code starts with <code>R</code> (e.g. <code>R8M</code>),
+select <strong>RPP</strong>; if it starts with <code>S</code> (e.g. <code>S8M</code>), select
+<strong>STD / S-series</strong>.</p>
+
+<h3>Pulley 2</h3>
+<p><span class="tag tag-locked">Locked</span> <strong>Belt Label (e.g. "HTD 5M")</strong> — Shows
+the belt family and pitch inherited from Pulley 1. Pulley 2 always uses the same belt — a drive
+belt cannot change pitch mid-run.</p>
+<div class="note">To change the belt family or pitch, update those settings in the Pulley 1 panel.</div>
+
+</body>
+</html>

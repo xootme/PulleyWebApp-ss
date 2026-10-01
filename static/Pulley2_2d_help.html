@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pulley 2 — 2D Help</title>
+<title>Pulley 2 — Help</title>
 <style>
   body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
          background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
@@ -16,6 +16,10 @@
           border-radius: 3px; margin: 8px 0; font-size: 13px; }
   .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
           border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
   code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
           color: #a5f3fc; }
   .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
@@ -23,54 +27,27 @@
   .tag-auto   { background: #14532d; color: #86efac; }
   .tag-input  { background: #1e3a5f; color: #93c5fd; }
   .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
-  .tag-locked { background: #2e1065; color: #c4b5fd; }
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; max-width: 100%; display: block; margin: 0; border: none;
+                border-radius: 0; }
 </style>
 </head>
 <body>
+</head>
+<body>
 
-<h2>&#9881; Pulley 2 — 2D Guide</h2>
+<h2>&#9881; Pulley 2 Guide</h2>
 
-<h3>Overview</h3>
-<p>Pulley 2 is the <strong>driven (output) pulley</strong> in a Two Pulley Drive system. It shares the
-belt profile (family and pitch) with Pulley 1 — only size, fit, and print settings can be adjusted
-independently. Its tooth count drives the gear ratio calculation.</p>
-
-<h3>Belt Lock</h3>
-<p><span class="tag tag-locked">Locked</span> <strong>Belt Label (e.g. "HTD 5M")</strong> — Shows
-the belt family and pitch inherited from Pulley 1. Pulley 2 always uses the same belt — a drive
-belt cannot change pitch mid-run.</p>
-<div class="note">To change the belt family or pitch, update those settings in the Pulley 1 panel.</div>
-
-<h3>Size</h3>
+<p>This guide is now split by card; each card's &#9432; opens its own page:</p>
 <ul>
-  <li><span class="tag tag-input">Input</span> <strong>Number of Teeth</strong> — Editing P2 keeps
-      Pulley 1 fixed and updates the Gear Ratio to reflect the new P2/P1 relationship.
-      More teeth on P2 = lower output speed, higher output torque.</li>
-  <li><span class="tag tag-auto">Auto</span> <strong>Outer Diameter (mm)</strong> — Calculated from
-      tooth count and pitch. Can be typed to reverse-calculate the nearest whole-number tooth count.
-      Gear Ratio updates to match.</li>
-  <li><span class="tag tag-input">Input</span> <strong>Bore Diameter (mm)</strong> — Shaft hole for
-      Pulley 2. Independent of Pulley 1. Minimum 1 mm.
-      <div class="note">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter for FDM printing tolerance.</div>
-  </li>
-  <li><span class="tag tag-input">Input</span> <strong>Bore Shape</strong> — Round, D-flat, Keyway or
-      Spline (ISO 14 or ISO 4156) for Pulley 2's shaft, independent of Pulley 1, with its own retaining
-      ring, splined washer and sample shaft. The fields are the same
-      as Pulley 1's: see <a href="/static/Pulley1_2d_help.html" target="_blank">Pulley 1 help &rarr; Bore Shape</a>.</li>
-  <li><span class="tag tag-read">Read-only</span> <strong>Pitch Diameter</strong> — Theoretical belt
-      pitch-line diameter for Pulley 2. Formula: (Teeth &times; Pitch) / &pi;</li>
-</ul>
-
-
-<h3>Download — 2D</h3>
-<ul>
-  <li><strong>SVG Drawing</strong> — Clean 2D SVG of Pulley 2 at 1:1 mm scale.
-      In Fusion 360: Insert &rarr; Insert SVG, scale 1 mm/unit, then extrude to create a solid body.</li>
-  <li><strong>SVG + Data</strong> — Same drawing plus a data panel with all key dimensions.</li>
-  <li><strong>Download Pulley DXF</strong> — DXF using true arc entities. R2010 format, in millimetres.</li>
-  <li><strong>Belt Drive (SVG or DXF)</strong> — To download the complete two-pulley belt drive drawing,
-      use the <strong>Download Belt</strong> button in the Pulley 1 panel. SVG for CAD import; DXF with
-      separate <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.</li>
+  <li><a href="/static/BeltProfile_help.html">Belt Profile</a> — families, pitches, their other names</li>
+  <li><a href="/static/Size_help.html">Size</a> — teeth, outer diameter, bore and bore shape (splines)</li>
+  <li><a href="/static/Dimensions_help.html">Dimensions and Warnings</a> — the panel under the preview</li>
+  <li><a href="/static/Download_help.html">Download</a> — the Download window and Import</li>
+  <li>3D Mode: <a href="/static/Hub_help.html">Hub</a>, <a href="/static/spokes_2d_help.html">Spokes</a>,
+      <a href="/static/flange_help.html">Flanges</a>, <a href="/static/3D_Print_help.html">3D Print</a>,
+      <a href="/static/3d_mouse_nav_help.html">3D view (Mouse Nav)</a></li>
 </ul>
 
 </body>

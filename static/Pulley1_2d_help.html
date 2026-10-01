@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pulley 1 — 2D Help</title>
+<title>Pulley 1 — Help</title>
 <style>
   body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
          background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
@@ -34,186 +34,21 @@
 </style>
 </head>
 <body>
+</head>
+<body>
 
-<h2>&#9881; Pulley 1 — 2D Guide</h2>
+<h2>&#9881; Pulley 1 Guide</h2>
 
-<h3>Belt Profile</h3>
-<p>Select the belt <strong>family</strong> then the <strong>pitch</strong>. The pitch is the
-centre-to-centre distance between adjacent belt teeth in millimetres.</p>
-<table>
-  <tr><th>Family</th><th>Pitches</th><th>Profile shape</th><th>Standard</th></tr>
-  <tr><td>HTD</td><td>3M, 5M, 8M, 14M, 20M</td><td>Curvilinear arc flanks</td><td>ISO 13050:2014</td></tr>
-  <tr><td>GT</td><td>2M, 3M, 5M, 8M, 14M</td><td>Gates PowerGrip GT2/GT3 curvilinear arc flanks</td><td>Gates</td></tr>
-  <tr><td>STD / S-series</td><td>S2M, S3M, S5M, S8M, S14M</td><td>Large-radius arc flanks with intentional tip crush</td><td>ISO 13050:2014 S-series</td></tr>
-  <tr><td>RPP</td><td>R3M, R5M, R8M, R14M, R20M</td><td>Parabolic flanks with tip fillet</td><td>ISO 13050:2014 Section 8</td></tr>
-  <tr><td>Imperial</td><td>MXL, XXL, XL, L, H, XH, XXH</td><td>Trapezoidal flanks, 40°-50° included angle</td><td>ISO 5294:2012</td></tr>
-  <tr><td>T</td><td>T2.5, T5, T10, T20</td><td>Trapezoidal flanks, 40° included angle</td><td>ISO 17396:2017</td></tr>
-  <tr><td>AT</td><td>AT3, AT5, AT10, AT20</td><td>Trapezoidal flanks, 50° included angle</td><td>ISO 17396:2017</td></tr>
-</table>
-<div class="note">Changing the Family resets the Pitch options to only those available for that family.</div>
-
-<p><strong>STD / S-series — alternate names</strong></p>
-<p>These profiles appear under several names depending on the manufacturer or region. All refer to the
-same ISO 13050 S-series large-radius arc-flank geometry: <em>S-series</em> (ISO official), <em>STD</em>
-(Super Torque Drive), <em>S-HTD</em>, and <em>Synchroflex S</em> (ContiTech trade name).
-If a belt datasheet lists an S-series pitch code (e.g. <code>S8M</code>), it is compatible with this
-family regardless of the trade name used.</p>
-
-<p><strong>RPP vs STD — not the same profile</strong></p>
-<p>ISO 13050 defines two distinct families: STD/S-series uses a large-radius circular arc flank
-(<code>Rbb</code>); RPP uses a parabolic curve (<code>y' = K·x'²</code>) with a tip fillet.
-Check your belt datasheet — if the pitch code starts with <code>R</code> (e.g. <code>R8M</code>),
-select <strong>RPP</strong>; if it starts with <code>S</code> (e.g. <code>S8M</code>), select
-<strong>STD / S-series</strong>.</p>
-
-<h3>Size</h3>
+<p>This guide is now split by card; each card's &#9432; opens its own page:</p>
 <ul>
-  <li><span class="tag tag-input">Input</span> <strong>Number of Teeth</strong> — Determines pulley
-      diameter directly. A minimum tooth count is enforced per belt specification to prevent undercutting.</li>
-  <li><span class="tag tag-auto">Auto</span> <strong>Outer Diameter (mm)</strong> — Calculated from
-      tooth count and pitch. Can also be typed — the tool finds the nearest whole-number tooth count.</li>
-  <li><span class="tag tag-input">Input</span> <strong>Bore Diameter (mm)</strong> — Central shaft hole
-      diameter. Must be smaller than the pitch diameter. Minimum 1 mm.
-      <div class="note">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter to account for FDM printing tolerance.</div>
-  </li>
-  <li><span class="tag tag-input">Input</span> <strong>Bore Shape</strong> — the shape of the shaft
-      hole, cut the same in every download, 2D and 3D:
-      <ul>
-        <li><strong>Round</strong> — a plain bore.</li>
-        <li><strong>D-flat</strong> — a flat chord for a D-profile motor shaft. <strong>Flat Depth</strong>
-            is how far the flat sits in from the bore wall; measure your shaft (small motor shafts are
-            typically 0.5 mm).</li>
-        <li><strong>Keyway</strong> — a slot for a parallel key (ISO 773 / DIN 6885). <strong>Key Width W</strong>
-            and <strong>Hub Depth</strong> (t<sub>2</sub> + corner clearance r); <strong>ISO Key</strong>
-            fills both from ISO 773 for your bore.</li>
-        <li><strong>Spline</strong> — the hole for a splined shaft. <strong>Straight-sided (ISO 14)</strong>:
-            pick a size from the light or medium series, or type <strong>Splines N</strong>,
-            <strong>Minor d</strong>, <strong>Major D</strong> and slot <strong>Width B</strong>.
-            <strong>Involute (ISO 4156)</strong>: <strong>Pressure angle</strong> 30&deg;, 37.5&deg; or
-            45&deg;, <strong>Root</strong> (30&deg; only), <strong>Module m</strong> and <strong>Teeth z</strong>.
-            <strong>Hex bar</strong>: pick the <strong>Stock</strong> — metric, inch (1/4&Prime;&ndash;1&Prime;,
-            FRC's 3/8&Prime; and 1/2&Prime;) or rounded hex (REV's 1/2&Prime;, 13.75 mm across corners) — or
-            type <strong>Across flats</strong>, the <strong>Rings</strong> that go on it (DIN 471, or inch SH /
-            5100) and, for rounded stock, <strong>Across corners</strong>. A flat faces +X. It's far easier to
-            print than a spline and carries the torque on its own.
-            A spline replaces the round bore: <strong>Bore Diameter</strong> becomes the hole's minor diameter
-            and can't be typed until Bore Shape is Round again. Its major diameter is how far the bore reaches,
-            for the wall checks and the Dimensions panel.
-            <ul>
-              <li><strong>The fit</strong> is the standard's default, and the line under the sizes gives it:
-                  ISO 14's sliding fit (hole H9 / H10 / H7 on B / D / d, shaft d10 / a11 / f7, from
-                  ISO 286-2), or ISO 4156's H/h, tolerance class 6. A hex bar: an H11 hole on the
-                  h11 that EN 10278 gives bright hex bar (to 80 mm), across flats and across corners.
-                  The hole and a <strong>sample shaft</strong> that fits it are each drawn at the middle
-                  of their tolerance zone.</li>
-              <li>In 3D Mode, the <strong>Spline</strong> card (under Spokes) holds the rest.
-                  <strong>Retaining ring, top face</strong> / <strong>bottom face</strong> — either or
-                  both: a DIN 471 external ring (McMaster's 98541A…), the size for the shaft's outside
-                  diameter — on a hex bar, the round-shaft ring for its across flats (DIN 471 metric, SH /
-                  5100 inch; SH-50 on 1/2&Prime; hex): its groove runs round inside the flats, unbroken.
-                  One ring stops the pulley one way (a shoulder on the shaft takes the other);
-                  a ring on each face holds it both ways. Each ringed face gets a
-                  <strong>counterbore</strong> DIN 471's d4 wide (the room the ring's lugs need) and the
-                  groove's width deep, so the ring sits flush; the sample shaft carries a groove there. The depth is measured from the part's <em>outer</em> face: a flange
-                  or metal plate on that face (with no hub there) has the counterbore through it, and the
-                  pulley takes the rest. A separate printed top flange with that larger hole locates on
-                  its nubs rather than on the shaft.</li>
-              <li><strong>Make counterbore</strong> — under each ticked ring, on by default. Untick it
-                  and that face stays plain: the washer lies on the face and the ring on the washer, so
-                  they stand proud by their thickness, and the sample shaft's groove and end move out
-                  with them. The part keeps the material a counterbore would take — worth it when the
-                  counterbore would leave too little round it (a flange over that face then keeps its
-                  own hole, too).</li>
-              <li><strong>Splined washer under each ring</strong> — a thin washer with the same spline
-                  (d4 &minus; 1 mm across, 1.5 mm thick) between the pulley and the ring: it turns with the
-                  shaft, so the ring rubs the washer, not the pulley. A counterbore gets deeper by its
-                  thickness.</li>
-              <li><strong>Show sample shaft</strong> — the 3D view draws the sample shaft (grey) through
-                  the bore, with the rings (dark) and washers (blue) where they sit.</li>
-            </ul>
-            A spline drives the pulley itself, so it takes no set screw: <strong>Retention</strong> (Hub, in
-            3D Mode) is None while Bore Shape is Spline. A hex bar takes any Retention — one or two set
-            screws, each on a flat (+X, then 120&deg; on; 180&deg; with captured nuts) — with or without rings.</li>
-      </ul>
-      <div class="note">Every feature sits on the +X side (0&deg;): the flat, the key slot, the first spline slot.
-      In 3D Mode a set screw (Hub &rarr; Retention) then goes on a flat or key — one screw.</div>
-      <div class="note">The involute's flanks are drawn as arcs within 0.001 mm of the true involute, and
-      the SVG and DXF carry the spline as true lines and arcs. The <strong>STL</strong> adds the print
-      compensation (Advanced): the bore and counterbore grow, the sample shaft and the washer's outside
-      shrink, the shaft's groove widens. SVG, DXF and STEP are the nominal fit. The small_step STEP
-      can't build a splined bore yet and says so.</div>
-      <div class="note">The <strong>Download</strong> window then lists the <strong>sample splined
-      shaft</strong> (as long as the pulley, DIN 471's n past each ringed face and 5 mm past any other)
-      and, with the box ticked, the <strong>splined washer</strong> — STL, SVG and DXF.</div>
-      <a class="figure" href="/static/help/bore_shape.svg" target="_blank" title="Open full size">
-        <img src="/static/help/bore_shape.svg" alt="The same pulley's bore as Round, D-flat, Keyway and Spline"/></a>
-      <a class="figure" href="/static/help/spline_straight.svg" target="_blank" title="Open full size">
-        <img src="/static/help/spline_straight.svg" alt="An ISO 14 straight-sided spline, 6 x 23 x 26 (B 6), with N, d, D and B marked"/></a>
-      <a class="figure" href="/static/help/spline_involute.svg" target="_blank" title="Open full size">
-        <img src="/static/help/spline_involute.svg" alt="An ISO 4156 involute spline, m 1.5 x 16 teeth, with its minor, pitch and major circles"/></a>
-      <a class="figure" href="/static/help/spline_hex.svg" target="_blank" title="Open full size">
-        <img src="/static/help/spline_hex.svg" alt="A hex bar bore: REV's 1/2 inch rounded hex, across flats and the rounded corners, with the sharp hex dashed"/></a>
-      <a class="figure" href="/static/help/spline_ring.svg" target="_blank" title="Open full size">
-        <img src="/static/help/spline_ring.svg" alt="A section through a splined pulley on its sample shaft: the DIN 471 ring in the counterbore on the top face, the splined washer under it"/></a>
-      <a class="figure" href="/static/help/spline_counterbore.svg" target="_blank" title="Open full size">
-        <img src="/static/help/spline_counterbore.svg" alt="Make counterbore on and off, side by side: the ring and washer sunk flush in a counterbore, and with nothing cut, sitting on the face with the shaft's groove moved out"/></a>
-  </li>
-  <li><span class="tag tag-read">Read-only</span> <strong>Pitch Diameter</strong> — Theoretical belt
-      pitch-line diameter used for belt length calculations.
-      Formula: (Teeth &times; Pitch) / &pi;</li>
+  <li><a href="/static/BeltProfile_help.html">Belt Profile</a> — families, pitches, their other names</li>
+  <li><a href="/static/Size_help.html">Size</a> — teeth, outer diameter, bore and bore shape (splines)</li>
+  <li><a href="/static/Dimensions_help.html">Dimensions and Warnings</a> — the panel under the preview</li>
+  <li><a href="/static/Download_help.html">Download</a> — the Download window and Import</li>
+  <li>3D Mode: <a href="/static/Hub_help.html">Hub</a>, <a href="/static/spokes_2d_help.html">Spokes</a>,
+      <a href="/static/flange_help.html">Flanges</a>, <a href="/static/3D_Print_help.html">3D Print</a>,
+      <a href="/static/3d_mouse_nav_help.html">3D view (Mouse Nav)</a></li>
 </ul>
-
-
-<h3>Dimensions and Warnings</h3>
-<p>Under the preview, a collapsible <strong>Dimensions</strong> table lists the pulley's figures:
-pitch, outside and root diameters, groove depth, pitch line differential, belt and face width (with
-the minimum the belt's standard asks for), a spline's minor and major diameters with the sample
-shaft's, the retaining ring, its counterbore and the washer, and — with flanges in
-3D Mode — the flange's outside diameter, how far it reaches past the OD, and the minimum flange height.
-A figure that falls short of its minimum is shown red; one with no published figure behind it is
-marked <strong>&asymp;</strong> (hover it for why).</p>
-<p>Above the table, <strong>warnings</strong> say where a published rule is broken, each naming its
-source:</p>
-<ul>
-  <li><strong>Face width</strong> — the pulley narrower than ISO 13050 (HTD, GT 8/14M, STD 8/14M, RPP),
-      ISO 5294 (MXL–XXH) or Gates (GT 2/3/5M) ask for the belt, flanged or unflanged. T, AT and
-      STD 2/3/5M have no published figure here and aren't checked.</li>
-  <li><strong>Flange height</strong> — the flange reaching less far past the OD than ISO 13050 Annex D
-      (belt tooth height + pitch differential), ISO 5294 or Gates Table 22.</li>
-  <li><strong>Flange angle</strong> — outside ISO's 8–25&deg; (it's built at the nearest limit).</li>
-  <li><strong>Spline reach</strong> — a spline's major diameter within 1 mm of the tooth root or the hub OD.</li>
-  <li><strong>Ring counterbore</strong> — within 1 mm of the hub OD (on the top face), the spoke hub or the
-      tooth root.</li>
-</ul>
-<p><strong>Auto-fix</strong>, beside the warnings, applies the settings that clear the ones a setting
-can: clearance height, flange rim radius, flange angle — and for a spline the part can't hold (1 mm of
-wall round its reach and the ring's counterbore), a bigger <strong>Hub OD</strong>, up to the tooth root
-less 1 mm a side; failing that, the largest smaller spline of the same kind (an ISO 14 size, or fewer
-involute teeth) that fits.</p>
-<div class="note">A new design's <strong>Clearance Height</strong> already makes the face the standard's
-minimum width, and follows the profile, belt width and flanges until you type a value of your own.</div>
-
-<h3>Download — 2D</h3>
-<ul>
-  <li><strong>SVG Drawing</strong> — Clean 2D SVG at 1:1 mm scale (teeth, bore, OD).
-      Import into Fusion 360 (Insert &rarr; Insert SVG, scale 1 mm/unit), FreeCAD, Inkscape,
-      or Illustrator. This is also what the 2D preview window shows.</li>
-  <li><strong>SVG + Data</strong> — Same drawing plus a data panel listing all key dimensions.
-      Useful for documentation and inspection records.</li>
-  <li><strong>Download Pulley DXF</strong> — DXF of the pulley profile and bore using true arc entities.
-      R2010 DXF format, dimensions in millimetres.</li>
-  <li><strong>Download Belt (SVG or DXF)</strong> — In single-pulley mode: belt tooth cross-section only.
-      In Two Pulley Drive mode: the complete two-pulley belt layout with separate
-      <strong>BELT_BACK</strong> and <strong>BELT_TEETH</strong> layers.</li>
-</ul>
-
-<h3>Import Design</h3>
-<p>The <strong>&#128194; Import</strong> button (toolbar, next to Reset) restores a previously
-exported design. Every SVG, DXF, STEP, and STL file downloaded from this tool contains embedded
-design parameters. Clicking Import, then selecting one of those files, reads the parameters
-and repopulates all form fields exactly as they were when the file was exported.</p>
-<div class="note">Only files exported from this tool contain embedded parameters. Files
-from other CAD programs will show an error.</div>
 
 </body>
 </html>

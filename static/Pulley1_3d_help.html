@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pulley 1 — 3D Help</title>
+<title>Pulley 1 — 3D — Help</title>
 <style>
   body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
          background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
@@ -16,50 +16,39 @@
           border-radius: 3px; margin: 8px 0; font-size: 13px; }
   .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
           border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
   code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
           color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; max-width: 100%; display: block; margin: 0; border: none;
+                border-radius: 0; }
 </style>
+</head>
+<body>
 </head>
 <body>
 
 <h2>&#9881; Pulley 1 — 3D Guide</h2>
 
-<h3>3D Preview</h3>
-<p>Click the <strong>3D</strong> tab in the preview panel to open the interactive Three.js viewer.
-The pulley — including hub boss and all retention features — renders in real time and updates
-automatically as settings change.</p>
+<p>This guide is now split by card; each card's &#9432; opens its own page:</p>
 <ul>
-  <li><strong>Orbit:</strong> left-click and drag</li>
-  <li><strong>Zoom:</strong> scroll wheel</li>
-  <li><strong>Pan:</strong> right-click and drag (or two-finger drag on trackpad)</li>
+  <li><a href="/static/BeltProfile_help.html">Belt Profile</a> — families, pitches, their other names</li>
+  <li><a href="/static/Size_help.html">Size</a> — teeth, outer diameter, bore and bore shape (splines)</li>
+  <li><a href="/static/Dimensions_help.html">Dimensions and Warnings</a> — the panel under the preview</li>
+  <li><a href="/static/Download_help.html">Download</a> — the Download window and Import</li>
+  <li>3D Mode: <a href="/static/Hub_help.html">Hub</a>, <a href="/static/spokes_2d_help.html">Spokes</a>,
+      <a href="/static/flange_help.html">Flanges</a>, <a href="/static/3D_Print_help.html">3D Print</a>,
+      <a href="/static/3d_mouse_nav_help.html">3D view (Mouse Nav)</a></li>
 </ul>
-<div class="note">The preview geometry is exactly what the STL download produces — if it looks right in the viewer, the STL is correct.</div>
-
-<h3>Spokes</h3>
-<p>Enable the <strong>Spokes</strong> section to hollow out the pulley body between the rim ring and the
-hub boss, replacing solid material with evenly spaced radial spokes. This reduces print time and
-material usage on large-diameter pulleys.</p>
-<p>Click the <strong>ℹ</strong> button next to the Spokes heading for full parameter details.</p>
-<div class="note">The spoke voids also appear in the 2D SVG and DXF exports as cut profiles for laser or waterjet cutting.
-Use <em>Gen. Rim Layer</em> to export just the toothed rim ring as a separate 2D file.</div>
-
-<h3>Flanges</h3>
-<p>Enable the <strong>Flanges</strong> section to add annular plates on the top and bottom faces of the
-pulley that prevent the belt from riding off axially.</p>
-<ul>
-  <li><strong>Metal</strong> — thin plate with a bent-up outer rim; downloaded as separate upper and
-      lower STL files.</li>
-  <li><strong>3D Print</strong> — solid wedge profile; the bottom flange is merged into the pulley body.
-      The top flange is optionally a separate part with gluing nubs.</li>
-</ul>
-<p>Click the <strong>ℹ</strong> button next to the Flanges heading for full parameter details.</p>
-<div class="note">When flanges are enabled, a <em>Download Flanges</em> button appears in the Download card for separate upper- and lower-flange STL files.</div>
-
-<h3>Download — STL</h3>
-<p><strong>Download Pulley STL</strong> — Binary STL of the complete 3D pulley solid — toothed body
-plus any hub boss, retention features, spokes, and (for 3D-print flanges) the integrated bottom flange.
-Bore subtracted as a through-hole. Exported in millimetres.
-Open in your slicer (PrusaSlicer, Cura, Bambu Studio, etc.) and print directly.</p>
 
 </body>
 </html>

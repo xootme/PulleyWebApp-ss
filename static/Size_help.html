@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Size — Help</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 14px; color: #e2e8f0;
+         background: #1e293b; margin: 0; padding: 16px 20px 24px; line-height: 1.5; }
+  h2   { font-size: 16px; color: #93c5fd; margin: 0 0 10px; }
+  h3   { font-size: 13px; color: #7dd3fc; margin: 14px 0 4px; }
+  p    { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 18px; }
+  li   { margin-bottom: 3px; }
+  .note { background: #1e3a5f; border-left: 3px solid #3b82f6; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #451a03; border-left: 3px solid #f97316; padding: 6px 10px;
+          border-radius: 3px; margin: 8px 0; font-size: 13px; color: #fed7aa; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th    { background: #1e3a5f; color: #93c5fd; text-align: left; padding: 5px 8px; }
+  td    { padding: 4px 8px; border-bottom: 1px solid #334155; vertical-align: top; }
+  tr:nth-child(even) td { background: #172032; }
+  code  { background: #0f172a; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+          color: #a5f3fc; }
+  .tag  { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+          border-radius: 10px; margin-right: 4px; vertical-align: middle; }
+  .tag-auto   { background: #14532d; color: #86efac; }
+  .tag-input  { background: #1e3a5f; color: #93c5fd; }
+  .tag-read   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .figure  { display: block; background: #fff; border: 1px solid #334155; border-radius: 4px;
+             margin: 8px 0 2px; padding: 4px; }
+  .figure img { width: 100%; max-width: 100%; display: block; margin: 0; border: none;
+                border-radius: 0; }
+</style>
+</head>
+<body>
+</head>
+<body>
+
+<h2>&#9881; Size</h2>
+
+<ul>
+  <li><span class="tag tag-input">Input</span> <strong>Number of Teeth</strong> — Determines pulley
+      diameter directly. A minimum tooth count is enforced per belt specification to prevent undercutting.</li>
+  <li><span class="tag tag-auto">Auto</span> <strong>Outer Diameter (mm)</strong> — Calculated from
+      tooth count and pitch. Can also be typed — the tool finds the nearest whole-number tooth count.</li>
+  <li><span class="tag tag-input">Input</span> <strong>Bore Diameter (mm)</strong> — Central shaft hole
+      diameter. Must be smaller than the pitch diameter. Minimum 1 mm.
+      <div class="note">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter to account for FDM printing tolerance.</div>
+  </li>
+  <li><span class="tag tag-input">Input</span> <strong>Bore Shape</strong> — the shape of the shaft
+      hole, cut the same in every download, 2D and 3D:
+      <ul>
+        <li><strong>Round</strong> — a plain bore.</li>
+        <li><strong>D-flat</strong> — a flat chord for a D-profile motor shaft. <strong>Flat Depth</strong>
+            is how far the flat sits in from the bore wall; measure your shaft (small motor shafts are
+            typically 0.5 mm).</li>
+        <li><strong>Keyway</strong> — a slot for a parallel key (ISO 773 / DIN 6885). <strong>Key Width W</strong>
+            and <strong>Hub Depth</strong> (t<sub>2</sub> + corner clearance r); <strong>ISO Key</strong>
+            fills both from ISO 773 for your bore.</li>
+        <li id="spline"><strong>Spline</strong> — the hole for a splined shaft. <strong>Straight-sided (ISO 14)</strong>:
+            pick a size from the light or medium series, or type <strong>Splines N</strong>,
+            <strong>Minor d</strong>, <strong>Major D</strong> and slot <strong>Width B</strong>.
+            <strong>Involute (ISO 4156)</strong>: <strong>Pressure angle</strong> 30&deg;, 37.5&deg; or
+            45&deg;, <strong>Root</strong> (30&deg; only), <strong>Module m</strong> and <strong>Teeth z</strong>.
+            <strong>Hex bar</strong>: pick the <strong>Stock</strong> — metric, inch (1/4&Prime;&ndash;1&Prime;,
+            FRC's 3/8&Prime; and 1/2&Prime;) or rounded hex (REV's 1/2&Prime;, 13.75 mm across corners) — or
+            type <strong>Across flats</strong>, the <strong>Rings</strong> that go on it (DIN 471, or inch SH /
+            5100) and, for rounded stock, <strong>Across corners</strong>. A flat faces +X. It's far easier to
+            print than a spline and carries the torque on its own.
+            A spline replaces the round bore: <strong>Bore Diameter</strong> becomes the hole's minor diameter
+            and can't be typed until Bore Shape is Round again. Its major diameter is how far the bore reaches,
+            for the wall checks and the Dimensions panel.
+            <ul>
+              <li><strong>The fit</strong> is the standard's default, and the line under the sizes gives it:
+                  ISO 14's sliding fit (hole H9 / H10 / H7 on B / D / d, shaft d10 / a11 / f7, from
+                  ISO 286-2), or ISO 4156's H/h, tolerance class 6. A hex bar: an H11 hole on the
+                  h11 that EN 10278 gives bright hex bar (to 80 mm), across flats and across corners.
+                  The hole and a <strong>sample shaft</strong> that fits it are each drawn at the middle
+                  of their tolerance zone.</li>
+              <li>In 3D Mode, the <strong>Spline</strong> card (under Spokes) holds the rest.
+                  <strong>Retaining ring, top face</strong> / <strong>bottom face</strong> — either or
+                  both: a DIN 471 external ring (McMaster's 98541A…), the size for the shaft's outside
+                  diameter — on a hex bar, the round-shaft ring for its across flats (DIN 471 metric, SH /
+                  5100 inch; SH-50 on 1/2&Prime; hex): its groove runs round inside the flats, unbroken.
+                  One ring stops the pulley one way (a shoulder on the shaft takes the other);
+                  a ring on each face holds it both ways. Each ringed face gets a
+                  <strong>counterbore</strong> DIN 471's d4 wide (the room the ring's lugs need) and the
+                  groove's width deep, so the ring sits flush; the sample shaft carries a groove there. The depth is measured from the part's <em>outer</em> face: a flange
+                  or metal plate on that face (with no hub there) has the counterbore through it, and the
+                  pulley takes the rest. A separate printed top flange with that larger hole locates on
+                  its nubs rather than on the shaft.</li>
+              <li><strong>Make counterbore</strong> — under each ticked ring, on by default. Untick it
+                  and that face stays plain: the washer lies on the face and the ring on the washer, so
+                  they stand proud by their thickness, and the sample shaft's groove and end move out
+                  with them. The part keeps the material a counterbore would take — worth it when the
+                  counterbore would leave too little round it (a flange over that face then keeps its
+                  own hole, too).</li>
+              <li><strong>Splined washer under each ring</strong> — a thin washer with the same spline
+                  (d4 &minus; 1 mm across, 1.5 mm thick) between the pulley and the ring: it turns with the
+                  shaft, so the ring rubs the washer, not the pulley. A counterbore gets deeper by its
+                  thickness.</li>
+              <li><strong>Show sample shaft</strong> — the 3D view draws the sample shaft (grey) through
+                  the bore, with the rings (dark) and washers (blue) where they sit.</li>
+            </ul>
+            A spline drives the pulley itself, so it takes no set screw: <strong>Retention</strong> (Hub, in
+            3D Mode) is None while Bore Shape is Spline. A hex bar takes any Retention — one or two set
+            screws, each on a flat (+X, then 120&deg; on; 180&deg; with captured nuts) — with or without rings.</li>
+      </ul>
+      <div class="note">Every feature sits on the +X side (0&deg;): the flat, the key slot, the first spline slot.
+      In 3D Mode a set screw (Hub &rarr; Retention) then goes on a flat or key — one screw.</div>
+      <div class="note">The involute's flanks are drawn as arcs within 0.001 mm of the true involute, and
+      the SVG and DXF carry the spline as true lines and arcs. The <strong>STL</strong> adds the print
+      compensation (Advanced): the bore and counterbore grow, the sample shaft and the washer's outside
+      shrink, the shaft's groove widens. SVG, DXF and STEP are the nominal fit. The small_step STEP
+      can't build a splined bore yet and says so.</div>
+      <div class="note">The <strong>Download</strong> window then lists the <strong>sample splined
+      shaft</strong> (as long as the pulley, DIN 471's n past each ringed face and 5 mm past any other)
+      and, with the box ticked, the <strong>splined washer</strong> — STL, SVG and DXF.</div>
+      <a class="figure" href="/static/help/bore_shape.svg" target="_blank" title="Open full size">
+        <img src="/static/help/bore_shape.svg" alt="The same pulley's bore as Round, D-flat, Keyway and Spline"/></a>
+      <a class="figure" href="/static/help/spline_straight.svg" target="_blank" title="Open full size">
+        <img src="/static/help/spline_straight.svg" alt="An ISO 14 straight-sided spline, 6 x 23 x 26 (B 6), with N, d, D and B marked"/></a>
+      <a class="figure" href="/static/help/spline_involute.svg" target="_blank" title="Open full size">
+        <img src="/static/help/spline_involute.svg" alt="An ISO 4156 involute spline, m 1.5 x 16 teeth, with its minor, pitch and major circles"/></a>
+      <a class="figure" href="/static/help/spline_hex.svg" target="_blank" title="Open full size">
+        <img src="/static/help/spline_hex.svg" alt="A hex bar bore: REV's 1/2 inch rounded hex, across flats and the rounded corners, with the sharp hex dashed"/></a>
+      <a class="figure" href="/static/help/spline_ring.svg" target="_blank" title="Open full size">
+        <img src="/static/help/spline_ring.svg" alt="A section through a splined pulley on its sample shaft: the DIN 471 ring in the counterbore on the top face, the splined washer under it"/></a>
+      <a class="figure" href="/static/help/spline_counterbore.svg" target="_blank" title="Open full size">
+        <img src="/static/help/spline_counterbore.svg" alt="Make counterbore on and off, side by side: the ring and washer sunk flush in a counterbore, and with nothing cut, sitting on the face with the shaft's groove moved out"/></a>
+  </li>
+  <li><span class="tag tag-read">Read-only</span> <strong>Pitch Diameter</strong> — Theoretical belt
+      pitch-line diameter used for belt length calculations.
+      Formula: (Teeth &times; Pitch) / &pi;</li>
+</ul>
+
+
+
+<h3>Pulley 2</h3>
+<p>Pulley 2 is the <strong>driven (output) pulley</strong> in a Two Pulley Drive system. It shares the
+belt profile (family and pitch) with Pulley 1 — only size, fit, and print settings can be adjusted
+independently. Its tooth count drives the gear ratio calculation.</p>
+<ul>
+  <li><span class="tag tag-input">Input</span> <strong>Number of Teeth</strong> — Editing P2 keeps
+      Pulley 1 fixed and updates the Gear Ratio to reflect the new P2/P1 relationship.
+      More teeth on P2 = lower output speed, higher output torque.</li>
+  <li><span class="tag tag-auto">Auto</span> <strong>Outer Diameter (mm)</strong> — Calculated from
+      tooth count and pitch. Can be typed to reverse-calculate the nearest whole-number tooth count.
+      Gear Ratio updates to match.</li>
+  <li><span class="tag tag-input">Input</span> <strong>Bore Diameter (mm)</strong> — Shaft hole for
+      Pulley 2. Independent of Pulley 1. Minimum 1 mm.
+      <div class="note">For 3D-printed pulleys, add 0.2–0.4 mm over the nominal shaft diameter for FDM printing tolerance.</div>
+  </li>
+  <li><span class="tag tag-input">Input</span> <strong>Bore Shape</strong> — Round, D-flat, Keyway or
+      Spline (ISO 14 or ISO 4156) for Pulley 2's shaft, independent of Pulley 1, with its own retaining
+      ring, splined washer and sample shaft. The fields are the same
+      as Pulley 1's: see <strong>Bore Shape</strong> above.</li>
+  <li><span class="tag tag-read">Read-only</span> <strong>Pitch Diameter</strong> — Theoretical belt
+      pitch-line diameter for Pulley 2. Formula: (Teeth &times; Pitch) / &pi;</li>
+</ul>
+
+
+</body>
+</html>
