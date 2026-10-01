@@ -4,6 +4,7 @@
 *
 !app.py
 !accounts_setup.py
+!agent.py
 !bundles.py
 !charging.py
 !results.py

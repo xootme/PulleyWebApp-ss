@@ -1,5 +1,38 @@
 # Architectural Decision Records
 
+## ADR-019 — Agents: the v1 API and one MCP gateway for every CCT app (cct_common 0.22.0)
+**Date:** 2026-09-30
+**Status:** Active — Timing Pulleys is the first app
+
+**Context:** The owner wants the CCT apps easy for agents to use, and asked whether that should be one
+MCP interface for all of them or one per app. One: accounts, tokens and device sign-in already span
+the apps, cross-app work (an enclosure round a board, a drive sized to a motor) needs one session,
+and a new app should appear without new setup. Design: cct_common `docs/AGENT_API.md`.
+
+**Decision:**
+- **Each app serves a v1 JSON API** (`cct_common.agent_api`): `GET /api/v1/describe` (its
+  parameters — names, types, units, limits, choices, when they matter), `POST /api/v1/check`,
+  `/api/v1/files`, `/api/v1/quote`. Here: `agent.py`. **Parameter names are the app's own query keys**
+  (what the page sends and the download routes read), so an agent's design and a browser link are the
+  same thing — and those names are now public: renaming one is a breaking change.
+- **check** is the Dimensions panel as data (`_dimensions`, split from `/api/dimensions`), plus each
+  spline's fit and the spoke fit; its Auto-fix also comes as `fix.params`, keyed by parameter names an
+  agent can send straight back (the page's `fix.set` is keyed by field ids).
+- **files** is the download window's list, rebuilt on the server (`_dlParts` / `_dlFiles`): pulleys,
+  belt, whole-drive DXF, sample shafts and washers — plain GETs on the existing download routes.
+  Separate flange parts (a loose top flange, the supported assembly) wait: their routes use names the
+  page remaps in JavaScript.
+- **Paying is unchanged**: the download routes already take a device token (Bearer) and charge as the
+  window does. `files` registers the design — every file's parameters — so one payment covers every
+  file at or below its tier.
+- **The MCP gateway** (`cct_common.mcp_gateway`, stdio) is thin: `list_apps`, `describe`, `check`,
+  `quote`, `export`, `sign_in` / `sign_in_finish`, `balance`, over each configured app's v1 API.
+
+**Consequences:** `tests/test_agent.py` (the routes; the gateway over the test client; one payment for
+a design; sign-in and the MCP tools on a stub); cct_common `tests/test_agent_api.py`,
+`tests/test_mcp_gateway.py` (a real stdio MCP session against a toy app). Next: remote hosting of the
+gateway (streamable HTTP + OAuth), the flange parts, the other apps.
+
 ## ADR-018 — Hex bar bores, metric and inch, with their retaining rings (cct_common 0.21.0)
 **Date:** 2026-09-29
 **Status:** Active (2D, STL, cadquery STEP); small_step STEP pending (as splines, ADR-014)
