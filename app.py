@@ -121,38 +121,14 @@ def _get_machine_id():
     return machine_id
 
 
-# ── The session queue: compiled out ─────────────────────────────────────────
-# One active user at a time, the rest in a waiting room at /queue, built for
-# the single-server Render host. The live site runs on Google Cloud Run, which
-# scales by adding servers and never queues (the Dockerfile's QUEUE_DISABLED=1
-# kept it idle). With SESSION_QUEUE off the queue is not in the app at all: no
-# /queue page, no /api/session/* or /api/queue/* routes, no session check on
-# the export routes, and exports built inside their request. True puts it all
-# back as it was (QUEUE_DISABLED and PULLEY_TESTING then work as before).
-SESSION_QUEUE = False
-
-
-def queue_off() -> bool:
-    """True when nothing queues: the queue compiled out, QUEUE_DISABLED, or testing."""
-    return (not SESSION_QUEUE or bool(os.environ.get('QUEUE_DISABLED'))
-            or bool(os.environ.get('PULLEY_TESTING')))
-
-
-def _queue_route(rule, **options):
-    """app.route for the session queue's own routes: registered only with
-    SESSION_QUEUE on."""
-    def deco(view):
-        return app.route(rule, **options)(view) if SESSION_QUEUE else view
-    return deco
-
-
 def require_active_session(f):
     """Decorator: Check if user has active session before allowing expensive operations."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Skip checks in no-queue mode (local/desktop) or during testing
         from flask import current_app
-        if queue_off() or current_app.config.get('TESTING') or charges.is_internal():
+        if (os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING')
+                or current_app.config.get('TESTING') or charges.is_internal()):
             return f(*args, **kwargs)
 
         # Get session_id from URL params, form data, or JSON body
@@ -835,9 +811,9 @@ def _get_preset_value(spec, preset_type, preset_key, custom_val):
 
 @app.route('/')
 def index():
-    # With no queue (compiled out, local/desktop, testing) the page opens straight
-    # away. Empty session_id tells the JS not to replace the URL.
-    if queue_off():
+    # In no-queue mode (local/desktop) or testing mode, skip queue entirely.
+    # Empty session_id tells the JS not to replace the URL.
+    if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
         return render_template(
             'index.html',
             session_id='',
@@ -2914,7 +2890,7 @@ def api_fp_token():
                 .split(',')[0].strip())
 
         # Localhost / desktop build, or tokens on (they replace this limit): no limit
-        if charges.enabled or not SESSION_QUEUE or os.environ.get('QUEUE_DISABLED') or ip in ('127.0.0.1', '::1'):
+        if charges.enabled or os.environ.get('QUEUE_DISABLED') or ip in ('127.0.0.1', '::1'):
             return jsonify({'ok': True, 'token': None})
 
         if not fp or len(fp) > 64:
@@ -3774,7 +3750,7 @@ def api_download_step_async():
             finally:
                 _ctx.pop()
 
-        if queue_off():
+        if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
             generate_async()  # run in request thread — no daemon thread, no zombie
         else:
             threading.Thread(target=generate_async, daemon=True).start()
@@ -3941,7 +3917,7 @@ def api_download_all_step_async():
             finally:
                 _ctx.pop()
 
-        if queue_off():
+        if os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING'):
             generate_async()  # run in request thread — no daemon thread, no zombie
         else:
             threading.Thread(target=generate_async, daemon=True).start()
@@ -3957,14 +3933,14 @@ def api_download_all_step_async():
 
 # ── Session Management (Single-User Queue) ──────────────────────────────────
 
-@_queue_route('/api/session/create', methods=['POST'])
+@app.route('/api/session/create', methods=['POST'])
 def api_session_create():
     """Create a new session (immediate access or enqueue)."""
     result = create_session()
     return jsonify(result)
 
 
-@_queue_route('/api/session/status', methods=['GET'])
+@app.route('/api/session/status', methods=['GET'])
 def api_session_status():
     """Get status of a session."""
     session_id = request.args.get('session_id')
@@ -3974,7 +3950,7 @@ def api_session_status():
     return jsonify(status)
 
 
-@_queue_route('/api/session/heartbeat', methods=['POST'])
+@app.route('/api/session/heartbeat', methods=['POST'])
 def api_session_heartbeat():
     """Keep session alive (prevent idle timeout)."""
     session_id = request.json.get('session_id') if request.json else None
@@ -3984,7 +3960,7 @@ def api_session_heartbeat():
     return jsonify({'success': success})
 
 
-@_queue_route('/api/session/release', methods=['POST'])
+@app.route('/api/session/release', methods=['POST'])
 def api_session_release():
     """Release a session (manual end)."""
     data = request.json if request.is_json else {}
@@ -3995,13 +3971,13 @@ def api_session_release():
     return jsonify({'success': True})
 
 
-@_queue_route('/api/queue/status', methods=['GET'])
+@app.route('/api/queue/status', methods=['GET'])
 def api_queue_status():
     """Get queue info for UI display."""
     return jsonify(get_queue_info())
 
 
-@_queue_route('/api/test/reset', methods=['POST'])
+@app.route('/api/test/reset', methods=['POST'])
 def api_test_reset():
     """Reset all queue and session state. Enabled when PULLEY_TESTING=1 env var is set."""
     if not os.environ.get('PULLEY_TESTING'):
@@ -4070,7 +4046,7 @@ def api_trial_status():
     })
 
 
-@_queue_route('/api/session/register-machine', methods=['POST'])
+@app.route('/api/session/register-machine', methods=['POST'])
 def api_session_register_machine():
     """Register machine_id with session for addin/CLI access.
 
@@ -4290,7 +4266,7 @@ def api_download_stl():
         }), 500
 
 
-@_queue_route('/queue')
+@app.route('/queue')
 def queue_page():
     """Queue management UI page."""
     return render_template('queue.html')
@@ -4489,7 +4465,7 @@ register_bundle_routes(
     app, log_dir=_LOG_DIR, record_trial=_consume_web_token_from_body,
     create_job=create_job, start_job=start_job, update_progress=update_progress,
     finish_job=_finish_job, guard=require_active_session,
-    run_inline=queue_off,
+    run_inline=lambda: bool(os.environ.get('QUEUE_DISABLED') or os.environ.get('PULLEY_TESTING')),
 )
 
 
