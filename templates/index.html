@@ -106,9 +106,10 @@
       <div class="hub-header" onclick="toggleSplineCard({{ n }})">
         <span style="display:flex;align-items:center;gap:7px;">
           Spline
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html#spline')" title="Spline help">&#9432;</button>
         </span>
-        <span class="hub-arrow open" id="spline{{ n }}-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html#spline')" title="Spline help">&#9432;</button>
+          <span class="hub-arrow open" id="spline{{ n }}-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body open" id="spline{{ n }}-body">
         <!-- DIN 471 rings on the shaft; each face's counterbore is optional
@@ -259,9 +260,10 @@
       <div class="hub-header" onclick="toggleCard('belt1')">
         <span style="display:flex;align-items:center;gap:7px;">
           Belt Profile
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/BeltProfile_help.html')" title="Belt Profile help">&#9432;</button>
         </span>
-        <span class="hub-arrow open" id="belt1-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/BeltProfile_help.html')" title="Belt Profile help">&#9432;</button>
+          <span class="hub-arrow open" id="belt1-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body open" id="belt1-body">
       <span style="display:inline-flex;align-items:center;gap:8px;">
@@ -281,9 +283,10 @@
       <div class="hub-header" onclick="toggleCard('size1')">
         <span style="display:flex;align-items:center;gap:7px;">
           Size
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html')" title="Size help">&#9432;</button>
         </span>
-        <span class="hub-arrow open" id="size1-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html')" title="Size help">&#9432;</button>
+          <span class="hub-arrow open" id="size1-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body open" id="size1-body">
       <span class="belt-group">
@@ -304,9 +307,10 @@
       <div class="hub-header" onclick="toggleAdvanced(1)">
         <span style="display:flex;align-items:center;gap:6px;">
           Advanced
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/2d_advanced_help.html')" title="Advanced help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="advanced1_arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/2d_advanced_help.html')" title="Advanced help">&#9432;</button>
+          <span class="hub-arrow" id="advanced1_arrow">&#9660;</span>
+        </span>
       </div>
       <div id="advanced1_body" style="display:none">
         <label class="adv-both" title="Keep both pulleys' Advanced settings the same">
@@ -349,9 +353,10 @@
                  onchange="onHubEnabledChange(1)"
                  style="width:auto;accent-color:#0078d4;cursor:pointer;margin:0;">
           Hub
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Hub_help.html')" title="Hub help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="hub1-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Hub_help.html')" title="Hub help">&#9432;</button>
+          <span class="hub-arrow" id="hub1-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body" id="hub1-body">
         <label for="hub1_height">Hub Height (mm)</label>
@@ -396,9 +401,10 @@
         <span style="display:flex;align-items:center;gap:7px;">
           <input type="checkbox" id="flange1_enabled" onclick="event.stopPropagation(); onFlangeChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
           Flanges
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/flange_help.html')" title="Flange help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="flange1-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/flange_help.html')" title="Flange help">&#9432;</button>
+          <span class="hub-arrow" id="flange1-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body" id="flange1-body" style="display:none;">
 
@@ -502,9 +508,10 @@
         <span style="display:flex;align-items:center;gap:7px;">
           <input type="checkbox" id="spokes1_enabled" onclick="event.stopPropagation(); onSpokesChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
           Spokes
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="spokes1-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
+          <span class="hub-arrow" id="spokes1-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body" id="spokes1-body">
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
@@ -547,7 +554,7 @@
     {{ spline_card(1) }}
 
     <section class="card download-card">
-      <h2 style="display:flex;align-items:center;gap:7px;">Download
+      <h2 style="display:flex;align-items:center;justify-content:space-between;gap:7px;">Download
         <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Download_help.html')" title="Download help">&#9432;</button></h2>
       <button class="btn-download" onclick="openDownloadWindow()">⬇ Download</button>
       <label class="fb-2d" id="rim-layer1-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
@@ -622,9 +629,10 @@
       <div class="hub-header" onclick="toggleCard('size2')">
         <span style="display:flex;align-items:center;gap:7px;">
           Size
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html')" title="Size help">&#9432;</button>
         </span>
-        <span class="hub-arrow open" id="size2-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Size_help.html')" title="Size help">&#9432;</button>
+          <span class="hub-arrow open" id="size2-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body open" id="size2-body">
       <span class="belt-group">
@@ -645,9 +653,10 @@
       <div class="hub-header" onclick="toggleAdvanced(2)">
         <span style="display:flex;align-items:center;gap:6px;">
           Advanced
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/2d_advanced_help.html')" title="Advanced help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="advanced2_arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/2d_advanced_help.html')" title="Advanced help">&#9432;</button>
+          <span class="hub-arrow" id="advanced2_arrow">&#9660;</span>
+        </span>
       </div>
       <div id="advanced2_body" style="display:none">
         <label class="adv-both" title="Keep both pulleys' Advanced settings the same">
@@ -690,9 +699,10 @@
                  onchange="onHubEnabledChange(2)"
                  style="width:auto;accent-color:#0078d4;cursor:pointer;margin:0;">
           Hub
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Hub_help.html')" title="Hub help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="hub2-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Hub_help.html')" title="Hub help">&#9432;</button>
+          <span class="hub-arrow" id="hub2-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body" id="hub2-body">
         <label for="hub2_height">Hub Height (mm)</label>
@@ -737,9 +747,10 @@
         <span style="display:flex;align-items:center;gap:7px;">
           <input type="checkbox" id="flange2_enabled" onclick="event.stopPropagation(); onFlangeChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
           Flanges
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/flange_help.html')" title="Flange help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="flange2-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/flange_help.html')" title="Flange help">&#9432;</button>
+          <span class="hub-arrow" id="flange2-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body" id="flange2-body" style="display:none;">
 
@@ -832,9 +843,10 @@
         <span style="display:flex;align-items:center;gap:7px;">
           <input type="checkbox" id="spokes2_enabled" onclick="event.stopPropagation(); onSpokesChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
           Spokes
-          <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
         </span>
-        <span class="hub-arrow" id="spokes2-arrow">&#9660;</span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
+          <span class="hub-arrow" id="spokes2-arrow">&#9660;</span>
+        </span>
       </div>
       <div class="hub-body" id="spokes2-body">
         <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
@@ -877,7 +889,7 @@
     {{ spline_card(2) }}
 
     <section class="card download-card">
-      <h2 style="display:flex;align-items:center;gap:7px;">Download
+      <h2 style="display:flex;align-items:center;justify-content:space-between;gap:7px;">Download
         <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Download_help.html')" title="Download help">&#9432;</button></h2>
       <button class="btn-download-p2" onclick="openDownloadWindow()">⬇ Download</button>
       <label class="fb-2d" id="rim-layer2-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">

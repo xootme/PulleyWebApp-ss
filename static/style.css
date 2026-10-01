@@ -690,6 +690,8 @@ body:not(.feature-build) .fb-3d { display: none !important; }
   margin-bottom: 0;
 }
 .hub-header:hover { color: #005fa3; }
+/* a card's info button sits just left of its arrow */
+.hub-tools { display: flex; align-items: center; gap: 8px; }
 .hub-arrow {
   font-size: 10px;
   transition: transform 0.2s;
