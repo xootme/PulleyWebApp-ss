@@ -36,10 +36,26 @@ SCREWS = {'hub_od': '44', 'hub_height': '12', 'hub_screw_size': 'M4',
           'hub_screw_hold': 'thread', 'hub_screw_count': '2'}
 
 
+# The COMMITTED binary, used when SMALL_STEP_BIN says nothing.
+#
+# This file used to skip itself entirely without that variable, so nothing
+# exercised the app against the binary it actually ships -- and a worker that
+# sent a flag the committed binary rejects got as far as being pushed twice.
+# Defaulting to bin/small_step_linux means the artifact under test is the
+# artifact that deploys, unless someone deliberately points elsewhere.
+_COMMITTED_BIN = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'bin', 'small_step_linux')
+
+
+def _ss_bin():
+    return os.environ.get('SMALL_STEP_BIN') or _COMMITTED_BIN
+
+
 def _ss_ready():
     from exporters.step_worker_ss import SMALL_STEP_MIN_VERSION
     import subprocess
-    binp = os.environ.get('SMALL_STEP_BIN', '')
+    binp = _ss_bin()
     if not binp or not os.path.isfile(binp):
         return False
     try:
@@ -52,7 +68,8 @@ def _ss_ready():
 
 
 ss_only = pytest.mark.skipif(not _ss_ready(),
-                             reason='SMALL_STEP_BIN unset, missing, or too old')
+                             reason='no usable small_step: neither SMALL_STEP_BIN nor '
+                                    'bin/small_step_linux is present and new enough')
 
 
 def _load(data):
@@ -66,6 +83,10 @@ def _load(data):
 def _step(client, monkeypatch, q):
     monkeypatch.setenv('PULLEY_STEP_BACKEND', '')
     monkeypatch.setenv('QUEUE_DISABLED', '1')
+    # Point the app at the same binary `_ss_ready` vetted. Without this the
+    # app falls back to its Windows dev path and the test would check a
+    # different binary from the one it decided to run against.
+    monkeypatch.setenv('SMALL_STEP_BIN', _ss_bin())
     return client.get('/download/step', query_string=q)
 
 
