@@ -219,9 +219,13 @@ class TestFlangeInnerRadiusSpokes:
             f'Flange inner r={r_min:.3f} should be outside hub boss r={r_hub:.3f}'
         )
 
-    def test_metal_top_inner_radius_equals_R_OD_minus_rim(self):
-        R_OD, _, _ = _pulley_radii(FAMILY, PITCH, TEETH)
-        expected_r_inner = R_OD - RIM_DEPTH
+    def test_metal_top_inner_radius_is_the_rim_boundary(self):
+        """The metal plate stops where the printed flange does: the groove
+        bottom less the rim depth. It used R_OD - rim_depth (outside the groove
+        whenever the rim was shallower than the teeth — ADR-021); the old 1.5 mm
+        tolerance let that pass, so this one is tight."""
+        R_OD, _, tooth_ht = _pulley_radii(FAMILY, PITCH, TEETH)
+        expected_r_inner = (R_OD - tooth_ht) - RIM_DEPTH
 
         top, _ = build_flange_meshes(
             _fp_metal(),
@@ -233,7 +237,7 @@ class TestFlangeInnerRadiusSpokes:
         verts  = top.vertices
         radii  = np.sqrt(verts[:, 0] ** 2 + verts[:, 1] ** 2)
         r_min  = float(radii.min())
-        assert abs(r_min - expected_r_inner) < 1.5
+        assert abs(r_min - expected_r_inner) < 0.05, (r_min, expected_r_inner)
 
 
 # ===========================================================================

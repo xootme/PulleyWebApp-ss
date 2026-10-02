@@ -824,7 +824,7 @@ def build_flange_meshes(
             bend_r  = min(bend_r, rim_r * 0.8)
 
             r_inner_top = flange_inner_r_metal_top(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
-                                                   r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
+                                                   r_tooth_OD=_R_gb, rim_depth_mm=rim_depth_mm)
             prof_top = profile_metal(r_inner_top, R_OD, rim_r, angle, plate_t, bend_r)
             top = _revolve_through_bore(prof_top, sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
             top = _open_for_ring(top, spline, 'top', printed=False)
@@ -832,7 +832,7 @@ def build_flange_meshes(
             meshes.append(top)
 
             r_inner_bot = flange_inner_r_metal_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
-                                                      r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
+                                                      r_tooth_OD=_R_gb, rim_depth_mm=rim_depth_mm)
             prof_bot = profile_metal(r_inner_bot, R_OD, rim_r, angle, plate_t, bend_r)
             prof_bot = [(r, -z) for r, z in prof_bot]  # flip: bend faces down, contact face at Z=0
             bot = _revolve_through_bore(prof_bot, sections, bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline)
