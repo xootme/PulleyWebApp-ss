@@ -21,10 +21,31 @@ import subprocess
 import glob
 import argparse
 
-# Path to sfa-cl.exe relative to this file's repo root
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(_HERE)
-SFA_EXE = os.path.join(_REPO_ROOT, "tools", "sfa", "sfa-cl.exe")
+
+
+def _main_checkout():
+    """The repo's main checkout (a worktree's tools/sfa is empty: the binaries
+    aren't committed), or None."""
+    try:
+        common = subprocess.run(["git", "-C", _REPO_ROOT, "rev-parse", "--path-format=absolute",
+                                 "--git-common-dir"], capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return os.path.dirname(common) if common else None
+
+
+# Where sfa-cl.exe is looked for, in order (bug hunt section 9: a verifier that
+# can't find its tool must say so, and look where the tool really is): SFA_CL;
+# this repo's tools/sfa/; the main checkout's (from a worktree); AppData.
+SFA_CANDIDATES = [c for c in (
+    os.environ.get("SFA_CL", "").strip(),
+    os.path.join(_REPO_ROOT, "tools", "sfa", "sfa-cl.exe"),
+    os.path.join(_main_checkout() or _REPO_ROOT, "tools", "sfa", "sfa-cl.exe"),
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "SFA", "sfa-cl.exe"),
+) if c]
+SFA_EXE = next((c for c in SFA_CANDIDATES if os.path.isfile(c)), None)
 
 
 def validate_step(step_path):
@@ -32,8 +53,8 @@ def validate_step(step_path):
     Run NIST SFA syntax check on step_path.
     Returns (ok: bool, lines: list[str]) where lines are the relevant output.
     """
-    if not os.path.isfile(SFA_EXE):
-        return False, [f"sfa-cl.exe not found at: {SFA_EXE}"]
+    if SFA_EXE is None:
+        return False, ["sfa-cl.exe not found; looked in: " + "; ".join(SFA_CANDIDATES)]
 
     step_path = os.path.abspath(step_path)
     try:
