@@ -1261,7 +1261,10 @@ function _applyUrlParams(p) {
     if (p.has(`${pre}screw_hole_dia`)) setv(`hub${n}_screw_hole_dia`, p.get(`${pre}screw_hole_dia`));
     const retention = hasScrewD ? screwType : 'none';
     const retEl = document.getElementById(`hub${n}_retention`);
-    if (retEl) retEl.value = retention;
+    // The loaded value is also what a spline lock gives back when it lifts
+    // (_lockRetentionForSpline): it remembers the value from before the lock, and
+    // that was the previous design's — bug hunt section 8 (2026-10-02).
+    if (retEl) { retEl.value = retention; retEl.dataset.before = retention; }
 
     if (isSetScrewValue(retention)) {
       if (sz) setv(`hub${n}_screw_size`, sz);
@@ -1593,6 +1596,9 @@ async function applySettings(s) {
       else ret = 'none';
     }
     _val(`hub${n}_retention`,        ret);
+    // what a spline lock gives back is the loaded value, not the one it remembered
+    // before this load (Undo across the lock: redo then undo gave back None)
+    if (ret !== undefined) document.getElementById(`hub${n}_retention`).dataset.before = ret;
     _val(`hub${n}_screw_size`,       size);
     _val(`hub${n}_screw_count`,      s[`hub${n}_screw_count`]);
     _val(`hub${n}_flat_depth`,       s[`hub${n}_flat_depth`]);

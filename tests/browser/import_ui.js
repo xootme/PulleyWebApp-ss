@@ -114,6 +114,63 @@ async function main() {
     await panels(`link · ${name}`, want);
   }
 
+  // ── A lock gives back the LOADED value, not the one it remembered (bug hunt §8) ──
+  // A splined bore locks Retention at None and remembers the value before, to give
+  // back when the lock lifts. Importing a round-bore file onto a spline-locked page
+  // put that remembered value back over the file's own (2026-10-02).
+  const importFile = async file => {
+    await js('openImportDialog()');
+    const doc = await send('DOM.getDocument', { depth: -1 });
+    const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: '#import-file-input' });
+    await send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] });
+    await js('executeImport()');
+    await sleep(2500);
+  };
+  const ret = n => js(`document.getElementById('hub${n}_retention').value`);
+  const ROUND = `${DRIVE}&hub_od=20&hub_height=8&hub_screw_size=M3&hub_screw_count=2&hub_screw_hold=nut` +
+                `&p2_hub_od=24&p2_hub_height=8&p2_hub_screw_size=M4&p2_hub_screw_count=1&p2_hub_screw_hold=thread`;
+  const SPLINED = `${DRIVE}&hub_od=40&hub_height=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=23` +
+                  `&spline_major=26&spline_width=6&p2_hub_od=40&p2_hub_height=8&p2_bore_shape=spline&p2_spline_type=straight` +
+                  `&p2_spline_n=6&p2_spline_minor=23&p2_spline_major=26&p2_spline_width=6`;
+  await blank();
+  const exp = await js(`fetch('/download/stl?${ROUND}&pulley=2').then(async r => {
+    const b = new Uint8Array(await r.arrayBuffer()); let s = ''; for (const x of b) s += String.fromCharCode(x); return [r.status, btoa(s)]; })`);
+  check('lock: the app exports the round-bore design', exp[0] === 200, exp[0]);
+  const roundFile = path.join(tmp, 'round-screws.stl');
+  fs.writeFileSync(roundFile, Buffer.from(exp[1], 'base64'));
+  // the page: a splined drive, Retention locked at None on both pulleys
+  await send('Page.navigate', { url: `${BASE}/?${SPLINED}` });
+  await sleep(3500);
+  await to3d();
+  check('lock: a splined bore holds Retention at None on both pulleys',
+        (await ret(1)) === 'none' && (await ret(2)) === 'none'
+        && await js("document.getElementById('hub1_retention').disabled"));
+  await importFile(roundFile);
+  check('lock: importing a round-bore file gives back the FILE\'s Retention on both pulleys (nut / threaded)',
+        (await ret(1)) === 'set_screw_nut' && (await ret(2)) === 'set_screw_std'
+        && !(await js("document.getElementById('hub1_retention').disabled")),
+        [await ret(1), await ret(2)]);
+  check('lock: …and the file\'s screw count', (await js("document.getElementById('hub1_screw_count').value")) === '2',
+        await js("document.getElementById('hub1_screw_count').value"));
+
+  // undo / redo across the lock: round + insert -> spline (locked) -> undo -> redo -> undo
+  await blank();
+  await send('Page.navigate', { url: `${BASE}/?${DRIVE}&hub_od=20&hub_height=8&hub_screw_size=M3&hub_screw_count=1&hub_screw_hold=insert` });
+  await sleep(3500);
+  await to3d();
+  const idle = async () => { for (let i = 0; i < 40 && await js('typeof restoringHistory !== "undefined" && restoringHistory'); i++) await sleep(150); await sleep(800); };
+  const before = await ret(1);
+  await js(`(() => { const el = document.getElementById('bore1_shape'); el.value = 'spline';
+    el.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(2500);
+  check('undo: switching to a spline locks Retention at None', (await ret(1)) === 'none', [before, await ret(1)]);
+  await js('undo()'); await idle();
+  check('undo: back to the round bore gives back the insert', (await ret(1)) === before, await ret(1));
+  await js('redo()'); await idle();
+  await js('undo()'); await idle();
+  check('undo: after a redo and another undo, still the insert (not None)', (await ret(1)) === before,
+        [before, await ret(1)]);
+
   finish(errors);
   ws.close(); chrome.kill();
 }
