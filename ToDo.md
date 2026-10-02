@@ -281,13 +281,15 @@ Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
 
 ## Agent / Headless API Access
 One API serves agents and CAD plugins alike (ADR-019; cct_common `docs/AGENT_API.md`).
-**Built 2026-09-30 in the cadquery track, not committed:** cct_common 0.22.0 (`agent_api`,
-`mcp_gateway`) and `agent.py` wait for the owner's go-ahead; then sync cct_common, commit and
-fast-forward this track.
+**Shipped:** cct_common 0.22.0 (`agent_api`, `mcp_gateway`, `33fc3ea`) and `agent.py`
+(`702179e`); live at `cheapcadtools.com/tools/pulleys/api/v1/`. The MCP compliance checklist
+for every app is `Documents\CCT_App_Baseline.md` §6.
 
 **Core API:**
-- [ ] Commit and ship: `GET /api/v1/describe` (every parameter: type, unit, limits, choices, when it matters; parts, formats — replaces the planned /api/capabilities and /api/describe), `POST /api/v1/check` (Dimensions, warnings, Auto-fix as parameters), `/api/v1/files`, `/api/v1/quote`; versioned `/api/v1/`, and the page's query keys frozen as the public parameter names
-- [ ] Commit and ship the MCP gateway (cct_common's, one for every app, stdio)
+- [x] Commit and ship: `GET /api/v1/describe` (every parameter: type, unit, limits, choices, when it matters; parts, formats — replaces the planned /api/capabilities and /api/describe), `POST /api/v1/check` (Dimensions, warnings, Auto-fix as parameters), `/api/v1/files`, `/api/v1/quote`; versioned `/api/v1/`, and the page's query keys frozen as the public parameter names
+- [x] Commit and ship the MCP gateway (cct_common's, one for every app, stdio). Tested end to end against the live site 2026-10-01: tools, describe, check, misspelt name refused, device sign-in, balance, quote, export refused for want of tokens. Registered in Claude Code as `cct-tools` (user scope, venv `C:\Users\cmyer\.cct\mcp-venv`, token in `~/.cct/token`)
+- [ ] A paid export through the gateway landing on disk (the test account had 0 tokens)
+- [ ] Refuse a malformed body: `POST /api/v1/check` with `{"family": "GT"}` (no `params` wrapper) answers with the *default* design instead of a 400 — fix in cct_common `agent_api`
 - [x] JSON errors on all 400 responses — done 2026-09-27: `_api_error`; tracebacks go to the log, never the response (tests/test_api_errors.py)
 - [ ] Host the gateway remotely (streamable HTTP + OAuth), list it in MCP registries
 - [ ] Separate flange parts in `/api/v1/files` (loose top flange, supported assembly: their routes' remapped names)
