@@ -1323,6 +1323,17 @@ function _applyUrlParams(p) {
     set('flange2_support_air_gap',      'p2_flange_support_air_gap');
   }
 
+  // Refresh what depends on the values just set, as restoring saved settings
+  // does (applying them to the inputs alone leaves the panels as they were):
+  // each flange shows its own type's options — metal plate or 3D print, nubs,
+  // supports — and the spokes' hub lock follows. An import of a design with
+  // metal flanges on one pulley and printed on the other showed the metal
+  // options under a ticked "3D Print" (2026-10-02).
+  [1, 2].forEach(n => {
+    _syncSpokeHubLock(n);
+    onFlangeChange(n);
+  });
+
   schedulePreview();
 }
 
