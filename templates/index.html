@@ -1184,6 +1184,9 @@ function _applyUrlParams(p) {
     else el.value = v;
   };
   const chk = (id, on) => { const el = document.getElementById(id); if (el) el.checked = !!on; };
+  // A feature key is on only when it says so: spokes_enabled=0 is a design without spokes
+  // (it used to switch them on, since only the key's presence was tested).
+  const on = key => ['1', 'true', 'on', 'yes'].includes(String(p.get(key)).toLowerCase());
   const setv = (id, v)  => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
   // Designs from before sizes had names carry only a metric diameter.
   const screwSizeOf = dia => SCREW_SIZES.find(sz => sz.group === 'Metric' && sz.major === parseFloat(dia))?.name ?? null;
@@ -1250,7 +1253,7 @@ function _applyUrlParams(p) {
 
   // ── Spokes P1 ─────────────────────────────────────────────────────────────────
   if (p.has('spokes_enabled')) {
-    chk('spokes1_enabled', true);
+    chk('spokes1_enabled', on('spokes_enabled'));
     set('spokes1_hub_od',      'spokes_hub_od');
     set('spokes1_rim_depth',   'spokes_rim_depth');
     set('spokes1_width',       'spokes_width');
@@ -1262,7 +1265,7 @@ function _applyUrlParams(p) {
 
   // ── Spokes P2 ─────────────────────────────────────────────────────────────────
   if (isDual && p.has('p2_spokes_enabled')) {
-    chk('spokes2_enabled', true);
+    chk('spokes2_enabled', on('p2_spokes_enabled'));
     set('spokes2_hub_od',      'p2_spokes_hub_od');
     set('spokes2_rim_depth',   'p2_spokes_rim_depth');
     set('spokes2_width',       'p2_spokes_width');
@@ -1272,9 +1275,15 @@ function _applyUrlParams(p) {
     set('spokes2_height',      'p2_spokes_height');
   }
 
+  // Gen. Rim Layer belongs to spokes: show it for spokes a link set, as a restore does.
+  [1, 2].forEach(n => {
+    const rimWrap = document.getElementById(`rim-layer${n}-wrap`);
+    if (rimWrap) rimWrap.style.display = document.getElementById(`spokes${n}_enabled`).checked ? 'flex' : 'none';
+  });
+
   // ── Flanges P1 ────────────────────────────────────────────────────────────────
   if (p.has('flange_enabled')) {
-    chk('flange1_enabled', true);
+    chk('flange1_enabled', on('flange_enabled'));
     set('flange1_3dprint',              'flange_3dprint');
     set('flange1_angle',                'flange_angle');
     set('flange1_rim_radius',           'flange_rim_radius');
@@ -1295,7 +1304,7 @@ function _applyUrlParams(p) {
 
   // ── Flanges P2 ────────────────────────────────────────────────────────────────
   if (isDual && p.has('p2_flange_enabled')) {
-    chk('flange2_enabled', true);
+    chk('flange2_enabled', on('p2_flange_enabled'));
     set('flange2_3dprint',              'p2_flange_3dprint');
     set('flange2_angle',                'p2_flange_angle');
     set('flange2_rim_radius',           'p2_flange_rim_radius');
