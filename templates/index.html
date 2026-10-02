@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — Cheap CAD Tools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
+  <link rel="stylesheet" href="/static/cct_theme.css?v=1">
   <link rel="stylesheet" href="/static/style.css?v=45">
 </head>
 <body>
@@ -61,7 +62,7 @@
         </div>
         <div id="spline{{ n }}_involute" class="hidden">
           <div class="spline-grid">
-            <label for="spline{{ n }}_pa">Pressure angle</label>
+            <label for="spline{{ n }}_pa">Pressure Angle</label>
             <select id="spline{{ n }}_pa" onchange="onSplinePressure({{ n }})">
               <option value="30">30°</option><option value="37.5">37.5°</option><option value="45">45°</option>
             </select>
@@ -79,7 +80,7 @@
           <label for="spline{{ n }}_hex_preset">Stock</label>
           <select id="spline{{ n }}_hex_preset" onchange="onHexPreset({{ n }})"></select>
           <div class="spline-grid">
-            <label for="spline{{ n }}_af">Across flats (mm)</label>
+            <label for="spline{{ n }}_af">Across Flats (mm)</label>
             <input type="number" id="spline{{ n }}_af" min="1" max="80" step="0.05" value="12.7" oninput="onHexSize({{ n }})">
             <label for="spline{{ n }}_series">Rings</label>
             <select id="spline{{ n }}_series" onchange="onHexSize({{ n }})">
@@ -91,7 +92,7 @@
             Rounded corners
           </label>
           <div class="spline-grid hidden" id="spline{{ n }}_ac_row">
-            <label for="spline{{ n }}_ac">Across corners (mm)</label>
+            <label for="spline{{ n }}_ac">Across Corners (mm)</label>
             <input type="number" id="spline{{ n }}_ac" min="1" max="100" step="0.05" value="13.75" oninput="onHexSize({{ n }})">
           </div>
         </div>
@@ -169,7 +170,8 @@
       <button class="undo-btn" id="undo_btn" type="button" onclick="undo()" title="Nothing to undo (Ctrl+Z)" disabled>&#8630; Undo</button>
       <button class="undo-btn" id="redo_btn" type="button" onclick="redo()" title="Nothing to redo (Ctrl+Y)" disabled>&#8631; Redo</button>
       <button class="reset-btn fb-2d" type="button" onclick="resetSettings()" title="Clear saved settings and restore defaults">Reset</button>
-      <button class="btn-bug-report" type="button" onclick="openBugReport()" title="Report a bug">&#9888;</button>
+      <a class="btn-privacy" href="https://cheapcadtools.com/privacy-policy/" target="_blank" rel="noopener" title="Privacy Policy" aria-label="Privacy Policy"></a>
+      <button class="btn-bug-report" type="button" onclick="openBugReport()" title="Report a bug" aria-label="Report a bug">&#9888;</button>
     </div>
     <div id="cct-account" class="cct-account" hidden></div>
     <div id="session-timer-box" style="display: none; margin-left: auto; background: #dc3545; border-radius: 6px; padding: 8px 16px; min-width: 140px;">
@@ -200,6 +202,8 @@
     <input type="number" id="belt_height" value="10" min="1" max="200" step="0.5" style="width:80px" oninput="onBeltHeightInput()">
     <label for="clearance_height" style="margin:0 0 0 8px;white-space:nowrap">Clearance Height (mm)</label>
     <input type="number" id="clearance_height" value="0.5" min="0" max="50" step="0.1" style="width:70px" oninput="onClearanceInput()">
+    <button class="drive-info-btn" id="thread_btn" type="button" onclick="openThreadDialog()"
+            title="How tight a hole set screws cut their own thread into, for your printer">Threaded screw holes</button>
   </div>
   <label class="drive-toggle fb-2d" data-picture="/static/help/two_pulley.svg">
     <input type="checkbox" id="dual_enable" onchange="onDualToggle()" checked>
@@ -234,9 +238,10 @@
     <span class="drive-note" id="ratio_note"></span>
   </div>
   <div class="drive-bar-right">
-    <button class="import-btn fb-2d" onclick="openImportDialog()" title="Import design from an exported STEP, DXF, SVG, or STL file">&#128194; Import</button>
-    <button class="drive-info-btn fb-3d" onclick="openThreadDialog()"
-            title="How tight a hole set screws cut their own thread into, for your printer">Threaded screw holes</button>
+    <!-- Units · Import · this app's own help · ⓘ, the order all three drive apps use. -->
+    <span class="drive-units"><select id="units" title="Units for entry and display">
+      <option value="mm">mm</option><option value="in">inch</option></select></span>
+    <button class="import-btn" id="import_btn" type="button" onclick="openImportDialog()" title="Import a design from a file this tool exported (SVG, DXF, STL, STEP)">&#128194; Import</button>
     <button class="drive-info-btn fb-3d"
             onclick="openHelpUrl('/static/3D_Print_help.html')">&#9432; 3D Print</button>
     <button class="drive-info-btn fb-2d"
@@ -289,12 +294,17 @@
         </span>
       </div>
       <div class="hub-body open" id="size1-body">
-      <span class="belt-group">
-        <label for="teeth">Num. Teeth</label>
-        <input type="number" id="teeth" min="10" max="360" value="20" step="1" oninput="onTeethChange(1)">
-        <label for="od">Outer Dia.</label>
-        <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)" style="-moz-appearance:textfield" class="no-spin">
-      </span>
+      <!-- Num. Teeth | Outer Dia. side by side, labels above, as Sprocket and Gear Designer. -->
+      <div class="size-row">
+        <div>
+          <label for="teeth">Num. Teeth</label>
+          <input type="number" id="teeth" min="10" max="360" value="20" step="1" oninput="onTeethChange(1)">
+        </div>
+        <div>
+          <label for="od">Outer Dia.</label>
+          <input type="number" id="od" min="1" step="0.01" oninput="onODChange(1)" style="-moz-appearance:textfield" class="no-spin">
+        </div>
+      </div>
       <label for="bore">Bore Diameter (mm)</label>
       <input type="number" id="bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(1)">
       {{ bore_shape_fields(1) }}
@@ -323,7 +333,7 @@
           {% endfor %}
         </select>
         <div id="clearance_custom_row" class="hidden">
-          <label for="clearance_custom">Custom offset (mm)</label>
+          <label for="clearance_custom">Custom Offset (mm)</label>
           <input type="number" id="clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
         </div>
         <div class="preset-info" id="clearance_info"></div>
@@ -335,7 +345,7 @@
           {% endfor %}
         </select>
         <div id="backlash_custom_row" class="hidden">
-          <label for="backlash_custom">Custom offset (mm)</label>
+          <label for="backlash_custom">Custom Offset (mm)</label>
           <input type="number" id="backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
         </div>
         <div class="preset-info" id="backlash_info"></div>
@@ -395,6 +405,57 @@
         <div class="hub-info" id="hub1_info"></div>
       </div>
     </section>
+
+
+    <section class="card">
+      <div class="hub-header" onclick="toggleSpokes(1)">
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="spokes1_enabled" onclick="event.stopPropagation(); onSpokesChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
+          Spokes
+        </span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
+          <span class="hub-arrow" id="spokes1-arrow">&#9660;</span>
+        </span>
+      </div>
+      <div class="hub-body" id="spokes1-body">
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
+          <input type="number" id="spokes1_hub_od" value="16" min="4" max="200" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div id="spokes1_hub_warn" style="display:none;margin-bottom:4px;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
+          ⚠ Hub OD exceeds pulley OD — spokes ignored in preview
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
+          <input type="number" id="spokes1_rim_depth" value="2" min="0" max="15" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_width" style="margin:0;flex:1">Spoke Width (mm)</label>
+          <input type="number" id="spokes1_width" value="4" min="1" max="50" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
+          <input type="number" id="spokes1_fillet_tip" value="1" min="0" max="30" step="0.25" oninput="onFilletChange(1,'tip')" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes1_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
+          <input type="number" id="spokes1_fillet_base" value="1.5" min="0" max="30" step="0.25" oninput="onFilletChange(1,'base')" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <label for="spokes1_count" style="margin:0;flex:1">Spoke Count</label>
+          <input type="number" id="spokes1_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="hub-info fb-2d" id="spokes1_count_info"></div>
+        <div class="fb-2d spoke-overlap-warn" id="spokes1_overlap_warn" style="display:none;"></div>
+        <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <label for="spokes1_height" style="margin:0;flex:1">Spoke Height (mm)</label>
+          <input type="number" id="spokes1_height" value="0" min="0" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
+        </div>
+        <div class="hub-info fb-3d">0 = full belt height</div>
+      </div>
+    </section>
+
+    {{ spline_card(1) }}
 
     <section class="card fb-3d">
       <div class="hub-header" onclick="toggleSection('flange1')">
@@ -502,57 +563,6 @@
 
       </div>
     </section>
-
-    <section class="card">
-      <div class="hub-header" onclick="toggleSpokes(1)">
-        <span style="display:flex;align-items:center;gap:7px;">
-          <input type="checkbox" id="spokes1_enabled" onclick="event.stopPropagation(); onSpokesChange(1)" style="width:auto;accent-color:#0078d4;margin:0;">
-          Spokes
-        </span>
-        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
-          <span class="hub-arrow" id="spokes1-arrow">&#9660;</span>
-        </span>
-      </div>
-      <div class="hub-body" id="spokes1-body">
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes1_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
-          <input type="number" id="spokes1_hub_od" value="16" min="4" max="200" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
-        </div>
-        <div id="spokes1_hub_warn" style="display:none;margin-bottom:4px;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
-          ⚠ Hub OD exceeds pulley OD — spokes ignored in preview
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes1_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
-          <input type="number" id="spokes1_rim_depth" value="2" min="0" max="15" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes1_width" style="margin:0;flex:1">Spoke Width (mm)</label>
-          <input type="number" id="spokes1_width" value="4" min="1" max="50" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes1_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
-          <input type="number" id="spokes1_fillet_tip" value="1" min="0" max="30" step="0.25" oninput="onFilletChange(1,'tip')" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes1_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
-          <input type="number" id="spokes1_fillet_base" value="1.5" min="0" max="30" step="0.25" oninput="onFilletChange(1,'base')" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-          <label for="spokes1_count" style="margin:0;flex:1">Spoke Count</label>
-          <input type="number" id="spokes1_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(1)" style="width:70px">
-        </div>
-        <div class="hub-info fb-2d" id="spokes1_count_info"></div>
-        <div class="fb-2d spoke-overlap-warn" id="spokes1_overlap_warn" style="display:none;"></div>
-        <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-          <label for="spokes1_height" style="margin:0;flex:1">Spoke Height (mm)</label>
-          <input type="number" id="spokes1_height" value="0" min="0" step="0.5" oninput="onSpokesChange(1)" style="width:70px">
-        </div>
-        <div class="hub-info fb-3d">0 = full belt height</div>
-      </div>
-    </section>
-
-    {{ spline_card(1) }}
-
     <section class="card download-card">
       <h2 style="display:flex;align-items:center;justify-content:space-between;gap:7px;">Download
         <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Download_help.html')" title="Download help">&#9432;</button></h2>
@@ -582,10 +592,16 @@
       </div>
       <!-- Right side controls -->
       <span style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;">
-        <button id="tab-pulley" class="preview-tab active fb-2d" onclick="setPreviewTab('pulley')">2D</button>
-        <button id="tab-belt"   class="preview-tab hidden fb-2d" onclick="setPreviewTab('belt')">Belt</button>
-        <button id="tab-3d"     class="preview-tab hidden fb-3d" onclick="setPreviewTab('3d')">3D</button>
-        <span id="od-label" class="fb-2d"></span>
+        <!-- One toggle, as Sprocket Designer's Chain and Gear Designer's Tooth: the belt on its
+             own, then click again for the pulleys (2026-10-01 audit, row 25). 3D Mode shows 3D. -->
+        <button id="tab-belt"   class="preview-tab hidden fb-2d" onclick="setPreviewTab(previewTab === 'belt' ? 'pulley' : 'belt')"
+                aria-pressed="false" title="The belt on its own, dimensioned; click again for the pulleys">Belt</button>
+        <!-- What the 3D view shows, as Sprocket and Gear Designer (audit row 32). -->
+        <select id="view3d_which" class="fb-3d hidden" style="width:auto;padding:2px 6px;font-size:12px"
+                title="What the 3D view shows" onchange="applyView3dWhich(true)">
+          <option value="drive">Drive</option>
+          <option value="1">Pulley 1</option><option value="2">Pulley 2</option>
+        </select>
         <button class="drive-info-btn fb-3d"
                 onclick="openHelpUrl('/static/3d_mouse_nav_help.html')"
                 title="3D navigation and snap view help">&#9432; Mouse Nav</button>
@@ -622,7 +638,8 @@
     </div>
     <div class="card belt-lock-info fb-2d" id="belt-lock-info">
       Belt: <strong id="p2-belt-label">—</strong><br>
-      <span style="font-size:11px;color:#888">Family &amp; pitch locked to Pulley 1</span>
+      <!-- "<Thing>: <value>" over "Locked to <part> 1", the same card in all three drive apps. -->
+      <span style="font-size:11px;color:#888">Locked to Pulley 1</span>
     </div>
 
     <section class="card fb-2d">
@@ -635,12 +652,17 @@
         </span>
       </div>
       <div class="hub-body open" id="size2-body">
-      <span class="belt-group">
-        <label for="p2_teeth">Num. Teeth</label>
-        <input type="number" id="p2_teeth" min="10" max="360" value="30" step="1" oninput="onTeethChange(2)">
-        <label for="p2_od">Outer Dia.</label>
-        <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)" style="-moz-appearance:textfield" class="no-spin">
-      </span>
+      <!-- Num. Teeth | Outer Dia. side by side, labels above, as Sprocket and Gear Designer. -->
+      <div class="size-row">
+        <div>
+          <label for="p2_teeth">Num. Teeth</label>
+          <input type="number" id="p2_teeth" min="10" max="360" value="30" step="1" oninput="onTeethChange(2)">
+        </div>
+        <div>
+          <label for="p2_od">Outer Dia.</label>
+          <input type="number" id="p2_od" min="1" step="0.01" oninput="onODChange(2)" style="-moz-appearance:textfield" class="no-spin">
+        </div>
+      </div>
       <label for="p2_bore">Bore Diameter (mm)</label>
       <input type="number" id="p2_bore" min="1" value="8" step="0.1" oninput="clampBore(this); schedulePreview(); _onBoreChangeHub(2)">
       {{ bore_shape_fields(2) }}
@@ -669,7 +691,7 @@
           {% endfor %}
         </select>
         <div id="p2_clearance_custom_row" class="hidden">
-          <label for="p2_clearance_custom">Custom offset (mm)</label>
+          <label for="p2_clearance_custom">Custom Offset (mm)</label>
           <input type="number" id="p2_clearance_custom" value="0" step="0.01" oninput="schedulePreview()">
         </div>
         <div class="preset-info" id="p2_clearance_info"></div>
@@ -681,7 +703,7 @@
           {% endfor %}
         </select>
         <div id="p2_backlash_custom_row" class="hidden">
-          <label for="p2_backlash_custom">Custom offset (mm)</label>
+          <label for="p2_backlash_custom">Custom Offset (mm)</label>
           <input type="number" id="p2_backlash_custom" value="0" step="0.01" oninput="schedulePreview()">
         </div>
         <div class="preset-info" id="p2_backlash_info"></div>
@@ -741,6 +763,57 @@
         <div class="hub-info" id="hub2_info"></div>
       </div>
     </section>
+
+
+    <section class="card">
+      <div class="hub-header" onclick="toggleSpokes(2)">
+        <span style="display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="spokes2_enabled" onclick="event.stopPropagation(); onSpokesChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
+          Spokes
+        </span>
+        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
+          <span class="hub-arrow" id="spokes2-arrow">&#9660;</span>
+        </span>
+      </div>
+      <div class="hub-body" id="spokes2-body">
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
+          <input type="number" id="spokes2_hub_od" value="16" min="4" max="200" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div id="spokes2_hub_warn" style="display:none;margin-bottom:4px;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
+          ⚠ Hub OD exceeds pulley OD — spokes ignored in preview
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
+          <input type="number" id="spokes2_rim_depth" value="2" min="0" max="15" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_width" style="margin:0;flex:1">Spoke Width (mm)</label>
+          <input type="number" id="spokes2_width" value="4" min="1" max="50" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
+          <input type="number" id="spokes2_fillet_tip" value="1" min="0" max="30" step="0.25" oninput="onFilletChange(2,'tip')" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label for="spokes2_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
+          <input type="number" id="spokes2_fillet_base" value="1.5" min="0" max="30" step="0.25" oninput="onFilletChange(2,'base')" style="width:70px">
+        </div>
+        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <label for="spokes2_count" style="margin:0;flex:1">Spoke Count</label>
+          <input type="number" id="spokes2_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="hub-info fb-2d" id="spokes2_count_info"></div>
+        <div class="fb-2d spoke-overlap-warn" id="spokes2_overlap_warn" style="display:none;"></div>
+        <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <label for="spokes2_height" style="margin:0;flex:1">Spoke Height (mm)</label>
+          <input type="number" id="spokes2_height" value="0" min="0" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
+        </div>
+        <div class="hub-info fb-3d">0 = full belt height</div>
+      </div>
+    </section>
+
+    {{ spline_card(2) }}
 
     <section class="card fb-3d">
       <div class="hub-header" onclick="toggleSection('flange2')">
@@ -837,57 +910,6 @@
 
       </div>
     </section>
-
-    <section class="card">
-      <div class="hub-header" onclick="toggleSpokes(2)">
-        <span style="display:flex;align-items:center;gap:7px;">
-          <input type="checkbox" id="spokes2_enabled" onclick="event.stopPropagation(); onSpokesChange(2)" style="width:auto;accent-color:#0078d4;margin:0;">
-          Spokes
-        </span>
-        <span class="hub-tools"><button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/spokes_2d_help.html')" title="Spokes help">&#9432;</button>
-          <span class="hub-arrow" id="spokes2-arrow">&#9660;</span>
-        </span>
-      </div>
-      <div class="hub-body" id="spokes2-body">
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes2_hub_od" style="margin:0;flex:1">Hub OD (mm)</label>
-          <input type="number" id="spokes2_hub_od" value="16" min="4" max="200" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
-        </div>
-        <div id="spokes2_hub_warn" style="display:none;margin-bottom:4px;padding:4px 7px;background:#451a03;border:1px solid #f97316;border-radius:4px;font-size:12px;color:#fed7aa;">
-          ⚠ Hub OD exceeds pulley OD — spokes ignored in preview
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes2_rim_depth" style="margin:0;flex:1">Rim Depth (mm)</label>
-          <input type="number" id="spokes2_rim_depth" value="2" min="0" max="15" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes2_width" style="margin:0;flex:1">Spoke Width (mm)</label>
-          <input type="number" id="spokes2_width" value="4" min="1" max="50" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes2_fillet_tip" style="margin:0;flex:1">Fillet Tip (mm)</label>
-          <input type="number" id="spokes2_fillet_tip" value="1" min="0" max="30" step="0.25" oninput="onFilletChange(2,'tip')" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <label for="spokes2_fillet_base" style="margin:0;flex:1">Fillet Base (mm)</label>
-          <input type="number" id="spokes2_fillet_base" value="1.5" min="0" max="30" step="0.25" oninput="onFilletChange(2,'base')" style="width:70px">
-        </div>
-        <div class="fb-2d" style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-          <label for="spokes2_count" style="margin:0;flex:1">Spoke Count</label>
-          <input type="number" id="spokes2_count" value="4" min="2" max="24" step="1" oninput="onSpokesChange(2)" style="width:70px">
-        </div>
-        <div class="hub-info fb-2d" id="spokes2_count_info"></div>
-        <div class="fb-2d spoke-overlap-warn" id="spokes2_overlap_warn" style="display:none;"></div>
-        <div class="fb-3d" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-          <label for="spokes2_height" style="margin:0;flex:1">Spoke Height (mm)</label>
-          <input type="number" id="spokes2_height" value="0" min="0" step="0.5" oninput="onSpokesChange(2)" style="width:70px">
-        </div>
-        <div class="hub-info fb-3d">0 = full belt height</div>
-      </div>
-    </section>
-
-    {{ spline_card(2) }}
-
     <section class="card download-card">
       <h2 style="display:flex;align-items:center;justify-content:space-between;gap:7px;">Download
         <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Download_help.html')" title="Download help">&#9432;</button></h2>
@@ -928,7 +950,7 @@
       hole and heat-set inserts use the hole you enter, so these settings don't change them.</p>
     </div>
     <div class="import-body">
-      <label class="bug-label">Hole shape</label>
+      <label class="bug-label">Hole Shape</label>
       <div class="thread-shape">
         <label><input type="radio" name="screw_hole_shape" value="round" checked onchange="onThreadChange()"> Round</label>
         <label><input type="radio" name="screw_hole_shape" value="hex" onchange="onThreadChange()"> Hex</label>
@@ -936,12 +958,12 @@
       <img id="thread_picture" class="thread-picture" src="/static/help/thread_round.svg"
            alt="Looking into an M5 hole: the screw's outer and root diameters over the hole that is cut">
       <div id="thread_engagement_row">
-        <label class="bug-label" for="thread_engagement">Thread engagement (%)</label>
+        <label class="bug-label" for="thread_engagement">Thread Engagement (%)</label>
         <input type="number" id="thread_engagement" value="50" min="0" max="100" step="1" oninput="onThreadChange()">
         <div class="hub-info">0% = the screw's outer diameter (no grip) &middot; 100% = its root diameter (full thread)</div>
       </div>
       <div id="hex_flat_row" class="hidden">
-        <label class="bug-label" for="hex_flat">Hex flats (% of the screw's diameter)</label>
+        <label class="bug-label" for="hex_flat">Hex Flats (% of the screw's diameter)</label>
         <input type="number" id="hex_flat" value="82" min="78" max="92" step="1" oninput="onThreadChange()">
         <div class="hub-info">The screw grips on the flats; the corners give the plastic somewhere to go.</div>
       </div>
@@ -1075,6 +1097,8 @@
 
 
 <script src="/static/tokens.js?v=8"></script>
+<script src="/static/cct_units.js?v=1"></script>
+<script src="/static/cct_download.js?v=1"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -1360,6 +1384,7 @@ function collectSettings() {
   return {
     family:              document.getElementById('family').value,
     pitch:               document.getElementById('pitch').value,
+    units:               document.getElementById('units').value,
     teeth:               document.getElementById('teeth').value,
     bore:                document.getElementById('bore').value,
     clearance_preset:    document.getElementById('clearance_preset').value,
@@ -1473,6 +1498,8 @@ async function loadSettings() {
   try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch(e) {}
   if (!s) return false;
   await applySettings(s);
+  // Saved values are mm whatever the switch said; show them in its units.
+  if (s.units === 'in') { document.getElementById('units').value = 'in'; onUnitsChange(); }
   return true;
 }
 
@@ -1644,6 +1671,7 @@ async function applySettings(s) {
     if (s[`flange${n}_support_air_gap`]     !== undefined) _val(`flange${n}_support_air_gap`,     s[`flange${n}_support_air_gap`]);
     // Apply visibility
     onFlangeChange(n);
+    _dimHub(n);
   });
 }
 
@@ -1653,7 +1681,7 @@ async function applySettings(s) {
 // slider — is one step: the first save records it and the rest fold in, and
 // so do the page's own follow-ups (an automatic clearance height). Panel
 // open/closed state isn't part of a step.
-const HISTORY_SKIP = new Set(['hub1_open', 'hub2_open', 'clearance_auto']);
+const HISTORY_SKIP = new Set(['hub1_open', 'hub2_open', 'clearance_auto', 'units']);
 const UNDO_LIMIT = 100;
 const undoStack = [];
 const redoStack = [];
@@ -1814,10 +1842,20 @@ function resetSettings() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.onload = async () => {
+  // Every "(mm)" length becomes a bound field: mm to this script, the switch's
+  // units to the person (cct_common's cct_units.js, audit row 10).
+  CCTUnits.init({ select: document.getElementById('units') });
+  CCTUnits.bindMmLabels(document);
+  ['od', 'p2_od'].forEach(id => CCTUnits.bind(document.getElementById(id)));   // "Outer Dia.", no "(mm)"
+  document.getElementById('units').addEventListener('change', () => { onUnitsChange(); saveSettings(); });
   populatePitches('HTD');
   await loadSplines();
   const restored = await loadSettings();
   loadParamsFromUrl();   // URL params override saved settings when present
+  // The page opens with Two Pulley Drive ticked; only a click or a restored
+  // design set this title before, so a first visit read "Pulley" beside "Pulley 2".
+  document.getElementById('panel1-title').textContent =
+    document.getElementById('dual_enable').checked ? 'Pulley 1' : 'Pulley';
   if (!_threadFromDesign) applyThreadDefault();   // a new design starts from your default
   _syncNubHeightMax();
 
@@ -1839,6 +1877,8 @@ window.onload = async () => {
   }
   _updateHubMaxValues(1);
   _updateHubMaxValues(2);
+  _dimHub(1);
+  _dimHub(2);
   // Set hub height min based on retention type (mirrors onHubChange logic)
   [1, 2].forEach(function(n) {
     const heightEl  = document.getElementById(`hub${n}_height`);
@@ -1873,7 +1913,17 @@ function onDualToggle() {
     syncP2Belt();
     onTeethChange(2);
     updateGearRatioFromTeeth();
-    setDefaultCenterDistance();
+    // Coming back to two pulleys keeps the centre distance you had, as Sprocket
+    // Designer does; only a missing or too-short one is replaced by the default.
+    const cd = parseFloat(document.getElementById('center_distance').value) || 0;
+    const minC = _calcMinC();
+    if (cd > 0 && minC !== null && cd >= minC) {
+      updateMinDistance();
+      updateBeltTeethFromCenter();
+      correctCenterDistance();
+    } else {
+      setDefaultCenterDistance();
+    }
   }
   updateBeltBtn();
   schedulePreview();
@@ -1935,7 +1985,7 @@ function _validateBore(n) {
   }
 
   if (bore > bore_max) {
-    warnEl.textContent = `⚠ Bore ${bore} mm exceeds limit of ${bore_max.toFixed(1)} mm (${limitLabel})`;
+    warnEl.textContent = `⚠ Bore ${CCTUnits.fmt(bore, 2)} exceeds limit of ${CCTUnits.fmt(bore_max, 2)} (${limitLabel})`;
     warnEl.style.display = 'block';
   } else {
     warnEl.style.display = 'none';
@@ -2295,23 +2345,61 @@ function updateLabels(teeth, od) {
   const t2     = dual ? document.getElementById('p2_teeth').value : null;
   const teethStr = t2 ? `${teeth}T:${t2}T` : `${teeth}T`;
   document.getElementById('profile-label').textContent = `${family} ${pitch} — ${teethStr}`;
-  document.getElementById('od-label').textContent      = `OD: ${od} mm`;
   if (currentSpec) {
-    const pd = ((currentSpec.pitch_mm * teeth) / Math.PI).toFixed(3);
-    document.getElementById('pitch-circle-info').textContent = `Pitch diameter: ${pd} mm`;
-    document.getElementById('preview-footer').textContent    =
-      `${family} ${pitch} · P1: ${teeth}T OD ${od} mm · PD ${pd} mm`;
+    const pd = (currentSpec.pitch_mm * teeth) / Math.PI;
+    document.getElementById('pitch-circle-info').textContent = `Pitch diameter: ${CCTUnits.fmt(pd, 3)}`;
   }
+  refreshStatusLine();
   // Pulley OD just changed — re-check that the spoke layout still fits.
   revalidateSpokesForDiameter(1);
+}
+
+// The mm / inch switch: redraw the fields, then every readout that prints a length.
+function onUnitsChange() {
+  CCTUnits.convert();
+  [1, 2].forEach(n => {
+    const t = parseInt(document.getElementById(n === 1 ? 'teeth' : 'p2_teeth').value) || 0;
+    const el = document.getElementById(n === 1 ? 'pitch-circle-info' : 'p2-pitch-circle-info');
+    if (currentSpec && el) el.textContent = `Pitch diameter: ${CCTUnits.fmt(currentSpec.pitch_mm * t / Math.PI, 3)}`;
+    _validateBore(n);
+  });
+  updatePresetInfo(1); updatePresetInfo(2);
+  refreshStatusLine();
+  scheduleDims();
+  if (previewTab === '3d') schedulePreview3D();
+}
+
+// A box's size in the switch's units: "18.3 × 18.3 × 15.0 mm" or "0.720 × … in".
+function fmtSize(s) {
+  const inch = CCTUnits.inch(), k = inch ? 1 / CCTUnits.INCH : 1, d = inch ? 3 : 1;
+  return `${(s.x * k).toFixed(d)} × ${(s.y * k).toFixed(d)} × ${(s.z * k).toFixed(d)} ${inch ? 'in' : 'mm'}`;
+}
+
+// The line under the 2D preview: belt · pulley 1 · pulley 2 · drive, as Sprocket
+// Designer has it. The 3D view writes its own (size, drag to orbit), so leaving
+// 3D Mode has to put this back — schedulePreview() calls it on every change.
+function refreshStatusLine() {
+  if (previewTab === '3d' || !currentSpec) return;
+  const v  = id => document.getElementById(id).value;
+  const t1 = parseInt(v('teeth')) || 0;
+  const len = (mm, d) => CCTUnits.fmt(Number(mm), d);
+  const pd1 = (currentSpec.pitch_mm * t1) / Math.PI;
+  let s = `${v('family')} ${v('pitch')} · P1: ${t1}T OD ${len(v('od'), 3)} · PD ${len(pd1, 3)}`;
+  if (document.getElementById('dual_enable').checked) {
+    const bt = v('belt_teeth');
+    s += ` · P2: ${parseInt(v('p2_teeth')) || 0}T`;
+    if (bt) s += ` · ${bt}-tooth belt`;
+    s += ` · C ${len(v('center_distance'), 2)}`;
+  }
+  document.getElementById('preview-footer').textContent = s;
 }
 
 function updateP2Labels(teeth, od) {
   // Pulley OD just changed — re-check that the spoke layout still fits.
   revalidateSpokesForDiameter(2);
   if (!currentSpec) return;
-  const pd = ((currentSpec.pitch_mm * teeth) / Math.PI).toFixed(3);
-  document.getElementById('p2-pitch-circle-info').textContent = `Pitch diameter: ${pd} mm`;
+  const pd = (currentSpec.pitch_mm * teeth) / Math.PI;
+  document.getElementById('p2-pitch-circle-info').textContent = `Pitch diameter: ${CCTUnits.fmt(pd, 3)}`;
 }
 
 // ── Presets ───────────────────────────────────────────────────────────────────
@@ -2342,10 +2430,10 @@ function updatePresetInfo(n) {
   const ci   = document.getElementById(pfx + 'clearance_info');
   const bi   = document.getElementById(pfx + 'backlash_info');
   ci.textContent = (cp !== 'CUSTOM' && spec.presets.clearance[cp] !== undefined)
-    ? `Offset: ${spec.presets.clearance[cp].toFixed(3)} mm` : '';
-  bi.textContent = (bp === 'NONE') ? 'Offset: 0.000 mm'
+    ? `Offset: ${CCTUnits.fmt(spec.presets.clearance[cp], 3)}` : '';
+  bi.textContent = (bp === 'NONE') ? `Offset: ${CCTUnits.fmt(0, 3)}`
     : (bp !== 'CUSTOM' && spec.presets.backlash[bp] !== undefined)
-      ? `Offset: ${spec.presets.backlash[bp].toFixed(3)} mm` : '';
+      ? `Offset: ${CCTUnits.fmt(spec.presets.backlash[bp], 3)}` : '';
 }
 
 function updateP2PresetInfo() { updatePresetInfo(2); }
@@ -2460,9 +2548,8 @@ function updateRatioNote(t1, t2, ratio) {
 // ── Preview tabs ──────────────────────────────────────────────────────────────
 function setPreviewTab(tab) {
   previewTab = tab;
-  document.getElementById('tab-pulley').classList.toggle('active', tab === 'pulley');
-  document.getElementById('tab-belt')  .classList.toggle('active', tab === 'belt');
-  document.getElementById('tab-3d')    .classList.toggle('active', tab === '3d');
+  document.getElementById('tab-belt').classList.toggle('active', tab === 'belt');
+  document.getElementById('tab-belt').setAttribute('aria-pressed', tab === 'belt' ? 'true' : 'false');
 
   const canvas = document.getElementById('three-canvas');
   const img    = document.getElementById('preview-img');
@@ -2490,6 +2577,7 @@ function schedulePreview() {
   checkSpokeFit(2);
   clearTimeout(previewTimer);
   previewTimer = setTimeout(updatePreview, 300);
+  refreshStatusLine();
   scheduleDims();
   saveSettings();
 }
@@ -2896,167 +2984,68 @@ function _dlZipName() {
   return name;
 }
 
+// The window itself is cct_common's (cct_download.js): every CCT app shows the
+// same one (CCT_App_Baseline §4). With tokens on, cctTokens is its charging
+// adapter; the zip is built by the job queue (/api/download/bundle).
 async function openDownloadWindow() {
   closeDlMenus();
   const threeD   = document.getElementById('feature_build').checked;
   const tokensOn = await _cctTokensOn();
-  const tiers    = threeD ? _DL_TIERS_3D : _DL_TIERS_2D;
-  const parts    = _dlParts(threeD);
-  const el = (tag, cls, text) => { const e = document.createElement(tag);
-    if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
-  const box = (id, text, note) => {
-    const lab = el('label', 'cct-check');
-    const cb = el('input'); cb.type = 'checkbox'; cb.checked = true; cb.id = id;
-    lab.append(cb, document.createTextNode(' ' + text));
-    if (note) { const n = el('span', 'cct-dl-note', ' ' + note); n.dataset.note = note; lab.append(n); }
-    return lab;
-  };
-
-  const overlay = el('div', 'cct-dialog-overlay');
-  const dlg = el('div', 'cct-dialog cct-dl');
-  dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
-  dlg.append(el('h3', 'cct-dialog-title', 'Download'),
-             el('p', 'cct-dialog-note', threeD
-               ? 'Every part ticked goes into one zip.'
-               : '2D view: drawings only. Every part ticked goes into one zip.'));
-
-  const partsBox = el('div', 'cct-dl-parts');
-  partsBox.append(el('p', 'cct-dl-head', 'Parts'));
-  for (const pt of parts) partsBox.append(box(`cct-part-${pt.id}`, pt.label, pt.note));
-  dlg.append(partsBox);
-
-  if (tokensOn && tiers.length > 1) {
-    dlg.append(el('p', 'cct-dl-costnote',
-                  'Adding more complicated output files increases the token cost.'));
-  }
-  for (const t of tiers) {
-    const head = el('div', 'cct-tier');
-    head.append(el('span', null, tokensOn
-      ? `${t.tokens} token${t.tokens === 1 ? '' : 's'} · ${t.label}` : t.label));
-    const row = el('div', 'cct-formats');
-    for (const [fmt, label] of t.fmts) row.append(box(`cct-fmt-${fmt}`, label));
-    dlg.append(head, row);
-  }
-
-  const status = el('p', 'cct-dl-status');
-  const cancel = el('button', 'cct-btn', 'Cancel'); cancel.type = 'button';
-  const go = el('button', 'cct-btn cct-btn-primary', 'Download zip'); go.type = 'button';
-  const row = el('div', 'cct-dialog-buttons'); row.append(cancel, go);
-  dlg.append(status, row);
-  overlay.append(dlg);
-
-  const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
-  const onKey = e => { if (e.key === 'Escape') close(); };
-  document.addEventListener('keydown', onKey);
-  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
-  cancel.addEventListener('click', close);
-  document.body.append(overlay);
-
-  const ticked = id => document.getElementById(id)?.checked;
-  const selection = () => {
-    const fmts = tiers.flatMap(t => t.fmts.map(([f]) => f)).filter(f => ticked(`cct-fmt-${f}`));
-    const files = [];
-    for (const pt of parts) {
-      if (!ticked(`cct-part-${pt.id}`)) continue;
-      for (const f of fmts) if (!pt.only || pt.only === f) files.push(..._dlFiles(pt.id, f));
-    }
-    const top = fmts.reduce((a, f) => (!a || _DL_RANK[f] > _DL_RANK[a]) ? f : a, null);
-    return { files, top };
-  };
-
-  let seq = 0;
-  let quote = null;
-  // A part that comes in one format only (flanges: STL; whole drive: DXF)
-  // has nothing to add while that format is unticked — grey it out and say
-  // what would bring it back, rather than leave a tick that does nothing.
-  const syncParts = () => {
-    for (const pt of parts) {
-      if (!pt.only) continue;
-      const cb = document.getElementById(`cct-part-${pt.id}`);
-      const usable = !!ticked(`cct-fmt-${pt.only}`);
-      cb.disabled = !usable;
-      cb.closest('label').classList.toggle('cct-check-off', !usable);
-      const note = cb.closest('label').querySelector('.cct-dl-note');
-      if (note) note.textContent = ' ' + (usable ? note.dataset.note : `tick ${pt.only.toUpperCase()} to include`);
-    }
-  };
-
-  const update = async () => {
-    const mine = ++seq;
-    syncParts();
-    const { files, top } = selection();
-    quote = null;
-    if (!files.length) {
-      go.disabled = true; go.textContent = 'Nothing to download'; status.textContent = ''; return;
-    }
-    go.disabled = false;
-    if (!tokensOn) { go.textContent = `Download zip (${files.length} file${files.length === 1 ? '' : 's'})`; return; }
-    if (cctTokens.unavailable) { go.textContent = 'Download zip'; status.textContent = 'Accounts are temporarily unavailable.'; return; }
-    if (!cctTokens.signedIn) { go.textContent = 'Sign in to download'; status.textContent = ''; return; }
-    go.textContent = 'Download zip …';
-    const q = await cctTokens.quoteDesign(top);
-    if (mine !== seq) return;                       // a newer tick is already pricing
-    quote = q;
-    if (!q) { go.textContent = 'Download zip'; status.textContent = ''; return; }
-    if (q.cost === 0) {
-      go.textContent = 'Download zip (already paid)';
-      status.textContent = 'Already unlocked for this design — no tokens used.';
-    } else {
-      go.textContent = `Download zip (${q.cost} token${q.cost === 1 ? '' : 's'})`;
-      status.textContent = q.cost > q.balance
-        ? `You have ${q.balance} token${q.balance === 1 ? '' : 's'}.`
-        : `Balance: ${q.balance} → ${q.balance - q.cost}.`;
-    }
-  };
-  dlg.addEventListener('change', update);
-  update();
-
-  go.addEventListener('click', async () => {
-    const { files } = selection();
-    if (!files.length) return;
-    const body = { name: _dlZipName(), files };
-    if (tokensOn) {
-      if (cctTokens.unavailable) return;
-      if (!cctTokens.signedIn) { close(); cctTokens.signIn(); return; }
-      await update();
-      if (!quote) return;
-      if (quote.cost > quote.balance) { close(); cctTokens.buyDialog(quote.cost, quote.balance, quote.buy_url); return; }
-      body.design_id = await cctTokens.ensureDesign();
-    } else {
-      const tok = await _cctGetToken();
-      if (tok && tok.ok === false) { close(); _cctLimitMsg(tok.count, tok.limit); return; }
-      if (tok && tok.token) body._fpt = tok.token;
-    }
-    const sessionId = new URLSearchParams(window.location.search).get('session_id');
-    if (sessionId) body.session_id = sessionId;
-    close();
-    const title = document.querySelector('#progress-modal-overlay h3');
-    if (title) title.textContent = 'Preparing your download';
-    _retryDownload = () => openDownloadWindow();
-    const done = _busy('Building your files…');
-    fetch('/api/download/bundle', {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    .then(async r => {
-      done();
-      if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.error || `Server returned ${r.status}`);
+  const charging = tokensOn ? {
+    on: true,
+    get unavailable() { return cctTokens.unavailable; },
+    get signedIn() { return cctTokens.signedIn; },
+    quote: top => cctTokens.quoteDesign(top),
+    ensureDesign: () => cctTokens.ensureDesign(),
+    signIn: () => cctTokens.signIn(),
+    buyDialog: (cost, balance, url) => cctTokens.buyDialog(cost, balance, url),
+  } : null;
+  CCTDownload.open({
+    note: threeD ? 'Every part ticked goes into one zip.'
+                 : '2D view: drawings only. Every part ticked goes into one zip.',
+    parts: _dlParts(threeD),
+    tiers: threeD ? _DL_TIERS_3D : _DL_TIERS_2D,
+    rank: _DL_RANK,
+    filesFor: (pt, fmt) => _dlFiles(pt.id, fmt),
+    zipName: _dlZipName(),
+    charging,
+    submit: async (body, ui) => {
+      if (!tokensOn) {
+        const tok = await _cctGetToken();
+        if (tok && tok.ok === false) { ui.close(); _cctLimitMsg(tok.count, tok.limit); return; }
+        if (tok && tok.token) body._fpt = tok.token;
       }
-      return r.json();
-    })
-    .then(data => {
-      if (!data) return;
-      _currentJobId = data.job_id;
-      _jobStartTime = Date.now();
-      showProgressModal();
-      pollJobStatus();
-    })
-    .catch(err => { done(); showErrorModalWithRetry(`Couldn't start the download: ${err.message}`,
-                                                    () => openDownloadWindow()); });
+      const sessionId = new URLSearchParams(window.location.search).get('session_id');
+      if (sessionId) body.session_id = sessionId;
+      ui.close();
+      const title = document.querySelector('#progress-modal-overlay h3');
+      if (title) title.textContent = 'Preparing your download';
+      _retryDownload = () => openDownloadWindow();
+      const done = _busy('Building your files…');
+      fetch('/api/download/bundle', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      .then(async r => {
+        done();
+        if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.error || `Server returned ${r.status}`);
+        }
+        return r.json();
+      })
+      .then(data => {
+        if (!data) return;
+        _currentJobId = data.job_id;
+        _jobStartTime = Date.now();
+        showProgressModal();
+        pollJobStatus();
+      })
+      .catch(err => { done(); showErrorModalWithRetry(`Couldn't start the download: ${err.message}`,
+                                                      () => openDownloadWindow()); });
+    },
   });
 }
 
@@ -3150,8 +3139,7 @@ function updateBeltBtn() {
   // If switching away from a belt-only family, reset to pulley tab
   if (!hasBelt && previewTab === 'belt') {
     previewTab = 'pulley';
-    document.getElementById('tab-pulley').classList.add('active');
-    document.getElementById('tab-belt')  .classList.remove('active');
+    document.getElementById('tab-belt').classList.remove('active');
   }
 }
 
@@ -3260,10 +3248,8 @@ document.getElementById('help-overlay').addEventListener('click', function(e) {
 });
 // Close on Escape key
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeHelp(); closeSummary(); }
+  if (e.key === 'Escape') closeHelp();
 });
-
-// ── Settings summary ────────────────────────────────────────────────────────
 
 // ── Bug Report ────────────────────────────────────────────────────────────────
 var _bugDraft = null;  // { seeing, should_see, email, isFeature }
@@ -3790,7 +3776,7 @@ function showDims(data) {
     }
   }
 
-  const mm = v => `${v.toFixed(2)} mm`;
+  const mm = v => CCTUnits.fmt(v, 2);
   const cols = data.pulleys;
   if (cols.length > 1) {
     const tr = table.insertRow();
@@ -3825,7 +3811,7 @@ function showDims(data) {
   const d = data.drive;
   if (d) {
     const rows = [
-      ['Belt', `${d.belt_teeth} teeth (${d.belt_length.toFixed(1)} mm)`],
+      ['Belt', `${d.belt_teeth} teeth (${CCTUnits.fmt(d.belt_length, 1)})`],
       ['Centre distance', mm(d.centre)],
       ['Ratio', `${d.ratio.toFixed(3)} : 1`],
       ['Wrap on the smaller pulley', `${d.wrap_small_deg.toFixed(1)}°`],
@@ -3972,8 +3958,10 @@ function _loadSplineParts(url, gen, isDual) {
           const mat = new THREE.MeshStandardMaterial({ color: SPLINE_MATS[name] || 0x9aa3ad,
             metalness: name === 'rings' ? 0.5 : 0.1, roughness: 0.6, side: THREE.DoubleSide });
           const mesh = new THREE.Mesh(geo, mat);
+          mesh.userData.part = String(n);              // whose spline parts (the picker)
           threeScene.add(mesh);
           threeSplineParts.push(mesh);
+          applyView3dWhich(false);
         }
       })
       .catch(e => console.error('spline parts', e));
@@ -4017,7 +4005,7 @@ function _fitCamera(geometry) {
 function _fitCameraToScene() {
   const THREE = window._THREE;
   const box3  = new THREE.Box3();
-  threeScene.traverse(obj => { if (obj.isMesh) box3.expandByObject(obj); });
+  threeScene.traverse(obj => { if (obj.isMesh && obj.visible) box3.expandByObject(obj); });
   if (box3.isEmpty()) return;
   const centre = new THREE.Vector3();
   box3.getCenter(centre);
@@ -4042,7 +4030,7 @@ function snapView(view) {
   const THREE  = window._THREE;
   const target = threeControls.target.clone();
   const box3   = new THREE.Box3();
-  threeScene.traverse(obj => { if (obj.isMesh) box3.expandByObject(obj); });
+  threeScene.traverse(obj => { if (obj.isMesh && obj.visible) box3.expandByObject(obj); });
   const size   = new THREE.Vector3();
   box3.getSize(size);
   // Compute distance so the bounding sphere fills the view at the camera FOV.
@@ -4076,6 +4064,19 @@ function snapView(view) {
   threeControls.update();
 }
 
+// The 3D view's picker: the whole drive, or one pulley with its own spline
+// parts. A view of the page, not a setting (not saved, not an undo step).
+function applyView3dWhich(refit) {
+  if (!threeScene) return;
+  const which = document.getElementById('view3d_which').value;
+  const dual = document.getElementById('dual_enable').checked;
+  threeScene.traverse(obj => {
+    if (!obj.isMesh || obj.userData.part === undefined) return;
+    obj.visible = !dual || which === 'drive' || obj.userData.part === which;
+  });
+  if (refit) _fitCameraToScene();
+}
+
 function load3DModel(url) {
   const THREE     = window._THREE;
   const STLLoader = window._STLLoader;
@@ -4095,6 +4096,7 @@ function load3DModel(url) {
   document.getElementById('preview-footer').textContent = 'Loading 3D…';
 
   const isDual = url.includes('dual=true');
+  document.getElementById('view3d_which').classList.toggle('hidden', !isDual);
   _loadSplineParts(url, gen, isDual);
   const pulleyMat  = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55, side: THREE.DoubleSide });
   const pulley2Mat = new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.10, roughness: 0.55, side: THREE.DoubleSide });
@@ -4108,20 +4110,26 @@ function load3DModel(url) {
     _loadSTL(p1Url, pulleyMat, (mesh) => {
       if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeModel = mesh;
+      mesh.userData.part = '1';
+      applyView3dWhich(false);
       const size = _fitCameraToScene();
       if (size) document.getElementById('preview-footer').textContent =
-        `3D drive  ·  ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm  ·  drag to orbit`;
+        `3D drive  ·  ${fmtSize(size)}  ·  drag to orbit`;
     });
 
     _loadSTL(p2Url, pulley2Mat, (mesh) => {
       if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeModel2 = mesh;
+      mesh.userData.part = '2';
+      applyView3dWhich(false);
       _fitCameraToScene();
     });
 
     _loadSTL(beltUrl, beltMat, (mesh) => {
       if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeBelt = mesh;
+      mesh.userData.part = 'belt';
+      applyView3dWhich(false);
     });
 
   } else {
@@ -4130,7 +4138,7 @@ function load3DModel(url) {
       threeModel = mesh;
       const size = _fitCamera(geo);
       document.getElementById('preview-footer').textContent =
-        `3D  ·  ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm  ·  drag to orbit`;
+        `3D  ·  ${fmtSize(size)}  ·  drag to orbit`;
     }, (err) => {
       console.error('STL load error:', err);
       document.getElementById('preview-footer').textContent = '3D load error — check console';
@@ -5135,12 +5143,18 @@ function _syncScrewHole(n) {
   updateScrewCuts(n);
 }
 
-function onHubEnabledChange(n) {
+// Dim the Hub card's fields while the hub is off, so the state is visually clear
+// (as Gear and Sprocket Designer grey theirs). Also on load and after a restore:
+// only a click used to dim them, so a fresh page showed live fields for no hub.
+function _dimHub(n) {
   const enabled = document.getElementById(`hub${n}_enabled`).checked;
   const body    = document.getElementById(`hub${n}-body`);
-  // Dim the body when hub is disabled so the state is visually clear
   body.style.opacity       = enabled ? '' : '0.45';
   body.style.pointerEvents = enabled ? '' : 'none';
+}
+
+function onHubEnabledChange(n) {
+  _dimHub(n);
   saveSettings();
   if (document.getElementById('feature_build').checked) {
     schedulePreview();

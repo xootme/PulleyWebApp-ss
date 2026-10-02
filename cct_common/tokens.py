@@ -36,7 +36,7 @@ import json
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Iterator, Optional
 
 from .sqlite_db import INTEGRITY_ERRORS, SqliteDB
@@ -97,6 +97,10 @@ class Quote:
     cost: int             # tokens this download would take now
     held_tier: Optional[str]    # highest tier already unlocked, if any
     unlocked_until: Optional[float]  # when held_tier's unlock expires
+    # The ledger row a charge() took (None: nothing taken — free, or a
+    # quote). Lets the caller give it back if the file never reaches the
+    # customer (refund(spend_id)); see cct_common.charging, "delivery".
+    spend_id: Optional[int] = None
 
 
 def format_tier(fmt: str) -> str:
@@ -370,7 +374,7 @@ class TokenStore(SqliteDB):
                     (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id,
                      self.app)).fetchone()[0]
         try:
-            yield q
+            yield replace(q, spend_id=spend_id)
         except BaseException:
             if spend_id is not None:
                 self.refund(spend_id, detail="export failed")
@@ -381,6 +385,13 @@ class TokenStore(SqliteDB):
                     """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app)
                        VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?, ?)""",
                     (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id, self.app))
+
+    def account_of_spend(self, spend_id: int) -> Optional[str]:
+        """The account a spend was taken from (None if there's no such spend)."""
+        with self._read() as db:
+            row = db.execute("SELECT account_id FROM ledger WHERE id = ? AND kind = 'spend'",
+                             (spend_id,)).fetchone()
+        return row["account_id"] if row else None
 
     def refund(self, spend_id: int, *, detail: Optional[str] = None) -> bool:
         """Reverse one spend: returns its tokens and removes the unlock it

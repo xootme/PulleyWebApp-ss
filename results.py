@@ -143,7 +143,7 @@ def save_result(log_dir: str, data: bytes, filename: str) -> str:
 
 
 def register_result_routes(app, *, log_dir: str) -> None:
-    from flask import send_file
+    from flask import request, send_file
 
     # Files the old /download/<job_id>.step route left in the log dir.
     try:
@@ -155,20 +155,29 @@ def register_result_routes(app, *, log_dir: str) -> None:
 
     expired = "This download has expired — download it again from the page.", 404
 
+    # A job's charge waits for its file to be fetched (cct_common.charging,
+    # "delivery"; owner 2026-10-02): refunded at once if the file is gone,
+    # standing once it has been sent in full.
+    from charging import charges
+
+    def gone():
+        charges.not_delivered(request.path)
+        return expired
+
     def fetch_result(token, filename):
         filename = os.path.basename(filename)
         if not _TOKEN.fullmatch(token):
-            return expired
+            return gone()
         if _gcs is not None:
             data = _gcs.load(f"results/{token}/{filename}", RESULT_TTL_S)
             if data is None:
-                return expired
-            return send_file(io.BytesIO(data), mimetype=_mimetype(filename),
-                             as_attachment=True, download_name=filename)
+                return gone()
+            return charges.serve_delivery(send_file(io.BytesIO(data), mimetype=_mimetype(filename),
+                                                    as_attachment=True, download_name=filename))
         path = os.path.join(_root(log_dir), token, filename)
         if not os.path.isfile(path):
-            return expired
-        return send_file(path, mimetype=_mimetype(filename), as_attachment=True,
-                         download_name=filename)
+            return gone()
+        return charges.serve_delivery(send_file(path, mimetype=_mimetype(filename), as_attachment=True,
+                                                download_name=filename))
 
     app.add_url_rule("/download/result/<token>/<filename>", view_func=fetch_result)

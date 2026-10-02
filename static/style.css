@@ -30,20 +30,7 @@ header {
 .header-title-block  { display: flex; flex-direction: column; gap: 1px; }
 .header-title        { font-size: 14px; opacity: 0.88; }
 .header-version      { font-size: 10px; opacity: 0.60; letter-spacing: 0.3px; }
-.header-spacer       { flex: 1; }
-/* Undo / Redo / Reset / bug report on the blue band, drawn as PCB Importer
-   draws them: brand-red Undo / Redo, a white Reset, the round bug badge. */
-.header-actions      { display: flex; align-items: center; gap: 8px; }
-.header-actions .undo-btn {
-  padding: 4px 12px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; line-height: normal;
-  background: #761516; color: #fff; border: none; border-radius: 5px;
-}
-.header-actions .undo-btn:hover:not(:disabled) { background: #5a0f10; }
-.header-actions .reset-btn {
-  padding: 4px 12px; font-size: 13px;
-  background: rgba(255, 255, 255, 0.9); color: #0078d4; border: 1px solid transparent;
-}
-.header-actions .reset-btn:hover { background: #fff; color: #0078d4; border-color: transparent; }
+/* The title bar's actions (.header-spacer, .header-actions, .undo-btn, .reset-btn) come from cct_theme.css. */
 
 /* ── Main layout ── */
 main {
@@ -628,28 +615,7 @@ main.dual #panel2 {
   background: linear-gradient(to bottom, transparent, #fff 40%);
 }
 
-.btn-help {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1.5px solid #c8d0db;
-  background: #f0f4f9;
-  color: #0078d4;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-  flex-shrink: 0;
-}
-.btn-help:hover {
-  background: #0078d4;
-  border-color: #0078d4;
-  color: #fff;
-}
+/* .btn-help, .btn-bug-report and .btn-privacy come from cct_theme.css (cct_common); don't re-declare them here or the shared ones lose. */
 /* Out-of-range number input highlight */
 input.input-out-of-range {
   outline: 2px solid #dc2626 !important;
@@ -782,28 +748,6 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 }
 
 /* ── Bug report button (preview header) ─────────────────────────────────── */
-.btn-bug-report {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1.5px solid #e6b84a;
-  background: #fffbeb;
-  color: #b45309;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.btn-bug-report:hover {
-  background: #f59e0b;
-  border-color: #d97706;
-  color: #fff;
-}
 
 /* ── Bug report modal ────────────────────────────────────────────────────── */
 #bug-report-overlay {
@@ -1076,54 +1020,8 @@ body:not(.feature-build) .fb-3d { display: none !important; }
 .cct-account-balance:focus-visible { background: rgba(255,255,255,0.32); outline: none; }
 .cct-token-count      { margin: 0 0 6px; font-size: 34px; font-weight: 700; color: #0078d4; line-height: 1.1; }
 .cct-token-count span { font-size: 16px; font-weight: 600; color: #333; }
-.cct-dl-costnote      { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: #c0392b; }
-.cct-token-expiry     { margin: 8px 0 6px; font-size: 14px; font-weight: 600; }
-.cct-dialog-offer     { margin: 10px 0 4px; font-size: 14px; font-weight: 700; color: #0078d4; }
-.cct-account-note     { opacity: 0.8; font-style: italic; }
-.cct-account .cct-btn-primary { background: #fff; color: #0078d4; border-color: #fff; }
-.cct-account .cct-btn-link    { color: #fff; }
-
-.cct-btn              { font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 4px; border: 1px solid #c8c8c8;
-                        background: #fff; color: #333; cursor: pointer; }
-.cct-btn:hover        { filter: brightness(0.96); }
-.cct-btn-primary      { background: #0078d4; border-color: #0078d4; color: #fff; }
-.cct-btn-link         { background: none; border: none; padding: 0; text-decoration: underline; }
-
-.cct-dialog-overlay   { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10002;
-                        display: flex; align-items: center; justify-content: center; }
-.cct-dialog           { background: #fff; border-radius: 8px; padding: 24px; width: 90%; max-width: 420px;
-                        box-shadow: 0 4px 20px rgba(0,0,0,0.3); font-family: system-ui, sans-serif; color: #333; }
-.cct-dialog-title     { margin: 0 0 12px; font-size: 17px; }
-.cct-dialog-text      { margin: 0 0 10px; font-size: 14px; line-height: 1.45; }
-.cct-dialog-note      { margin: 0 0 10px; font-size: 12px; color: #666; }
-.cct-dialog-status    { min-height: 1.2em; margin: 6px 0 0; font-size: 13px; color: #b00020; }
-.cct-input            { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 8px 10px;
-                        border: 1px solid #c8c8c8; border-radius: 4px; }
-.cct-check            { display: block; margin: 4px 0 4px 4px; font-size: 14px; cursor: pointer; }
-.cct-dialog-buttons   { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.cct-oauth            { display: flex; flex-direction: column; gap: 8px; }
-.cct-oauth-btn        { display: block; text-align: center; text-decoration: none; font-size: 14px;
-                        padding: 9px 14px; font-weight: 500; }
-.cct-oauth-or         { display: flex; align-items: center; gap: 10px; margin: 14px 0 12px;
-                        font-size: 12px; color: #666; }
-.cct-oauth-or::before,
-.cct-oauth-or::after  { content: ""; flex: 1; border-top: 1px solid #ddd; }
-
-/* ── Download window (index.html openDownloadWindow) ── */
-.cct-dl               { max-width: 440px; }
-.cct-dl-parts         { margin: 6px 0 4px; }
-.cct-dl-head          { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: #555; letter-spacing: 0.04em; text-transform: uppercase; }
-.cct-dl-note          { color: #777; font-size: 12px; }
-.cct-tier             { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px;
-                        font-size: 12px; font-weight: 600; color: #0078d4; white-space: nowrap; }
-.cct-tier::before,
-.cct-tier::after      { content: ""; flex: 1; border-top: 1px solid #d9d9d9; }
-.cct-tier::before     { flex: 0 0 12px; }
-.cct-formats          { display: flex; flex-wrap: wrap; gap: 4px 22px; }
-.cct-formats .cct-check { display: inline-block; }
-.cct-dl-status        { min-height: 1.3em; margin: 16px 0 0; font-size: 13px; color: #555; }
-.cct-btn[disabled]    { opacity: 0.55; cursor: default; }
-.cct-check-off        { opacity: 0.45; cursor: default; }
+/* The CCT dialogs, buttons and the Download window (.cct-dialog, .cct-btn, .cct-dl, …)
+   come from cct_theme.css (cct_common): one copy for every app. */
 
 /* Preview area while the first preview loads (a cold server can take a few seconds). */
 .preview-spinner {
@@ -1199,7 +1097,9 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
   border-top: 1px solid #eee;
   font-size: 12px;
 }
-.dims-results summary { cursor: pointer; color: #555; font-weight: 600; }
+/* The heading as Sprocket and Gear Designer draw it (audit row 30). */
+.dims-results summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #0078d4;
+  text-transform: uppercase; letter-spacing: 0.5px; }
 .warn-row { display: flex; align-items: flex-start; gap: 10px; }
 .warn-row .dims-warnings { flex: 1; min-width: 0; }
 .warn-row #dims_fix { flex-shrink: 0; margin-top: 4px; white-space: nowrap; }
@@ -1233,3 +1133,12 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
 .spline-check { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; cursor: pointer; }
 .spline-check input { width: auto; margin: 0; accent-color: #0078d4; }
 .spline-sub   { margin: 2px 0 2px 22px; font-size: 12px; }   /* "Make counterbore", under its ring */
+
+/* The mm / inch switch (cct_common's cct_units.js), as Sprocket and Gear Designer draw it. */
+.drive-units select { width: auto; padding: 3px 6px; font-size: 12px; }
+
+/* Num. Teeth | Outer Dia. side by side, as Sprocket and Gear Designer's Size card. */
+.size-row { display: flex; gap: 8px; }
+.size-row > div { flex: 1; min-width: 0; }
+.size-row label { margin-top: 0; }
+.size-row input { width: 100%; }

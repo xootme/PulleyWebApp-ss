@@ -26,6 +26,32 @@ fail on the old code; the rule's table; warning, Auto-fix and its clearing; pull
 cadquery STEP = STL less the plates), `test_step_small_step.py` (small_step STEP = STL with metal
 plates on spokes).
 
+## ADR-020 — The session queue is compiled out (app.SESSION_QUEUE = False)
+**Date:** 2026-10-01
+**Status:** Active
+
+**Context:** The one-active-user session queue (a waiting room at /queue, /api/session/*, a
+session check on every export route) was built for the single-server Render host. The live site
+runs on Google Cloud Run, which scales by adding servers, so it never queues: the Dockerfile's
+QUEUE_DISABLED=1 kept the code idle but in the app. The owner: "queue is no longer used on the
+current google cloud site. make the code conditional compile, and turn it off."
+
+**Decision:**
+- One switch at the top of app.py, `SESSION_QUEUE = False`. Off, the queue is not in the app:
+  its routes (`/queue`, `/api/session/create|status|heartbeat|release|register-machine`,
+  `/api/queue/status`, `/api/test/reset`) are registered only through `_queue_route`, which does
+  nothing while it is off; `require_active_session` lets everything through; exports and the
+  Download window's zip are built inside their request (what Cloud Run needs anyway); the weekly
+  free-trial limit, which only ever applied with the queue on, stays off.
+- `queue_off()` is the one test of "nothing queues": the switch off, QUEUE_DISABLED or
+  PULLEY_TESTING. `True` puts everything back as it was.
+- The export job queue (cct_common.job_queue's jobs, the progress dialog) is a different thing
+  and stays.
+- Tests: tests/test_session_queue.py (the routes are gone, the page opens and an export runs
+  with no switch set); tests/test_queue_pytest.py, which needs a live queue, skips while it's off.
+
+---
+
 ## ADR-019 — Agents: the v1 API and one MCP gateway for every CCT app (cct_common 0.22.0)
 **Date:** 2026-09-30
 **Status:** Active — Timing Pulleys is the first app

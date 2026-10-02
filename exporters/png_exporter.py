@@ -751,7 +751,9 @@ def _generate_png_legacy(
     def ss(pts):
         return [(x * SS, y * SS) for x, y in pts]
 
-    line_w = max(1, int(scale * SS * 0.28))   # ~0.28 mm stroke
+    # A thin outline whatever the pulley's size, as Sprocket and Gear Designer draw it
+    # (the 2026-10-01 audit, row 28): 0.28 mm of part was a heavy line on a small pulley.
+    line_w = max(1, round(SS * 1.5))
 
     PULLEY_FILL   = (203, 213, 225)
     PULLEY_STROKE = (51,  65,  85)
@@ -1047,7 +1049,7 @@ def _generate_png_dual_legacy(
     img  = Image.new('RGB', (render_w, render_h), bg_color)
     draw = ImageDraw.Draw(img)
 
-    line_w = max(1, int(scale * SS * 0.28))
+    line_w = max(1, round(SS * 1.5))          # thin, as the single-pulley preview
 
     def ss_pts(pts):
         return [(to_px(x, y)[0] * SS, to_px(x, y)[1] * SS) for x, y in pts]
@@ -1091,15 +1093,17 @@ def _generate_png_dual_legacy(
         fillet_tip_mm2, fillet_base_mm2)
 
     # ── Pulleys (on top of belt) ──────────────────────────────────────────────
-    PULLEY_FILL   = (203, 213, 225)   # slate-300
-    PULLEY_STROKE = (51,  65,  85)    # slate-700
+    # Pulley 1 blue, pulley 2 red, light — the CCT colours every drive app gives
+    # its two parts (Gear Designer's FILLS; the 2026-10-01 audit, row 27).
+    PULLEY_FILLS  = ((214, 232, 245), (243, 211, 207))   # #d6e8f5, #f3d3cf
+    PULLEY_STROKE = (29,  39,  51)    # #1d2733, the drive apps' ink
 
-    for pts, cx_off, svoids in (
-        (poly1, cx1, spoke_voids1),
-        (poly2, cx2, spoke_voids2),
+    for pts, cx_off, svoids, fill in (
+        (poly1, cx1, spoke_voids1, PULLEY_FILLS[0]),
+        (poly2, cx2, spoke_voids2, PULLEY_FILLS[1]),
     ):
         sp = ss_pts(pts)
-        draw.polygon(sp, fill=PULLEY_FILL)
+        draw.polygon(sp, fill=fill)
         for void_pts in svoids:
             sv = ss_pts([(x + cx_off, y) for x, y in void_pts])
             draw.polygon(sv, fill=bg_color)

@@ -17,6 +17,12 @@ import os
 import pytest
 import requests
 
+import app as _app
+
+# A live server's session queue: compiled out of the app (app.SESSION_QUEUE;
+# the owner, 2026-10-01 — the Google Cloud site no longer uses it).
+pytestmark = pytest.mark.skipif(not _app.SESSION_QUEUE, reason="the session queue is compiled out (app.SESSION_QUEUE)")
+
 BASE_URL = os.environ.get('PULLEY_TEST_URL', 'http://localhost:5000')
 
 def _base():

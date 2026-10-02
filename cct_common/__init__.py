@@ -88,6 +88,18 @@ refund-on-failure), SQLite-backed:
     with store.charge(account_id, design_key(params), "step"):
         ...  # generate the file; an exception refunds the charge
 
+Charging every export in tokens (the routes' decorator, registered designs,
+daily limits, refunds) and the Download window's zip — Timing Pulley
+Generator's, shared so every app's Download window works alike (0.23.0):
+
+    from cct_common.charging import Charges
+    charges = Charges(part2_prefix="g2_")          # the app's own names
+    from cct_common.download_bundle import register_bundle_routes
+    register_bundle_routes(app, charges=charges)  # POST /api/download/bundle
+
+The page side lives in static/ (copied into each app, as cct_theme.css):
+cct_download.js (the Download window), cct_units.js (the mm / inch switch).
+
 Accounts and email-link sign-in on the same database (linked identities,
 hashed revocable sessions, account deletion), plus its Flask routes:
 
@@ -118,4 +130,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.22.0"
+__version__ = "0.23.1"

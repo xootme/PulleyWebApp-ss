@@ -90,8 +90,9 @@ async function main() {
   check('no hole-diameter row for a named threaded screw', !(await shown('#hub1_screw_hole_row')));
 
   // ── the dialog ──
-  check('title bar button (3D mode)', await js("[...document.querySelectorAll('.drive-bar-right button')].some(b => b.textContent === 'Threaded screw holes' && b.offsetParent !== null)"));
-  await js("[...document.querySelectorAll('.drive-bar-right button')].find(b => b.textContent === 'Threaded screw holes').click()");
+  // Beside the 3D Mode fields, as Sprocket and Gear Designer have it (2026-10-01 audit, row 13).
+  check('drive bar button (3D mode)', await js("(() => { const b = document.getElementById('thread_btn'); return !!b && b.textContent === 'Threaded screw holes' && b.offsetParent !== null && !!b.closest('#belt_height_row'); })()"));
+  await js("document.getElementById('thread_btn').click()");
   check('dialog opens', await waitFor("getComputedStyle(document.getElementById('thread-overlay')).display === 'flex'"));
   check('round: the round picture', (await js("document.getElementById('thread_picture').src")).endsWith('/static/help/thread_round.svg')
     && await waitFor("document.getElementById('thread_picture').complete && document.getElementById('thread_picture').naturalWidth > 0"));

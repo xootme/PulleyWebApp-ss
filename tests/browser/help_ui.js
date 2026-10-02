@@ -180,6 +180,31 @@ async function main() {
   check('too small: says no spokes fit', none, await js(`document.getElementById('spokes2_overlap_warn').textContent`));
   check('too small: no Auto-fit button', !(await js(`!!document.querySelector('#spokes2_overlap_warn .spoke-fit-btn')`)));
 
+  // ── Escape closes each dialog, and throws nothing ─────────────────────────────
+  // A real key press, not a synthetic event: the page's keydown listeners must
+  // all run without error (one used to call the removed closeSummary()).
+  const escape = async () => {
+    for (const type of ['keyDown', 'keyUp'])
+      await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await sleep(300);
+  };
+  const isShown = id => js(`(() => { const el = document.getElementById('${id}');
+    return !!el && getComputedStyle(el).display !== 'none'; })()`);
+  const before = errors.length;
+  await js(`document.querySelector('.btn-help[data-help2d]').click()`);
+  check('Escape: help opens', await waitFor(`getComputedStyle(document.getElementById('help-overlay')).display !== 'none'`, 3000));
+  await escape();
+  check('Escape: closes help', !(await isShown('help-overlay')));
+  await js(`openBugReport()`); await sleep(300);
+  check('Escape: bug report opens', await isShown('bug-report-overlay'));
+  await escape();
+  check('Escape: closes the bug report', !(await isShown('bug-report-overlay')));
+  await js(`openImportDialog()`); await sleep(300);
+  check('Escape: import opens', await isShown('import-overlay'));
+  await escape();
+  check('Escape: closes import', !(await isShown('import-overlay')));
+  check('Escape: no page errors', errors.length === before, errors.slice(before));
+
   finish(errors);
   ws.close(); chrome.kill();
 }

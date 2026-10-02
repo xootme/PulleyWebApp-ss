@@ -148,4 +148,8 @@ def test_async_routes_and_zip_all_publish_their_jobs():
     assert src.count('_finish_job(job.id') == 4
     assert re.search(r'(?<![_\w])finish_job\(job\.id', src) is None
     assert 'finish_job=_finish_job' in src
-    assert 'finish_job(job.id' in inspect.getsource(bundles.register_bundle_routes)
+    # The zip route is cct_common's (download_bundle; the 2026-10-01 UI audit, row 37):
+    # bundles.py hands it this app's finish_job, which it calls for every job.
+    from cct_common import download_bundle
+    assert 'jobs=(create_job, start_job, update_progress, finish_job)' in inspect.getsource(bundles.register_bundle_routes)
+    assert 'finish_job(job.id' in inspect.getsource(download_bundle.register_bundle_routes)

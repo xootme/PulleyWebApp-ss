@@ -1,0 +1,247 @@
+/* cct_theme.css — shared CheapCAD Tools visual identity.
+ *
+ * Distilled from PulleyWebApp-ss's implemented style.css (the oldest/most
+ * mature CCT tool, and the actual visual reference — NOT the aspirational
+ * palette in CCT_Architecture.md's "Brand" section, which drifted out of
+ * sync with what's actually shipped). Copy this file straight into a
+ * consuming tool's static/ directory (same manual-copy pattern as
+ * cct_common/static/logo.png) and <link> it before the tool's own
+ * style.css so the tool's rules can still override specifics.
+ *
+ * Provides:
+ *   1. CSS custom properties any tool can use directly ("var(--cct-accent)").
+ *   2. Ready-made classes for the pieces that should look identical across
+ *      every tool: .cct-header / .cct-logo / .cct-header-title-block, the
+ *      .cct-card panel pattern, .cct-btn-primary, and .btn-help /
+ *      .btn-bug-report (already byte-identical between PulleyWebApp-ss and
+ *      EBoxDesigner before this file existed — now single-sourced), and
+ *      .btn-privacy beside it.
+ *   A tool must not re-declare these in its own style.css: loaded after
+ *   this file, its copy wins, and the shared fix never arrives (the bug
+ *   button's glyph stayed 14px in three apps that way).
+ *
+ * A tool's own :root can still define its own --accent/--bg/etc. for
+ * anything not yet migrated to the --cct-* names; this file doesn't
+ * require an all-or-nothing adoption.
+ */
+
+:root {
+  --cct-accent:       #0078d4;
+  --cct-accent-dark:  #005fa3;
+  --cct-brand-red:    #761516;
+  --cct-brand-red-dark: #5a0f10;
+  --cct-bg:           #f0f2f5;
+  --cct-panel:        #ffffff;
+  --cct-line:         #dde3ea;
+  --cct-text:         #1a1a1a;
+  --cct-muted:        #888888;
+  --cct-error:        #dc2626;
+  --cct-font: "Segoe UI", Arial, sans-serif;
+}
+
+/* ── Header band ──────────────────────────────────────────────────── */
+.cct-header {
+  background: var(--cct-accent);
+  color: #fff;
+  padding: 10px 24px;
+  flex-shrink: 0;
+}
+.cct-header-inner       { display: flex; align-items: center; gap: 16px; }
+.cct-logo               { height: 28px; width: auto; display: block; }
+.cct-header-title-block { display: flex; flex-direction: column; gap: 1px; }
+.cct-header-title       { font-size: 14px; opacity: 0.88; }
+.cct-header-version     { font-size: 10px; opacity: 0.60; letter-spacing: 0.3px; }
+
+/* ── Card panel ───────────────────────────────────────────────────── */
+.cct-card {
+  background: #f7f9fc;
+  border: 1px solid var(--cct-line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.cct-card h2, .cct-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--cct-accent);
+  margin-bottom: 10px;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────── */
+.cct-btn-primary {
+  padding: 9px;
+  background: var(--cct-accent);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: background 0.15s;
+}
+.cct-btn-primary:hover { background: var(--cct-accent-dark); }
+.cct-btn-secondary {
+  padding: 9px;
+  background: var(--cct-brand-red);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: background 0.15s;
+}
+.cct-btn-secondary:hover { background: var(--cct-brand-red-dark); }
+
+/* ── Circular icon buttons (help / bug-report) ───────────────────────
+ * Identical across PulleyWebApp-ss and EBoxDesigner already; kept here
+ * as the single source so future tools don't have to rediscover the
+ * sizing/color values by eye. */
+.btn-help {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid #c8d0db;
+  background: #f0f4f9;
+  color: var(--cct-accent);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.btn-help:hover { background: var(--cct-accent); border-color: var(--cct-accent); color: #fff; }
+
+/* ── The title bar's actions, right of a .header-spacer, in a .header-actions
+   row: brand-red Undo / Redo (.undo-btn), a white Reset (.reset-btn), then
+   the Privacy Policy and Report a bug badges. As PCB Importer first drew
+   them; Timing Pulley Generator, Sprocket and Gear Designer share it. ── */
+.header-spacer  { flex: 1; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.header-actions .undo-btn {
+  padding: 4px 12px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; line-height: normal;
+  background: var(--cct-brand-red); color: #fff; border: none; border-radius: 5px;
+  width: auto; height: auto; cursor: pointer; white-space: nowrap;
+}
+.header-actions .undo-btn:hover:not(:disabled) { background: var(--cct-brand-red-dark); }
+.header-actions .undo-btn:disabled { opacity: 0.35; cursor: default; }
+.header-actions .reset-btn {
+  padding: 4px 12px; font-size: 13px; border-radius: 4px; cursor: pointer; white-space: nowrap;
+  background: rgba(255, 255, 255, 0.9); color: var(--cct-accent); border: 1px solid transparent;
+}
+.header-actions .reset-btn:hover { background: #fff; color: var(--cct-accent); border-color: transparent; }
+
+/* The title bar's round icon buttons: Privacy Policy (an <a>) and Report a
+   bug, side by side, Privacy on the left.
+
+   Each icon is an SVG drawn as a CSS mask in currentColor, not a text glyph.
+   The bug button used to show U+26A0 as text: it falls out of Segoe UI to a
+   symbol face with its own metrics, its ink sat 1.32px low in the line box,
+   and the padding that lifted it could only ever reach +0.33px because the
+   result quantises to the device-pixel grid. A mask has no font metrics: it
+   centres exactly and is sized to fill the circle (18px inside 26px).
+   The button's own text (the ⚠ in the markup) stays for anything that reads
+   the page as text, but is drawn at font-size 0.
+   box-sizing is stated rather than assumed: this file is shared, and not
+   every host app ships a `* { box-sizing: border-box }` reset. */
+.btn-bug-report,
+.btn-privacy {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  font-size: 0;
+  line-height: 0;
+  text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn-bug-report::before,
+.btn-privacy::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: var(--cct-icon) center / contain no-repeat;
+          mask: var(--cct-icon) center / contain no-repeat;
+}
+.btn-bug-report {
+  /* A rounded warning triangle with the "!" cut out (even-odd fill). */
+  --cct-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 1.8c.7 0 1.3.4 1.7 1l9.4 16.4c.8 1.3-.2 3-1.7 3H2.6c-1.5 0-2.5-1.7-1.7-3L10.3 2.8c.4-.6 1-1 1.7-1zM10.8 8h2.4l-.4 7.4h-1.6zM12 16.6a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z'/%3E%3C/svg%3E");
+  border: 1.5px solid #e6b84a;
+  background: #fffbeb;
+  color: #b45309;
+}
+.btn-bug-report:hover { background: #f59e0b; border-color: #d97706; color: #fff; }
+.btn-privacy {
+  /* A shield with a tick cut out (even-odd fill). */
+  --cct-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 1.5 3.5 4.8v6.1c0 5.3 3.6 10.1 8.5 11.6 4.9-1.5 8.5-6.3 8.5-11.6V4.8zM10.7 15.6 7 11.9l1.5-1.5 2.2 2.2 4.8-4.8 1.5 1.5z'/%3E%3C/svg%3E");
+  border: 1.5px solid #c8d0db;
+  background: #f0f4f9;
+  color: var(--cct-accent);
+}
+.btn-privacy:hover { background: var(--cct-accent); border-color: var(--cct-accent); color: #fff; }
+
+/* ── Dialogs, buttons and the Download window (static/cct_download.js) ──
+   Timing Pulley Generator's, from its token dialogs; every app's dialogs use them. ── */
+.cct-dl-costnote      { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: #c0392b; }
+.cct-token-expiry     { margin: 8px 0 6px; font-size: 14px; font-weight: 600; }
+.cct-dialog-offer     { margin: 10px 0 4px; font-size: 14px; font-weight: 700; color: #0078d4; }
+.cct-account-note     { opacity: 0.8; font-style: italic; }
+.cct-account .cct-btn-primary { background: #fff; color: #0078d4; border-color: #fff; }
+.cct-account .cct-btn-link    { color: #fff; }
+
+.cct-btn              { font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 4px; border: 1px solid #c8c8c8;
+                        background: #fff; color: #333; cursor: pointer; }
+.cct-btn:hover        { filter: brightness(0.96); }
+.cct-btn-primary      { background: #0078d4; border-color: #0078d4; color: #fff; }
+.cct-btn-link         { background: none; border: none; padding: 0; text-decoration: underline; }
+
+.cct-dialog-overlay   { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10002;
+                        display: flex; align-items: center; justify-content: center; }
+.cct-dialog           { background: #fff; border-radius: 8px; padding: 24px; width: 90%; max-width: 420px;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.3); font-family: system-ui, sans-serif; color: #333; }
+.cct-dialog-title     { margin: 0 0 12px; font-size: 17px; }
+.cct-dialog-text      { margin: 0 0 10px; font-size: 14px; line-height: 1.45; }
+.cct-dialog-note      { margin: 0 0 10px; font-size: 12px; color: #666; }
+.cct-dialog-status    { min-height: 1.2em; margin: 6px 0 0; font-size: 13px; color: #b00020; }
+.cct-input            { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 8px 10px;
+                        border: 1px solid #c8c8c8; border-radius: 4px; }
+.cct-check            { display: block; margin: 4px 0 4px 4px; font-size: 14px; cursor: pointer; }
+.cct-dialog-buttons   { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.cct-oauth            { display: flex; flex-direction: column; gap: 8px; }
+.cct-oauth-btn        { display: block; text-align: center; text-decoration: none; font-size: 14px;
+                        padding: 9px 14px; font-weight: 500; }
+.cct-oauth-or         { display: flex; align-items: center; gap: 10px; margin: 14px 0 12px;
+                        font-size: 12px; color: #666; }
+.cct-oauth-or::before,
+.cct-oauth-or::after  { content: ""; flex: 1; border-top: 1px solid #ddd; }
+
+/* ── Download window (index.html openDownloadWindow) ── */
+.cct-dl               { max-width: 440px; }
+.cct-dl-parts         { margin: 6px 0 4px; }
+.cct-dl-head          { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: #555; letter-spacing: 0.04em; text-transform: uppercase; }
+.cct-dl-note          { color: #777; font-size: 12px; }
+.cct-tier             { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px;
+                        font-size: 12px; font-weight: 600; color: #0078d4; white-space: nowrap; }
+.cct-tier::before,
+.cct-tier::after      { content: ""; flex: 1; border-top: 1px solid #d9d9d9; }
+.cct-tier::before     { flex: 0 0 12px; }
+.cct-formats          { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+.cct-formats .cct-check { display: inline-block; }
+.cct-dl-status        { min-height: 1.3em; margin: 16px 0 0; font-size: 13px; color: #555; }
+.cct-btn[disabled]    { opacity: 0.55; cursor: default; }
+.cct-check-off        { opacity: 0.45; cursor: default; }

@@ -5,6 +5,8 @@ once it has served requests, so these tests switch charging on by pointing
 the `charges` singleton at an enabled accounts state and registering the
 account store the routes look up. Requests authenticate with an add-in
 device token (Authorization: Bearer)."""
+import os
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -409,3 +411,51 @@ def test_design_matches_ignores_the_spline_part():
     assert design_matches(dict(SPLINED, part='shaft'), design)
     assert design_matches(dict(SPLINED, part='washer', pulley='2'), design)
     assert 'part' not in canonical_design(dict(SPLINED, part='shaft'))
+
+
+# ── Paid only for what arrives (cct_common.charging "delivery"; the owner,
+# 2026-10-02: a download failed and was still charged) ──────────────────
+
+def _drop_result(output_file):
+    """Delete a stored result, as an expired link or another server would."""
+    import shutil
+    import app as appmod
+    import results
+    token = output_file.split('/')[3]
+    shutil.rmtree(os.path.join(results._root(appmod._LOG_DIR), token), ignore_errors=True)
+
+
+def test_bundle_whose_zip_is_gone_is_refunded(paid, monkeypatch):
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    r = _bundle(paid, [{'path': '/download/stl', 'params': P}])
+    status = paid.client.get(r.get_json()['status_url']).get_json()
+    assert status['status'] == 'done' and paid.balance() == 17     # held while it waits
+    _drop_result(status['output_file'])
+    assert paid.client.get(status['output_file']).status_code == 404
+    assert paid.balance() == 20
+    assert 'refund' in [h['kind'] for h in paid.tokens.history(paid.acct)]
+
+
+def test_async_step_fetched_in_full_stays_paid(paid, monkeypatch):
+    from charging import charges
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    body = dict(DESIGN, design_id=paid.design_id)
+    body.pop('p2_teeth'), body.pop('p2_bore')
+    r = paid.client.post('/api/download/step-async', headers=paid.auth, json=body)
+    status = paid.client.get(r.get_json()['status_url']).get_json()
+    got = paid.client.get(status['output_file'])
+    assert got.status_code == 200 and len(got.data) > 1000
+    got.close()
+    assert charges.sweep_undelivered(now=time.time() + 10**6) == 0  # nothing left pending
+    assert paid.balance() == 16
+
+
+def test_bundle_nobody_fetches_is_refunded_by_the_sweep(paid, monkeypatch):
+    from charging import charges
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    r = _bundle(paid, [{'path': '/download/stl', 'params': P}])
+    assert paid.client.get(r.get_json()['status_url']).get_json()['status'] == 'done'
+    assert charges.sweep_undelivered(now=time.time()) == 0       # not overdue yet
+    assert paid.balance() == 17
+    assert charges.sweep_undelivered(now=time.time() + 10**6) == 1
+    assert paid.balance() == 20
