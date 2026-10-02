@@ -36,6 +36,23 @@ def test_api_od_from_teeth(client, family, pitch):
     assert data['od'] > 0
 
 
+@pytest.mark.parametrize('family,pitch', PULLEY_CASES)
+def test_api_od_from_a_small_od_keeps_the_minimum_teeth(client, family, pitch):
+    """An OD too small for the profile gives its minimum teeth, as a tooth count
+    does (an MXL OD of 5.37 gave 9 teeth, under its 10 — the round-trip harness,
+    2026-10-02: the page kept 9 and a link of the design clamped to 10)."""
+    from app import getOuterDiameter
+    spec = get_spec(family, pitch)
+    n = spec['min_teeth']
+    one_short = getOuterDiameter(n - 1, spec['pitch'], spec['pitch_line_diff'])   # the OD of n - 1 teeth
+    r = client.get(f'/api/od?family={family}&pitch={pitch}&mode=od&value={one_short}')
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data['teeth'] == n
+    by_teeth = client.get(f'/api/od?family={family}&pitch={pitch}&mode=teeth&value={n}').get_json()
+    assert data['od'] == by_teeth['od']
+
+
 # ---------------------------------------------------------------------------
 # /api/belt
 # ---------------------------------------------------------------------------

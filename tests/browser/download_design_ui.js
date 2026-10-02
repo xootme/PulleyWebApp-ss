@@ -99,8 +99,10 @@ async function main() {
         const threeD = document.getElementById('feature_build').checked;
         const fmts = threeD ? ['step', 'stl', 'svg', 'dxf'] : ['svg', 'dxf'];
         const files = [];
+        // a part's "only" limits the formats the window offers it (cct_download.js onlyList)
+        const only = pt => pt.only ? [].concat(pt.only) : null;
         for (const part of _dlParts(threeD))
-          for (const fmt of fmts)
+          for (const fmt of fmts.filter(f => !only(part) || only(part).includes(f)))
             for (const f of _dlFiles(part.id, fmt))
               files.push({ part: part.id, fmt, path: f.path, params: Object.fromEntries(Object.entries(f.params).map(([k, v]) => [k, String(v)])) });
         return { design: cctFullDesign(), files, parts: _dlParts(threeD).map(p => p.id) };

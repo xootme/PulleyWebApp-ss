@@ -1198,20 +1198,32 @@ function migrateParams(p) {
 }
 
 // ── Apply a URLSearchParams object to the form ────────────────────────────────
+// A link flag is on only when it says so (1 / true / on / yes), anything else off:
+// website, hand-written and other apps' links don't all spell it the page's way (bug hunt
+// section 3; `dual=1` opened one pulley, `spline_cb_top=false` kept the counterbore).
+function _linkOn(v) { return v != null && ['1', 'true', 'on', 'yes'].includes(String(v).trim().toLowerCase()); }
+
 function _applyUrlParams(p) {
   const set = (id, key) => {
     const v = p.get(key !== undefined ? key : id);
     if (v === null) return;
     const el = document.getElementById(id);
     if (!el) return;
-    if (el.type === 'checkbox') el.checked = (v === 'true' || v === '1');
+    if (el.type === 'checkbox') el.checked = _linkOn(v);
     else el.value = v;
   };
   const chk = (id, on) => { const el = document.getElementById(id); if (el) el.checked = !!on; };
   // A feature key is on only when it says so: spokes_enabled=0 is a design without spokes
   // (it used to switch them on, since only the key's presence was tested).
-  const on = key => ['1', 'true', 'on', 'yes'].includes(String(p.get(key)).toLowerCase());
+  const on = key => _linkOn(p.get(key));
   const setv = (id, v)  => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  // 3D mode shows the hub, flange and spline cards and has the server check them; a
+  // design with any of them opens in it (link and import used to switch it on for a
+  // hub only, so a flanged or splined design opened in 2D with its checks off).
+  const to3d = () => {
+    const fbEl = document.getElementById('feature_build');
+    if (fbEl && !fbEl.checked) { fbEl.checked = true; document.body.classList.add('feature-build'); }
+  };
   // Designs from before sizes had names carry only a metric diameter.
   const screwSizeOf = dia => SCREW_SIZES.find(sz => sz.group === 'Metric' && sz.major === parseFloat(dia))?.name ?? null;
   if (p.has('screw_hole_shape') || p.has('thread_engagement') || p.has('hex_flat')) {
@@ -1228,7 +1240,7 @@ function _applyUrlParams(p) {
   if (p.has('clearance_height')) clearanceAuto = false;   // a design keeps its own
 
   // ── Dual / P2 ─────────────────────────────────────────────────────────────────
-  const isDual = p.get('dual') === 'true';
+  const isDual = _linkOn(p.get('dual'));
   if (isDual) {
     chk('dual_enable', true);
     document.getElementById('panel2')     ?.classList.remove('hidden');
@@ -1239,13 +1251,17 @@ function _applyUrlParams(p) {
     set('p2_clearance_preset');  set('p2_clearance_custom');
     set('p2_backlash_preset');   set('p2_backlash_custom');
     if (p.has('n_belt')) set('belt_teeth', 'n_belt');
+  } else if (document.getElementById('dual_enable')?.checked) {
+    // A design says when it has two pulleys; without that it has one. The page opens
+    // with two, so a one-pulley design used to open as a drive (2026-10-02).
+    chk('dual_enable', false);
+    onDualToggle();
   }
 
   // ── Hub restore ───────────────────────────────────────────────────────────────
   const restoreHub = (n, pre) => {
     if (!p.has(`${pre}od`)) return;
-    const fbEl = document.getElementById('feature_build');
-    if (fbEl && !fbEl.checked) { fbEl.checked = true; document.body.classList.add('feature-build'); }
+    to3d();
     chk(`hub${n}_enabled`, true);
     set(`hub${n}_od`,     `${pre}od`);
     set(`hub${n}_height`, `${pre}height`);
@@ -1255,7 +1271,7 @@ function _applyUrlParams(p) {
 
     const hasScrewD = p.has(`${pre}screw_dia`) || p.has(`${pre}screw_size`);
     const captNut   = p.get(`${pre}captured_nut`);
-    const hold      = p.get(`${pre}screw_hold`) || (captNut === '1' ? 'nut' : 'thread');
+    const hold      = p.get(`${pre}screw_hold`) || (_linkOn(captNut) ? 'nut' : 'thread');
     const screwType = hold === 'nut' ? 'set_screw_nut' : hold === 'insert' ? 'set_screw_insert' : 'set_screw_std';
     const sz        = p.get(`${pre}screw_size`) || screwSizeOf(p.get(`${pre}screw_dia`));
     if (p.has(`${pre}screw_hole_dia`)) setv(`hub${n}_screw_hole_dia`, p.get(`${pre}screw_hole_dia`));
@@ -1275,6 +1291,8 @@ function _applyUrlParams(p) {
   // The bore's shape: its own keys, or (older links) a D-flat / keyway on the hub
   boreFromLink(p, 1, '');
   if (isDual) boreFromLink(p, 2, 'p2_');
+  if (on('flange_enabled') || (isDual && on('p2_flange_enabled'))
+      || p.get('bore_shape') === 'spline' || (isDual && p.get('p2_bore_shape') === 'spline')) to3d();
   restoreHub(1, 'hub_');
   if (isDual) restoreHub(2, 'p2_hub_');
 
@@ -2922,7 +2940,10 @@ function _dlParts(threeD) {
   const teeth   = n => document.getElementById(n === 1 ? 'teeth' : 'p2_teeth')?.value;
   const parts = [{ id: 'p1', label: `Pulley 1 · ${teeth(1)}T` }];
   if (dual) parts.push({ id: 'p2', label: `Pulley 2 · ${teeth(2)}T` });
-  if (hasBelt) parts.push({ id: 'belt', label: 'Belt' });
+  // A belt's STEP and STL are of the drive's loop, so they need two pulleys (the server
+  // refuses them for one); its SVG and DXF don't. It was offered in every format.
+  if (hasBelt) parts.push(dual ? { id: 'belt', label: 'Belt' }
+                               : { id: 'belt', label: 'Belt', only: ['svg', 'dxf'], note: 'STEP and STL need two pulleys' });
   if (threeD) {
     for (const n of dual ? [1, 2] : [1]) {
       if (_flangeFiles(n).length) parts.push({ id: `fl${n}`, label: `Pulley ${n} flanges`, only: 'stl', note: 'STL only' });
@@ -2970,6 +2991,7 @@ function _dlFiles(part, fmt) {
                           return [q('/download/dxf', p)].concat(rim ? [q('/download/dxf-rim', p)] : []); }
   }
   if (part === 'belt') {
+    if ((fmt === 'step' || fmt === 'stl') && !document.getElementById('dual_enable').checked) return [];
     const p = buildBeltParams();
     if (fmt === 'step' || fmt === 'stl') p.belt_height = beltH();
     return [q(`/download/belt-${fmt}`, p)];
@@ -3529,6 +3551,11 @@ async function executeImport() {
     const p = new URLSearchParams(params);
     migrateParams(p);
     _applyUrlParams(p);
+    // What a link's page load runs after the same loader: the belt profile's spec
+    // (min teeth, the OD formula) and the fields worked out from it. Without it an
+    // imported design of another profile showed the old profile's Outer Dia. (bug
+    // hunt section 2, 2026-10-02).
+    await onPitchChange();
     cancelImport();
   } catch (e) {
     statusEl.textContent = 'Could not read file: ' + e.message;
@@ -4251,14 +4278,14 @@ function boreFromLink(p, n, pre) {
       f.value = p.get(`${pre}spline_${k}`);
       if (f.tagName === 'SELECT' && f.value !== p.get(`${pre}spline_${k}`)) f.dataset.want = p.get(`${pre}spline_${k}`);
     }
-    document.getElementById(`spline${n}_washer`).checked = p.get(`${pre}spline_washer`) === '1';
-    document.getElementById(`spline${n}_rounded`).checked = p.get(`${pre}spline_rounded`) === '1';
+    document.getElementById(`spline${n}_washer`).checked = _linkOn(p.get(`${pre}spline_washer`));
+    document.getElementById(`spline${n}_rounded`).checked = _linkOn(p.get(`${pre}spline_rounded`));
     if (p.has(`${pre}spline_ring_top`) || p.has(`${pre}spline_ring_bottom`)) {
       for (const f of ['top', 'bottom'])
-        document.getElementById(`spline${n}_ring_${f}`).checked = p.get(`${pre}spline_ring_${f}`) === '1';
+        document.getElementById(`spline${n}_ring_${f}`).checked = _linkOn(p.get(`${pre}spline_ring_${f}`));
     } else _oldRing(n, p.get(`${pre}spline_ring`));
     for (const f of ['top', 'bottom'])      // a link from before the choice had counterbores
-      document.getElementById(`spline${n}_cb_${f}`).checked = p.get(`${pre}spline_cb_${f}`) !== '0';
+      document.getElementById(`spline${n}_cb_${f}`).checked = !p.has(`${pre}spline_cb_${f}`) || _linkOn(p.get(`${pre}spline_cb_${f}`));
   } else if (p.has(`${pre}hub_flat_depth`)) {
     el.value = 'flat';
     document.getElementById(`hub${n}_flat_depth`).value = p.get(`${pre}hub_flat_depth`);
@@ -5238,12 +5265,16 @@ function _updateHubMaxValues(n) {
     _clampHubInput(hubOdEl);
   }
 
-  // Spoke Hub OD: min = bore (spoke hub boss must enclose the bore)
+  // Spoke Hub OD: the same min as the hub, which follows it while spokes are on
+  // (_syncSpokeHubLock). With min = bore the two clamped apart — hub 24, spokes hub 23
+  // under a spline — and the lock wasn't put back (2026-10-02). bore + 1 is also the
+  // spoke fit's own floor (geometry/spoke_fit.py WALL, 0.5 mm a side).
   const spokeHubEl = document.getElementById(`spokes${n}_hub_od`);
   if (spokeHubEl) {
-    spokeHubEl.min = bore.toFixed(1);
+    spokeHubEl.min = (bore + 1).toFixed(1);
     _clampHubInput(spokeHubEl);
   }
+  _syncSpokeHubLock(n);
 }
 
 // Re-validate when bore changes

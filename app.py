@@ -1469,7 +1469,9 @@ def api_od():
             return jsonify({'teeth': n, 'od': od})
         else:
             od = float(request.args.get('value', 0))
-            n  = getTeethFromOD(od, spec['pitch'], spec['pitch_line_diff'])
+            # the profile's minimum, as teeth are (an OD of 5.37 gave an MXL 9 teeth, below
+            # its 10: the page kept 9, a link of the same design clamped to 10 — 2026-10-02)
+            n  = max(spec['min_teeth'], getTeethFromOD(od, spec['pitch'], spec['pitch_line_diff']))
             od2 = round(getOuterDiameter(n, spec['pitch'], spec['pitch_line_diff']), 3)
             return jsonify({'teeth': n, 'od': od2})
     except Exception as e:
