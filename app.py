@@ -1229,6 +1229,58 @@ def _spline_fix(args, pfx, n, sp_obj, root_d, three_d):
     return fix, change
 
 
+def _set_screw_slot(args, pfx, n, who, root_d):
+    """A set-screw hole wider than both the hub wall it crosses and the bore
+    radius it opens into breaks out of the hub inside and out at once: a slot,
+    not a hole (Sprocket's ADR-036, the owner 2026-10-02; bug hunt). Both
+    conditions: wider than the wall alone (an M3 in a spoke-clamped Ø16 hub) is
+    a sound hole. Width is the hole's diameter, or across the flats of a hex
+    hole. Returns ([warning], {element id: value}, [change text]); the fix is a
+    Hub OD that closes the rim (and the spokes' hub, which the hub follows),
+    else the largest smaller screw of the same kind that fits, else none. Never
+    the bore, which must fit the shaft."""
+    from geometry import set_screw as _ss
+    hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0)
+    if hub_od <= 0 or _safe_float(args.get(f'{pfx}hub_height'), 0.0) <= 0:
+        return [], {}, []
+    try:
+        screw = _set_screw(args, pfx)
+    except ValueError:
+        return [], {}, []
+    if screw is None:
+        return [], {}, []
+    r = _spoke_room(args, pfx)[1] / 2                     # the bore's reach, as a radius
+    width = lambda s: s.hole.get('flats') or s.hole.get('diameter') or 0.0
+    slot = lambda w, hub: w > hub / 2 - r + 1e-9 and w > r + 1e-9
+    w = width(screw)
+    if not slot(w, hub_od):
+        return [], {}, []
+    need = math.ceil(4 * (r + w) - 1e-9) / 2
+    warning = (f'{who}a Ø{w:.2f} mm {screw.size} set-screw hole is wider than both the '
+               f'{hub_od / 2 - r:.2f} mm of hub wall it crosses and the {r:.2f} mm bore radius it '
+               f'opens into, so it cuts a slot, not a hole — use a smaller screw or a larger bore, '
+               f'or a Hub OD of at least Ø{need:g} mm.')
+    spokes_on = args.get(f'{pfx}spokes_enabled') == '1'
+    hub_max = math.floor((root_d - 2 * SPLINE_WALL) * 2) / 2
+    if need <= hub_max:
+        trial = dict(args.items(), **{f'{pfx}hub_od': need, f'{pfx}spokes_hub_od': need})
+        fit = _spoke_fit(trial, pfx) if spokes_on else None
+        if fit is None or (fit.possible and fit.fitted['hub_od'] >= need - 1e-6):
+            fix = {f'hub{n}_od': need}
+            if spokes_on:
+                fix[f'spokes{n}_hub_od'] = need
+            return [warning], fix, [f'{who}hub OD {hub_od:g} → {need:g} mm '
+                                    f'(closes the {screw.size} set-screw hole)']
+    if screw.size in _ss.METRIC + _ss.INCH:
+        group = _ss.METRIC if screw.size in _ss.METRIC else _ss.INCH
+        for size in reversed(group[:group.index(screw.size)]):
+            smaller = _ss.parse(dict(args.items(), **{f'{pfx}hub_screw_size': size}), pfx)
+            if smaller is not None and not slot(width(smaller), hub_od):
+                return [warning], {f'hub{n}_screw_size': size}, [
+                    f'{who}set screw {screw.size} → {size} (the hub can\'t close a larger one)']
+    return [warning], {}, []
+
+
 def _flange_rim_fix(args, pfx, n, who, need):
     """Auto-fix for a flange sitting too little on its spoke rim (ADR-021): the
     settings whose rim AS BUILT is at least `need` mm. The spoke fit trims Rim
@@ -1342,6 +1394,12 @@ def _dimensions(args):
             sp_fix, sp_changes = _spline_fix(args, pfx, n, sp_obj, root_d, three_d)
             fix_set.update(sp_fix)
             changes += sp_changes
+
+        if three_d:
+            ss_warn, ss_fix, ss_changes = _set_screw_slot(args, pfx, n, who, od - 2 * tooth_ht)
+            warnings += ss_warn
+            fix_set.update(ss_fix)
+            changes += ss_changes
 
         flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
         p['flanged'] = flanged
