@@ -1229,6 +1229,41 @@ def _spline_fix(args, pfx, n, sp_obj, root_d, three_d):
     return fix, change
 
 
+def _flange_rim_fix(args, pfx, n, who, need):
+    """Auto-fix for a flange sitting too little on its spoke rim (ADR-021): the
+    settings whose rim AS BUILT is at least `need` mm. The spoke fit trims Rim
+    Depth when hub and rim leave the openings too little room, so a deeper Rim
+    Depth alone comes back trimmed (2026-10-02: the fix offered the depth
+    already entered, for ever); the room has to come from the spokes' hub,
+    which the 3D hub follows, down to SPLINE_WALL round the bore's reach (as
+    _spline_fix asks). Checked with the real fit. Returns ({element id: value},
+    [change text]) — empty when no spoke layout leaves the flange room here."""
+    from geometry import spoke_fit as sf
+    rim0 = max(0.0, _safe_float(args.get(f'{pfx}spokes_rim_depth'), 2.0))
+    hub0 = max(0.0, _safe_float(args.get(f'{pfx}spokes_hub_od'), 0.0))
+    rim = max(rim0, math.ceil(need * 10 - 1e-9) / 10)
+    r_root, reach = _spoke_room(args, pfx)
+    # the fit leaves Rim Depth as asked while r_root - rim - hub/2 >= MIN_WEB + MIN_OPENING
+    hub_room = math.floor(4 * (r_root - rim - sf.MIN_WEB - sf.MIN_OPENING) + 1e-9) / 2
+    hub = min(hub0, hub_room)
+    if hub < hub0 and hub < reach + 2 * SPLINE_WALL - 1e-9:
+        return {}, []
+    fit = _spoke_fit(dict(args.items(), **{f'{pfx}spokes_rim_depth': rim,
+                                           f'{pfx}spokes_hub_od': hub}), pfx)
+    if not fit.possible or fit.fitted['rim_depth'] < need - 1e-6:
+        return {}, []
+    fix, change = {}, []
+    if rim != rim0:
+        fix[f'spokes{n}_rim_depth'] = rim
+        change.append(f'{who}spoke rim depth {rim0:g} → {rim:g} mm')
+    if hub != hub0:
+        fix[f'spokes{n}_hub_od'] = hub
+        if _safe_float(args.get(f'{pfx}hub_height'), 0.0) > 0:
+            fix[f'hub{n}_od'] = hub                       # the 3D hub follows the spokes' hub
+        change.append(f'{who}spokes hub OD {hub0:g} → {hub:g} mm (room for the rim)')
+    return fix, change
+
+
 @app.route('/api/dimensions')
 def api_dimensions():
     """The Dimensions panel under the 2D view (the Sprocket app's): each
@@ -1349,13 +1384,19 @@ def _dimensions(args):
                 p.update(flange_overlap=sp_rim, flange_min_overlap=ov_need.value)
                 p['approx']['flange_min_overlap'] = ov_need.source
                 if sp_rim < ov_need.value - 1e-6:
-                    new_rd = math.ceil(ov_need.value * 10 - 1e-9) / 10
+                    rim_fix, rim_changes = _flange_rim_fix(args, pfx, n, who, ov_need.value)
+                    deeper, smaller = (f'spokes{n}_rim_depth' in rim_fix, f'spokes{n}_hub_od' in rim_fix)
+                    how = ('no spoke layout leaves it that much rim on this pulley; turn Spokes off, '
+                           'or use a smaller bore or a bigger pulley' if not rim_fix else
+                           'widen the spokes\' Rim Depth' + (' and make it room with a smaller Spokes '
+                                                            'Hub OD' if smaller else '') if deeper else
+                           'the spokes\' openings take the room the rim needs; give it room with a '
+                           'smaller Spokes Hub OD')
                     warnings.append(f'{who}the flange sits only {sp_rim:.2f} mm inward of the groove '
                                     f'bottom (on the spoke rim); it needs at least {ov_need.value:.2f} mm '
-                                    f'(≈ the larger of 3 mm and the flange height) — widen the spokes\' '
-                                    f'Rim Depth.')
-                    fix_set[f'spokes{n}_rim_depth'] = new_rd
-                    changes.append(f'{who}spoke rim depth {sp_rim:g} → {new_rd:g} mm')
+                                    f'(≈ the larger of 3 mm and the flange height) — {how}.')
+                    fix_set.update(rim_fix)
+                    changes += rim_changes
 
         need_w = bs.min_face_width(key, belt_w, flanged)
         if need_w is not None:
@@ -2100,10 +2141,9 @@ def _as_spline_hole_outer(sp):
     return splines.hole(_as_spline_obj(sp)).outer
 
 
-def _spoke_fit(args, prefix=''):
-    """Check a pulley's requested spoke settings against its size (geometry/spoke_fit.py).
-    prefix '' is pulley 1 (or the only pulley), 'p2_' pulley 2."""
-    from geometry.spoke_fit import fit_spokes
+def _spoke_room(args, prefix=''):
+    """(groove-bottom radius, bore reach) — the room a pulley's spokes are
+    fitted into (mm)."""
     family = args.get('family', 'HTD')
     pitch  = args.get('pitch', '5M')
     key    = _resolve_key(family, pitch)
@@ -2119,6 +2159,14 @@ def _spoke_fit(args, prefix=''):
     # its minor, and a spoke hub fitted to the minor was cut through by them
     sp = _spline_of(args, prefix)
     reach = _as_spline_hole_outer(sp) if sp else _get_bore(args, f'{prefix}bore')
+    return r_root, reach
+
+
+def _spoke_fit(args, prefix=''):
+    """Check a pulley's requested spoke settings against its size (geometry/spoke_fit.py).
+    prefix '' is pulley 1 (or the only pulley), 'p2_' pulley 2."""
+    from geometry.spoke_fit import fit_spokes
+    r_root, reach = _spoke_room(args, prefix)
     return fit_spokes(
         r_root, reach,
         max(0.0, float(args.get(f'{prefix}spokes_hub_od', 0.0))),

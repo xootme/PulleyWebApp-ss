@@ -190,3 +190,76 @@ def test_the_reported_pulley_step_is_the_stl(client, monkeypatch):
     v = _load(client.get('/download/stl', query_string=REPORTED).data)
     stl = trimesh.Trimesh(vertices=v, faces=np.arange(len(v)).reshape(-1, 3), process=True).volume
     assert vol == pytest.approx(stl, rel=5e-3)
+
+
+# ── 3. the Auto-fix clears what it warns about (2026-10-02) ──────────────────
+# The overlap is the rim AS BUILT, after the spoke fit; the fit trims Rim Depth
+# when hub and rim crowd the openings. The fix wrote the needed overlap into
+# Rim Depth — already 3 on the reported 40T, built 2.2 — so pressing it changed
+# nothing and it was offered again, for ever.
+LOOPED = {'family': 'GT', 'pitch': '2M', 'teeth': '40', 'bore': '8', 'belt_height': '6',
+          'feature_build': '1', 'hub_od': '18', 'hub_height': '7', 'hub_screw_size': 'M3',
+          'hub_screw_count': '1', 'spokes_enabled': '1', 'spokes_count': '5', 'spokes_height': '4',
+          'spokes_rim_depth': '3', 'spokes_hub_od': '18', 'spokes_width': '4',
+          'flange_enabled': '1', 'flange_3dprint': '1', 'flange_top_separate': '0',
+          'flange_rim_radius': '4.8', 'flange_height': '1.5', 'flange_angle': '15',
+          'dual': 'true', 'p2_teeth': '60', 'p2_bore': '8', 'center_distance': '100'}
+
+
+def _overlap_warned(d):
+    return any('inward of the groove' in w for w in d['warnings'])
+
+
+def _apply(q, d):
+    from agent import _fix_params
+    return {**q, **{k: str(v) for k, v in _fix_params(d['fix']['set']).items()}}
+
+
+def _spoke_keys(d):
+    return {k for k in ((d.get('fix') or {}).get('set') or {}) if k.startswith('spokes')}
+
+
+def test_the_reported_fix_is_not_offered_for_ever(client):
+    d, p = _dims(client, LOOPED)
+    assert _overlap_warned(d) and p['flange_overlap'] < 3        # built 2.2 from an asked 3
+    assert d['fix']['set'].get('spokes1_rim_depth') != 3         # not the depth already there
+    assert 'spokes1_hub_od' in d['fix']['set']                   # the room comes from the hub
+    d2, p2 = _dims(client, _apply(LOOPED, d))
+    assert not _overlap_warned(d2), d2['warnings']
+    assert p2['flange_overlap'] >= p2['flange_min_overlap'] - 1e-6
+    assert not _spoke_keys(d2)
+
+
+@pytest.mark.parametrize('pulley', [
+    {'family': 'GT', 'pitch': '2M', 'teeth': t} for t in ('30', '40', '60', '80')] + [
+    {'family': 'HTD', 'pitch': p, 'teeth': t} for p, t in (('5M', '20'), ('5M', '30'), ('8M', '24'))],
+    ids=lambda q: f"{q['family']}{q['pitch']}-{q['teeth']}T")
+def test_every_offered_overlap_fix_clears_it(client, pulley):
+    """Whatever the spokes, a fix that is offered clears the warning when applied;
+    where none can, none is offered and the warning says what to do instead."""
+    seen = {'fixed': 0, 'refused': 0}
+    for bore in ('5', '8', '12'):
+        for rim in ('1', '3', '5'):
+            for hub in ('12', '18', '26'):
+                q = {**LOOPED, **pulley, 'bore': bore, 'spokes_rim_depth': rim, 'spokes_hub_od': hub,
+                     'hub_od': hub, 'dual': 'false'}
+                d, p = _dims(client, q)
+                if not _overlap_warned(d):
+                    continue
+                if not _spoke_keys(d):
+                    assert any('turn Spokes off' in w for w in d['warnings']), (q, d['warnings'])
+                    seen['refused'] += 1
+                    continue
+                d2, p2 = _dims(client, _apply(q, d))
+                assert not _overlap_warned(d2), (q, d['fix'], d2['warnings'])
+                assert not _spoke_keys(d2), (q, d2['fix'])
+                seen['fixed'] += 1
+    assert sum(seen.values()), 'the sweep never warned'
+
+
+def test_the_api_names_the_spoke_fix_as_parameters(client):
+    """/api/v1/check's fix.params uses describe's names (spokes_rim_depth, not
+    the page's spokes1_rim_depth)."""
+    from agent import _fix_params
+    out = _fix_params({'spokes1_rim_depth': 3.1, 'spokes2_hub_od': 12.5, 'hub2_od': 12.5})
+    assert out == {'spokes_rim_depth': 3.1, 'p2_spokes_hub_od': 12.5, 'p2_hub_od': 12.5}

@@ -190,7 +190,7 @@ def _fix_params(fix_set: dict) -> dict:
     import re
     out = {}
     for key, value in fix_set.items():
-        m = re.match(r"^(hub|spline|flange)([12])_(.+)$", key)
+        m = re.match(r"^(hub|spline|flange|spokes)([12])_(.+)$", key)
         if not m:
             out[key] = value                                     # clearance_height, …
             continue
