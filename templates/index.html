@@ -3709,10 +3709,13 @@ const DIM_ROWS = [
   ['flange_od',              'Flange outside diameter'],
   ['flange_reach',           'Flange past the OD'],
   ['flange_min_height',      'Minimum flange height'],
+  ['flange_overlap',         'Flange inward of the groove'],
+  ['flange_min_overlap',     'Minimum flange overlap'],
 ];
 // A row's third entry, if any, writes its text (a figure that isn't mm).
 // A figure that fails the rule next to it is shown red.
-const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height' };
+const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height',
+                    flange_overlap: 'flange_min_overlap' };
 let dimsTimer = null, dimsSeq = 0, dimsFix = null;
 
 function scheduleDims() {

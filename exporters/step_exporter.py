@@ -1582,7 +1582,7 @@ def generate_flange_step(
 
         if which == 'top':
             r_inner = flange_inner_r_metal_top(bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
-                                               r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+                                               r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
             import sys
             rim_boundary = _R_tr - rim_depth_mm if rim_depth_mm > 0.0 else 0.0
             print(f"DEBUG STEP METAL-TOP: R_OD={R_OD:.2f}, _R_tr={_R_tr:.2f}, rim_depth={rim_depth_mm}, rim_boundary={rim_boundary:.2f}, r_inner={r_inner:.2f}, spokes={spokes_enabled}", file=sys.stderr)
@@ -1591,7 +1591,7 @@ def generate_flange_step(
             flange = flange.translate((0.0, 0.0, belt_height_mm))
         else:
             r_inner = flange_inner_r_metal_bottom(bore_mm, spokes_enabled, spoke_hub_od_mm,
-                                                  r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+                                                  r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
             prof = profile_metal(r_inner, R_OD, _rim_r, _angle, _plate_t, _bend_r)
             prof_flipped = [(r, -z) for r, z in prof]
             flange = _revolve_rz_profile(prof_flipped)

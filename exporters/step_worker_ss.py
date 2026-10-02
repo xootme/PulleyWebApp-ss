@@ -339,10 +339,10 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
             _bend = min(_bend, flange_rim_r_mm * 0.8)
             r_inner_top = flange_inner_r_metal_top(
                 bore_mm, hub_od_mm, spokes_on, spoke_hub_od_mm,
-                r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+                r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
             r_inner_bot = flange_inner_r_metal_bottom(
                 bore_mm, spokes_on, spoke_hub_od_mm,
-                r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+                r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
             cmd += ['--top-metal',
                     str(r_inner_top), str(R_OD),
                     str(flange_rim_r_mm), str(flange_angle_deg),
@@ -522,11 +522,11 @@ def _export_flange(params, ss_bin):
         if which == 'bottom':
             r_inner = flange_inner_r_metal_bottom(
                 bore_mm, spokes_enabled, spoke_hub_od_mm,
-                r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+                r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
         else:
             r_inner = flange_inner_r_metal_top(
                 bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
-                r_tooth_OD=R_OD, rim_depth_mm=rim_depth_mm)
+                r_tooth_OD=_R_tr, rim_depth_mm=rim_depth_mm)
         cmd = [ss_bin, 'flange-metal',
                str(r_inner), str(R_OD), str(rim_radius_mm),
                str(flange_angle_deg), str(plate_height_mm), str(_bend), side_str]

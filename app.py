@@ -1313,6 +1313,24 @@ def _dimensions(args):
                                 f'{lo:g}–{hi:g}°; it is built at {fp["flange_angle_deg"]:g}°.')
                 fix_set[f'flange{n}_angle'] = fp['flange_angle_deg']
                 changes.append(f'{who}flange angle {raw_angle:g}° → {fp["flange_angle_deg"]:g}°')
+            # The flange must sit on the pulley: reach inward past the groove
+            # bottom by max(3 mm, h) (belt_specs.min_flange_overlap). On a spoked
+            # pulley it stops at the spoke rim's inner face, so its overlap is the
+            # rim depth as built (after the spoke fit); without spokes it runs in
+            # to the hub or bore and always sits on the pulley.
+            sp_on, _sp_hub, sp_rim = _parse_spoke_params(args, pfx)[:3]
+            if sp_on and sp_rim > 0:
+                ov_need = bs.min_flange_overlap(key, spec)
+                p.update(flange_overlap=sp_rim, flange_min_overlap=ov_need.value)
+                p['approx']['flange_min_overlap'] = ov_need.source
+                if sp_rim < ov_need.value - 1e-6:
+                    new_rd = math.ceil(ov_need.value * 10 - 1e-9) / 10
+                    warnings.append(f'{who}the flange sits only {sp_rim:.2f} mm inward of the groove '
+                                    f'bottom (on the spoke rim); it needs at least {ov_need.value:.2f} mm '
+                                    f'(≈ the larger of 3 mm and the flange height) — widen the spokes\' '
+                                    f'Rim Depth.')
+                    fix_set[f'spokes{n}_rim_depth'] = new_rd
+                    changes.append(f'{who}spoke rim depth {sp_rim:g} → {new_rd:g} mm')
 
         need_w = bs.min_face_width(key, belt_w, flanged)
         if need_w is not None:

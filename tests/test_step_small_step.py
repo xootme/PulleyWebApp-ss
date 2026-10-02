@@ -227,3 +227,21 @@ def test_small_step_separate_top_flange_is_its_own_product(client, monkeypatch,
         assert any('Flange' in p for p in products), products
     n, ok, _ = _solids(r.data)
     assert ok and n >= 2            # pulley + flange solids, both sound
+
+
+@ss_only
+@pytest.mark.parametrize('rim', ['2', '5'])
+def test_small_step_metal_flanges_on_spokes(client, monkeypatch, rim):
+    """Metal plates on a spoked pulley stop at the groove bottom less the rim
+    depth (they used OD - rim, outside the groove at rim 2; the STL's plates
+    are checked in test_flange_overlap.py). small_step's STEP carries the
+    plates, so it equals the STL, plates and all."""
+    q = {**BASE, 'bore': '8', 'flange_enabled': '1', 'flange_3dprint': '0', 'flange_angle': '15',
+         'flange_rim_radius': '4.2', 'flange_plate_height': '1', 'spokes_enabled': '1',
+         'spokes_rim_depth': rim, 'spokes_hub_od': '20', 'spokes_width': '6', 'spokes_count': '5'}
+    r = _step(client, monkeypatch, q)
+    assert r.status_code == 200, r.data[:200]
+    n, ok, vol = _solids(r.data)
+    assert ok
+    stl = _load(client.get('/download/stl', query_string=q).data).volume
+    assert vol == pytest.approx(stl, rel=5e-3)

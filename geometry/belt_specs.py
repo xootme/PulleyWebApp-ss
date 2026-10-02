@@ -117,6 +117,22 @@ def min_flange_height(key: str, spec: dict) -> Figure:
                   'no published figure for this profile', approximate=True)
 
 
+FLANGE_OVERLAP_FLOOR = 3.0      # mm: the least a flange may sit on the pulley
+
+
+def min_flange_overlap(key: str, spec: dict) -> Figure:
+    """How far a flange must reach inward past the groove bottom (the root
+    diameter), so it sits on solid pulley: the larger of 3 mm and the minimum
+    flange height h (min_flange_height). The owner's rule (2026-10-01): as much
+    support inside the groove as the flange stands out past the OD, never under
+    3 mm. No standard gives an inward overlap, so it is always marked
+    approximate; h's own source is named."""
+    h = min_flange_height(key, spec)
+    value = max(FLANGE_OVERLAP_FLOOR, h.value)
+    return Figure(round(value, 3), f'CCT rule (owner, 2026-10-01): the larger of 3 mm and the minimum '
+                  f'flange height h ({h.source})', approximate=True)
+
+
 def min_face_width(key: str, belt_width: float, flanged: bool):
     """The minimum pulley face width for a belt width, or None where no
     source covers the profile."""

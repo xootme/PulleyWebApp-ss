@@ -1,5 +1,31 @@
 # Architectural Decision Records
 
+## ADR-021 — A flange sits on the pulley: inward overlap ≥ max(3 mm, h)
+**Date:** 2026-10-01 · **Status:** Active (STL, cadquery STEP, small_step STEP)
+
+**Context:** the owner found a metal flange whose hole lay outside the tooth grooves, so it sat on
+nothing. On a spoked pulley a flange stops at the spoke rim's inner face. The printed flange took
+that as the groove bottom less the Rim Depth; the metal plates took it from the tooth tips (OD less
+the Rim Depth), so any Rim Depth under the groove depth put the plate's hole outside the groove.
+Twelve call sites (STL, 3D preview, cadquery STEP, both small_step worker paths) passed the OD.
+
+**Decision:**
+1. Every flange inner edge on a spoked pulley is the groove bottom less the Rim Depth — metal
+   plates now pass the groove-bottom radius, as the printed flange already did.
+2. The owner's rule: a flange reaches inward past the groove bottom by at least
+   **max(3 mm, h)**, h being the minimum flange height the app already uses outward (ISO 13050
+   Annex D ht + a; Gates Table 22; ISO 5294 Annex A). Rationale: as much support inside the groove
+   as the flange stands out past the OD; 3 mm keeps small belts printable. No standard gives an
+   inward overlap, so it is marked ≈ and named as the owner's rule
+   (`belt_specs.min_flange_overlap`). On a spoked pulley the overlap is the Rim Depth as built;
+   short of the minimum, the Dimensions panel warns and Auto-fix widens the Rim Depth. Without
+   spokes the flange reaches the hub or bore and is never checked.
+
+**Tests:** `tests/test_flange_overlap.py` (each flange's hole measured on the STL — the metal cases
+fail on the old code; the rule's table; warning, Auto-fix and its clearing; pulley 2's own fix;
+cadquery STEP = STL less the plates), `test_step_small_step.py` (small_step STEP = STL with metal
+plates on spokes).
+
 ## ADR-019 — Agents: the v1 API and one MCP gateway for every CCT app (cct_common 0.22.0)
 **Date:** 2026-09-30
 **Status:** Active — Timing Pulleys is the first app
