@@ -1313,9 +1313,10 @@ def _dimensions(args):
         if flanged:
             fp = _parse_flange_params(args, pfx)
             spokes = _parse_spoke_params(args, pfx)[0]
-            # A printed flange on a spoked pulley measures its rim from the
-            # tooth root (flange_exporter.generate_3dprint_flange_stl).
-            r_ref = R_OD - tooth_ht if (fp['flange_3dprint'] and spokes) else R_OD
+            # Every flange flares from the tooth tips (R_OD); spokes only move its
+            # inner edge. (A printed flange on a spoked pulley used to flare from
+            # the groove bottom — fixed 2026-10-02.)
+            r_ref = R_OD
             flange_od = 2 * (r_ref + fp['rim_radius_mm'])
             reach = flange_od / 2 - R_OD
             need = bs.min_flange_height(key, spec)

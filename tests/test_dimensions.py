@@ -120,11 +120,15 @@ def test_flanges_only_count_with_3d_features_on(client):
     assert d['pulleys'][0]['flanged'] is False and 'flange_od' not in d['pulleys'][0]
 
 
-def test_printed_flange_on_spokes_reaches_from_the_root(client):
+def test_printed_flange_on_spokes_reaches_from_the_tips(client):
+    """A flange flares from the tooth tips whatever the spokes: it reaches its
+    rim radius past the OD. (A printed flange on a spoked pulley flared from
+    the groove bottom, reaching only rim - groove depth past the OD; this test
+    used to pin that — the owner, 2026-10-02: they begin at the tooth tip.)"""
     spokes = dict(spokes_enabled=1, spokes_hub_od=14, spokes_rim_depth=2, spokes_width=4,
                   spokes_count=4, spokes_fillet_tip=0.5, spokes_fillet_base=0.5)
     d = _dims(client, teeth=40, flange_enabled=1, flange_3dprint=1, flange_rim_radius=3, **spokes)
-    assert d['pulleys'][0]['flange_reach'] == pytest.approx(3 - 2.08, abs=1e-3)
+    assert d['pulleys'][0]['flange_reach'] == pytest.approx(3, abs=1e-3)
 
 
 def test_drive_warnings(client):

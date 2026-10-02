@@ -131,8 +131,62 @@ def test_the_3d_preview_shows_the_flanges(client, kind):
     bare = trimesh.load(io.BytesIO(client.get('/api/preview-stl', query_string={**q, 'flange_enabled': '0'}).data),
                         file_type='stl')
     r_max = lambda m: float(np.hypot(m.vertices[:, 0], m.vertices[:, 1]).max())   # noqa: E731
-    # out to the flange OD the Dimensions panel gives (a printed flange on a spoked
-    # pulley measures its rim from the groove bottom, a metal plate from the OD)
+    # out to the flange OD the Dimensions panel gives (every flange flares from the OD)
     flange_od = client.get('/api/dimensions', query_string=q).get_json()['pulleys'][0]['flange_od']
     assert r_max(flanged) == pytest.approx(flange_od / 2, abs=0.5), (r_max(flanged), flange_od / 2)   # (a plate's edge: + its thickness)
     assert r_max(flanged) > r_max(bare) + 0.5 and flanged.volume > bare.volume + 100
+
+
+# ── a printed flange flares from the tooth tips, spokes or not (2026-10-02) ──
+# The owner's report: on a spoked pulley the printed flanges began at the root of
+# the teeth (groove bottom) instead of the tips — RPP-5M-30T-P2-flanges.step.
+REPORTED = {'family': 'RPP', 'pitch': '5M', 'teeth': '30', 'bore': '10', 'belt_height': '10',
+            'feature_build': '1', 'flange_enabled': '1', 'flange_3dprint': '1', 'flange_angle': '15',
+            'flange_rim_radius': '4.8', 'flange_height': '1.5', 'flange_top_separate': '0',
+            'flange_supports_enabled': '1', 'spokes_enabled': '1', 'spokes_hub_od': '16',
+            'spokes_rim_depth': '3', 'spokes_width': '6', 'spokes_count': '4'}
+
+
+def _r_od(client, q):
+    p = client.get('/api/dimensions', query_string=q).get_json()['pulleys'][0]
+    return p['outside_diameter_built'] / 2, p
+
+
+@pytest.mark.parametrize('spokes', ['1', '0'], ids=['spokes', 'no spokes'])
+@pytest.mark.parametrize('separate', ['0', '1'], ids=['joined top', 'separate top'])
+def test_a_printed_flange_flares_from_the_tooth_tips(client, spokes, separate):
+    """Each printed flange reaches its rim radius past the tooth tips (the OD) —
+    the same with spokes as without (it reached only rim - groove depth past the
+    OD with spokes: it flared from the groove bottom)."""
+    q = {**REPORTED, 'spokes_enabled': spokes, 'flange_top_separate': separate}
+    r_od, p = _r_od(client, q)
+    assert p['flange_reach'] == pytest.approx(4.8, abs=1e-3)
+    for which in ('top', 'bottom'):
+        r = client.get('/download/flange-stl', query_string={**q, 'flange_which': which})
+        assert r.status_code == 200, r.data[:200]
+        v = _load(r.data)
+        r_max = float(np.hypot(v[:, 0], v[:, 1]).max())
+        assert r_max == pytest.approx(r_od + 4.8, abs=0.05), (which, r_max, r_od + 4.8)
+    # the pulley's own STL (bottom flange joined; the top too unless separate)
+    v = _load(client.get('/download/stl', query_string=q).data)
+    assert float(np.hypot(v[:, 0], v[:, 1]).max()) == pytest.approx(r_od + 4.8, abs=0.05)
+
+
+def test_the_reported_pulley_step_is_the_stl(client, monkeypatch):
+    """small_step's STEP of the reported pulley (printed flanges joined, on
+    spokes) is its STL: the flanges flare from the tips in both."""
+    from test_step_small_step import _solids, ss_only   # noqa: F401  (OCP, the ss build)
+    pytest.importorskip('OCP')
+    import os
+    if not os.environ.get('SMALL_STEP_BIN'):
+        pytest.skip('SMALL_STEP_BIN unset')
+    monkeypatch.setenv('PULLEY_STEP_BACKEND', '')
+    monkeypatch.setenv('QUEUE_DISABLED', '1')
+    import trimesh
+    r = client.get('/download/step', query_string=REPORTED)
+    assert r.status_code == 200, r.data[:200]
+    n, ok, vol = _solids(r.data)
+    assert ok
+    v = _load(client.get('/download/stl', query_string=REPORTED).data)
+    stl = trimesh.Trimesh(vertices=v, faces=np.arange(len(v)).reshape(-1, 3), process=True).volume
+    assert vol == pytest.approx(stl, rel=5e-3)

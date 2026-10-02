@@ -1272,7 +1272,7 @@ def generate_pulley_step(
         _angle_b = max(8.0, min(25.0, flange_angle_deg))
         _rim_r_b = max(0.5, flange_rim_radius_mm)
         _f_h_b   = max(0.1, flange_height_mm)
-        _prof_b  = profile_3dprint(_r_inner_b, _r_tooth_ref_b, _rim_r_b, _angle_b, _f_h_b)
+        _prof_b  = profile_3dprint(_r_inner_b, _R_OD_b, _rim_r_b, _angle_b, _f_h_b)
         _bot_prof_b = [(_r, -_z) for _r, _z in _prof_b]
         _bot_flange_mesh = _revolve_rz_profile(_bot_prof_b)
         result = result.union(_bot_flange_mesh, clean=False)
@@ -1407,7 +1407,7 @@ def generate_pulley_step(
             _r_inner_top = flange_inner_r_3dprint(
                 bore_mm, hub_od_mm, _has_spokes, spoke_hub_od_mm,
                 r_tooth_OD=_r_tooth_ref, rim_depth_mm=rim_depth_mm)
-            _top_prof = profile_3dprint(_r_inner_top, _r_tooth_ref, _rim_r, _angle, _f_h)
+            _top_prof = profile_3dprint(_r_inner_top, _R_OD, _rim_r, _angle, _f_h)
             _top_flange = _revolve_rz_profile(_top_prof)
             _top_flange = _top_flange.translate((0.0, 0.0, belt_height_mm))
             result = result.union(_top_flange, clean=False)
@@ -1534,7 +1534,7 @@ def generate_flange_step(
         # For spokes, profile transition should be at rim boundary (_R_tr), not tooth OD (R_OD)
         prof_r_tooth = _R_tr if spokes_enabled else R_OD
         print(f"DEBUG STEP 3DPRINT: spokes={spokes_enabled}, R_OD={R_OD:.2f}, _R_tr={_R_tr:.2f}, rim_depth={rim_depth_mm}, prof_r_tooth={prof_r_tooth:.2f}, r_inner={r_inner:.2f}", file=sys.stderr)
-        prof   = profile_3dprint(r_inner, prof_r_tooth, _rim_r, _angle, _f_h)
+        prof   = profile_3dprint(r_inner, R_OD, _rim_r, _angle, _f_h)
         print(f"DEBUG PROFILE: {prof}", file=sys.stderr)
 
         if which == 'top':

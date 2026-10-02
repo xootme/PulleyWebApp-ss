@@ -303,9 +303,9 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         spokes_on = spoke_count > 0
 
         if flange_3dprint:
-            # prof_r_tooth = tooth-root OD for spokes (flat face stops at rim ring),
-            # full OD otherwise. Pass the same value as r_tooth_OD so flange_inner_r
-            # computes the correct spoke-void OD (R_tr - rim_depth_mm).
+            # prof_r_tooth = the groove bottom with spokes, the OD without: only for
+            # the inner edge (flange_inner_r: groove bottom - rim depth). The flange
+            # itself flares from the tooth tips (R_OD) on every pulley.
             prof_r_tooth = _R_tr if spokes_on else R_OD
             r_inner_top = flange_inner_r_3dprint(
                 bore_mm, hub_od_mm, spokes_on, spoke_hub_od_mm,
@@ -314,7 +314,7 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
                 bore_mm, spokes_on, spoke_hub_od_mm,
                 r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
             cmd += ['--top-3d',
-                    str(r_inner_top), str(prof_r_tooth),
+                    str(r_inner_top), str(R_OD),
                     str(flange_rim_r_mm), str(flange_angle_deg), str(flange_height_mm)]
             if nubs_enabled:
                 import math as _math
@@ -332,7 +332,7 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
                         str(nub_count), str(nub_dia_mm),
                         str(nub_height_mm), str(nub_allowance_mm), str(r_nub)]
             cmd += ['--bot-3d',
-                    str(r_inner_bot), str(prof_r_tooth),
+                    str(r_inner_bot), str(R_OD),
                     str(flange_rim_r_mm), str(flange_angle_deg), str(flange_height_mm)]
         else:
             _bend = bend_radius_mm if bend_radius_mm > 0.0 else 1.5 * plate_height_mm
@@ -514,7 +514,7 @@ def _export_flange(params, ss_bin):
                 bore_mm, hub_od_mm, spokes_enabled, spoke_hub_od_mm,
                 r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
         cmd = [ss_bin, 'flange-3d',
-               str(r_inner), str(prof_r_tooth), str(rim_radius_mm),
+               str(r_inner), str(R_OD), str(rim_radius_mm),          # flare from the tips
                str(flange_angle_deg), str(flange_height_mm), side_str]
     else:
         _bend = bend_radius_mm if bend_radius_mm > 0.0 else 1.5 * plate_height_mm
