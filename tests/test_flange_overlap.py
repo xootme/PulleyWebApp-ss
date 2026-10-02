@@ -116,3 +116,23 @@ def test_cadquery_step_metal_flanges_on_spokes(client, monkeypatch, tmp_path, ri
     whole = _load_stl(client.get('/download/stl', query_string=q).data)
     plates = _load_stl(client.get('/download/flange-stl', query_string=q).data)
     assert _step_mesh_volume(path) == pytest.approx(whole.volume - plates.volume, rel=5e-3)
+
+
+@pytest.mark.parametrize('kind', ['0', '1'], ids=['metal', 'printed'])
+def test_the_3d_preview_shows_the_flanges(client, kind):
+    """The preview draws the flanges, from the groove bottom less the rim depth
+    out past the OD. (b127340 left the preview's metal branch calling a name
+    from another function: it returned no flanges at all, while the downloads
+    were right — a 200 with the flanges missing.)"""
+    import io
+    import trimesh
+    q = {**BASE, 'flange_3dprint': kind, 'spokes_rim_depth': '5'}
+    flanged = trimesh.load(io.BytesIO(client.get('/api/preview-stl', query_string=q).data), file_type='stl')
+    bare = trimesh.load(io.BytesIO(client.get('/api/preview-stl', query_string={**q, 'flange_enabled': '0'}).data),
+                        file_type='stl')
+    r_max = lambda m: float(np.hypot(m.vertices[:, 0], m.vertices[:, 1]).max())   # noqa: E731
+    # out to the flange OD the Dimensions panel gives (a printed flange on a spoked
+    # pulley measures its rim from the groove bottom, a metal plate from the OD)
+    flange_od = client.get('/api/dimensions', query_string=q).get_json()['pulleys'][0]['flange_od']
+    assert r_max(flanged) == pytest.approx(flange_od / 2, abs=0.5), (r_max(flanged), flange_od / 2)   # (a plate's edge: + its thickness)
+    assert r_max(flanged) > r_max(bare) + 0.5 and flanged.volume > bare.volume + 100
