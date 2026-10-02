@@ -376,3 +376,36 @@ def test_agent_limit_refuses_background_jobs_and_zips_up_front(agent, monkeypatc
         'design_id': did, 'name': 'x',
         'files': [{'path': '/download/step', 'params': dict(P, teeth='34')}]})
     assert r.status_code == 429
+
+
+SPLINED = {'family': 'HTD', 'pitch': '5M', 'teeth': '40', 'bore': '23.0105', 'belt_height': '12',
+           'bore_shape': 'spline', 'spline_type': 'straight', 'spline_n': '6', 'spline_minor': '23',
+           'spline_major': '26', 'spline_width': '6', 'spline_ring_top': '1', 'spline_ring_bottom': '0',
+           'spline_washer': '1'}
+
+
+def test_bundle_takes_a_splined_designs_shaft_and_washer(paid, monkeypatch):
+    """The Download window sends the sample shaft and washer as
+    /download/spline-* with part=shaft / washer — a choice of part, not a
+    design setting. It was refused as "isn't part of this design" (bug
+    30ae49ecd8, 2026-10-02) because `part` wasn't a route-only key."""
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    did = charges.designs.register(paid.acct, SPLINED)
+    r = _bundle(paid, [{'path': '/download/stl', 'params': SPLINED},
+                       {'path': '/download/spline-stl', 'params': dict(SPLINED, part='shaft')},
+                       {'path': '/download/spline-dxf', 'params': dict(SPLINED, part='washer')}], did)
+    assert r.status_code == 200, r.data[:300]
+    status = paid.client.get(r.get_json()['status_url']).get_json()
+    assert status['status'] == 'done', status
+    assert len(_zip_names(paid.client, status)) == 3
+    # still refused when the part's other settings belong to another design
+    r = _bundle(paid, [{'path': '/download/spline-stl', 'params': dict(SPLINED, part='shaft', spline_n='8')}], did)
+    assert r.status_code == 400 and "isn't part of this design" in r.get_json()['error']
+
+
+def test_design_matches_ignores_the_spline_part():
+    from charging import canonical_design
+    design = canonical_design(SPLINED)
+    assert design_matches(dict(SPLINED, part='shaft'), design)
+    assert design_matches(dict(SPLINED, part='washer', pulley='2'), design)
+    assert 'part' not in canonical_design(dict(SPLINED, part='shaft'))

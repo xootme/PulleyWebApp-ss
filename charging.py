@@ -54,7 +54,7 @@ DESIGN_TTL_S = 30 * 24 * 3600
 
 # Request keys that select or deliver a part rather than describe the
 # design (in addition to cct_common.tokens.TRANSIENT_KEYS).
-ROUTE_ONLY_KEYS = frozenset({"design_id", "flange_which", "machine_id"})
+ROUTE_ONLY_KEYS = frozenset({"design_id", "flange_which", "machine_id", "part"})   # part: a spline part (shaft / washer)
 
 # The flange routes send some hub values under flat names.
 ALIASES = {
