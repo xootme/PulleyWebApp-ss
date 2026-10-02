@@ -104,6 +104,14 @@ console.neon.tech → the project → Billing → the Launch plan (7-day restore
 
 ## Deploy production (Claude, once 4–5 are done)
 
+**Every deploy since launch** (the rules for all CCT apps: `Documents\CCT_App_Baseline.md` §9):
+on the owner's "deploy" only; **bump `APP_VERSION` by +0.0.1 unless the owner names a version**
+(and `tests/browser/admin_ui.js`), committed as "Version x.y.z"; deploy that commit from a clean
+`git worktree add --detach`, code only:
+`gcloud --configuration=cheapcadtools run deploy pulley --source . --region us-central1` —
+`pulley-test` first, then `pulley`. The full command below was the first-time setup: its
+`--set-env-vars` replaces every setting, so don't rerun it.
+
 ```bash
 gcloud --configuration=cheapcadtools run deploy pulley --source . --region us-central1 \
   --service-account pulley-run@cheapcadtools.iam.gserviceaccount.com \
