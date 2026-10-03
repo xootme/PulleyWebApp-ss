@@ -124,6 +124,18 @@ def _safe_next(target: Optional[str]) -> str:
     return target
 
 
+# Where the approval page may send the person after they decide: only the
+# hosted MCP gateway's sign-in callback (cct_common.mcp_oauth), which turns the
+# approved device code into an OAuth code for the AI app that asked.
+MCP_CALLBACK_PATH = "/mcp/oauth/callback"
+
+
+def _safe_then(target: Optional[str]) -> Optional[str]:
+    """The approval page's return address, if it's the MCP callback; else None."""
+    t = _safe_next(target)
+    return t if t.startswith(MCP_CALLBACK_PATH + "?") else None
+
+
 def register_account_routes(app, accounts: AccountStore, *, email_sender,
                             app_name: str = "CheapCAD Tools",
                             email_subject: Optional[str] = None,
@@ -373,53 +385,73 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             body["token"] = token
         return jsonify(body)
 
-    def _device_page(title, inner, status=200):
-        return _page(title, inner + "<p style='color:#666;font-size:.9rem'>Only approve a code "
-                     "you just saw in your own CAD add-in. Never approve a code someone sent you.</p>",
-                     status)
+    def _device_page(title, inner, status=200, ai=False):
+        warn = ("Only approve if you just chose to connect CheapCAD Tools from your own AI app."
+                if ai else "Only approve a code you just saw in your own CAD add-in.")
+        return _page(title, inner + f"<p style='color:#666;font-size:.9rem'>{warn} "
+                     "Never approve a request someone sent you.</p>", status)
 
-    def _code_form(value=""):
+    def _then_field(then):
+        return (f"<input type='hidden' name='then' value='{html.escape(then, quote=True)}'>"
+                if then else "")
+
+    def _code_form(value="", then=None):
         return ("<form method='get' action='/account/device'>"
                 "<p><label>Code shown in your add-in<br>"
                 f"<input name='code' value='{html.escape(value, quote=True)}' autocomplete='off' "
                 "style='font:1.2rem monospace;letter-spacing:.1em;padding:.4rem;margin-top:.3rem'>"
-                "</label></p><button type='submit'>Continue</button></form>")
+                f"</label></p>{_then_field(then)}<button type='submit'>Continue</button></form>")
 
     def device_page():
         code = accounts.normalize_user_code(request.args.get("code", ""))
+        # An AI app connecting through the hosted MCP gateway (cct_common.mcp_oauth)
+        # comes here with then=<its callback>: the same approval, then back to it.
+        then = _safe_then(request.args.get("then"))
+        what = "an AI app" if then else "your CAD add-in"
+        heading = "Connect an AI app" if then else "Connect a CAD add-in"
         acct = current_account_id()
         if not acct:
             return _device_page(f"Sign in to {app_name}", (
-                "<p>To connect your CAD add-in, sign in first. We'll email you a link "
+                f"<p>To connect {what}, sign in first. We'll email you a link "
                 "that brings you back here.</p>"
                 "<form method='post' action='/account/device/sign-in'>"
                 f"<input type='hidden' name='code' value='{html.escape(code, quote=True)}'>"
+                f"{_then_field(then)}"
                 "<p><input type='email' name='email' placeholder='you@example.com' required "
                 "style='font-size:1rem;padding:.4rem;width:100%'></p>"
-                "<button type='submit'>Email me a link</button></form>"))
+                "<button type='submit'>Email me a link</button></form>"
+                f"<p><a href='/account/sign-in?next={quote(request.full_path, safe='')}'>"
+                "Or sign in another way (Google, GitHub)</a></p>"), ai=bool(then))
         req = accounts.device_request(code) if code else None
         if not req:
             msg = "<p>That code isn't recognised. Check it and try again.</p>" if code else ""
-            return _device_page("Connect a CAD add-in", msg + _code_form(code))
+            return _device_page(heading, msg + _code_form(code, then), ai=bool(then))
         if req["state"] != "pending":
+            if then and req["state"] in ("approved", "denied"):
+                return redirect(then, code=303)          # the callback finishes it
+            again = "Start connecting again in your AI app." if then else "Start sign-in again in the add-in."
             text = {"approved": "This add-in is already connected.",
                     "denied": "This request was denied.",
-                    "expired": "This code has expired. Start sign-in again in the add-in."}[req["state"]]
-            return _device_page("Connect a CAD add-in", f"<p>{text}</p>")
-        return _device_page("Connect a CAD add-in", (
+                    "expired": f"This code has expired. {again}"}[req["state"]]
+            return _device_page(heading, f"<p>{text}</p>", ai=bool(then))
+        limit_for = "this AI app" if then else "this add-in"
+        return _device_page(heading, (
             f"<p>Allow <strong>{html.escape(req['label'])}</strong> to use your account "
             f"({html.escape(tokens.account_email(acct) or '')})?</p>"
-            f"<p style='font:1.4rem monospace;letter-spacing:.12em'>{html.escape(code)}</p>"
-            "<form method='post' action='/account/device'>"
+            + ("" if then else
+               f"<p style='font:1.4rem monospace;letter-spacing:.12em'>{html.escape(code)}</p>")
+            + "<form method='post' action='/account/device'>"
             f"<input type='hidden' name='code' value='{html.escape(code, quote=True)}'>"
-            "<p><label>Daily limit for this add-in<br>"
+            f"{_then_field(then)}"
+            f"<p><label>Daily limit for {limit_for}<br>"
             f"{_budget_select(accounts.device_daily_budget)}</label><br>"
             "<span style='color:#666;font-size:.9rem'>It stops at this many tokens in any "
             "24 hours and we email you. Change it any time on "
             "<a href='/account/devices'>your connected add-ins page</a>.</span></p>"
             "<p style='display:flex;gap:.6rem'>"
             "<button type='submit' name='decision' value='approve'>Approve</button>"
-            "<button type='submit' name='decision' value='deny'>Deny</button></p></form>"))
+            "<button type='submit' name='decision' value='deny'>Deny</button></p></form>"),
+            ai=bool(then))
 
     def device_decide():
         acct = current_account_id()
@@ -434,10 +466,13 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             except ValueError:
                 return _device_page("Connect a CAD add-in",
                                     "<p>Choose a daily limit from the list.</p>", status=400)
+        then = _safe_then(request.form.get("then"))
         if not accounts.decide_device(code, acct, approve=approve, **extra):
             return _device_page("Connect a CAD add-in",
                                 "<p>This code has expired or was already used. "
-                                "Start sign-in again in the add-in.</p>", status=400)
+                                "Start sign-in again in the add-in.</p>", status=400, ai=bool(then))
+        if then:
+            return redirect(then, code=303)              # back to the AI app, approved or not
         if approve:
             return _device_page("Add-in connected",
                                 "<p>Done — go back to your CAD program; it will finish signing in "
@@ -456,7 +491,10 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         except RateLimited:
             return _device_page(f"Sign in to {app_name}",
                                 "<p>Too many sign-in emails requested. Try again in an hour.</p>", 429)
+        then = _safe_then(request.form.get("then"))
         nxt = back if back != "/" else "/account/device" + (f"?code={code}" if code else "")
+        if then and back == "/":
+            nxt += ("&" if "?" in nxt else "?") + "then=" + quote(then, safe="")
         link = f"{request.host_url}account/login?token={token}&next={quote(nxt, safe='/')}"
         ok, _ = email_sender(email, subject, body_fn(link))
         if not ok:
