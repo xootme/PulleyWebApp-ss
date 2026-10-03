@@ -189,6 +189,23 @@ class CCTOAuthProvider:
         return HTMLResponse(_page("Approve the connection first",
                                   f"<a href='{approve}'>Open the approval page</a> to finish."), 200)
 
+    async def revoke(self, request):
+        """POST /revoke (RFC 7009), in place of the SDK's: an AI app's public
+        client sends the token and no secret, which the SDK's form model
+        refuses, and it only revokes a token whose client_id is the caller's
+        while ours carry the connection's label. Whoever holds a token can
+        already use it, so holding it is enough to end it. Only AI-app
+        (device) sessions; an unknown token is a 200 too, as the RFC says."""
+        from starlette.responses import JSONResponse, Response
+        token = (await request.form()).get("token", "")
+        if not token:
+            return JSONResponse({"error": "invalid_request", "error_description": "token is required"},
+                                400, headers={"Cache-Control": "no-store"})
+        info = self.accounts.session_info(token)
+        if info and info["kind"] == "device":
+            self.accounts.revoke_session(token)
+        return Response(status_code=200, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+
     async def load_authorization_code(self, client, authorization_code: str):
         from mcp.server.auth.provider import AuthorizationCode
         row = self.store.code(authorization_code, client.client_id)

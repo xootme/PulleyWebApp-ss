@@ -168,7 +168,24 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "<style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;"
             "padding:0 1rem;line-height:1.5}button,.btn{font-size:1rem;padding:.6rem 1.4rem;"
             "cursor:pointer}.btn{display:inline-block;border:1px solid #888;border-radius:4px;"
-            "color:inherit;text-decoration:none;min-width:14rem;text-align:center}</style></head><body>"
+            "color:inherit;text-decoration:none;min-width:14rem;text-align:center}"
+            ".oauth{display:flex;flex-direction:column;gap:.6rem;margin:1.2rem 0}"
+            ".btn-oauth{display:flex;align-items:center;justify-content:center;gap:.7rem;"
+            "box-sizing:border-box;width:100%;padding:.7rem 1rem;border:1px solid #dadce0;"
+            "border-radius:6px;background:#fff;color:#1f1f1f;font-weight:500;text-decoration:none;"
+            "box-shadow:0 1px 2px rgba(0,0,0,.06)}.btn-oauth:hover{background:#f6f8fa;border-color:#c4c7cc}"
+            ".btn-oauth svg{flex:none}.or{display:flex;align-items:center;gap:.7rem;color:#666;"
+            "font-size:.9rem;margin:1.2rem 0}.or::before,.or::after{content:'';flex:1;"
+            "border-top:1px solid #ddd}"
+            "input[type=email]{box-sizing:border-box;width:100%;font-size:1rem;padding:.6rem .7rem;"
+            "border:1px solid #c8c8c8;border-radius:6px}"
+            "button{border:1px solid #0078d4;border-radius:6px;background:#0078d4;color:#fff;"
+            "font-weight:500}button:hover{filter:brightness(.95)}button+button{margin-left:.5rem}"
+            "button.secondary{background:#fff;color:#333;border-color:#c8c8c8}"
+            ".logo{display:block;margin-bottom:1.5rem}.logo img{height:44px;width:auto}"
+            "h1{font-size:1.6rem;line-height:1.25}</style></head><body>"
+            # Every CCT app ships the shared logo at /static/logo.png (cct_common/static).
+            "<a class='logo' href='/'><img src='/static/logo.png' alt='CheapCAD Tools'></a>"
             f"<h1>{html.escape(title)}</h1>{inner}</body></html>")
         r = Response(doc, status=status, mimetype="text/html")
         r.headers["Cache-Control"] = "no-store"
@@ -227,6 +244,17 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                 "<p><a href='/'>Request a new one</a></p>"), status=400)
         return _finish_sign_in(account_id, request.form.get("next"))
 
+    def _oauth_buttons(nxt: str, safe: str = "/") -> str:
+        """'Continue with Google / GitHub …' with each one's logo, for the
+        providers this app has set up; empty if none. Back to `nxt` after."""
+        from .oauth import ICONS, PROVIDERS
+        enc = html.escape(quote(nxt, safe=safe), quote=True)
+        links = "".join(
+            f"<a class='btn-oauth' href='/account/oauth/{p}/start?next={enc}'>{ICONS[p]}"
+            f"<span>Continue with {html.escape(PROVIDERS[p]['label'])}</span></a>"
+            for p in app.extensions[_EXT_KEY].get("oauth_providers") or [])
+        return f"<div class='oauth'>{links}</div>" if links else ""
+
     def sign_in_page():
         """For pages outside the tool (the admin dashboard, a bookmarked
         link) that need a signed-in visitor; the tool itself signs in from
@@ -238,15 +266,11 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                 f"<p>You're signed in as <strong>{html.escape(tokens.account_email(acct) or '')}"
                 "</strong>.</p>"
                 f"<p><a href='{html.escape(nxt, quote=True)}'>Continue</a></p>"
-                "<p><button type='button' onclick=\"fetch('/api/account/logout',{method:'POST'})"
+                "<p><button class='secondary' type='button' onclick=\"fetch('/api/account/logout',{method:'POST'})"
                 ".then(()=>location.reload())\">Sign in with a different account</button></p>"))
-        from .oauth import PROVIDERS
-        buttons = "".join(
-            f"<p><a class='btn' href='/account/oauth/{p}/start?next={html.escape(quote(nxt, safe='/'), quote=True)}'>"
-            f"Continue with {html.escape(PROVIDERS[p]['label'])}</a></p>"
-            for p in app.extensions[_EXT_KEY].get("oauth_providers") or [])
+        buttons = _oauth_buttons(nxt)
         return _page(f"Sign in to {app_name}", (
-            buttons + ("<p style='color:#666'>or</p>" if buttons else "")
+            buttons + ("<div class='or'>or</div>" if buttons else "")
             + "<form method='post' action='/account/sign-in'>"
             f"<input type='hidden' name='next' value='{html.escape(nxt, quote=True)}'>"
             "<p><input type='email' name='email' placeholder='you@example.com' required "
@@ -411,17 +435,18 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         heading = "Connect an AI app" if then else "Connect a CAD add-in"
         acct = current_account_id()
         if not acct:
+            # Google / GitHub … come back to this very page (code and then kept).
+            buttons = _oauth_buttons(request.full_path, safe="")
             return _device_page(f"Sign in to {app_name}", (
-                f"<p>To connect {what}, sign in first. We'll email you a link "
-                "that brings you back here.</p>"
-                "<form method='post' action='/account/device/sign-in'>"
+                f"<p>To connect {what}, sign in first.</p>"
+                + (buttons + "<div class='or'>or get an email link</div>" if buttons else
+                   "<p>We'll email you a link that brings you back here.</p>")
+                + "<form method='post' action='/account/device/sign-in'>"
                 f"<input type='hidden' name='code' value='{html.escape(code, quote=True)}'>"
                 f"{_then_field(then)}"
                 "<p><input type='email' name='email' placeholder='you@example.com' required "
                 "style='font-size:1rem;padding:.4rem;width:100%'></p>"
-                "<button type='submit'>Email me a link</button></form>"
-                f"<p><a href='/account/sign-in?next={quote(request.full_path, safe='')}'>"
-                "Or sign in another way (Google, GitHub)</a></p>"), ai=bool(then))
+                "<button type='submit'>Email me a link</button></form>"), ai=bool(then))
         req = accounts.device_request(code) if code else None
         if not req:
             msg = "<p>That code isn't recognised. Check it and try again.</p>" if code else ""
@@ -450,7 +475,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "<a href='/account/devices'>your connected add-ins page</a>.</span></p>"
             "<p style='display:flex;gap:.6rem'>"
             "<button type='submit' name='decision' value='approve'>Approve</button>"
-            "<button type='submit' name='decision' value='deny'>Deny</button></p></form>"),
+            "<button class='secondary' type='submit' name='decision' value='deny'>Deny</button></p></form>"),
             ai=bool(then))
 
     def device_decide():
@@ -543,7 +568,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                     f"<p><label>Daily limit {_budget_select(limit)}</label></p>"
                     "<p style='display:flex;gap:.6rem'>"
                     "<button type='submit' name='action' value='save'>Save</button>"
-                    "<button type='submit' name='action' value='revoke'>Disconnect</button></p></form>")
+                    "<button class='secondary' type='submit' name='action' value='revoke'>Disconnect</button></p></form>")
         return _page("Connected add-ins", (notice + body + (
             "<p style='color:#666;font-size:.9rem'>A limit stops an add-in or agent once it has "
             "spent that many tokens in any 24 hours, and emails you. It doesn't affect downloads "

@@ -126,6 +126,7 @@ async function main() {
   check('sign-in dialog offers Continue with Google, and only that',
         await js(`(() => { const b = [...document.querySelectorAll('.cct-dialog .cct-oauth-btn')];
           return b.length === 1 && b[0].textContent === 'Continue with Google'
+            && !!b[0].querySelector('svg.cct-oauth-icon')                  // Google's logo
             && b[0].getAttribute('href').startsWith('/account/oauth/google/start?next=%2F'); })()`));
   check('sign-in dialog: offers 20 free tokens',
         await js("document.querySelector('.cct-dialog .cct-dialog-offer')?.textContent === 'Get 20 free tokens when you sign up.'"));

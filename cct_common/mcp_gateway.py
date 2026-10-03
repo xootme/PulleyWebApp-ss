@@ -362,7 +362,12 @@ def build_hosted_app(apps: dict, database_url: str, site_url: str, http=None):
     hosts = [host, f"{host}:*"] + [x for h in extra for x in (h, f"{h}:*")]
     security = TransportSecuritySettings(allowed_hosts=hosts,
                                          allowed_origins=[site] + [f"https://{h}" for h in extra])
-    return server.streamable_http_app(stateless_http=True, json_response=True, transport_security=security)
+    app = server.streamable_http_app(stateless_http=True, json_response=True, transport_security=security)
+    # Ours ahead of the SDK's /revoke (still the one the metadata advertises):
+    # see CCTOAuthProvider.revoke for why the SDK's can't revoke our tokens.
+    from starlette.routing import Route
+    app.router.routes.insert(0, Route("/revoke", provider.revoke, methods=["POST"]))
+    return app
 
 
 def main(argv=None):

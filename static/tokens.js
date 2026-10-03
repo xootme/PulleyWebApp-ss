@@ -161,7 +161,10 @@
       const next = encodeURIComponent(location.pathname + location.search);
       const col = el('div', 'cct-oauth');
       for (const p of list) {
-        const a = el('a', `cct-btn cct-oauth-btn cct-oauth-${p.id}`, `Continue with ${p.label}`);
+        const a = el('a', `cct-btn cct-oauth-btn cct-oauth-${p.id}`);
+        // The provider's logo: an inline SVG from our own server (cct_common.oauth.ICONS).
+        if (p.icon) a.insertAdjacentHTML('beforeend', p.icon);
+        a.append(el('span', '', `Continue with ${p.label}`));
         a.href = `${p.start}?next=${next}`;
         col.append(a);
       }
