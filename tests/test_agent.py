@@ -41,7 +41,7 @@ def test_describe(client):
     names = {p['name'] for p in d['params']}
     for key in ('family', 'pitch', 'teeth', 'bore', 'belt_height', 'dual', 'center_distance', 'bore_shape',
                 'spline_type', 'spline_af', 'spline_ring_top', 'hub_od', 'hub_screw_size', 'flange_enabled',
-                'spokes_enabled'):
+                'spokes_enabled', 'flange_supports_enabled', 'flange_nubs_enabled'):
         assert key in names, key
     pitch = next(p for p in d['params'] if p['name'] == 'pitch')
     assert pitch['choices_by']['family']['Imperial'] == ['MXL', 'XL', 'L', 'H', 'XH', 'XXH']
@@ -70,6 +70,15 @@ def test_check_and_its_autofix_as_parameters(client):
     assert fix['hub_od'] == 30.5 and (fix['spline_n'], fix['spline_minor'], fix['spline_major']) == (6, 16, 20)
     again = client.post('/api/v1/check', json={"params": dict(DRIVE, **fix)}).get_json()
     assert again['fix'] is None
+
+
+def test_autofix_face_width_is_not_a_float_tenth_over(client):
+    """An L drive: 14.3 mm minimum face for a 10 mm belt is 4.3 mm of extra
+    face, as the page says, not the 4.4 that float rounding gave."""
+    d = client.post('/api/v1/check', json={"params": {"family": "Imperial", "pitch": "L", "teeth": 20,
+                                                      "dual": True, "p2_teeth": 30}}).get_json()
+    assert d['pulleys'][0]['face_width_min'] == 14.3
+    assert d['fix']['params']['clearance_height'] == 4.3
 
 
 def test_files_list_the_design(client):
@@ -111,6 +120,22 @@ def test_gateway_export_writes_the_files(gw, tmp_path):
         data = open(f['path'], 'rb').read()
         assert len(data) == f['bytes'] > 100
     assert out['problems'] == []
+
+
+def test_flange_supports_and_nubs_reach_the_stl(gw, tmp_path):
+    """Print supports under a top flange printed in place, and gluing nubs on
+    a separate one: listed by describe, and each changes the pulley's STL."""
+    def stl(name, **extra):
+        p = dict(ROUND, flange_enabled=True, flange_3dprint=True, **extra)
+        out = gw.export('pulleys', p, formats=['stl'], parts=['pulley1'], out_dir=str(tmp_path / name))
+        assert out['problems'] == []
+        return open(out['files'][0]['path'], 'rb').read()
+    in_place = stl('a', flange_top_separate=False)
+    supported = stl('b', flange_top_separate=False, flange_supports_enabled=True,
+                    flange_support_nozzle_dia=0.4)
+    separate = stl('c', flange_top_separate=True)
+    nubbed = stl('d', flange_top_separate=True, flange_nubs_enabled=True, flange_nub_count=6)
+    assert supported != in_place and nubbed != separate
 
 
 # small_step refuses this one by name (its "gap 65"): the ring's counterbore

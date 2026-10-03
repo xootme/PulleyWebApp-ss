@@ -148,6 +148,26 @@ def _params(families: dict, screw_sizes: list) -> list:
           when={"flange_3dprint": False}, group="Flanges", per_part=True),
         P("flange_bend_radius", "number", "Metal plate bend radius (0: 1.5 x thickness)", unit="mm", min=0,
           max=20, when={"flange_3dprint": False}, group="Flanges", per_part=True),
+        # A separate top flange: gluing nubs locate it on the pulley.
+        P("flange_nubs_enabled", "boolean", "Gluing nubs on a separate top flange (pins into sockets in "
+          "the pulley)", when={"flange_top_separate": True}, group="Flanges", per_part=True),
+        P("flange_nub_count", "integer", "Number of nubs", min=1, max=100,
+          when={"flange_nubs_enabled": True}, group="Flanges", per_part=True),
+        P("flange_nub_dia", "number", "Nub diameter", unit="mm", min=1, max=15,
+          when={"flange_nubs_enabled": True}, group="Flanges", per_part=True),
+        P("flange_nub_height", "number", "Nub height", unit="mm", min=0.5, max=20,
+          when={"flange_nubs_enabled": True}, group="Flanges", per_part=True),
+        P("flange_nub_allowance", "number", "Socket fit allowance round each nub", unit="mm", min=0, max=2,
+          when={"flange_nubs_enabled": True}, group="Flanges", per_part=True),
+        # A top flange printed in place: breakaway supports under its overhang.
+        P("flange_supports_enabled", "boolean", "Breakaway print supports under a top flange printed in "
+          "place", when={"flange_top_separate": False}, group="Flanges", per_part=True),
+        P("flange_support_nozzle_dia", "number", "Supports: printer nozzle diameter", unit="mm", min=0.1,
+          max=2, when={"flange_supports_enabled": True}, group="Flanges", per_part=True),
+        P("flange_support_max_spacing", "number", "Supports: largest gap between them", unit="mm", min=1,
+          max=50, when={"flange_supports_enabled": True}, group="Flanges", per_part=True),
+        P("flange_support_air_gap", "number", "Supports: air gap under the flange", unit="mm", min=0,
+          max=1, when={"flange_supports_enabled": True}, group="Flanges", per_part=True),
     ]
 
 

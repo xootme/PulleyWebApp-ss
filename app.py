@@ -1464,7 +1464,9 @@ def _dimensions(args):
                 warnings.append(f'{who}the pulley face is {face_w:g} mm wide; {need_w.source} '
                                 f'asks for at least {need_w.value:g} mm on {kind} pulley '
                                 f'for a {belt_w:g} mm belt.')
-                new_extra = math.ceil((need_w.value - belt_w) * 10) / 10
+                # Rounded before the ceil: 14.3 - 10 is 4.300000000000001 in
+                # floats, which would ceil to 4.4 where the page says 4.3.
+                new_extra = math.ceil(round((need_w.value - belt_w) * 10, 6)) / 10
                 if new_extra > fix_set.get('clearance_height', -1):
                     fix_set['clearance_height'] = new_extra
         pulleys.append(p)
