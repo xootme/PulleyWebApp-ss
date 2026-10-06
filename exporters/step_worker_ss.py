@@ -504,6 +504,10 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         cmd += ['--hub-skirt', str(hub_skirt)]
     if nut_screw and _has_flag(ss_bin, '--screw-z'):
         cmd += ['--screw-z', str(_nut_screw_z(params, hub_skirt if skirt_sent else 0.0))]
+    # The part's colour (exporters/colors.py), every body of it; absent for a pulley
+    # made for an assembly, whose manifest paints it (small_step refuses both).
+    if params.get('color') and _has_flag(ss_bin, '--color'):
+        cmd += ['--color', str(params['color'])]
 
     return cmd
 

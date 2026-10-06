@@ -963,7 +963,7 @@ def api_onshape_import():
         fname = f'{family}-{pitch}-{num_teeth}T.step'
 
         # ── Generate STEP ─────────────────────────────────────────────────────
-        step_bytes = _run_ss_worker(dict(kw, export_type='pulley'))
+        step_bytes = _run_ss_worker(dict(kw, export_type='pulley', color=_step_color(pfx)))
 
         step_bytes = _rename_step_product(step_bytes, fname[:-5])
 
@@ -2184,6 +2184,12 @@ def _printed_as_one(meshes):
     return trimesh.util.concatenate(parts)
 
 
+def _step_color(prefix=''):
+    """A pulley's colour in its STEP: the 3D view's (exporters/colors.py)."""
+    from exporters import colors
+    return colors.PULLEY[2 if prefix == 'p2_' else 1]
+
+
 def _step_screw_kw(args, prefix=''):
     """The set screw's hole and nut for a STEP worker (ADR-013), as JSON:
     {} for no screws or an old design (the worker then cuts the nominal
@@ -2733,7 +2739,7 @@ def download_step():
         fl_sfx = '+flanges' if _fl_enabled else ''
         fname  = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{fl_sfx}.step'
         try:
-            step_bytes = _run_ss_worker(dict(kw, export_type='pulley'))
+            step_bytes = _run_ss_worker(dict(kw, export_type='pulley', color=_step_color(pfx)))
         except RuntimeError as _e:
             return _api_error(f'STEP error: {_e}')
 
@@ -2880,9 +2886,9 @@ def download_all_step():
         _fname_stem = (f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T+{kw2["num_teeth"]}T-all'
                        if kw2 else f'{kw1["family"]}-{kw1["pitch"]}-{_t1}T-all')
 
-        worker_kw = dict(kw1, export_type='all')
+        worker_kw = dict(kw1, export_type='all', color=_step_color(''))
         if kw2:
-            worker_kw['kw2'] = kw2
+            worker_kw['kw2'] = dict(kw2, color=_step_color('p2_'))
         if belt_kw:
             worker_kw['belt_kw'] = belt_kw
         try:
@@ -3939,7 +3945,9 @@ def api_download_step_async():
                     )
 
                     update_progress(job.id, 30)
-                    step_bytes = _run_ss_worker(dict(kw, export_type='pulley'), timeout=110)
+                    step_bytes = _run_ss_worker(dict(kw, export_type='pulley',
+                                                     color=_step_color('p2_' if pulley == '2' else '')),
+                                                timeout=110)
                     update_progress(job.id, 80)
 
                     p2_sfx = '-P2' if pulley == '2' else ''
@@ -4108,9 +4116,9 @@ def api_download_all_step_async():
 
                     update_progress(job.id, 30)  # Generating STEP
 
-                    async_worker_kw = dict(kw1, export_type='all')
+                    async_worker_kw = dict(kw1, export_type='all', color=_step_color(''))
                     if kw2:
-                        async_worker_kw['kw2'] = kw2
+                        async_worker_kw['kw2'] = dict(kw2, color=_step_color('p2_'))
                     if belt_kw:
                         async_worker_kw['belt_kw'] = belt_kw
                     step_bytes = _run_ss_worker(async_worker_kw, timeout=110)
@@ -4368,7 +4376,8 @@ def api_download_step():
             bend_radius_mm=fp.get('bend_radius_mm', 0.0),
         )
 
-        step_data = _run_ss_worker(dict(kw, export_type='pulley'))
+        step_data = _run_ss_worker(dict(kw, export_type='pulley',
+                                        color=_step_color('p2_' if pulley == '2' else '')))
         step_data = _embed_step(step_data, params_dict)
 
         fname = f'{family}-{pitch}-{num_teeth}T.step'
