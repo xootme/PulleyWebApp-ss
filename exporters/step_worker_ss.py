@@ -68,6 +68,22 @@ def _binary_version(ss_bin: str) -> tuple:
     return _versions[ss_bin]
 
 
+_help: dict = {}              # bin_path → its --help text
+
+
+def _has_flag(ss_bin: str, flag: str) -> bool:
+    """Does this binary take `flag`? Asked of its --help: flags arrive between
+    version bumps (--hub-skirt came after 0.7.0 under the same version), and a
+    flag it doesn't know would fail the whole STEP."""
+    if ss_bin not in _help:
+        try:
+            r = subprocess.run([ss_bin, '--help'], capture_output=True, text=True, timeout=10)
+            _help[ss_bin] = r.stdout + r.stderr
+        except (OSError, subprocess.SubprocessError):
+            _help[ss_bin] = ''
+    return f'[{flag} ' in _help[ss_bin] or f'[{flag}]' in _help[ss_bin]
+
+
 def _check_binary_version(ss_bin: str) -> None:
     """Raise RuntimeError if the binary is older than SMALL_STEP_MIN_VERSION."""
     if ss_bin in _version_checked:
@@ -381,8 +397,19 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         if bool(params.get('flange_top_separate', False)):
             cmd += ['--flange-separate', 'top']
 
+    sent_hole = None              # the screw hole small_step is told to cut (None: its nominal one)
+    hub_skirt = 0.0
     if hub_od_mm > bore_mm and hub_height_mm > 0.0:
         cmd += ['--hub', str(hub_od_mm), str(hub_height_mm)]
+        # A flanged hub without spokes fills the flange's thickness and then stands
+        # its full height proud of it (step_exporter's _flange_ext_step; the STL
+        # does the same): a printed flange's height, a metal one's plate. The rule
+        # is the app's, so it is sent, not left for small_step to guess.
+        # Sent last (below): placed inside the hub's group it ended the group early,
+        # "rim_r must be a number, got --screw-hole".
+        has_spokes = spoke_count > 0 and spoke_width_mm > 0.0
+        hub_skirt = ((flange_height_mm if flange_3dprint else plate_height_mm)
+                     if flange_enabled and not has_spokes else 0.0)
         if flat_depth_mm > 0.0:
             cmd += ['--flat', str(flat_depth_mm)]
         if keyway_w_mm > 0.0 and keyway_h_mm > 0.0:
@@ -392,8 +419,22 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         captured_nut = bool(params.get('captured_nut', False))
         if screw_dia_mm > 0.0 and screw_count > 0:
             cmd += ['--screws', str(screw_dia_mm), str(screw_count)]
+            # The hole the STL and the cadquery STEP cut (ADR-013): threaded round
+            # or hex, a nut's clearance hole, an insert's — not the nominal one.
+            hole = params.get('screw_hole') or {}
+            if _has_flag(ss_bin, '--screw-hole'):
+                if hole.get('shape') == 'hex' and hole.get('flats'):
+                    cmd += ['--screw-hole', 'hex', str(float(hole['flats']))]
+                    sent_hole = hole
+                elif hole.get('diameter'):
+                    cmd += ['--screw-hole', 'round', str(float(hole['diameter']))]
+                    sent_hole = hole
             if captured_nut:
                 cmd += ['--captured-nut']
+                # The named size's own nut (an inch screw's is not the nearest metric one)
+                nut = params.get('screw_nut')
+                if nut and _has_flag(ss_bin, '--nut'):
+                    cmd += ['--nut', str(float(nut[0])), str(float(nut[1]))]
             elif (spline or {}).get('kind') == 'hex':
                 # A hex bar's six flats sit at multiples of 60 degrees from
                 # +X, so the 90 default lands on a CORNER and the screw would
@@ -409,7 +450,7 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         screw_count=int(params.get('screw_count', 0)), captured_nut=bool(params.get('captured_nut', False)),
         screw_dia_mm=float(params.get('screw_dia_mm', 0.0)), spline=spline,
         flat_depth_mm=flat_depth_mm, keyway_h_mm=keyway_h_mm,
-        nut=params.get('screw_nut'), hole=None)   # small_step cuts the nominal hole (no --screw-hole sent)
+        nut=params.get('screw_nut'), hole=sent_hole)
     if why:
         raise Refused(' '.join(w[0].upper() + w[1:] for w in why))
     rt_ = (spline or {}).get('retainer') or {}
@@ -434,6 +475,9 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         cb_depth = float(retainer.get('cb_depth') or 0.0)
         if cb_d > 0.0 and cb_depth > 0.0:
             cmd += ['--counterbore', str(face), str(cb_d), str(cb_depth)]
+
+    if hub_skirt > 0.0 and _has_flag(ss_bin, '--hub-skirt'):
+        cmd += ['--hub-skirt', str(hub_skirt)]
 
     return cmd
 
