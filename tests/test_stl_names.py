@@ -166,3 +166,32 @@ def test_the_grid_walls_are_no_further_apart_than_the_largest_gap():
 def test_no_grid_where_nothing_hangs_or_supports_are_off(extra):
     grid, *_ = _grid({**SPOKED, **extra})
     assert grid == []
+
+
+def test_each_grid_stands_on_a_one_layer_adhesion_layer():
+    """A solid layer (half the nozzle thick) on the bed under each grid,
+    covering its whole area, so the walls hold the bed (the owner, 2026-10-06)."""
+    for nozzle in ('0.4', '0.6'):
+        grid, v, r_rim, r_bore = _grid({**SPOKED, 'spokes_height': '4', 'flange_support_nozzle_dia': nozzle})
+        pad_h = float(nozzle) / 2
+        h = lambda m: m.vertices[:, 2].max() - m.vertices[:, 2].min()
+        pads = [m for m in grid if abs(m.vertices[:, 2].min() + 1.5) < 1e-6 and abs(h(m) - pad_h) < 1e-6]
+        walls = [m for m in grid if not any(m is p for p in pads)]
+        assert pads and walls
+        area = lambda ms: sum(m.volume / h(m) for m in ms)
+        assert area(pads) > area(walls)                # solid under the grid, not just under the walls
+        under = _footprint(pads)                       # every wall stands on a layer
+        for w in walls:
+            assert _footprint([w]).difference(under).area < 1e-3, 'a wall off its layer'
+
+
+def _footprint(meshes):
+    """The area the meshes cover on the bed: the union of their bottom faces."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    polys = []
+    for m in meshes:
+        low = m.vertices[:, 2].min()
+        tri = m.triangles[np.all(np.abs(m.triangles[:, :, 2] - low) < 1e-9, axis=1)][:, :, :2]
+        polys += [Polygon(t).buffer(1e-6) for t in tri if Polygon(t).area > 1e-12]
+    return unary_union(polys)

@@ -715,7 +715,10 @@ def build_center_supports(
     stands a grid of walls one nozzle wide, at most `support_max_spacing`
     apart, with an outline so a narrow ring is never missed; each stops
     `support_air_gap` below the part and keeps that gap from the bore and the
-    bottom flange's inner edge, so it breaks away.
+    bottom flange's inner edge, so it breaks away. Each grid stands on a solid
+    adhesion layer one layer thick (a layer is half the nozzle diameter),
+    covering the grid's whole area, so the thin walls have a first layer to
+    hold the bed (the owner, 2026-10-06).
 
     r_rim_mm is the spoke rim's inner face (= the bottom flange's inner
     edge), r_hub_mm the spoke hub; z = 0 is the pulley body's underside and
@@ -733,6 +736,7 @@ def build_center_supports(
     s = max(1.0, float(fp.get('support_max_spacing', 10.0)))
     gap = max(0.0, float(fp.get('support_air_gap', 0.2)))
     z_bed = -max(0.1, float(fp.get('flange_height_mm', 1.5)))
+    pad_h = t / 2.0                                 # one layer: half the nozzle
     web_h = min(web_height_mm, face_height_mm) if web_height_mm > 0 else face_height_mm
     z_web = (face_height_mm - web_h) / 2.0          # the web's underside (it is centred)
 
@@ -770,6 +774,13 @@ def build_center_supports(
             m = trimesh.creation.extrude_polygon(p, z_top - z_bed)
             m.apply_translation([0.0, 0.0, z_bed])
             meshes.append(m)
+        # the adhesion layer under it: the grid's whole area, one layer thick
+        pads = list(region.geoms) if hasattr(region, 'geoms') else [region]
+        for p in pads:
+            if isinstance(p, Polygon) and p.area >= 1e-4:
+                m = trimesh.creation.extrude_polygon(p, min(pad_h, z_top - z_bed))
+                m.apply_translation([0.0, 0.0, z_bed])
+                meshes.append(m)
     return meshes
 
 
