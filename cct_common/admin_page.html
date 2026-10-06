@@ -43,6 +43,9 @@
   .pill { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: #e2e8f0; }
   .pill.completed { background: #dcfce7; color: var(--green); }
   .pill.refunded { background: #fee2e2; color: var(--red); }
+  .pill.server { background: #fee2e2; color: var(--red); }
+  .pill.job { background: #ffedd5; color: #9a3412; }
+  .pill.page { background: #e0e7ff; color: #3730a3; }
   .empty { padding: 24px; text-align: center; color: var(--grey); background: #fff; border: 1px solid var(--line); }
   dialog { border: none; border-radius: 8px; padding: 20px 22px; width: 420px;
            box-shadow: 0 12px 40px rgba(15,23,42,.3); }
@@ -71,6 +74,7 @@
     <button data-tab="subs" class="on">Subscribers</button>
     <button data-tab="sales">Sales</button>
     <button data-tab="bugs">Bug reports</button>
+    <button data-tab="fails">Download failures</button>
     <button data-tab="status">Status</button>
   </nav>
   <span id="who"></span>
@@ -88,6 +92,12 @@
   <section class="tab" id="tab-bugs">
     <div class="bar"><input id="bugs-q" placeholder="Search…"><span class="count" id="bugs-count"></span></div>
     <div id="bugs"></div>
+  </section>
+  <section class="tab" id="tab-fails">
+    <div class="bar"><input id="fails-q" placeholder="Search…"><span class="count" id="fails-count"></span>
+      <button class="act danger" id="fails-clear">Clear all</button></div>
+    <div class="sub" id="fails-summary" style="margin:0 0 8px"></div>
+    <div id="fails"></div>
   </section>
   <section class="tab" id="tab-status"><div class="status" id="status"></div></section>
 </main>
@@ -339,6 +349,70 @@ loaders.bugs = async () => {
   catch (e) { $('#bugs').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
 };
 $('#bugs-q').oninput = drawBugs;
+
+// ── download failures (cct_common.download_failures) ──────────────────────
+// server: a download route answered with an error; job: a background download
+// (STEP, the zip) finished with one; page: the browser saw it fail with no answer
+// from the server (killed at its time limit, out of memory, the network).
+let fails = [];
+const failsSort = { key: 'created_at', dir: -1 };
+const secs = ms => ms == null ? '' : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
+// The design a failure was for, to open it again in the app (a zip: its first file's).
+const designOf = r => { const p = r.params || {};
+  const d = Array.isArray(p.files) && p.files[0] && p.files[0].params ? p.files[0].params : p;
+  return d && (d.family || d.teeth || d.module) ? d : null; };
+const appBase = () => location.pathname.replace(/\/admin\/?$/, '/');
+const failsCols = [
+  { key: 'created_at', label: 'When', date: true, cell: r => date(r.created_at) },
+  { key: 'source', label: 'Seen by', cell: r => el('span', 'pill ' + r.source, r.source) },
+  { key: 'route', label: 'Download', cell: r => { const d = el('div');
+      d.append(el('div', '', r.route || ''));
+      const what = [r.fmt && r.fmt.toUpperCase(), r.part && 'part ' + r.part].filter(Boolean).join(' · ');
+      if (what) d.append(el('div', 'sub', what)); return d; } },
+  { key: 'error', label: 'Error', cell: r => { const d = el('div');
+      d.append(el('div', '', (r.status ? r.status + ' — ' : '') + (r.error || '(no message)')));
+      const des = designOf(r);
+      if (des) { const a = el('a', '', 'Open this design'); a.target = '_blank'; a.rel = 'noopener';
+                 a.href = appBase() + '?' + new URLSearchParams(des); d.append(a); }
+      if (r.params && Object.keys(r.params).length) { const det = el('details');
+        det.append(el('summary', 'sub', 'request'), el('pre', 'state', JSON.stringify(r.params, null, 1)));
+        d.append(det); }
+      return d; } },
+  { key: 'duration_ms', label: 'Took', num: true, cell: r => secs(r.duration_ms) },
+  { key: 'revision', label: 'Server', cell: r => { const d = el('div');
+      d.append(el('div', '', r.revision || 'local'), el('div', 'sub', (r.instance || '').slice(0, 8)));
+      return d; } },
+  { key: 'app_version', label: 'Version' },
+  { key: 'actions', label: '', nosort: true, cell: r => button('Delete', async () => {
+      try { await api(`/admin/api/download-failures/${encodeURIComponent(r.failure_id)}`,
+                      { method: 'DELETE', body: '{}' }); await loaders.fails(); } catch (e) { alert(e.message); }
+    }, 'danger') },
+];
+function drawFails() {
+  const q = $('#fails-q').value.trim().toLowerCase();
+  const now = Date.now() / 1000, n = s => fails.filter(f => f.created_at > now - s).length;
+  const byFmt = {};
+  for (const f of fails) if (f.created_at > now - 7 * 86400) byFmt[f.fmt || '?'] = (byFmt[f.fmt || '?'] || 0) + 1;
+  $('#fails-summary').textContent = `${n(86400)} in the last 24 h · ${n(7 * 86400)} in 7 days` +
+    (Object.keys(byFmt).length ? ' (' + Object.entries(byFmt).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(', ') + ')' : '') +
+    ' · kept 90 days';
+  table($('#fails'), fails.filter(f => matches(q, f.route, f.error, f.fmt, f.source, f.revision, f.app_version,
+                                               JSON.stringify(f.params))),
+        failsCols, failsSort, $('#fails-count'), 'failure');
+}
+loaders.fails = async () => {
+  try { const d = await api('/admin/api/download-failures'); fails = d.failures;
+        if (!d.enabled) { $('#fails').replaceChildren(el('div', 'empty', 'This app keeps no download failures.'));
+                          $('#fails-summary').textContent = ''; return; }
+        drawFails(); }
+  catch (e) { $('#fails').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
+};
+$('#fails-q').oninput = drawFails;
+$('#fails-clear').onclick = async () => {
+  if (!confirm('Delete every download failure kept?')) return;
+  try { await api('/admin/api/download-failures', { method: 'DELETE', body: '{}' }); await loaders.fails(); }
+  catch (e) { alert(e.message); }
+};
 
 // ── status ────────────────────────────────────────────────────────────────
 loaders.status = async () => {

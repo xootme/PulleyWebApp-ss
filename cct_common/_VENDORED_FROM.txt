@@ -1,4 +1,4 @@
 Vendored from C:\Users\cmyer\Documents\cct_common (branch ui-parity)
 cct_common version: 0.23.3
-source commit: a3c395e74ff80a0cd253d23e3639b9f1437439ca
+source commit: 658e39477bcd42a8f0859299ae9d422b00770952
 Run sync_cct_common.py (repo root) to refresh.

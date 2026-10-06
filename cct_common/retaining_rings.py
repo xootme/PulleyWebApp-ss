@@ -60,6 +60,10 @@ class Ring:
     series: str = "DIN 471"   # or "SH" (inch, Rotor Clip SH = Truarc 5100)
     number: str = ""     # SH: the ring number, e.g. "SH-50"
     inch: str = ""       # SH: the shaft size as the catalogue names it, e.g. '1/2"'
+    # The ring's own outline (ring_outline.py, for a STEP model of the ring):
+    b: float = 0.0       # radial width of the ring opposite its aperture (DIN "b ≈")
+    d5: float = 0.0      # diameter of the assembly (pliers) holes in the lugs
+    outline_approx: bool = False   # b and d5 not from the ring's own table (SH: from DIN's proportions)
 
     def label(self) -> str:
         if self.series == "SH":
@@ -145,7 +149,25 @@ MCMASTER = {
     24: "98541A125", 25: "98541A440", 26: "98541A128", 28: "98541A130", 29: "98541A132",
 }
 
-RINGS = [Ring(*row, mcmaster=MCMASTER.get(row[0], "")) for row in _TABLE]
+# b, d5 — DIN 471:2011 Table 1 (normal type), the two columns after a: the ring's
+# radial width opposite the aperture (≈) and its assembly holes (min). Read from
+# the standard's text and anchored on d1, s, d3 and a above, all 61 sizes.
+_OUTLINE = {
+    3: (0.8, 1.0), 4: (0.9, 1.0), 5: (1.1, 1.0), 6: (1.3, 1.2), 7: (1.4, 1.2), 8: (1.5, 1.2),
+    9: (1.7, 1.2), 10: (1.8, 1.5), 11: (1.8, 1.5), 12: (1.8, 1.7), 13: (2.0, 1.7), 14: (2.1, 1.7),
+    15: (2.2, 1.7), 16: (2.2, 1.7), 17: (2.3, 1.7), 18: (2.4, 2.0), 19: (2.5, 2.0), 20: (2.6, 2.0),
+    21: (2.7, 2.0), 22: (2.8, 2.0), 24: (3.0, 2.0), 25: (3.0, 2.0), 26: (3.1, 2.0), 28: (3.2, 2.0),
+    29: (3.4, 2.0), 30: (3.5, 2.0), 32: (3.6, 2.5), 34: (3.8, 2.5), 35: (3.9, 2.5), 36: (4.0, 2.5),
+    38: (4.2, 2.5), 40: (4.4, 2.5), 42: (4.5, 2.5), 45: (4.7, 2.5), 48: (5.0, 2.5), 50: (5.1, 2.5),
+    52: (5.2, 2.5), 55: (5.4, 2.5), 56: (5.5, 2.5), 58: (5.6, 2.5), 60: (5.8, 2.5), 62: (6.0, 2.5),
+    63: (6.2, 2.5), 65: (6.3, 3.0), 68: (6.5, 3.0), 70: (6.6, 3.0), 72: (6.8, 3.0), 75: (7.0, 3.0),
+    78: (7.3, 3.0), 80: (7.4, 3.0), 82: (7.6, 3.0), 85: (7.8, 3.5), 88: (8.0, 3.5), 90: (8.2, 3.5),
+    95: (8.6, 3.5), 100: (9.0, 3.5), 105: (9.3, 3.5), 110: (9.6, 3.5), 115: (9.8, 3.5),
+    120: (10.2, 3.5), 125: (10.4, 4.0), 130: (10.7, 4.0), 135: (11.0, 4.0),
+}
+
+RINGS = [Ring(*row, mcmaster=MCMASTER.get(row[0], ""), b=_OUTLINE[row[0]][0], d5=_OUTLINE[row[0]][1])
+         for row in _TABLE]
 
 INCH_SOURCE = "Rotor Clip SH series (= Truarc 5100), catalogue pp. 20-21 and SH data sheet"
 # number, shaft Ds, groove Dg, groove width W, groove depth d, free diameter Df,
@@ -188,9 +210,26 @@ _INCH_TABLE = [
     ("SH-150", '1-1/2"', 1.500, 1.406, .056, .047, 1.387, .050, .214, 1.90, .141),
 ]
 _IN = 25.4
+
+
+def _din_like(d1: float) -> tuple:
+    """(b, d5) for a shaft size DIN 471 doesn't list: interpolated from DIN's own
+    columns. The SH data we hold gives no section width or hole size, so an SH
+    ring's outline borrows DIN's proportions (outline_approx)."""
+    xs = sorted(_OUTLINE)
+    if d1 <= xs[0]:
+        return _OUTLINE[xs[0]]
+    for lo, hi in zip(xs, xs[1:]):
+        if d1 <= hi:
+            f = (d1 - lo) / (hi - lo)
+            return tuple(round(_OUTLINE[lo][k] + f * (_OUTLINE[hi][k] - _OUTLINE[lo][k]), 3) for k in (0, 1))
+    return _OUTLINE[xs[-1]]
+
+
 INCH_RINGS = [Ring(round(ds * _IN, 4), round(t * _IN, 4), round(df * _IN, 4), round(h * _IN, 4),
                    round(dg * _IN, 4), round(w * _IN, 4), round(d * _IN, 4), round(y * _IN, 4),
-                   round(l2 * _IN, 4), series="SH", number=no, inch=name)
+                   round(l2 * _IN, 4), series="SH", number=no, inch=name,
+                   b=_din_like(ds * _IN)[0], d5=_din_like(ds * _IN)[1], outline_approx=True)
               for no, name, ds, dg, w, d, df, t, h, l2, y in _INCH_TABLE]
 
 # Clearances for a printed or cut part round the ring (mm).

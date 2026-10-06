@@ -57,12 +57,13 @@ def admin_emails() -> frozenset:
 
 
 def register_admin(app, accounts, *, app_name: str = "CheapCAD Tools", app_version: str = "",
-                   bug_reports=None, default_app: str = "",
+                   bug_reports=None, default_app: str = "", download_failures=None,
                    clock=time.time) -> None:
     """Mount the admin dashboard. `accounts` is the AccountStore (its
     TokenStore is the ledger); payments come from register_payment_routes
     (app.extensions["cct_payments"]) when it has run. `bug_reports` is an
-    optional store with list(limit) and delete(id). `default_app` names the
+    optional store with list(limit) and delete(id); `download_failures` a
+    cct_common.download_failures store (the Download failures tab). `default_app` names the
     tool for ledger rows written before the ledger recorded one."""
     from flask import Response, abort, jsonify, redirect, request, send_file
 
@@ -260,6 +261,30 @@ def register_admin(app, accounts, *, app_name: str = "CheapCAD Tools", app_versi
         app.logger.info("admin %s deleted bug report %s", admin, report_id)
         return jsonify({"deleted": report_id})
 
+    # ── download failures (cct_common.download_failures) ──
+    def failures_list():
+        _need_admin()
+        if download_failures is None:
+            return jsonify({"failures": [], "enabled": False})
+        return jsonify({"failures": download_failures.list(1000), "enabled": True})
+
+    def failure_delete(failure_id):
+        admin = _need_admin()
+        _need_same_origin()
+        if download_failures is None or not download_failures.delete(failure_id):
+            abort(404)
+        app.logger.info("admin %s deleted download failure %s", admin, failure_id)
+        return jsonify({"deleted": failure_id})
+
+    def failures_clear():
+        admin = _need_admin()
+        _need_same_origin()
+        if download_failures is None:
+            abort(404)
+        n = download_failures.clear()
+        app.logger.info("admin %s cleared %d download failures", admin, n)
+        return jsonify({"deleted": n})
+
     # ── status ──
     def status():
         _need_admin()
@@ -292,4 +317,9 @@ def register_admin(app, accounts, *, app_name: str = "CheapCAD Tools", app_versi
                      view_func=refund, methods=["POST"])
     app.add_url_rule("/admin/api/bugs", view_func=bugs_list, methods=["GET"])
     app.add_url_rule("/admin/api/bugs/<report_id>", view_func=bug_delete, methods=["DELETE"])
+    app.add_url_rule("/admin/api/download-failures", view_func=failures_list, methods=["GET"])
+    app.add_url_rule("/admin/api/download-failures", endpoint="failures_clear",
+                     view_func=failures_clear, methods=["DELETE"])
+    app.add_url_rule("/admin/api/download-failures/<failure_id>", view_func=failure_delete,
+                     methods=["DELETE"])
     app.add_url_rule("/admin/api/status", view_func=status, methods=["GET"])

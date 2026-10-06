@@ -4662,14 +4662,32 @@ from bug_store import BugReports
 _bug_store = (BugReports(os.environ['DATABASE_URL'].strip())
               if os.environ.get('DATABASE_URL', '').strip() else None)
 
+# Every download that fails — a route's error answer, a failed job, or what the
+# page saw (a request cut off at the time limit, a lost instance) — for the admin
+# page's Download failures tab (cct_common.download_failures). The database on
+# Cloud Run; locally a file beside the logs.
+from cct_common.download_failures import (DownloadFailures, record_job_failure,
+                                          register_download_failure_log)
+_failure_store = None
+try:
+    _failure_store = DownloadFailures(os.environ.get('DATABASE_URL', '').strip()
+                                      or os.path.join(_LOG_DIR, 'download_failures.db'))
+except Exception:
+    app.logger.exception('download failures will not be kept: the store would not open')
+register_download_failure_log(app, _failure_store, app_name='pulleys', app_version=APP_VERSION)
+
 if _accounts_state.accounts is not None:
     from cct_common.admin import register_admin
     register_admin(app, _accounts_state.accounts, app_name='Timing Pulleys',
-                   app_version=APP_VERSION, bug_reports=_bug_store, default_app='pulleys')
+                   app_version=APP_VERSION, bug_reports=_bug_store, default_app='pulleys',
+                   download_failures=_failure_store)
 
 
 def _finish_job(job_id, **kw):
     finish_job(job_id, **kw)
+    if kw.get('error'):
+        record_job_failure(_failure_store, get_job(job_id), str(kw['error']),
+                           app_name='pulleys', app_version=APP_VERSION)
     if _shared_jobs is not None:
         try:
             _shared_jobs.publish(get_job(job_id))

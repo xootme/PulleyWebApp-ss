@@ -216,11 +216,14 @@
         body.design_id = await charging.ensureDesign();
       }
       go.disabled = true;
+      const t0 = Date.now();
       try {
         await submit(body, ui);
       } catch (e) {
         status.textContent = e.message || String(e);
         go.disabled = false;
+        reportFailure({ route: "/api/download/bundle", fmt: "bundle", error: e.message || String(e),
+                        duration_ms: Date.now() - t0, params: body });
       }
     });
     return { close, selection };
@@ -235,5 +238,22 @@
     });
   }
 
-  root.CCTDownload = { open, allFiles, submitSync };
+  // A download that failed where the user saw it (cct_common.download_failures,
+  // the admin page's Download failures tab). The server records its own error
+  // answers and failed jobs; this is for what it can't see: the request cut off
+  // (the server killed at its time limit, the instance gone), a network error,
+  // a job that never finished. Never throws, never delays the page.
+  //   cctReportDownloadFailure({ route, part, fmt, status, error, duration_ms, job_id, params })
+  function reportFailure(info) {
+    try {
+      const body = JSON.stringify(Object.assign({}, info, {
+        error: String((info && info.error) || "").slice(0, 2000) }));
+      fetch("/api/download-failure", { method: "POST", keepalive: body.length < 60000,
+        credentials: "same-origin", headers: { "Content-Type": "application/json" }, body })
+        .catch(() => {});
+    } catch (e) { /* reporting must never break the page */ }
+  }
+  root.cctReportDownloadFailure = reportFailure;
+
+  root.CCTDownload = { open, allFiles, submitSync, reportFailure };
 })(typeof window !== "undefined" ? window : globalThis);
