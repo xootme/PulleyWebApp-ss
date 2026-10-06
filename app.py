@@ -281,7 +281,7 @@ def _run_cadquery_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
 
 
 # ── App version ───────────────────────────────────────────────────────────────
-APP_VERSION        = '2.0.8'   # 2.x: the token model (ADR-008) — accounts, pay per download, hosted only
+APP_VERSION        = '2.0.9'   # 2.x: the token model (ADR-008) — accounts, pay per download, hosted only
 # Increment when a param is renamed, split, or its meaning changes.
 # New optional params never need a bump — missing keys just use form defaults.
 CCT_SCHEMA_VERSION = 1
