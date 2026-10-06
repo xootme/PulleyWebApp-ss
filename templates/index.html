@@ -3741,8 +3741,7 @@ const DIM_ROWS = [
   ['spline_major',           'Spline major (its reach)'],
   ['shaft_minor',            'Sample shaft minor'],
   ['shaft_major',            'Sample shaft major'],
-  ['ring',                   'Retaining ring', c => `${c.ring}, ${c.ring_face} face` +
-                                                   (c.ring_mcmaster ? ` (McMaster ${c.ring_mcmaster})` : '')],
+  ['ring',                   'Retaining ring', c => _withMcMaster(`${c.ring}, ${c.ring_face} face`, c.ring_mcmaster)],
   ['counterbore_d',          'Ring counterbore diameter'],
   ['counterbore_depth',      'Ring counterbore depth'],
   ['washer_od',              'Splined washer OD'],
@@ -3758,6 +3757,24 @@ const DIM_ROWS = [
 ];
 // A row's third entry, if any, writes its text (a figure that isn't mm).
 // A figure that fails the rule next to it is shown red.
+// A ring's McMaster-Carr number links to McMaster's own "find a part" with the
+// number in it (their homepage, the number after #), which opens the ring's page
+// and its CAD download. Their models stay theirs: we link, never copy (their
+// terms; the owner, 2026-10-06).
+function mcmasterUrl(part) { return `https://www.mcmaster.com/#${encodeURIComponent(part)}`; }
+function _withMcMaster(text, part, after = '') {
+  const span = document.createElement('span');
+  span.append(text);
+  if (part) {
+    const a = document.createElement('a');
+    a.href = mcmasterUrl(part); a.target = '_blank'; a.rel = 'noopener';
+    a.className = 'mcmaster-link'; a.textContent = `McMaster ${part}`;
+    a.title = 'Find this ring on McMaster-Carr (opens their page, with its CAD download)';
+    span.append(' (', a, ')');
+  }
+  span.append(after);
+  return span;
+}
 const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height',
                     flange_overlap: 'flange_min_overlap' };
 let dimsTimer = null, dimsSeq = 0, dimsFix = null;
@@ -3833,7 +3850,8 @@ function showDims(data) {
       const td = tr.insertCell();
       td.className = 'num';
       if (c[key] === undefined) { td.textContent = '—'; continue; }
-      td.textContent = text ? text(c) : mm(c[key]);
+      const shown = text ? text(c) : mm(c[key]);
+      if (shown instanceof Node) td.append(shown); else td.textContent = shown;
       const limit = DIM_SHORT[key];
       if (limit && c[limit] !== undefined && c[key] < c[limit] - 1e-6) td.classList.add('short');
       if (c.approx && c.approx[key]) {
@@ -4387,13 +4405,12 @@ function _fetchSplineFit(n) {
     const cbf = rt ? (rt.cb_faces || rt.faces) : [];
     const where = cbf.length === 2 ? 'each face' : `the ${cbf[0]} face`;
     const flat = rt ? rt.faces.filter(f => !cbf.includes(f)) : [];
-    out.textContent = rt
-      ? `${rt.faces.length === 2 ? '2 × ' : ''}${rt.ring}${rt.mcmaster ? ` (McMaster ${rt.mcmaster})` : ''}` +
+    if (rt) out.replaceChildren(_withMcMaster(`${rt.faces.length === 2 ? '2 × ' : ''}${rt.ring}`, rt.mcmaster,
         (cbf.length ? ` · counterbore Ø${rt.cb_d} × ${+rt.cb_depth.toFixed(2)} mm in ${where}` : '') +
         (flat.length ? ` · on the ${flat.join(' and ')} face${flat.length === 2 ? 's' : ''}, no counterbore` : '') +
         (rt.washer_t > 0 ? ` · washer Ø${rt.washer_od} × ${rt.washer_t} mm` : '') +
-        (rt.faces.length === 1 ? ' · one ring holds it one way; a shoulder on the shaft the other' : '')
-      : 'No ring: nothing holds the pulley on the shaft.';
+        (rt.faces.length === 1 ? ' · one ring holds it one way; a shoulder on the shaft the other' : '')));
+    else out.textContent = 'No ring: nothing holds the pulley on the shaft.';
   }, 150);
 }
 
