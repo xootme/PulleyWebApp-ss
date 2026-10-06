@@ -135,20 +135,6 @@ select:focus, input[type="number"]:focus {
   transition: background 0.15s;
 }
 .btn-download:hover { background: #005fa3; }
-.btn-download-p2 {
-  width: 100%;
-  padding: 9px;
-  background: #761516;
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  letter-spacing: 0.3px;
-  transition: background 0.15s;
-}
-.btn-download-p2:hover { background: #5a0f10; }
 
 /* ── Download popup menu ── */
 .dl-wrap {

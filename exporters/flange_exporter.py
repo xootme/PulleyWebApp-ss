@@ -692,6 +692,94 @@ def build_support_ribs(
         return []
 
 
+def build_center_supports(
+    fp: dict,
+    *,
+    bore_reach_mm: float,
+    r_hub_mm: float,
+    r_rim_mm: float,
+    face_height_mm: float,
+    web_height_mm: float,
+    spoke_count: int,
+    spoke_width_mm: float,
+    fillet_tip_mm: float = 0.0,
+    fillet_base_mm: float = 0.0,
+) -> list:
+    """Grid supports under the middle of a spoked pulley printed with its
+    flanges in place (the owner, 2026-10-05).
+
+    The pulley stands on its bottom flange, which is a ring from the spoke
+    rim's inner face outwards, so the hub and the spoke web hang one flange
+    height (more for a web shorter than the face, which is centred) above the
+    bed. Under each — the hub ring, then the web less its openings — this
+    stands a grid of walls one nozzle wide, at most `support_max_spacing`
+    apart, with an outline so a narrow ring is never missed; each stops
+    `support_air_gap` below the part and keeps that gap from the bore and the
+    bottom flange's inner edge, so it breaks away.
+
+    r_rim_mm is the spoke rim's inner face (= the bottom flange's inner
+    edge), r_hub_mm the spoke hub; z = 0 is the pulley body's underside and
+    the bed is at -flange height (as build_support_ribs). Returns [] when
+    supports are off, the top flange is a separate part, or nothing hangs.
+    """
+    if not (fp.get('supports_enabled') and fp.get('flange_3dprint')
+            and not fp.get('top_separate', True)) or spoke_count <= 0:
+        return []
+    from shapely.geometry import MultiPolygon, Point, Polygon, box
+    from shapely.ops import unary_union
+    from exporters.png_exporter import _spoke_void_polygons
+
+    t = max(0.1, float(fp.get('support_nozzle_dia', 0.4)))
+    s = max(1.0, float(fp.get('support_max_spacing', 10.0)))
+    gap = max(0.0, float(fp.get('support_air_gap', 0.2)))
+    z_bed = -max(0.1, float(fp.get('flange_height_mm', 1.5)))
+    web_h = min(web_height_mm, face_height_mm) if web_height_mm > 0 else face_height_mm
+    z_web = (face_height_mm - web_h) / 2.0          # the web's underside (it is centred)
+
+    keep = Point(0, 0).buffer(r_rim_mm - gap, resolution=96).difference(
+        Point(0, 0).buffer(bore_reach_mm + gap, resolution=96))
+    hub = keep.intersection(Point(0, 0).buffer(r_hub_mm, resolution=96))
+    web = keep.difference(Point(0, 0).buffer(r_hub_mm, resolution=96))
+    voids = [Polygon(v).buffer(0) for v in _spoke_void_polygons(
+        r_hub_mm, r_rim_mm, spoke_count, spoke_width_mm,
+        fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm) if len(v) >= 3]
+    if voids:
+        web = web.difference(unary_union(voids).buffer(gap))
+    regions = [(hub, 0.0 - gap), (web, z_web - gap)] if z_web > 1e-6 else \
+              [(unary_union([hub, web]), 0.0 - gap)]
+
+    meshes = []
+    for region, z_top in regions:
+        if region.is_empty or z_top - z_bed < 0.2:
+            continue
+        inset = region.buffer(-t / 2.0)
+        if inset.is_empty:
+            continue
+        x0, y0, x1, y1 = region.bounds
+        lines = [box(x - t / 2, y0 - 1, x + t / 2, y1 + 1)
+                 for x in _grid_positions(x0, x1, s)] + \
+                [box(x0 - 1, y - t / 2, x1 + 1, y + t / 2) for y in _grid_positions(y0, y1, s)]
+        walls = unary_union(lines).intersection(region)
+        outline = region.difference(inset.buffer(-t / 2.0)) if not inset.buffer(-t / 2.0).is_empty else region
+        shape = unary_union([walls, outline]).intersection(region)
+        polys = list(shape.geoms) if isinstance(shape, MultiPolygon) else \
+            [g for g in getattr(shape, 'geoms', [shape]) if isinstance(g, Polygon)]
+        for p in polys:
+            if p.area < 1e-4:
+                continue
+            m = trimesh.creation.extrude_polygon(p, z_top - z_bed)
+            m.apply_translation([0.0, 0.0, z_bed])
+            meshes.append(m)
+    return meshes
+
+
+def _grid_positions(lo: float, hi: float, spacing: float) -> list:
+    """Wall positions across [lo, hi], centred, at most `spacing` apart."""
+    n = max(1, math.ceil((hi - lo) / spacing))
+    step = (hi - lo) / n
+    return [lo + step * (k + 0.5) for k in range(n)] if n > 1 else [(lo + hi) / 2.0]
+
+
 # ---------------------------------------------------------------------------
 # Preview helper — returns trimesh objects (not bytes) for 3D viewer
 # ---------------------------------------------------------------------------

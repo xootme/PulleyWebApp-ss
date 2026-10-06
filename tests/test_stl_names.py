@@ -2,7 +2,7 @@
 
   GT-2M-30T.stl                 the pulley: no flanges, or both on it
   GT-2M-30T-1flange.stl         its top flange is a separate part, so only one is on it
-  ...-with-supports.stl         the same with print supports (a printed top made in place
+  ...-w-supports.stl         the same with print supports (a printed top made in place
                                 and Add Print Supports): offered beside the plain one
                                 (with_supports=1), not as a "Pulley n flanges" part
 
@@ -56,13 +56,13 @@ def test_pulley_2_keeps_its_suffix(client):
          'p2_flange_enabled': '1', 'p2_flange_3dprint': '1', 'p2_flange_top_separate': '1'}
     assert _name(_get(client, q)) == 'GT-2M-40T-P2-1flange.stl'
     q.update(p2_flange_top_separate='0', p2_flange_supports_enabled='1', with_supports='1')
-    assert _name(_get(client, q)) == 'GT-2M-40T-P2-with-supports.stl'
+    assert _name(_get(client, q)) == 'GT-2M-40T-P2-w-supports.stl'
 
 
 def test_with_supports_is_the_pulley_plus_its_supports(client):
     plain = _mesh(_get(client, {**BASE, **SUPPORTS}))
     r = _get(client, {**BASE, **SUPPORTS, 'with_supports': '1'})
-    assert _name(r) == 'GT-2M-30T-with-supports.stl'
+    assert _name(r) == 'GT-2M-30T-w-supports.stl'
     supported = _mesh(r)
     # the same pulley, every triangle of it, plus the ribs and the bed tube outside the flange
     assert len(supported.faces) > len(plain.faces)
@@ -93,9 +93,76 @@ def test_with_supports_is_a_delivery_key_not_a_design_setting():
 def test_the_agent_api_lists_the_same_files():
     from agent import files
     got = {name for _p, fmt, _path, _q, name in files({**BASE, **SUPPORTS}, ['pulley1'], ['stl'])}
-    assert got == {'GT-2M-30T.stl', 'GT-2M-30T-with-supports.stl'}
+    assert got == {'GT-2M-30T.stl', 'GT-2M-30T-w-supports.stl'}
     got = {name for *_x, name in files({**BASE, **PRINTED, 'flange_top_separate': '1'}, ['pulley1'], ['stl'])}
     assert got == {'GT-2M-30T-1flange.stl'}
     # and a one-pulley belt only as drawings: its STEP and STL need two pulleys
     fmts = {fmt for _p, fmt, *_x in files(dict(BASE), ['belt'], ['step', 'stl', 'svg', 'dxf'])}
     assert fmts == {'svg', 'dxf'}
+
+
+# ── the separate top flange's name (the owner, 2026-10-05) ───────────────────
+
+@pytest.mark.parametrize('pulley, name', [('1', 'GT-2M-30T-flange-only.stl'), ('2', 'GT-2M-30T-P2-flange-only.stl')])
+def test_the_separate_top_flange_is_flange_only(client, pulley, name):
+    q = {**BASE, **PRINTED, 'flange_top_separate': '1', 'flange_which': 'top'}
+    if pulley == '2':
+        q['pulley'] = '2'                   # the flange route takes P2's settings flat
+    r = client.get('/download/flange-stl', query_string=q)
+    assert _name(r) == name
+
+
+# ── grid supports under the hub and spoke web (the owner, 2026-10-05) ────────
+# Printed in place on a spoked pulley, the bottom flange is a ring from the spoke
+# rim outwards, so the hub and the web hang a flange height above the bed.
+
+SPOKED = {**BASE, **SUPPORTS, 'teeth': '60', 'bore': '6', 'flange_height': '1.5', 'spokes_enabled': '1',
+          'spokes_hub_od': '16', 'spokes_rim_depth': '3', 'spokes_width': '5', 'spokes_count': '5',
+          'flange_support_nozzle_dia': '0.4', 'flange_support_max_spacing': '6', 'flange_support_air_gap': '0.2'}
+
+
+def _grid(q):
+    """The grid meshes of a design's print supports: those inside the bottom
+    flange's inner edge (the ribs and their tube stand outside the flange)."""
+    import app as A
+    fp = A._parse_flange_params(q, '')
+    r_root, reach = A._spoke_room(q, '')
+    r_rim = r_root - float(q['spokes_rim_depth'])
+    grid = [m for m in A._print_supports(q, '1', fp)
+            if np.hypot(m.vertices[:, 0], m.vertices[:, 1]).max() < r_rim]
+    v = np.vstack([m.vertices for m in grid]) if grid else np.zeros((0, 3))
+    return grid, v, r_rim, reach / 2
+
+
+@pytest.mark.parametrize('web, z_web', [('0', 0.0), ('4', (6 - 4) / 2)], ids=['full web', 'web 4 mm, centred'])
+def test_a_spoked_pulley_gets_a_grid_under_its_hub_and_web(client, web, z_web):
+    q = {**SPOKED, 'spokes_height': web}
+    grid, v, r_rim, r_bore = _grid(q)
+    assert grid, 'no grid under the middle'
+    r = np.hypot(v[:, 0], v[:, 1])
+    assert v[:, 2].min() == pytest.approx(-1.5, abs=1e-6)             # stands on the bed
+    assert v[:, 2].max() == pytest.approx(z_web - 0.2, abs=1e-6)      # one air gap below the web
+    assert r.min() >= r_bore + 0.2 - 1e-3                             # clear of the bore (the circle is a 384-gon)
+    assert r.max() <= r_rim - 0.2 + 1e-3                              # clear of the flange's inner edge
+    under_hub = v[r < 8.0 - 1e-3]                                      # the hub is Ø16
+    assert len(under_hub) and under_hub[:, 2].max() == pytest.approx(-0.2, abs=1e-6)   # the hub sits at z = 0
+    # every grid wall is one nozzle wide, and they are in the -w-supports STL
+    plain = _mesh(_get(client, q))
+    supported = _mesh(_get(client, {**q, 'with_supports': '1'}))
+    assert len(supported.faces) >= len(plain.faces) + sum(len(m.faces) for m in grid)
+
+
+def test_the_grid_walls_are_no_further_apart_than_the_largest_gap():
+    from exporters.flange_exporter import _grid_positions
+    for lo, hi, s in ((-20, 20, 6), (-3.1, 3.1, 10), (0, 47.3, 4.5)):
+        p = _grid_positions(lo, hi, s)
+        assert all(b - a <= s + 1e-9 for a, b in zip(p, p[1:]))
+        assert p[0] - lo <= s / 2 + 1e-9 and hi - p[-1] <= s / 2 + 1e-9
+
+
+@pytest.mark.parametrize('extra', [{'spokes_enabled': '0'}, {'flange_supports_enabled': '0'},
+                                   {'flange_top_separate': '1'}],
+                         ids=['no spokes (the flange runs to the hub)', 'supports off', 'top separate'])
+def test_no_grid_where_nothing_hangs_or_supports_are_off(extra):
+    grid, *_ = _grid({**SPOKED, **extra})
+    assert grid == []

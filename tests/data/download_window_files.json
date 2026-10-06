@@ -4557,7 +4557,8 @@
      "flange_support_nozzle_dia": "0.4",
      "flange_support_max_spacing": "10",
      "flange_support_air_gap": "0.2",
-     "flange_which": "top"
+     "flange_which": "top",
+     "pulley": "2"
     }
    }
   ]

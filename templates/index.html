@@ -569,7 +569,12 @@
       <button class="btn-download" onclick="openDownloadWindow()">⬇ Download</button>
       <label class="fb-2d" id="rim-layer1-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="rim_layer1_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
-        Gen. Rim Layer
+        <span>Gen. Rim Layer<span class="rim-layer-who" id="rim-layer1-who"></span></span>
+      </label>
+      <!-- Pulley 2's: the one Download card serves both pulleys (the owner, 2026-10-05) -->
+      <label class="fb-2d" id="rim-layer2-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="rim_layer2_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
+        <span>Gen. Rim Layer<span class="rim-layer-who"> · Pulley 2</span></span>
       </label>
     </section>
 
@@ -909,15 +914,6 @@
         </div>
 
       </div>
-    </section>
-    <section class="card download-card">
-      <h2 style="display:flex;align-items:center;justify-content:space-between;gap:7px;">Download
-        <button class="btn-help" onclick="event.stopPropagation(); openHelpUrl('/static/Download_help.html')" title="Download help">&#9432;</button></h2>
-      <button class="btn-download-p2" onclick="openDownloadWindow()">⬇ Download</button>
-      <label class="fb-2d" id="rim-layer2-wrap" data-picture="/static/help/rim_layer.svg" style="display:none;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:13px;">
-        <input type="checkbox" id="rim_layer2_enabled" style="width:auto;accent-color:#0078d4;margin:0;">
-        Gen. Rim Layer
-      </label>
     </section>
 
   </aside>
@@ -1321,10 +1317,7 @@ function _applyUrlParams(p) {
   }
 
   // Gen. Rim Layer belongs to spokes: show it for spokes a link set, as a restore does.
-  [1, 2].forEach(n => {
-    const rimWrap = document.getElementById(`rim-layer${n}-wrap`);
-    if (rimWrap) rimWrap.style.display = document.getElementById(`spokes${n}_enabled`).checked ? 'flex' : 'none';
-  });
+  _syncRimLayers();
 
   // ── Flanges P1 ────────────────────────────────────────────────────────────────
   if (p.has('flange_enabled')) {
@@ -1657,12 +1650,8 @@ async function applySettings(s) {
   if (s.spokes2_count !== undefined)        document.getElementById('spokes2_count').value = s.spokes2_count;
   if (s.spokes2_height !== undefined)       document.getElementById('spokes2_height').value = s.spokes2_height;
   // Restore Gen. Rim Layer checkbox visibility and hub OD lock state.
-  [1, 2].forEach(n => {
-    const spokesOn = document.getElementById(`spokes${n}_enabled`).checked;
-    const rimWrap  = document.getElementById(`rim-layer${n}-wrap`);
-    if (rimWrap) rimWrap.style.display = spokesOn ? 'flex' : 'none';
-    _syncSpokeHubLock(n);
-  });
+  _syncRimLayers();
+  [1, 2].forEach(n => _syncSpokeHubLock(n));
 
   if (s.screw_hole_shape) {
     setThreadSettings(s.screw_hole_shape, s.thread_engagement, s.hex_flat);
@@ -1932,6 +1921,7 @@ function onDualToggle() {
   ratioRow.classList.toggle('hidden', !dual);
   layout  .classList.toggle('dual',   dual);
   p1title.textContent = dual ? 'Pulley 1' : 'Pulley';
+  _syncRimLayers();
 
   if (dual) {
     syncP2Belt();
@@ -2928,7 +2918,8 @@ const _DL_RANK = { step: 3, stl: 2, svg: 1, dxf: 1 };
 function _flangeFiles(n) {
   const on = id => !!document.getElementById(id)?.checked;
   if (!on(`flange${n}_enabled`) || !on(`flange${n}_3dprint`) || !on(`flange${n}_top_separate`)) return [];
-  return [{ path: '/download/flange-stl', params: Object.assign(_flangeParams(n), { flange_which: 'top' }) }];
+  return [{ path: '/download/flange-stl',
+            params: Object.assign(_flangeParams(n), { flange_which: 'top' }, n === 2 ? { pulley: '2' } : {}) }];
 }
 
 // Print supports go with a printed top flange made in place: the pulley's STL then
@@ -4908,11 +4899,23 @@ function revalidateSpokesForDiameter(n) {
   checkSpokeFit(n);
 }
 
+// The Download card's Gen. Rim Layer checkboxes (2D): one per pulley with spokes,
+// pulley 2's only with two pulleys, each named for its pulley when there are two.
+function _syncRimLayers() {
+  const dual = document.getElementById('dual_enable')?.checked;
+  for (const n of [1, 2]) {
+    const wrap = document.getElementById(`rim-layer${n}-wrap`);
+    const on = document.getElementById(`spokes${n}_enabled`)?.checked && (n === 1 || dual);
+    if (wrap) wrap.style.display = on ? 'flex' : 'none';
+  }
+  const who = document.getElementById('rim-layer1-who');
+  if (who) who.textContent = dual ? ' · Pulley 1' : '';
+}
+
 function onSpokesChange(n) {
   _updateSpokeMaxCount(n);
   const spokesOn  = document.getElementById(`spokes${n}_enabled`).checked;
-  const rimWrap   = document.getElementById(`rim-layer${n}-wrap`);
-  if (rimWrap) rimWrap.style.display = spokesOn ? 'flex' : 'none';
+  _syncRimLayers();
 
   // Whether the settings fit the pulley is the server's call (checkSpokeFit).
   const hubWarn = document.getElementById(`spokes${n}_hub_warn`);
@@ -5062,6 +5065,7 @@ function updateFlangeDlButtons(n) {
 async function downloadFlange(n, which) {
   const fp = _flangeParams(n);
   fp.flange_which = which;
+  if (n === 2) fp.pulley = '2';
   await _cctGuardedDownload(_dlUrl('/download/flange-stl?' + new URLSearchParams(fp)));
 }
 

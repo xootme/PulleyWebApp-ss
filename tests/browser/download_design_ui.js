@@ -112,6 +112,10 @@ async function main() {
       })()`);
       const label = `${name} [${mode}]`;
       check(`${label}: the window offers files`, rec.files.length > 0, rec.parts);
+      // one Download button for the whole design, in Pulley 1's panel (the owner, 2026-10-05)
+      const btns = await js(`[...document.querySelectorAll('.download-card button')].filter(b => b.offsetParent !== null
+        && /Download/.test(b.textContent)).map(b => b.closest('aside').id)`);
+      check(`${label}: one Download button, under Pulley 1`, btns.length === 1 && btns[0] === 'panel1', btns);
       // a "Pulley n flanges" part only for a printed top flange made as a separate part,
       // and the pulley's STL with supports beside it only for one printed in place
       const q = new URLSearchParams(query), pre = n => (n === 2 ? 'p2_' : '');

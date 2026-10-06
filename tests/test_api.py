@@ -3,6 +3,8 @@ test_api.py — HTTP endpoint tests via Flask test client.
 Covers /api/spec, /api/od, /api/belt, /api/preview, /api/belt-preview,
 /download/svg, and /download/belt-svg (single and dual).
 """
+import re
+
 import pytest
 
 from tests.conftest import PULLEY_CASES, BELT_CASES, get_spec
@@ -322,8 +324,8 @@ def test_download_flange_stl_3dprint_upper(client):
     r = client.get(f'/download/flange-stl?{_FLANGE_3DP}&flange_which=top')
     assert r.status_code == 200
     cd = r.headers.get('Content-Disposition', '')
-    assert 'upper-flange' in cd
-    assert '3DP' in cd
+    # the separate printed top flange is the pulley's name + -flange-only (the owner, 2026-10-05)
+    assert re.search(r'filename="[A-Za-z]+-[^"]+-\d+T-flange-only\.stl"', cd), cd
     assert len(r.data) > 84
 
 

@@ -273,14 +273,14 @@ def files(query: dict, parts: list, formats: list) -> list:
         name = f"{stem}-{teeth}T{'-P2' if n == 2 else ''}"
         add(f"pulley{n}", "step", "/download/step", base, f"{name}.step")
         # The server's STL names: -1flange when the top flange is a separate part, and
-        # with print supports (a top printed in place) a -with-supports copy too.
+        # with print supports (a top printed in place) a -w-supports copy too.
         printed = query.get(f"{pfx}flange_enabled") == "1" and query.get(f"{pfx}flange_3dprint") == "1"
         separate = query.get(f"{pfx}flange_top_separate", "1") == "1"
         stl_name = f"{name}-1flange" if printed and separate else name
         add(f"pulley{n}", "stl", "/download/stl", base, f"{stl_name}.stl")
         if printed and not separate and query.get(f"{pfx}flange_supports_enabled") == "1":
             add(f"pulley{n}", "stl", "/download/stl", dict(base, with_supports="1"),
-                f"{stl_name}-with-supports.stl")
+                f"{stl_name}-w-supports.stl")
         add(f"pulley{n}", "svg", "/download/svg", dict(base, include_data="1"), f"{name}.svg")
         add(f"pulley{n}", "dxf", "/download/dxf", base, f"{name}.dxf")
         sp = _spline_of(query, pfx)

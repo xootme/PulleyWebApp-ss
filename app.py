@@ -2589,6 +2589,26 @@ def _pulley_stl(args):
             _fl_enabled, _bare)
 
 
+def _print_supports(args, pulley, fp):
+    """A pulley's print supports, for its -w-supports STL: the ribs under the
+    top flange's overhang and, on a spoked pulley, the grid under its hub and
+    spoke web, which hang a flange height above the bed (flange_exporter)."""
+    from exporters.flange_exporter import build_center_supports
+    pfx = 'p2_' if pulley == '2' else ''
+    family, pitch, teeth, bore, belt_h, cl_mm, _bl, pr_ex = _parse_stl_params(args, pulley)
+    out = build_support_ribs(fp, family, pitch, teeth, bore, belt_h,
+                             clearance_mm=cl_mm, print_extra_mm=pr_ex)
+    sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_cnt, sp_h, _ = _parse_spoke_params(args, pfx)
+    if out and sp_en and sp_cnt > 0:
+        r_root, reach = _spoke_room(args, pfx)
+        r_hub = sp_hub / 2.0 if sp_hub > 0 else reach / 2.0 + 1.0
+        out += build_center_supports(
+            fp, bore_reach_mm=reach / 2.0, r_hub_mm=r_hub, r_rim_mm=max(r_root - sp_rim, r_hub + 1.0),
+            face_height_mm=belt_h, web_height_mm=sp_h, spoke_count=sp_cnt, spoke_width_mm=sp_w,
+            fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb)
+    return out
+
+
 @app.route('/download/stl')
 @charges.charged('stl')
 def download_stl():
@@ -2600,14 +2620,13 @@ def download_stl():
         pulley = args.get('pulley', '1')
         fp = _parse_flange_params(args, 'p2_' if pulley == '2' else '') if _fl_enabled else {}
         printed = _fl_enabled and fp.get('flange_3dprint')
-        # Names (the owner, 2026-10-03): GT-2M-30T is the pulley, with no flanges or
-        # both; -1flange when its top flange is a separate part, so only one is on it;
-        # -with-supports for the copy with print supports (with_supports=1).
+        # Names (the owner, 2026-10-03, 2026-10-05): GT-2M-30T is the pulley, with no
+        # flanges or both; -1flange when its top flange is a separate part, so only one
+        # is on it (the flange itself is -flange-only); -w-supports for the copy with
+        # print supports (with_supports=1).
         fname = stem + ('-1flange' if printed and fp.get('top_separate') else '')
         if args.get('with_supports') == '1':
-            family, pitch, teeth, bore, belt_h, cl_mm, _bl, pr_ex = _parse_stl_params(args, pulley)
-            ribs = build_support_ribs(fp, family, pitch, teeth, bore, belt_h,
-                                      clearance_mm=cl_mm, print_extra_mm=pr_ex) if printed else []
+            ribs = _print_supports(args, pulley, fp) if printed else []
             if not ribs:
                 return _api_error('Print supports go with a printed top flange made in place '
                                   '(not a separate part) and Add Print Supports ticked.')
@@ -2615,7 +2634,7 @@ def download_stl():
             import trimesh as _tm_s
             stl = _tm_s.util.concatenate([_tm_s.load(_io_s.BytesIO(stl), file_type='stl')] + ribs
                                          ).export(file_type='stl')
-            fname += '-with-supports'
+            fname += '-w-supports'
         fname += '.stl'
         stl = _embed_stl(stl, request.args)
         # Mirror to a connected CAD addin's watch folder (CCT_Import) so it auto-
@@ -3394,7 +3413,7 @@ def download_flange_stl():
                 flat_depth_mm=flat_d, keyway_w_mm=kw_w, keyway_h_mm=kw_h,
                 spline=_spline_of(args, ''),
             )
-            suffix    = '-upper-flange' if which == 'top' else '-lower-flange'
+            suffix    = '-flange-only' if which == 'top' else '-lower-flange'
         else:
             stl_bytes = generate_metal_flange_stl(
                 family, pitch, num_teeth, bore_mm, belt_h,
@@ -3413,8 +3432,14 @@ def download_flange_stl():
             )
             suffix = '-flanges'
 
-        type_tag  = '3DP' if fp['flange_3dprint'] else 'Metal'
-        filename  = f'{family}{pitch}-{num_teeth}T-{type_tag}{suffix}.stl'
+        # the pulley's own name (the owner, 2026-10-05): GT-2M-30T-flange-only is
+        # the separate printed top flange; P2's carries -P2 (pulley=2 names it only)
+        p2_sfx = '-P2' if args.get('pulley') == '2' else ''
+        if fp['flange_3dprint'] and which == 'top':
+            filename = f'{family}-{pitch}-{num_teeth}T{p2_sfx}{suffix}.stl'
+        else:
+            type_tag = '3DP' if fp['flange_3dprint'] else 'Metal'
+            filename = f'{family}-{pitch}-{num_teeth}T{p2_sfx}-{type_tag}{suffix}.stl'
 
         stl_bytes = _embed_stl(stl_bytes, request.args)
         return Response(
