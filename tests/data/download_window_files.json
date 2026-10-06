@@ -213,7 +213,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "5M",
@@ -226,7 +226,8 @@
      "backlash_custom": "0",
      "clearance_height": "6",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "parts": "p1"
     }
    },
    {
@@ -656,7 +657,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "5M",
@@ -678,7 +679,9 @@
      "p2_backlash_custom": "0",
      "clearance_height": "6",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "n_belt": "95",
+     "parts": "p1"
     }
    },
    {
@@ -759,7 +762,7 @@
     }
    },
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "5M",
@@ -782,7 +785,8 @@
      "clearance_height": "6",
      "sv": "1",
      "belt_height": "10",
-     "pulley": "2"
+     "n_belt": "95",
+     "parts": "p2"
     }
    },
    {
@@ -866,7 +870,7 @@
     }
    },
    {
-    "path": "/download/belt-step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "5M",
@@ -888,8 +892,9 @@
      "p2_backlash_custom": "0",
      "clearance_height": "6",
      "sv": "1",
+     "belt_height": "10",
      "n_belt": "95",
-     "belt_height": "10"
+     "parts": "belt"
     }
    },
    {
@@ -969,6 +974,34 @@
      "clearance_height": "6",
      "sv": "1",
      "n_belt": "95"
+    }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "5M",
+     "teeth": "24",
+     "bore": "8",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "dual": "true",
+     "center_distance": "162.22",
+     "p2_teeth": "36",
+     "p2_bore": "10",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "clearance_height": "6",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "95",
+     "parts": "p1,p2,belt"
     }
    }
   ]
@@ -1361,7 +1394,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -1386,7 +1419,9 @@
      "p2_hub_keyway_h": "1.8",
      "clearance_height": "10",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "n_belt": "74",
+     "parts": "p1"
     }
    },
    {
@@ -1476,7 +1511,7 @@
     }
    },
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -1502,7 +1537,8 @@
      "clearance_height": "10",
      "sv": "1",
      "belt_height": "10",
-     "pulley": "2"
+     "n_belt": "74",
+     "parts": "p2"
     }
    },
    {
@@ -1595,7 +1631,7 @@
     }
    },
    {
-    "path": "/download/belt-step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -1620,8 +1656,9 @@
      "p2_hub_keyway_h": "1.8",
      "clearance_height": "10",
      "sv": "1",
+     "belt_height": "10",
      "n_belt": "74",
-     "belt_height": "10"
+     "parts": "belt"
     }
    },
    {
@@ -1710,6 +1747,37 @@
      "clearance_height": "10",
      "sv": "1",
      "n_belt": "74"
+    }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "30",
+     "bore": "12",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "hub_flat_depth": "1",
+     "dual": "true",
+     "center_distance": "163.82",
+     "p2_teeth": "36",
+     "p2_bore": "10",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_hub_keyway_w": "4",
+     "p2_hub_keyway_h": "1.8",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "74",
+     "parts": "p1,p2,belt"
     }
    }
   ]
@@ -1803,7 +1871,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "GT",
      "pitch": "2M",
@@ -1823,7 +1891,8 @@
      "hub_captured_nut": "1",
      "clearance_height": "3",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "parts": "p1"
     }
    },
    {
@@ -2554,7 +2623,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -2592,7 +2661,9 @@
      "p2_spokes_height": "0",
      "clearance_height": "10",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "n_belt": "83",
+     "parts": "p1"
     }
    },
    {
@@ -2721,7 +2792,7 @@
     }
    },
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -2760,7 +2831,8 @@
      "clearance_height": "10",
      "sv": "1",
      "belt_height": "10",
-     "pulley": "2"
+     "n_belt": "83",
+     "parts": "p2"
     }
    },
    {
@@ -2892,7 +2964,7 @@
     }
    },
    {
-    "path": "/download/belt-step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -2930,8 +3002,9 @@
      "p2_spokes_height": "0",
      "clearance_height": "10",
      "sv": "1",
+     "belt_height": "10",
      "n_belt": "83",
-     "belt_height": "10"
+     "parts": "belt"
     }
    },
    {
@@ -3060,6 +3133,50 @@
      "sv": "1",
      "n_belt": "83"
     }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "48",
+     "bore": "12",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "10",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "spokes_enabled": "1",
+     "spokes_hub_od": "22",
+     "spokes_rim_depth": "5",
+     "spokes_width": "6",
+     "spokes_fillet_tip": "1",
+     "spokes_fillet_base": "1.5",
+     "spokes_count": "5",
+     "spokes_height": "0",
+     "p2_spokes_enabled": "1",
+     "p2_spokes_hub_od": "22",
+     "p2_spokes_rim_depth": "5",
+     "p2_spokes_width": "6",
+     "p2_spokes_fillet_tip": "1",
+     "p2_spokes_fillet_base": "1.5",
+     "p2_spokes_count": "4",
+     "p2_spokes_height": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "83",
+     "parts": "p1,p2,belt"
+    }
    }
   ]
  },
@@ -3147,7 +3264,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -3186,7 +3303,8 @@
      "flange_support_air_gap": "0.2",
      "clearance_height": "2",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "parts": "p1"
     }
    },
    {
@@ -3417,7 +3535,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "5M",
@@ -3448,7 +3566,8 @@
      "flange_support_air_gap": "0.2",
      "clearance_height": "2",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "parts": "p1"
     }
    },
    {
@@ -3706,7 +3825,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "GT",
      "pitch": "2M",
@@ -3764,7 +3883,9 @@
      "p2_flange_support_air_gap": "0.2",
      "clearance_height": "1",
      "sv": "1",
-     "belt_height": "6"
+     "belt_height": "6",
+     "n_belt": "194",
+     "parts": "p1"
     }
    },
    {
@@ -4016,7 +4137,7 @@
     }
    },
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "GT",
      "pitch": "2M",
@@ -4075,7 +4196,8 @@
      "clearance_height": "1",
      "sv": "1",
      "belt_height": "6",
-     "pulley": "2"
+     "n_belt": "194",
+     "parts": "p2"
     }
    },
    {
@@ -4267,7 +4389,7 @@
     }
    },
    {
-    "path": "/download/belt-step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "GT",
      "pitch": "2M",
@@ -4325,8 +4447,9 @@
      "p2_flange_support_air_gap": "0.2",
      "clearance_height": "1",
      "sv": "1",
+     "belt_height": "6",
      "n_belt": "194",
-     "belt_height": "6"
+     "parts": "belt"
     }
    },
    {
@@ -4560,6 +4683,70 @@
      "flange_which": "top",
      "pulley": "2"
     }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "GT",
+     "pitch": "2M",
+     "teeth": "30",
+     "bore": "5",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "dual": "true",
+     "center_distance": "160.99",
+     "p2_teeth": "36",
+     "p2_bore": "10",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "flange_enabled": "1",
+     "flange_3dprint": "1",
+     "flange_angle": "15",
+     "flange_rim_radius": "2.5",
+     "flange_height": "1.5",
+     "flange_plate_height": "1.0",
+     "flange_bend_radius": "0",
+     "flange_top_separate": "0",
+     "hub_height_for_flange": "10",
+     "flange_nubs_enabled": "0",
+     "flange_nub_count": "4",
+     "flange_nub_dia": "3",
+     "flange_nub_height": "2",
+     "flange_nub_allowance": "0.2",
+     "flange_supports_enabled": "1",
+     "flange_support_nozzle_dia": "0.4",
+     "flange_support_max_spacing": "10",
+     "flange_support_air_gap": "0.2",
+     "p2_flange_enabled": "1",
+     "p2_flange_3dprint": "1",
+     "p2_flange_angle": "15",
+     "p2_flange_rim_radius": "2.5",
+     "p2_flange_height": "1.5",
+     "p2_flange_plate_height": "1.0",
+     "p2_flange_bend_radius": "0",
+     "p2_flange_top_separate": "1",
+     "p2_hub_height_for_flange": "10",
+     "p2_flange_nubs_enabled": "0",
+     "p2_flange_nub_count": "4",
+     "p2_flange_nub_dia": "3",
+     "p2_flange_nub_height": "2",
+     "p2_flange_nub_allowance": "0.2",
+     "p2_flange_supports_enabled": "0",
+     "p2_flange_support_nozzle_dia": "0.4",
+     "p2_flange_support_max_spacing": "10",
+     "p2_flange_support_air_gap": "0.2",
+     "clearance_height": "1",
+     "sv": "1",
+     "belt_height": "6",
+     "n_belt": "194",
+     "parts": "p1,p2,belt"
+    }
    }
   ]
  },
@@ -4672,7 +4859,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -4714,7 +4901,9 @@
      "p2_spline_ring_bottom": "0",
      "clearance_height": "10",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "p1"
     }
    },
    {
@@ -4855,7 +5044,7 @@
     }
    },
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -4898,7 +5087,8 @@
      "clearance_height": "10",
      "sv": "1",
      "belt_height": "10",
-     "pulley": "2"
+     "n_belt": "71",
+     "parts": "p2"
     }
    },
    {
@@ -5042,7 +5232,7 @@
     }
    },
    {
-    "path": "/download/belt-step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -5084,8 +5274,9 @@
      "p2_spline_ring_bottom": "0",
      "clearance_height": "10",
      "sv": "1",
+     "belt_height": "10",
      "n_belt": "71",
-     "belt_height": "10"
+     "parts": "belt"
     }
    },
    {
@@ -5228,6 +5419,54 @@
     }
    },
    {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "24",
+     "bore": "23.0105",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "straight",
+     "spline_n": "6",
+     "spline_minor": "23",
+     "spline_major": "26",
+     "spline_width": "6",
+     "spline_ring_top": "1",
+     "spline_cb_top": "1",
+     "spline_ring_bottom": "1",
+     "spline_cb_bottom": "1",
+     "spline_washer": "1",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "22.7179",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_bore_shape": "spline",
+     "p2_spline_type": "involute",
+     "p2_spline_m": "1.5",
+     "p2_spline_z": "16",
+     "p2_spline_pa": "30",
+     "p2_spline_root": "flat",
+     "p2_spline_ring_top": "1",
+     "p2_spline_cb_top": "1",
+     "p2_spline_ring_bottom": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "sh1"
+    }
+   },
+   {
     "path": "/download/spline-stl",
     "params": {
      "family": "HTD",
@@ -5369,6 +5608,54 @@
     }
    },
    {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "24",
+     "bore": "23.0105",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "straight",
+     "spline_n": "6",
+     "spline_minor": "23",
+     "spline_major": "26",
+     "spline_width": "6",
+     "spline_ring_top": "1",
+     "spline_cb_top": "1",
+     "spline_ring_bottom": "1",
+     "spline_cb_bottom": "1",
+     "spline_washer": "1",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "22.7179",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_bore_shape": "spline",
+     "p2_spline_type": "involute",
+     "p2_spline_m": "1.5",
+     "p2_spline_z": "16",
+     "p2_spline_pa": "30",
+     "p2_spline_root": "flat",
+     "p2_spline_ring_top": "1",
+     "p2_spline_cb_top": "1",
+     "p2_spline_ring_bottom": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "wa1"
+    }
+   },
+   {
     "path": "/download/spline-stl",
     "params": {
      "family": "HTD",
@@ -5507,6 +5794,54 @@
      "sv": "1",
      "belt_height": "10",
      "part": "washer"
+    }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "24",
+     "bore": "23.0105",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "straight",
+     "spline_n": "6",
+     "spline_minor": "23",
+     "spline_major": "26",
+     "spline_width": "6",
+     "spline_ring_top": "1",
+     "spline_cb_top": "1",
+     "spline_ring_bottom": "1",
+     "spline_cb_bottom": "1",
+     "spline_washer": "1",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "22.7179",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_bore_shape": "spline",
+     "p2_spline_type": "involute",
+     "p2_spline_m": "1.5",
+     "p2_spline_z": "16",
+     "p2_spline_pa": "30",
+     "p2_spline_root": "flat",
+     "p2_spline_ring_top": "1",
+     "p2_spline_cb_top": "1",
+     "p2_spline_ring_bottom": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "sh2"
     }
    },
    {
@@ -5764,7 +6099,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -5806,7 +6141,9 @@
      "p2_spline_ring_bottom": "0",
      "clearance_height": "10",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "p1"
     }
    },
    {
@@ -5947,7 +6284,7 @@
     }
    },
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -5990,7 +6327,8 @@
      "clearance_height": "10",
      "sv": "1",
      "belt_height": "10",
-     "pulley": "2"
+     "n_belt": "71",
+     "parts": "p2"
     }
    },
    {
@@ -6134,7 +6472,7 @@
     }
    },
    {
-    "path": "/download/belt-step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "8M",
@@ -6176,8 +6514,9 @@
      "p2_spline_ring_bottom": "0",
      "clearance_height": "10",
      "sv": "1",
+     "belt_height": "10",
      "n_belt": "71",
-     "belt_height": "10"
+     "parts": "belt"
     }
    },
    {
@@ -6320,6 +6659,54 @@
     }
    },
    {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "24",
+     "bore": "23.0105",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "straight",
+     "spline_n": "6",
+     "spline_minor": "23",
+     "spline_major": "26",
+     "spline_width": "6",
+     "spline_ring_top": "1",
+     "spline_cb_top": "1",
+     "spline_ring_bottom": "1",
+     "spline_cb_bottom": "1",
+     "spline_washer": "1",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "22.7179",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_bore_shape": "spline",
+     "p2_spline_type": "involute",
+     "p2_spline_m": "1.5",
+     "p2_spline_z": "16",
+     "p2_spline_pa": "30",
+     "p2_spline_root": "flat",
+     "p2_spline_ring_top": "1",
+     "p2_spline_cb_top": "1",
+     "p2_spline_ring_bottom": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "sh1"
+    }
+   },
+   {
     "path": "/download/spline-stl",
     "params": {
      "family": "HTD",
@@ -6458,6 +6845,54 @@
      "sv": "1",
      "belt_height": "10",
      "part": "shaft"
+    }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "24",
+     "bore": "23.0105",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "straight",
+     "spline_n": "6",
+     "spline_minor": "23",
+     "spline_major": "26",
+     "spline_width": "6",
+     "spline_ring_top": "1",
+     "spline_cb_top": "1",
+     "spline_ring_bottom": "1",
+     "spline_cb_bottom": "1",
+     "spline_washer": "1",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "22.7179",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_bore_shape": "spline",
+     "p2_spline_type": "involute",
+     "p2_spline_m": "1.5",
+     "p2_spline_z": "16",
+     "p2_spline_pa": "30",
+     "p2_spline_root": "flat",
+     "p2_spline_ring_top": "1",
+     "p2_spline_cb_top": "1",
+     "p2_spline_ring_bottom": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "wa1"
     }
    },
    {
@@ -6602,6 +7037,54 @@
     }
    },
    {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "24",
+     "bore": "23.0105",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "straight",
+     "spline_n": "6",
+     "spline_minor": "23",
+     "spline_major": "26",
+     "spline_width": "6",
+     "spline_ring_top": "1",
+     "spline_cb_top": "1",
+     "spline_ring_bottom": "1",
+     "spline_cb_bottom": "1",
+     "spline_washer": "1",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "22.7179",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_bore_shape": "spline",
+     "p2_spline_type": "involute",
+     "p2_spline_m": "1.5",
+     "p2_spline_z": "16",
+     "p2_spline_pa": "30",
+     "p2_spline_root": "flat",
+     "p2_spline_ring_top": "1",
+     "p2_spline_cb_top": "1",
+     "p2_spline_ring_bottom": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "sh2"
+    }
+   },
+   {
     "path": "/download/spline-stl",
     "params": {
      "family": "HTD",
@@ -6743,6 +7226,54 @@
      "pulley": "2",
      "belt_height": "10",
      "part": "shaft"
+    }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "8M",
+     "teeth": "24",
+     "bore": "23.0105",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "straight",
+     "spline_n": "6",
+     "spline_minor": "23",
+     "spline_major": "26",
+     "spline_width": "6",
+     "spline_ring_top": "1",
+     "spline_cb_top": "1",
+     "spline_ring_bottom": "1",
+     "spline_cb_bottom": "1",
+     "spline_washer": "1",
+     "dual": "true",
+     "center_distance": "163.28",
+     "p2_teeth": "36",
+     "p2_bore": "22.7179",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "p2_bore_shape": "spline",
+     "p2_spline_type": "involute",
+     "p2_spline_m": "1.5",
+     "p2_spline_z": "16",
+     "p2_spline_pa": "30",
+     "p2_spline_root": "flat",
+     "p2_spline_ring_top": "1",
+     "p2_spline_cb_top": "1",
+     "p2_spline_ring_bottom": "0",
+     "clearance_height": "10",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "71",
+     "parts": "p1,p2,belt,sh1,wa1,sh2"
     }
    }
   ]
@@ -6846,7 +7377,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "HTD",
      "pitch": "5M",
@@ -6876,7 +7407,8 @@
      "hex_flat": "82",
      "clearance_height": "6",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "parts": "p1"
     }
    },
    {
@@ -6995,6 +7527,41 @@
     }
    },
    {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "5M",
+     "teeth": "40",
+     "bore": "12.755",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "hex",
+     "spline_af": "12.7",
+     "spline_series": "inch",
+     "spline_ring_top": "1",
+     "spline_cb_top": "0",
+     "spline_ring_bottom": "0",
+     "hub_od": "40",
+     "hub_height": "10",
+     "hub_screw_size": "M4",
+     "hub_screw_hold": "thread",
+     "hub_screw_count": "2",
+     "hub_screw_dia": "4",
+     "hub_captured_nut": "0",
+     "screw_hole_shape": "round",
+     "thread_engagement": "50",
+     "hex_flat": "82",
+     "clearance_height": "6",
+     "sv": "1",
+     "belt_height": "10",
+     "parts": "sh1"
+    }
+   },
+   {
     "path": "/download/spline-stl",
     "params": {
      "family": "HTD",
@@ -7097,6 +7664,41 @@
      "sv": "1",
      "belt_height": "10",
      "part": "shaft"
+    }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "HTD",
+     "pitch": "5M",
+     "teeth": "40",
+     "bore": "12.755",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "bore_shape": "spline",
+     "spline_type": "hex",
+     "spline_af": "12.7",
+     "spline_series": "inch",
+     "spline_ring_top": "1",
+     "spline_cb_top": "0",
+     "spline_ring_bottom": "0",
+     "hub_od": "40",
+     "hub_height": "10",
+     "hub_screw_size": "M4",
+     "hub_screw_hold": "thread",
+     "hub_screw_count": "2",
+     "hub_screw_dia": "4",
+     "hub_captured_nut": "0",
+     "screw_hole_shape": "round",
+     "thread_engagement": "50",
+     "hex_flat": "82",
+     "clearance_height": "6",
+     "sv": "1",
+     "belt_height": "10",
+     "parts": "p1,sh1"
     }
    }
   ]
@@ -7462,7 +8064,7 @@
   },
   "files": [
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "T",
      "pitch": "T5",
@@ -7484,7 +8086,9 @@
      "p2_backlash_custom": "0",
      "clearance_height": "0.5",
      "sv": "1",
-     "belt_height": "10"
+     "belt_height": "10",
+     "n_belt": "93",
+     "parts": "p1"
     }
    },
    {
@@ -7565,7 +8169,7 @@
     }
    },
    {
-    "path": "/download/step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "T",
      "pitch": "T5",
@@ -7588,7 +8192,8 @@
      "clearance_height": "0.5",
      "sv": "1",
      "belt_height": "10",
-     "pulley": "2"
+     "n_belt": "93",
+     "parts": "p2"
     }
    },
    {
@@ -7672,7 +8277,7 @@
     }
    },
    {
-    "path": "/download/belt-step",
+    "path": "/download/assembly-step",
     "params": {
      "family": "T",
      "pitch": "T5",
@@ -7694,8 +8299,9 @@
      "p2_backlash_custom": "0",
      "clearance_height": "0.5",
      "sv": "1",
+     "belt_height": "10",
      "n_belt": "93",
-     "belt_height": "10"
+     "parts": "belt"
     }
    },
    {
@@ -7775,6 +8381,34 @@
      "clearance_height": "0.5",
      "sv": "1",
      "n_belt": "93"
+    }
+   },
+   {
+    "path": "/download/assembly-step",
+    "params": {
+     "family": "T",
+     "pitch": "T5",
+     "teeth": "20",
+     "bore": "6",
+     "print_extra": "0",
+     "clearance_preset": "STANDARD",
+     "clearance_custom": "0",
+     "backlash_preset": "STANDARD",
+     "backlash_custom": "0",
+     "dual": "true",
+     "center_distance": "162.00",
+     "p2_teeth": "36",
+     "p2_bore": "10",
+     "p2_print_extra": "0",
+     "p2_clearance_preset": "STANDARD",
+     "p2_clearance_custom": "0",
+     "p2_backlash_preset": "STANDARD",
+     "p2_backlash_custom": "0",
+     "clearance_height": "0.5",
+     "sv": "1",
+     "belt_height": "10",
+     "n_belt": "93",
+     "parts": "p1,p2,belt"
     }
    }
   ]

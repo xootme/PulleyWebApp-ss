@@ -2810,6 +2810,49 @@ def download_belt_step():
         return _api_error('Belt STEP export failed. The error has been logged.', 500)
 
 
+@app.route('/download/assembly-step')
+@charges.charged('step')
+@require_active_session
+def download_assembly_step():
+    """The whole design as one assembly STEP (the owner, 2026-10-06): every part
+    the Download window has ticked (parts=p1,p2,belt,sh1,wa1 …; all when absent),
+    each a component of its own, named as its STL is and placed as assembled
+    (exporters/assembly.py; small_step assemble). STEP is nominal: no print
+    supports, no bloat."""
+    _consume_web_token(request)
+    try:
+        from exporters import assembly as _asm
+        args = request.args
+        only = {p.strip() for p in args.get('parts', '').split(',') if p.strip()} or None
+        m = _asm.manifest(args, only=only)
+        if not m['parts']:
+            return _api_error('No parts chosen for the STEP file.')
+        kw = {'1': _step_kw_of(args, '')}
+        if args.get('dual') == 'true':
+            kw['2'] = _step_kw_of(args, 'p2_')
+        has_belt = any(p.get('make', {}).get('kind') == 'belt' for p in m['parts'])
+        belt_kw = _belt_step_kw(args, kw['1'], kw['2']) if has_belt else None
+        try:
+            step_bytes = _run_ss_worker(dict(export_type='assembly', manifest=m, kw=kw, belt_kw=belt_kw),
+                                        timeout=110)
+        except RuntimeError as _e:
+            return _api_error(f'STEP error: {_e}')
+        lone = _asm.single_make(m)
+        if lone:            # one pulley alone: its own STEP, named as /download/step names it
+            step_bytes = _rename_step_product(step_bytes, lone['name'])
+        step_bytes = _embed_step(step_bytes, args)
+        fname = f"{(lone or m)['name']}.step"
+        # Mirror as '-all': the addins import an assembly without importToTarget.
+        if _mirror_to_addins(step_bytes, f"{m['name']}-all.step"):
+            return ('', 204)
+        return Response(step_bytes, mimetype='application/step',
+                        headers={'Content-Disposition': f'attachment; filename="{_safe_dl_name(fname)}"'})
+    except Exception as e:
+        import logging as _log, traceback as _tb
+        _log.getLogger(__name__).error('assembly STEP failed: %s\n%s', e, _tb.format_exc())
+        return _api_error(f'Error generating the assembly STEP: {e}')
+
+
 @app.route('/download/all-step')
 @charges.charged('step')
 def download_all_step():
@@ -4016,6 +4059,63 @@ def api_download_status(job_id):
     return jsonify(job.to_dict())
 
 
+def _step_kw_of(args, pfx):
+    """The worker's keywords for one pulley (pfx '' or 'p2_') of a design's query —
+    the all-parts and assembly STEPs' (the single-pulley route builds its own)."""
+    family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
+        _parse_stl_params(args, '2' if pfx == 'p2_' else '1')
+    hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(args, pfx)
+    sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
+        _parse_spoke_params(args, pfx)
+    eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+    _fl_en = args.get(f'{pfx}flange_enabled') == '1'
+    fp = _parse_flange_params(args, pfx) if _fl_en else {}
+    return dict(
+        family=family, pitch=pitch, num_teeth=num_teeth,
+        bore_mm=bore_mm, belt_height_mm=belt_height,
+        clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
+        hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
+        screw_dia_mm=sd, screw_count=sc,
+        **_step_screw_kw(args, pfx),
+        captured_nut=cn, flat_depth_mm=fd,
+        keyway_w_mm=kw_w, keyway_h_mm=kw_h,
+        spline=_spline_of(args, pfx),
+        spoke_count=sp_c if sp_en else 0,
+        spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
+        rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
+        spoke_height_mm=sp_h,
+        flange_enabled       = _fl_en,
+        flange_3dprint       = fp.get('flange_3dprint', True),
+        flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
+        flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
+        flange_height_mm     = fp.get('flange_height_mm', 1.5),
+        flange_top_separate  = fp.get('top_separate', True),
+        nubs_enabled         = fp.get('nubs_enabled', False),
+        nub_count            = fp.get('nub_count', 4),
+        nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
+        nub_height_mm        = fp.get('nub_height_mm', 2.0),
+        nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
+        plate_height_mm      = fp.get('plate_height_mm', 1.0),
+        bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
+    )
+
+
+def _belt_step_kw(args, kw1, kw2):
+    """The worker's belt keywords for a drive (both pulleys' keywords from _step_kw_of)."""
+    key = _resolve_key(kw1['family'], kw1['pitch'])
+    pitch_mm = (PULLEY_SPECS.get(key, {}) if key else {}).get('pitch', 5.0)
+    default_c = (kw1['num_teeth'] + kw2['num_teeth']) * pitch_mm / (2.0 * math.pi)
+    return dict(
+        family         = kw1['family'],
+        pitch          = kw1['pitch'],
+        num_teeth_left = kw1['num_teeth'],
+        num_teeth_right= kw2['num_teeth'],
+        center_dist_mm = float(args.get('center_distance', default_c)),
+        belt_height_mm = max(1.0, float(args.get('belt_height', 10.0))),
+        n_belt_teeth   = int(args.get('n_belt', 0)),
+    )
+
+
 @app.route('/api/download/all-step-async', methods=['POST'])
 @require_active_session
 def api_download_all_step_async():
@@ -4051,44 +4151,7 @@ def api_download_all_step_async():
                     import subprocess
                     import sys
 
-                    # Build keyword dicts same as sync route (download_all_step)
-                    def _build_kw(pfx):
-                        family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
-                            _parse_stl_params(query_params, '2' if pfx == 'p2_' else '1')
-                        hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(query_params, pfx)
-                        sp_en, sp_hub, sp_rim, sp_w, sp_ft, sp_fb, sp_c, sp_h, sp_split = \
-                            _parse_spoke_params(query_params, pfx)
-                        eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
-                        _fl_en = query_params.get(f'{pfx}flange_enabled') == '1'
-                        fp = _parse_flange_params(query_params, pfx) if _fl_en else {}
-                        return dict(
-                            family=family, pitch=pitch, num_teeth=num_teeth,
-                            bore_mm=bore_mm, belt_height_mm=belt_height,
-                            clearance_mm=cl_mm, backlash_mm=bl_mm, print_extra_mm=pr_ex,
-                            hub_od_mm=eff_hub_od, hub_height_mm=hub_h,
-                            screw_dia_mm=sd, screw_count=sc,
-                            **_step_screw_kw(query_params, pfx),
-                            captured_nut=cn, flat_depth_mm=fd,
-                            keyway_w_mm=kw_w, keyway_h_mm=kw_h,
-                            spline=_spline_of(query_params, pfx),
-                            spoke_count=sp_c if sp_en else 0,
-                            spoke_width_mm=sp_w, spoke_hub_od_mm=sp_hub,
-                            rim_depth_mm=sp_rim, fillet_tip_mm=sp_ft, fillet_base_mm=sp_fb,
-                            spoke_height_mm=sp_h,
-                            flange_enabled       = _fl_en,
-                            flange_3dprint       = fp.get('flange_3dprint', True),
-                            flange_angle_deg     = fp.get('flange_angle_deg', 15.0),
-                            flange_rim_radius_mm = fp.get('rim_radius_mm', 3.0),
-                            flange_height_mm     = fp.get('flange_height_mm', 1.5),
-                            flange_top_separate  = fp.get('top_separate', True),
-                            nubs_enabled         = fp.get('nubs_enabled', False),
-                            nub_count            = fp.get('nub_count', 4),
-                            nub_dia_mm           = fp.get('nub_dia_mm', 3.0),
-                            nub_height_mm        = fp.get('nub_height_mm', 2.0),
-                            nub_allowance_mm     = fp.get('nub_allowance_mm', 0.2),
-                            plate_height_mm      = fp.get('plate_height_mm', 1.0),
-                            bend_radius_mm       = fp.get('bend_radius_mm', 0.0),
-                        )
+                    _build_kw = lambda pfx: _step_kw_of(query_params, pfx)   # noqa: E731
 
                     update_progress(job.id, 10)  # Parsing
                     dual = query_params.get('dual') == 'true'
@@ -4096,23 +4159,7 @@ def api_download_all_step_async():
                     kw2 = _build_kw('p2_') if dual else None
 
                     update_progress(job.id, 20)  # Building params
-                    belt_kw = None
-                    if dual:
-                        key   = _resolve_key(kw1['family'], kw1['pitch'])
-                        spec  = PULLEY_SPECS.get(key, {}) if key else {}
-                        pitch_mm   = spec.get('pitch', 5.0)
-                        _default_c = (kw1['num_teeth'] + kw2['num_teeth']) * pitch_mm / (2.0 * math.pi)
-                        center_dist = float(query_params.get('center_distance', _default_c))
-                        raw_belt_h  = max(1.0, float(query_params.get('belt_height', 10.0)))
-                        belt_kw = dict(
-                            family         = kw1['family'],
-                            pitch          = kw1['pitch'],
-                            num_teeth_left = kw1['num_teeth'],
-                            num_teeth_right= kw2['num_teeth'],
-                            center_dist_mm = center_dist,
-                            belt_height_mm = raw_belt_h,
-                            n_belt_teeth   = int(query_params.get('n_belt', 0)),
-                        )
+                    belt_kw = _belt_step_kw(query_params, kw1, kw2) if dual else None
 
                     update_progress(job.id, 30)  # Generating STEP
 

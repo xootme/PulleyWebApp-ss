@@ -24,8 +24,9 @@ from cct_common.charging import (  # noqa: F401  (the names this app's code and 
 )
 
 # Request keys that select or deliver a part rather than describe the design.
-ROUTE_ONLY_KEYS = _c.ROUTE_ONLY_KEYS | frozenset({"flange_which", "part", "with_supports"})
-# part: a spline part (shaft / washer); with_supports: the pulley STL's copy with print supports
+ROUTE_ONLY_KEYS = _c.ROUTE_ONLY_KEYS | frozenset({"flange_which", "part", "parts", "with_supports"})
+# part: a spline part (shaft / washer); parts: the assembly STEP's ticked parts;
+# with_supports: the pulley STL's copy with print supports
 
 # The flange routes send some hub values under flat names.
 ALIASES = {

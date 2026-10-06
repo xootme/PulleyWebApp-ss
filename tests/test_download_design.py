@@ -38,7 +38,7 @@ def test_the_recorded_matrix_still_covers_the_risky_parts():
     cases = json.loads(CASES.read_text(encoding='utf-8'))
     paths = {f['path'] for c in cases for f in c['files']}
     for p in ('/download/spline-stl', '/download/spline-dxf', '/download/flange-stl', '/download/svg-rim',
-              '/download/step', '/download/belt-stl', '/download/all-dxf'):
+              '/download/assembly-step', '/download/belt-stl', '/download/all-dxf'):
         assert p in paths, p
     params = [f['params'] for c in cases for f in c['files']]
     assert any(q.get('part') == 'washer' for q in params) and any(q.get('pulley') == '2' for q in params)

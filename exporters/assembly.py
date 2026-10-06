@@ -168,22 +168,49 @@ def ss_binary() -> str | None:
     return repo if os.name != "nt" and os.path.isfile(repo) else None
 
 
-_CAN_EXTRUDE: dict = {}
+_HELP: dict = {}
 
 
-def can_extrude(ss_bin: str | None) -> bool:
-    """Does this binary have `extrude`? Asked of the binary itself: small_step
-    0.7.0 shipped both with and without it under the one version string."""
+def _has_command(ss_bin: str | None, cmd: str) -> bool:
+    """Does this binary have `cmd`? Asked of the binary itself: small_step
+    0.7.0 shipped with and without extrude and assemble under one version string."""
     import subprocess
     if not ss_bin:
         return False
-    if ss_bin not in _CAN_EXTRUDE:
+    if ss_bin not in _HELP:
         try:
             out = subprocess.run([ss_bin, "--help"], capture_output=True, text=True, timeout=10)
-            _CAN_EXTRUDE[ss_bin] = "extrude:" in (out.stdout + out.stderr)
+            _HELP[ss_bin] = out.stdout + out.stderr
         except (OSError, subprocess.SubprocessError):
-            _CAN_EXTRUDE[ss_bin] = False
-    return _CAN_EXTRUDE[ss_bin]
+            _HELP[ss_bin] = ""
+    return f"{cmd}:" in _HELP[ss_bin]
+
+
+def can_extrude(ss_bin: str | None) -> bool:
+    return _has_command(ss_bin, "extrude")
+
+
+def can_assemble(ss_bin: str | None) -> bool:
+    return _has_command(ss_bin, "assemble")
+
+
+_CAN_SECTIONS: dict = {}
+
+
+def can_sections(ss_bin: str | None) -> bool:
+    """Does this binary's extrude take stacked "sections" (handoff item 1,
+    added 2026-10-06)? Tried once on a small square."""
+    if not can_extrude(ss_bin):
+        return False
+    if ss_bin not in _CAN_SECTIONS:
+        sq = [["line", [0, 0], [1, 0]], ["line", [1, 0], [1, 1]], ["line", [1, 1], [0, 1]], ["line", [0, 1], [0, 0]]]
+        try:
+            extrude_step({"name": "probe", "sections": [{"z0": 0.0, "z1": 1.0, "loops": [sq]},
+                                                         {"z0": 1.0, "z1": 2.0, "loops": [sq]}]}, ss_bin)
+            _CAN_SECTIONS[ss_bin] = True
+        except ExtrudeError:
+            _CAN_SECTIONS[ss_bin] = False
+    return _CAN_SECTIONS[ss_bin]
 
 
 def extrude_step(spec: dict, ss_bin: str | None = None) -> bytes:
@@ -208,6 +235,81 @@ def extrude_step(spec: dict, ss_bin: str | None = None) -> bytes:
             return f.read()
 
 
+# ── the assembly STEP (small_step assemble) ──────────────────────────────────
+
+class AssembleError(ExtrudeError):
+    """small_step couldn't assemble the parts: its message, for the download's error."""
+
+
+def lower_sections(m: dict) -> dict:
+    """The manifest for a small_step whose extrude takes no stacked sections:
+    each section its own part ("<name>-1", "<name>-2" …), lifted to its z0.
+    The shaft then comes in pieces, but each is the right shape and the rings
+    still sit in grooves; with sections it is one solid again."""
+    def lifted(pl, dz):
+        o = list(pl.get("origin", [0.0, 0.0, 0.0]))
+        return dict(pl, origin=[o[0], o[1], o[2] + dz])
+
+    parts = []
+    for p in m["parts"]:
+        ex = p.get("extrude")
+        if not ex or "sections" not in ex:
+            parts.append(p)
+            continue
+        for i, s in enumerate(ex["sections"], 1):
+            name = f"{p['name']}-{i}"
+            q = {"name": name, "extrude": {"name": name, "thickness": s["z1"] - s["z0"], "loops": s["loops"]},
+                 "placement": lifted(p.get("placement", {}), s["z0"])}
+            if p.get("instances"):
+                q["instances"] = [lifted(pl, s["z0"]) for pl in p["instances"]]
+            parts.append(q)
+    return dict(m, parts=parts)
+
+
+def single_make(m: dict) -> dict | None:
+    """The one part when the manifest is a single made part (one pulley ticked
+    alone): its STEP is the file, no assembly around it."""
+    ps = m["parts"]
+    return ps[0] if len(ps) == 1 and "make" in ps[0] and not ps[0].get("instances") else None
+
+
+def assemble_step(m: dict, make_step, ss_bin: str | None = None) -> bytes:
+    """The manifest as one assembly STEP. make_step(make) -> bytes builds each
+    "make" part (the worker's pulley and belt STEPs); they are written beside
+    the manifest and named by path, the extrude parts go in as they are:
+    `small_step assemble --json manifest.json -o assembly.step`."""
+    import json
+    import os
+    import subprocess
+    import tempfile
+    lone = single_make(m)
+    if lone:                                     # nothing to assemble: the part's own STEP, in its own frame
+        return make_step(lone["make"])
+    ss_bin = ss_bin or ss_binary()
+    if not can_assemble(ss_bin):
+        raise AssembleError(f"this small_step ({ss_bin or 'none found'}) can't assemble")
+    if any("sections" in (p.get("extrude") or {}) for p in m["parts"]) and not can_sections(ss_bin):
+        m = lower_sections(m)
+    with tempfile.TemporaryDirectory() as tmp:
+        parts = []
+        for i, p in enumerate(m["parts"]):
+            q = {k: v for k, v in p.items() if k != "make"}
+            if "make" in p:
+                q["step"] = f"part{i}.step"
+                with open(os.path.join(tmp, q["step"]), "wb") as f:
+                    f.write(make_step(p["make"]))
+            parts.append(q)
+        src, out = os.path.join(tmp, "manifest.json"), os.path.join(tmp, "assembly.step")
+        with open(src, "w", encoding="utf-8") as f:
+            json.dump(dict(m, parts=parts), f)
+        r = subprocess.run([ss_bin, "assemble", "--json", src, "-o", out], capture_output=True, text=True, timeout=120)
+        if r.returncode != 0 or not os.path.isfile(out):
+            msg = (r.stderr or r.stdout or "").strip().splitlines()
+            raise AssembleError("assembly: " + (msg[-1] if msg else f"exit {r.returncode}"))
+        with open(out, "rb") as f:
+            return f.read()
+
+
 # ── the manifest ─────────────────────────────────────────────────────────────
 
 def _place(origin_x: float, z: float, rot_deg: float) -> dict:
@@ -223,7 +325,7 @@ def _add(parts: list, part: dict) -> None:
     parts.append(part)
 
 
-def _spline_parts(args, n: int, stem: str, x: float, rot: float, parts: list) -> None:
+def _spline_parts(args, n: int, stem: str, x: float, rot: float, add) -> None:
     import app as A
     from exporters.spline_parts import _span_z, ends
     pfx = "p2_" if n == 2 else ""
@@ -252,7 +354,7 @@ def _spline_parts(args, n: int, stem: str, x: float, rot: float, parts: list) ->
         in_groove = any(g0 - 1e-9 <= z0 and z1 <= g1 + 1e-9 for g0, g1 in grooves)
         loop = clip_to_circle(shaft, rt["d2"] / 2.0) if in_groove else shaft
         sections.append({"z0": z0, "z1": z1, "loops": [loop_json(loop)], "groove": in_groove})
-    _add(parts, {"name": f"{stem}-spline-shaft", "extrude": {"name": f"{stem}-spline-shaft",
+    add(f"sh{n}", {"name": f"{stem}-spline-shaft", "extrude": {"name": f"{stem}-spline-shaft",
                                                              "sections": sections},
                  "placement": _place(x, 0.0, rot)})
     if not rt:
@@ -263,17 +365,19 @@ def _spline_parts(args, n: int, stem: str, x: float, rot: float, parts: list) ->
         st = rt["stack"][face]
         if st["washer"]:
             w0 = lo + _span_z(face, span, st["washer"])[0]
-            _add(parts, {"name": f"{stem}-spline-washer",
+            add(f"wa{n}", {"name": f"{stem}-spline-washer",
                          "extrude": {"name": f"{stem}-spline-washer", "thickness": rt["washer_t"],
                                      "loops": [loop_json(circle(rt["washer_od"] / 2.0)),
                                                loop_json(reversed_loop(spl.path(sp_obj)))]},
                          "placement": _place(x, w0, rot)})
         r0 = lo + _span_z(face, span, st["ring"])[0]
-        _add(parts, {"name": fitted["name"], "extrude": fitted, "placement": _place(x, r0, rot)})
+        add(f"sh{n}", {"name": fitted["name"], "extrude": fitted, "placement": _place(x, r0, rot)})   # in the shaft's groove
 
 
-def manifest(args) -> dict:
-    """The assembly's parts and where they go, for a design's query (module docstring)."""
+def manifest(args, only=None) -> dict:
+    """The assembly's parts and where they go, for a design's query (module docstring).
+    only: the Download window's part ids to keep (p1, p2, belt, sh1, wa1 …; a
+    ring goes with its shaft, whose groove it sits in); None keeps them all."""
     import app as A
     from geometry.pulley_geometry import BELT_FAMILIES, build_two_pulley_belt
     family, pitch = args.get("family", "HTD"), args.get("pitch", "5M")
@@ -299,12 +403,17 @@ def manifest(args) -> dict:
             rot = {1: -math.degrees(phi_l), 2: -math.degrees(phi_r)}
 
     parts: list = []
+
+    def add(pid: str, part: dict) -> None:
+        if only is None or pid in only:
+            _add(parts, part)
+
     for n in teeth:
-        parts.append({"name": stems[n], "make": {"kind": "pulley", "pulley": n},
+        add(f"p{n}", {"name": stems[n], "make": {"kind": "pulley", "pulley": n},
                       "placement": _place(x[n], 0.0, rot[n])})
     if belt:
-        parts.append({"name": f"{family}-{pitch}-belt", "make": {"kind": "belt"},
-                      "placement": _place(0.0, 0.0, 0.0)})
+        add("belt", {"name": f"{family}-{pitch}-belt", "make": {"kind": "belt"},
+                     "placement": _place(0.0, 0.0, 0.0)})
     for n in teeth:
-        _spline_parts(args, n, stems[n], x[n], rot[n], parts)
+        _spline_parts(args, n, stems[n], x[n], rot[n], add)
     return {"name": name, "parts": parts}

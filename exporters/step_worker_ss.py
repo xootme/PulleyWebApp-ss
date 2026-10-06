@@ -31,6 +31,11 @@ export_type controls the operation:
     Parts are merged with entity renumbering; no positional offset applied
     (all parts at origin — experimental).
 
+  'assembly':
+    The whole design as one assembly STEP: each part the STEP made alone at the
+    origin, then small_step assemble names and places them (exporters/assembly.py).
+    Required params: manifest, kw ({"1": kw1, "2": kw2}), belt_kw (with a belt).
+
 Writes STEP bytes to stdout; errors to stderr.
 
 Requires env var SMALL_STEP_BIN pointing to the small_step binary.
@@ -650,6 +655,24 @@ def _export_flange(params, ss_bin):
     sys.stdout.buffer.write(_run_cmd(cmd))
 
 
+def _generate_assembly_bytes(params, ss_bin):
+    """The whole design as one assembly STEP (exporters/assembly.py): params are
+    {"manifest": assembly.manifest(...), "kw": {"1": kw1, "2": kw2}, "belt_kw": ...};
+    each "make" part is the STEP this worker already makes, alone and unmoved —
+    small_step assemble places it."""
+    from exporters.assembly import assemble_step
+    kws, belt_kw = params['kw'], params.get('belt_kw')
+
+    def make(spec):
+        if spec['kind'] == 'pulley':
+            return _generate_pulley_bytes(dict(kws[str(spec['pulley'])]), ss_bin)
+        if spec['kind'] == 'belt' and belt_kw:
+            return _generate_belt_bytes(dict(belt_kw), ss_bin)
+        raise RuntimeError(f'no STEP for part {spec}')
+
+    return assemble_step(params['manifest'], make, ss_bin)
+
+
 def run(params: dict, ss_bin: str) -> bytes:
     """Generate STEP bytes in-process (used by the PyInstaller frozen build).
 
@@ -682,6 +705,9 @@ def run(params: dict, ss_bin: str) -> bytes:
 
     if export_type == 'belt':
         return _generate_belt_bytes(params, ss_bin)
+
+    if export_type == 'assembly':
+        return _generate_assembly_bytes(params, ss_bin)
 
     if export_type == 'all':
         kw2      = params.pop('kw2', None)
@@ -775,6 +801,10 @@ def main():
 
     if export_type == 'belt':
         sys.stdout.buffer.write(_generate_belt_bytes(params, ss_bin))
+        return
+
+    if export_type == 'assembly':
+        sys.stdout.buffer.write(_generate_assembly_bytes(params, ss_bin))
         return
 
     if export_type == 'all':
