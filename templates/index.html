@@ -3921,6 +3921,10 @@ async function update3DPreview() {
   try {
     const params = buildParams();
     params.belt_height = document.getElementById('belt_height').value;
+    // The build stamp: the preview is cached for an hour (max-age), so without it a
+    // browser kept showing the last build's shapes after a deploy or restart (the
+    // shaped retaining ring, 2026-10-06). Within one build the cache still serves.
+    params.b = BUILD_TIME;
     const url = '/api/preview-stl?' + new URLSearchParams(params);
     await init3D();
     load3DModel(url);
