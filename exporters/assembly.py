@@ -151,6 +151,63 @@ def clip_to_circle(segs, r: float) -> list:
     return out
 
 
+# ── a part's STEP from its outline (small_step extrude) ──────────────────────
+
+class ExtrudeError(RuntimeError):
+    """small_step couldn't extrude a part: its message, for the download's error."""
+
+
+def ss_binary() -> str | None:
+    """The small_step binary the worker would run: SMALL_STEP_BIN, else the
+    repo's Linux build (Cloud Run sets SMALL_STEP_BIN to it)."""
+    import os
+    env = os.environ.get("SMALL_STEP_BIN", "").strip()
+    if env and os.path.isfile(env):
+        return env
+    repo = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "small_step_linux")
+    return repo if os.name != "nt" and os.path.isfile(repo) else None
+
+
+_CAN_EXTRUDE: dict = {}
+
+
+def can_extrude(ss_bin: str | None) -> bool:
+    """Does this binary have `extrude`? Asked of the binary itself: small_step
+    0.7.0 shipped both with and without it under the one version string."""
+    import subprocess
+    if not ss_bin:
+        return False
+    if ss_bin not in _CAN_EXTRUDE:
+        try:
+            out = subprocess.run([ss_bin, "--help"], capture_output=True, text=True, timeout=10)
+            _CAN_EXTRUDE[ss_bin] = "extrude:" in (out.stdout + out.stderr)
+        except (OSError, subprocess.SubprocessError):
+            _CAN_EXTRUDE[ss_bin] = False
+    return _CAN_EXTRUDE[ss_bin]
+
+
+def extrude_step(spec: dict, ss_bin: str | None = None) -> bytes:
+    """One part's STEP from an extrude spec (ring_outline.Outline.as_dict(), the
+    washer's, the shaft's): `small_step extrude --json part.json -o part.step`."""
+    import json
+    import os
+    import subprocess
+    import tempfile
+    ss_bin = ss_bin or ss_binary()
+    if not can_extrude(ss_bin):
+        raise ExtrudeError(f"this small_step ({ss_bin or 'none found'}) can't extrude")
+    with tempfile.TemporaryDirectory() as tmp:
+        src, out = os.path.join(tmp, "part.json"), os.path.join(tmp, "part.step")
+        with open(src, "w", encoding="utf-8") as f:
+            json.dump(spec, f)
+        r = subprocess.run([ss_bin, "extrude", "--json", src, "-o", out], capture_output=True, text=True, timeout=120)
+        if r.returncode != 0 or not os.path.isfile(out):
+            msg = (r.stderr or r.stdout or "").strip().splitlines()
+            raise ExtrudeError(f"{spec.get('name', 'part')}: " + (msg[-1] if msg else f"exit {r.returncode}"))
+        with open(out, "rb") as f:
+            return f.read()
+
+
 # ── the manifest ─────────────────────────────────────────────────────────────
 
 def _place(origin_x: float, z: float, rot_deg: float) -> dict:
