@@ -88,17 +88,17 @@ def shaft_stl(spline, span: float) -> bytes:
     return mesh.export(file_type='stl')
 
 
-def _ring_mesh(rt, gap_deg: float = 40.0):
-    """A retaining ring as it sits in its groove: an open ring from d2 out
-    to its lugs (a past the groove), s thick, standing on z = 0."""
-    from shapely.geometry import Polygon as _P
-    r_in, r_out = rt['d2'] / 2.0, rt['d2'] / 2.0 + rt['a']
-    ring = ShapelyPoint(0, 0).buffer(r_out, resolution=32).difference(
-        ShapelyPoint(0, 0).buffer(r_in, resolution=32))
-    half = math.radians(gap_deg / 2.0)
-    wedge = _P([(0, 0), (2 * r_out * math.cos(half), 2 * r_out * math.sin(half)),
-                (2 * r_out * math.cos(half), -2 * r_out * math.sin(half))])
-    return trimesh.creation.extrude_polygon(shapely_orient(ring.difference(wedge), sign=1.0), rt['s'])
+def _ring_mesh(spline):
+    """A retaining ring as it sits in its groove, standing on z = 0: its DIN 471
+    outline (the lugs and their holes, the band tapering to its back) closed
+    onto the groove's floor (cct_common.ring_outline.installed), s thick. The
+    same shape the assembly STEP extrudes (exporters/assembly.py), so the view
+    and the file show one ring. It was a plain open annulus from d2 out to the
+    lugs, drawn before the outline existed."""
+    from cct_common import retaining_rings as rr
+    from cct_common import ring_outline as ro
+    fitted = ro.installed(rr.for_spline(_as_spline(spline)))
+    return trimesh.creation.extrude_polygon(shapely_orient(fitted.polygon(), sign=1.0), fitted.thickness)
 
 
 def _washer_mesh(spline):
@@ -121,7 +121,7 @@ def preview_parts(spline, span: float) -> dict:
     rings, washers = [], []
     for face in faces:
         st = rt['stack'][face]                                   # in the counterbore or on the face
-        r = _ring_mesh(rt)
+        r = _ring_mesh(spline)
         r.apply_translation([0.0, 0.0, _span_z(face, span, st['ring'])[0]])
         rings.append(r)
         if st['washer']:

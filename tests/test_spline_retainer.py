@@ -519,6 +519,24 @@ def test_preview_parts_sit_in_the_pulley(client):
     assert parts['shaft'] is not None and parts['rings'] is None and parts['washers'] is None
 
 
+def test_preview_ring_is_the_shaped_ring(client):
+    """The 3D view's ring is the DIN 471 outline fitted to its groove — the lugs
+    with their holes, the tapered band — the shape the assembly STEP extrudes,
+    not the plain open annulus it once was."""
+    from app import _spline_of
+    from cct_common import retaining_rings as rr
+    from cct_common import ring_outline as ro
+    from exporters.spline_parts import _as_spline
+    q = {**BASE, **STRAIGHT, 'spline_ring_top': '1', 'spline_ring_bottom': '0'}
+    ring = _parts(client, {**q, 'part': 'spline'})['rings']
+    fitted = ro.installed(rr.for_spline(_as_spline(_spline_of(q))))
+    poly = fitted.polygon()
+    assert ring.is_watertight
+    assert len(poly.interiors) == 2                                     # a hole in each lug
+    assert ring.volume == pytest.approx(poly.area * fitted.thickness, rel=1e-3)
+    assert float(ring.bounds[1][2] - ring.bounds[0][2]) == pytest.approx(fitted.thickness, abs=1e-6)
+
+
 def test_preview_parts_in_a_drive(client):
     q = {**BASE, 'dual': 'true', 'p2_teeth': '30', 'center_distance': '80', 'p2_bore': '8',
          **{f'p2_{k}': v for k, v in {**INVOLUTE, **BOTH}.items()}}
