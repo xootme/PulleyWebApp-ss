@@ -3872,6 +3872,11 @@ function applyDimsFix() {
   for (const [id, value] of Object.entries(dimsFix.set)) {
     const el = document.getElementById(id);
     if (!el) continue;
+    if (el.type === 'checkbox') {          // a tick (the ring's Make counterbore): set it, act on change
+      el.checked = !!value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      continue;
+    }
     el.value = value;
     // a menu (the spline's Size) acts on change, a number field on input
     el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));

@@ -1114,6 +1114,22 @@ def _as_spline_obj(sp):
     return _as_spline(sp)
 
 
+def _nut_counterbore_problems(args, pfx, who, sp):
+    """A captured nut and the ring's top counterbore on the hub's top face
+    (geometry/nut_counterbore.py): the clauses this design breaks, the same
+    check the STEP worker refuses on."""
+    from geometry.nut_counterbore import problems
+    hub_od, hub_h, sd, sc, cn, fd, _kw_w, kw_h = _parse_hub_params(args, pfx)
+    try:
+        ss = _set_screw(args, pfx)
+    except ValueError:
+        return []
+    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
+    return problems(bore_mm=bore_mm, hub_od_mm=hub_od, hub_height_mm=hub_h, screw_count=sc,
+                    captured_nut=cn, screw_dia_mm=sd, spline=sp, flat_depth_mm=fd, keyway_h_mm=kw_h,
+                    nut=ss.nut if ss else None, hole=None, who=who)   # the nominal hole, as the STEP cuts it
+
+
 def _counterbore_warnings(args, pfx, who, rt, root_d, three_d):
     """Where the ring's counterbore (ADR-017) can't do its job: too wide for
     the material around it. (A flange or plate over its face has the
@@ -1391,6 +1407,12 @@ def _dimensions(args):
                 if rt['washer_t'] > 0:
                     p.update(washer_od=rt['washer_od'], washer_t=rt['washer_t'])
                 warnings += _counterbore_warnings(args, pfx, who, rt, root_d, three_d)
+                if three_d:
+                    nc = _nut_counterbore_problems(args, pfx, who, sp)
+                    if nc:
+                        warnings += nc
+                        fix_set[f'spline{n}_cb_top'] = False
+                        changes.append(f'{who}no top counterbore (the pocket of the captured nut opens there)')
             sp_fix, sp_changes = _spline_fix(args, pfx, n, sp_obj, root_d, three_d)
             fix_set.update(sp_fix)
             changes += sp_changes

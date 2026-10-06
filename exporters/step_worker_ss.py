@@ -51,6 +51,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SMALL_STEP_MIN_VERSION = (0, 6, 0)
 
 _version_checked: dict = {}   # bin_path → True once verified
+# small_step builds a captured nut under a top ring counterbore correctly from
+# this version (and refuses the rest by name); before it, every such solid was invalid.
+NUT_COUNTERBORE_VERSION = (0, 7, 0)
+_versions: dict = {}          # bin_path → (major, minor, patch)
+
+
+def _binary_version(ss_bin: str) -> tuple:
+    """The binary's version, e.g. (0, 7, 0); (0, 0, 0) if it won't say."""
+    if ss_bin not in _versions:
+        try:
+            out = subprocess.run([ss_bin, '--version'], capture_output=True, text=True, timeout=5).stdout
+            _versions[ss_bin] = tuple(int(x) for x in out.split()[1].split('.'))
+        except (OSError, IndexError, ValueError, subprocess.SubprocessError):
+            _versions[ss_bin] = (0, 0, 0)
+    return _versions[ss_bin]
 
 
 def _check_binary_version(ss_bin: str) -> None:
@@ -252,6 +267,11 @@ def _merge_steps(step_parts: list, label: str = 'assembly') -> bytes:
     return (header + '\n'.join(all_data) + '\nENDSEC;\nEND-ISO-10303-21;\n').encode('utf-8')
 
 
+class Refused(ValueError):
+    """A design STEP can't be made of, with the reason the user sees: main()
+    prints only the message, which the app returns as the download's error."""
+
+
 def _build_pulley_cmd(params, ss_bin, dxf_tmp):
     """Build the small_step combined command for a pulley."""
     family          = params['family']
@@ -379,6 +399,28 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
                 # +X, so the 90 default lands on a CORNER and the screw would
                 # meet an edge instead of a face (report section 4).
                 cmd += ['--screw-step', '120']
+
+    # A captured nut and a top ring counterbore share the hub's top face: refuse
+    # what can't be built, by name (geometry/nut_counterbore.py; the small_step
+    # session's handoff, 2026-10-06: every such design gave an invalid STEP).
+    from geometry.nut_counterbore import problems as _nut_cb_problems
+    why = _nut_cb_problems(
+        bore_mm=bore_mm, hub_od_mm=hub_od_mm, hub_height_mm=hub_height_mm,
+        screw_count=int(params.get('screw_count', 0)), captured_nut=bool(params.get('captured_nut', False)),
+        screw_dia_mm=float(params.get('screw_dia_mm', 0.0)), spline=spline,
+        flat_depth_mm=flat_depth_mm, keyway_h_mm=keyway_h_mm,
+        nut=params.get('screw_nut'), hole=None)   # small_step cuts the nominal hole (no --screw-hole sent)
+    if why:
+        raise Refused(' '.join(w[0].upper() + w[1:] for w in why))
+    rt_ = (spline or {}).get('retainer') or {}
+    if (_binary_version(ss_bin) < NUT_COUNTERBORE_VERSION and bool(params.get('captured_nut', False))
+            and int(params.get('screw_count', 0)) > 0 and hub_od_mm > bore_mm and hub_height_mm > 0
+            and 'top' in (rt_.get('cb_faces', rt_.get('faces')) or [])):
+        # Before 0.7.0 small_step made an INVALID solid of any captured nut under a
+        # top counterbore, conforming or not (measured, the handoff of 2026-10-06).
+        raise Refused("A captured nut and the retaining ring's top counterbore can't be made in STEP "
+                      "together yet — untick Make counterbore on the top face, or hold the screw by its "
+                      "thread or an insert instead of a nut.")
 
     # Retaining-ring counterbores, one per ringed face (report section 3).
     retainer = (spline or {}).get('retainer') or {}
@@ -719,5 +761,13 @@ def main():
     sys.stdout.buffer.write(_generate_pulley_bytes(params, ss_bin))
 
 
+def _main():
+    try:
+        main()
+    except Refused as e:
+        sys.stderr.write(f'{e}\n')
+        sys.exit(2)
+
+
 if __name__ == '__main__':
-    main()
+    _main()

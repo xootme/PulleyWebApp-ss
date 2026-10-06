@@ -742,11 +742,14 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
 
         else:
             z_screw  = hub_z_start + flange_ext_mm + hub_height_mm / 2.0
-            # One-sided: from the hub OD in to the bore, not out the far side
-            # (matches small_step's STEP and the cadquery path); +0.5 overshoot
-            # on each end so the bore and hub surface cuts are clean.
-            hole_len = R_hub - R_bore + 1.0
-            hole_cx  = (R_hub + R_bore) / 2.0
+            # One-sided: from the hub OD in to the bore — on a D-flat in to the
+            # flat, or the D's segment plugs the hole and the screw can't reach
+            # the shaft (small_step 0.7.0 runs it to the flat too; it stopped at
+            # the round bore before, 2026-10-06). +0.5 overshoot on each end so
+            # the cuts are clean.
+            r_in     = R_bore - flat_depth_mm if flat_depth_mm > 0.0 else R_bore
+            hole_len = R_hub - r_in + 1.0
+            hole_cx  = (R_hub + r_in) / 2.0
 
         for angle in screw_angles:
             # ── Radial screw hole ─────────────────────────────────────────────
@@ -1351,10 +1354,12 @@ def generate_pulley_step(
                 pkt_cx   = R_bore - _POCKET_OVERLAP
         else:
             z_screw  = hub_z_start + _flange_ext_step + hub_height_mm / 2.0
-            # Hole goes from hub OD inward to bore — not through the other side.
+            # Hole goes from hub OD inward to bore — on a D-flat to the flat (see
+            # the first mesh path) — not through the other side.
             # +0.5 overshoot on each end so the bore and hub surface cuts are clean.
-            hole_len = R_hub - R_bore + 1.0
-            hole_cx  = (R_hub + R_bore) / 2.0
+            r_in     = R_bore - flat_depth_mm if flat_depth_mm > 0.0 else R_bore
+            hole_len = R_hub - r_in + 1.0
+            hole_cx  = (R_hub + r_in) / 2.0
 
         for angle in screw_angles:
             x_start = hole_cx - hole_len / 2.0
@@ -2223,9 +2228,11 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
                 pkt_cx   = R_bore - _POCKET_OVERLAP
         else:
             z_screw  = hub_z_start + _flange_ext_mesh + hub_height_mm / 2.0
-            # One-sided: from the hub OD in to the bore (see the first mesh path).
-            hole_len = R_hub - R_bore + 1.0
-            hole_cx  = (R_hub + R_bore) / 2.0
+            # One-sided: from the hub OD in to the bore, on a D-flat to the flat
+            # (see the first mesh path).
+            r_in     = R_bore - flat_depth_mm if flat_depth_mm > 0.0 else R_bore
+            hole_len = R_hub - r_in + 1.0
+            hole_cx  = (R_hub + r_in) / 2.0
 
         for angle in screw_angles:
             hole = _screw_hole_cutter(screw_dia_mm, hole_len, set_screw)
