@@ -2922,16 +2922,21 @@ const _DL_RANK = { step: 3, stl: 2, svg: 1, dxf: 1 };
 
 // Flange STLs that exist as parts of their own for pulley n (upper flange when
 // 3D-printed separate; the supported assembly when integrated with supports).
+// A pulley's own flanges part: only a printed top flange made as a separate part.
+// Printed in place, the flanges are in the pulley's STL (and its supports in the
+// -with-supports copy beside it), so there is no flanges part (the owner, 2026-10-03).
 function _flangeFiles(n) {
   const on = id => !!document.getElementById(id)?.checked;
-  if (!on(`flange${n}_enabled`) || !on(`flange${n}_3dprint`)) return [];
-  if (on(`flange${n}_top_separate`)) {
-    return [{ path: '/download/flange-stl', params: Object.assign(_flangeParams(n), { flange_which: 'top' }) }];
-  }
-  if (on(`flange${n}_supports_enabled`)) {
-    return [{ path: '/download/flange-assembly', params: _flangeAsmParams(n) }];
-  }
-  return [];
+  if (!on(`flange${n}_enabled`) || !on(`flange${n}_3dprint`) || !on(`flange${n}_top_separate`)) return [];
+  return [{ path: '/download/flange-stl', params: Object.assign(_flangeParams(n), { flange_which: 'top' }) }];
+}
+
+// Print supports go with a printed top flange made in place: the pulley's STL then
+// comes twice, as is and with the supports (-with-supports).
+function _supportsOn(n) {
+  const on = id => !!document.getElementById(id)?.checked;
+  return on(`flange${n}_enabled`) && on(`flange${n}_3dprint`) && !on(`flange${n}_top_separate`)
+         && on(`flange${n}_supports_enabled`);
 }
 
 function _dlParts(threeD) {
@@ -2984,7 +2989,9 @@ function _dlFiles(part, fmt) {
     const rim = rimWrap && rimWrap.style.display !== 'none'
                 && document.getElementById(`rim_layer${n}_enabled`).checked;
     if (fmt === 'step') return [q('/download/step', _stepParams(n))];
-    if (fmt === 'stl')  { const p = base(); p.belt_height = beltH(); return [q('/download/stl', p)]; }
+    if (fmt === 'stl')  { const p = base(); p.belt_height = beltH();
+                          return [q('/download/stl', p)].concat(
+                            _supportsOn(n) ? [q('/download/stl', Object.assign({}, p, { with_supports: '1' }))] : []); }
     if (fmt === 'svg')  { const p = base(); p.include_data = '1';
                           return [q('/download/svg', p)].concat(rim ? [q('/download/svg-rim', p)] : []); }
     if (fmt === 'dxf')  { const p = base();
@@ -3701,6 +3708,8 @@ async function downloadSTL(n) {
   params.belt_height = document.getElementById('belt_height').value;
   if (n === 2) params.pulley = '2';
   await _cctGuardedDownload(_dlUrl('/download/stl?' + new URLSearchParams(params)));
+  if (_supportsOn(n))
+    await _cctGuardedDownload(_dlUrl('/download/stl?' + new URLSearchParams(Object.assign(params, { with_supports: '1' }))));
 }
 
 // ── Three.js 3D preview ───────────────────────────────────────────────────────

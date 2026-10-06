@@ -174,7 +174,7 @@ def _params(families: dict, screw_sizes: list) -> list:
 PARTS = [
     Part("pulley1", "Pulley 1", ("step", "stl", "svg", "dxf")),
     Part("pulley2", "Pulley 2", ("step", "stl", "svg", "dxf"), when="dual"),
-    Part("belt", "Belt", ("step", "stl", "svg", "dxf"), when="a belt family"),
+    Part("belt", "Belt", ("step", "stl", "svg", "dxf"), when="a belt family; STEP and STL need dual"),
     Part("drive", "Whole drive drawing", ("dxf",), when="dual, a belt family"),
     Part("shaft1", "Pulley 1 sample splined shaft", ("stl", "svg", "dxf"), when="pulley 1 has a spline or hex bore"),
     Part("washer1", "Pulley 1 splined washer", ("stl", "svg", "dxf"), when="pulley 1 has a ring and spline_washer"),
@@ -272,7 +272,15 @@ def files(query: dict, parts: list, formats: list) -> list:
         teeth = query.get(f"{pfx}teeth", "")
         name = f"{stem}-{teeth}T{'-P2' if n == 2 else ''}"
         add(f"pulley{n}", "step", "/download/step", base, f"{name}.step")
-        add(f"pulley{n}", "stl", "/download/stl", base, f"{name}.stl")
+        # The server's STL names: -1flange when the top flange is a separate part, and
+        # with print supports (a top printed in place) a -with-supports copy too.
+        printed = query.get(f"{pfx}flange_enabled") == "1" and query.get(f"{pfx}flange_3dprint") == "1"
+        separate = query.get(f"{pfx}flange_top_separate", "1") == "1"
+        stl_name = f"{name}-1flange" if printed and separate else name
+        add(f"pulley{n}", "stl", "/download/stl", base, f"{stl_name}.stl")
+        if printed and not separate and query.get(f"{pfx}flange_supports_enabled") == "1":
+            add(f"pulley{n}", "stl", "/download/stl", dict(base, with_supports="1"),
+                f"{stl_name}-with-supports.stl")
         add(f"pulley{n}", "svg", "/download/svg", dict(base, include_data="1"), f"{name}.svg")
         add(f"pulley{n}", "dxf", "/download/dxf", base, f"{name}.dxf")
         sp = _spline_of(query, pfx)
@@ -293,7 +301,9 @@ def files(query: dict, parts: list, formats: list) -> list:
             belt = dict(query, n_belt=str(n_belt))
         else:
             belt = {"family": family, "pitch": pitch, "belt_height": query.get("belt_height", "10")}
-        for fmt in ("step", "stl", "svg", "dxf"):
+        # a belt's STEP and STL are of the drive's loop: two pulleys only (the server
+        # refuses them for one)
+        for fmt in ("step", "stl", "svg", "dxf") if dual else ("svg", "dxf"):
             add("belt", fmt, f"/download/belt-{fmt}", belt, f"{stem}-belt.{fmt}")
         if dual:
             add("drive", "dxf", "/download/all-dxf", belt, f"{stem}-drive.dxf")

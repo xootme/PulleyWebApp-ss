@@ -2595,9 +2595,28 @@ def download_stl():
     """Return binary STL file download."""
     _consume_web_token(request)
     try:
-        stl, stem, _fl_enabled, _ = _pulley_stl(request.args)
-        fl_sfx = '+flange' if _fl_enabled else ''
-        fname = f'{stem}{fl_sfx}.stl'
+        args = request.args
+        stl, stem, _fl_enabled, _ = _pulley_stl(args)
+        pulley = args.get('pulley', '1')
+        fp = _parse_flange_params(args, 'p2_' if pulley == '2' else '') if _fl_enabled else {}
+        printed = _fl_enabled and fp.get('flange_3dprint')
+        # Names (the owner, 2026-10-03): GT-2M-30T is the pulley, with no flanges or
+        # both; -1flange when its top flange is a separate part, so only one is on it;
+        # -with-supports for the copy with print supports (with_supports=1).
+        fname = stem + ('-1flange' if printed and fp.get('top_separate') else '')
+        if args.get('with_supports') == '1':
+            family, pitch, teeth, bore, belt_h, cl_mm, _bl, pr_ex = _parse_stl_params(args, pulley)
+            ribs = build_support_ribs(fp, family, pitch, teeth, bore, belt_h,
+                                      clearance_mm=cl_mm, print_extra_mm=pr_ex) if printed else []
+            if not ribs:
+                return _api_error('Print supports go with a printed top flange made in place '
+                                  '(not a separate part) and Add Print Supports ticked.')
+            import io as _io_s
+            import trimesh as _tm_s
+            stl = _tm_s.util.concatenate([_tm_s.load(_io_s.BytesIO(stl), file_type='stl')] + ribs
+                                         ).export(file_type='stl')
+            fname += '-with-supports'
+        fname += '.stl'
         stl = _embed_stl(stl, request.args)
         # Mirror to a connected CAD addin's watch folder (CCT_Import) so it auto-
         # imports, same as STEP downloads; skip the browser download if it landed.

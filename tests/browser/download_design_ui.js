@@ -45,6 +45,9 @@ const DESIGNS = [
   ['spokes + rim layer', `family=HTD&pitch=8M&teeth=48&bore=12&${SPOKES}&${DUAL}&p2_spokes_enabled=1&p2_spokes_hub_od=22&p2_spokes_rim_depth=5&p2_spokes_width=6&p2_spokes_count=4`, ['2d', '3d'], 'rim'],
   ['metal flanges on spokes', `family=HTD&pitch=8M&teeth=48&bore=12&${SPOKES}&flange_enabled=1&flange_3dprint=0&flange_rim_radius=4.2&flange_plate_height=1`, ['3d']],
   ['printed flanges: separate top, nubs, supports', 'family=HTD&pitch=5M&teeth=40&bore=8&flange_enabled=1&flange_3dprint=1&flange_top_separate=1&flange_nubs_enabled=1&flange_supports_enabled=1&flange_rim_radius=3', ['3d']],
+  // printed in place with supports: no flanges part; the pulley's STL twice, plain and
+  // -with-supports (the owner, 2026-10-03)
+  ['printed flanges in place + supports', `family=GT&pitch=2M&teeth=30&bore=5&belt_height=6&flange_enabled=1&flange_3dprint=1&flange_top_separate=0&flange_supports_enabled=1&flange_rim_radius=2.5&${DUAL}&p2_flange_enabled=1&p2_flange_3dprint=1&p2_flange_top_separate=1&p2_flange_rim_radius=2.5`, ['3d']],
   ['splines on both + rings + washer', `family=HTD&pitch=8M&teeth=24&belt_height=10&${SPLINE}&spline_ring_top=1&spline_ring_bottom=1&spline_washer=1&${DUAL}&p2_bore_shape=spline&p2_spline_type=involute&p2_spline_m=1.5&p2_spline_z=16&p2_spline_pa=30&p2_spline_root=flat&p2_spline_ring_top=1`, ['2d', '3d']],
   ['hex bar, no counterbore', 'family=HTD&pitch=5M&teeth=40&bore=8&bore_shape=spline&spline_type=hex&spline_af=12.7&spline_series=inch&spline_ring_top=1&spline_cb_top=0&hub_od=40&hub_height=10&hub_screw_size=M4&hub_screw_count=2', ['3d']],
   ['imperial + T', `family=Imperial&pitch=XL&teeth=20&bore=6&${DUAL}`, ['2d']],
@@ -109,6 +112,18 @@ async function main() {
       })()`);
       const label = `${name} [${mode}]`;
       check(`${label}: the window offers files`, rec.files.length > 0, rec.parts);
+      // a "Pulley n flanges" part only for a printed top flange made as a separate part,
+      // and the pulley's STL with supports beside it only for one printed in place
+      const q = new URLSearchParams(query), pre = n => (n === 2 ? 'p2_' : '');
+      const sep = n => q.get(pre(n) + 'flange_enabled') === '1' && q.get(pre(n) + 'flange_3dprint') === '1'
+                       && q.get(pre(n) + 'flange_top_separate') === '1';
+      const sup = n => q.get(pre(n) + 'flange_enabled') === '1' && q.get(pre(n) + 'flange_3dprint') === '1'
+                       && q.get(pre(n) + 'flange_top_separate') === '0' && q.get(pre(n) + 'flange_supports_enabled') === '1';
+      if (mode === '3d') for (const n of [1, 2]) {
+        check(`${label}: pulley ${n} flanges part only for a separate top`, rec.parts.includes('fl' + n) === sep(n), rec.parts);
+        const withSup = rec.files.filter(f => f.part === 'p' + n && f.fmt === 'stl' && f.params.with_supports === '1');
+        check(`${label}: pulley ${n} STL with supports only with supports in place`, withSup.length === (sup(n) ? 1 : 0), withSup.length);
+      }
       // every file downloads (tokens off)
       for (const f of rec.files) {
         const url = f.path + '?' + new URLSearchParams(f.params);
