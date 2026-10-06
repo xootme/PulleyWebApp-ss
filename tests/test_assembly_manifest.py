@@ -70,7 +70,8 @@ def _all_loops(part):
 def test_one_pulley_is_one_part_at_the_origin(client):
     m = asm.manifest(BASE)
     assert m == {'name': 'HTD-5M-30T', 'parts': [{'name': 'HTD-5M-30T', 'make': {'kind': 'pulley', 'pulley': 1},
-                                                    'placement': {'origin': [0.0, 0.0, 0.0], 'rotate_z_deg': 0.0}}]}
+                                                    'placement': {'origin': [0.0, 0.0, 0.0], 'rotate_z_deg': 0.0},
+                                                    'color': '#4A9FD4'}]}
 
 
 def test_a_drive_places_pulley_2_and_the_belt_as_the_merged_step_did(client):

@@ -664,8 +664,14 @@ def _generate_assembly_bytes(params, ss_bin):
     kws, belt_kw = params['kw'], params.get('belt_kw')
 
     def make(spec):
+        # A part in an assembly is painted by the manifest, so it is made without a
+        # colour of its own (small_step refuses both); a lone pulley brings its own.
         if spec['kind'] == 'pulley':
-            return _generate_pulley_bytes(dict(kws[str(spec['pulley'])]), ss_bin)
+            kw = dict(kws[str(spec['pulley'])])
+            kw.pop('color', None)
+            if spec.get('color'):
+                kw['color'] = spec['color']
+            return _generate_pulley_bytes(kw, ss_bin)
         if spec['kind'] == 'belt' and belt_kw:
             return _generate_belt_bytes(dict(belt_kw), ss_bin)
         raise RuntimeError(f'no STEP for part {spec}')

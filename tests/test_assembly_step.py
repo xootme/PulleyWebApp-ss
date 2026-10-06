@@ -18,6 +18,7 @@ import re
 import pytest
 
 from exporters import assembly as asm
+from exporters import colors
 
 BIN = asm.ss_binary()
 needs_assemble = pytest.mark.skipif(not asm.can_assemble(BIN),
@@ -69,7 +70,7 @@ def test_one_pulley_alone_is_its_own_step(client):
     assert asm.single_make(asm.manifest(SPLINE, only={'wa1'})) is None              # made by extrude
     made = []
     out = asm.assemble_step(asm.manifest(DRIVE, only={'p2'}), lambda mk: made.append(mk) or b'STEP', ss_bin='none')
-    assert out == b'STEP' and made == [{'kind': 'pulley', 'pulley': 2}]             # no binary asked
+    assert out == b'STEP' and made == [{'kind': 'pulley', 'pulley': 2, 'color': colors.PULLEY[2]}]   # no binary
 
 
 def test_the_shaft_in_pieces_while_extrude_takes_no_sections(client):
@@ -85,7 +86,19 @@ def test_the_shaft_in_pieces_while_extrude_takes_no_sections(client):
         assert p['extrude']['loops'] == s['loops'] and p['extrude']['name'] == p['name']
         assert p['placement']['origin'][2] == pytest.approx(z + s['z0'])
         assert p['placement']['rotate_z_deg'] == shaft['placement']['rotate_z_deg']
+        assert p['color'] == shaft['color'] == colors.SHAFT
     assert [p for p in low['parts'] if p not in pieces] == [p for p in m['parts'] if p is not shaft]
+
+
+def test_every_part_has_its_colour(client):
+    """The 3D view's colours (exporters/colors.py), one per part, in the manifest:
+    small_step paints every occurrence of a part from it."""
+    want = {'HTD-5M-20T': colors.PULLEY[1], 'HTD-5M-30T-P2': colors.PULLEY[2], 'HTD-5M-belt': colors.BELT}
+    assert {p['name']: p['color'] for p in asm.manifest(DRIVE)['parts']} == want
+    got = {p['name']: p['color'] for p in asm.manifest(SPLINE)['parts']}
+    ring = next(n for n in got if n.startswith('DIN 471'))
+    assert got == {'HTD-5M-40T': colors.PULLEY[1], 'HTD-5M-40T-spline-shaft': colors.SHAFT,
+                   'HTD-5M-40T-spline-washer': colors.WASHER, ring: colors.RING}
 
 
 def test_parts_is_a_route_key_not_the_design():
@@ -126,6 +139,20 @@ def _tree(data: bytes):
             re.findall(r"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('([^']*)','[^']*','[^']*',#(\d+),#(\d+)", text)]
     roots = [d for d in pdef if d not in {b for _, b, _ in uses}]
     return pdef, uses, roots
+
+
+def _rgb(hexcolor):
+    h = hexcolor.lstrip('#')
+    return tuple(round(int(h[i:i + 2], 16) / 255.0, 6) for i in (0, 2, 4))
+
+
+def _check_colours(data, m):
+    """One colour chain per distinct colour, a styled item per solid: every
+    part's solids painted its manifest colour, each geometry once."""
+    got = {tuple(round(float(x), 6) for x in c) for c in
+           re.findall(r"COLOUR_RGB\('[^']*',([-0-9.Ee+]+),([-0-9.Ee+]+),([-0-9.Ee+]+)\)", data.decode('latin-1'))}
+    assert got == {_rgb(p['color']) for p in m['parts']}
+    assert data.count(b'STYLED_ITEM(') == data.count(b'MANIFOLD_SOLID_BREP')
 
 
 def _check_tree(data, m):
@@ -211,6 +238,7 @@ def test_a_drive_is_one_assembly(client):
     m = asm.manifest(DRIVE)
     _check_tree(r.data, m)
     _check_places(r.data, m)
+    _check_colours(r.data, m)
 
 
 @needs_assemble
@@ -225,6 +253,7 @@ def test_one_pulley_ticked_is_a_plain_part(client):
     r = _get(client, dict(DRIVE, parts='p1'))
     assert 'filename="HTD-5M-20T.step"' in r.headers['Content-Disposition']
     assert b'NEXT_ASSEMBLY_USAGE_OCCURRENCE' not in r.data
+    _check_colours(r.data, asm.manifest(DRIVE, only={'p1'}))       # painted by its own file
 
 
 @needs_assemble
@@ -235,6 +264,7 @@ def test_a_splined_pulley_with_its_shaft_washers_and_rings(client):
         m = asm.lower_sections(m)
     _check_tree(r.data, m)
     _check_places(r.data, m)
+    _check_colours(r.data, m)
 
 
 @needs_assemble

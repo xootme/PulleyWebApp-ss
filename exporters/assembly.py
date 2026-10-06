@@ -7,7 +7,8 @@ parts placed as assembled; small_step's `assemble`, Documents\\CCT_Assembly_STEP
     m == {"name": "HTD-5M-20T-30T",
           "parts": [{"name": ..., "make": {...}  or  "extrude": {...},
                      "placement": {"origin": [x, y, z], "rotate_z_deg": deg},
-                     "instances": [placement, ...]}, ...]}
+                     "instances": [placement, ...],
+                     "color": "#RRGGBB"}, ...]}       # the 3D view's (exporters/colors.py)
 
 Every part is in the frame the app's STL and small_step's pulley STEP share
 (checked to 1e-3 mm on hub, flange, metal plate and spline designs): the bore
@@ -42,6 +43,8 @@ import math
 from cct_common import retaining_rings as rr
 from cct_common import ring_outline as ro
 from cct_common import splines as spl
+
+from exporters import colors
 
 
 # ── outlines as JSON loops ───────────────────────────────────────────────────
@@ -260,6 +263,8 @@ def lower_sections(m: dict) -> dict:
             name = f"{p['name']}-{i}"
             q = {"name": name, "extrude": {"name": name, "thickness": s["z1"] - s["z0"], "loops": s["loops"]},
                  "placement": lifted(p.get("placement", {}), s["z0"])}
+            if p.get("color"):
+                q["color"] = p["color"]
             if p.get("instances"):
                 q["instances"] = [lifted(pl, s["z0"]) for pl in p["instances"]]
             parts.append(q)
@@ -283,8 +288,8 @@ def assemble_step(m: dict, make_step, ss_bin: str | None = None) -> bytes:
     import subprocess
     import tempfile
     lone = single_make(m)
-    if lone:                                     # nothing to assemble: the part's own STEP, in its own frame
-        return make_step(lone["make"])
+    if lone:                                     # nothing to assemble: the part's own STEP, in its own frame,
+        return make_step(dict(lone["make"], color=lone.get("color")))   # painted by its own file
     ss_bin = ss_bin or ss_binary()
     if not can_assemble(ss_bin):
         raise AssembleError(f"this small_step ({ss_bin or 'none found'}) can't assemble")
@@ -356,7 +361,7 @@ def _spline_parts(args, n: int, stem: str, x: float, rot: float, add) -> None:
         sections.append({"z0": z0, "z1": z1, "loops": [loop_json(loop)], "groove": in_groove})
     add(f"sh{n}", {"name": f"{stem}-spline-shaft", "extrude": {"name": f"{stem}-spline-shaft",
                                                              "sections": sections},
-                 "placement": _place(x, 0.0, rot)})
+                 "placement": _place(x, 0.0, rot), "color": colors.SHAFT})
     if not rt:
         return
     ring = rr.for_spline(sp_obj)
@@ -369,9 +374,10 @@ def _spline_parts(args, n: int, stem: str, x: float, rot: float, add) -> None:
                          "extrude": {"name": f"{stem}-spline-washer", "thickness": rt["washer_t"],
                                      "loops": [loop_json(circle(rt["washer_od"] / 2.0)),
                                                loop_json(reversed_loop(spl.path(sp_obj)))]},
-                         "placement": _place(x, w0, rot)})
+                         "placement": _place(x, w0, rot), "color": colors.WASHER})
         r0 = lo + _span_z(face, span, st["ring"])[0]
-        add(f"sh{n}", {"name": fitted["name"], "extrude": fitted, "placement": _place(x, r0, rot)})   # in the shaft's groove
+        add(f"sh{n}", {"name": fitted["name"], "extrude": fitted, "placement": _place(x, r0, rot),
+                       "color": colors.RING})   # in the shaft's groove
 
 
 def manifest(args, only=None) -> dict:
@@ -410,10 +416,10 @@ def manifest(args, only=None) -> dict:
 
     for n in teeth:
         add(f"p{n}", {"name": stems[n], "make": {"kind": "pulley", "pulley": n},
-                      "placement": _place(x[n], 0.0, rot[n])})
+                      "placement": _place(x[n], 0.0, rot[n]), "color": colors.PULLEY[n]})
     if belt:
         add("belt", {"name": f"{family}-{pitch}-belt", "make": {"kind": "belt"},
-                     "placement": _place(0.0, 0.0, 0.0)})
+                     "placement": _place(0.0, 0.0, 0.0), "color": colors.BELT})
     for n in teeth:
         _spline_parts(args, n, stems[n], x[n], rot[n], add)
     return {"name": name, "parts": parts}
