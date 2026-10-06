@@ -120,6 +120,27 @@ def _compute_rod(family, pitch, num_teeth, print_extra_mm, clearance_mm):
     return r_od, spec['tooth_ht']
 
 
+def _nut_screw_z(params, hub_skirt):
+    """Where the app centres a captured nut's screw: on the nut, hub_top − af/√3
+    (step_exporter and the STL; small_step's own guess was 0.8 to 1.0 mm high).
+    hub_top as the app builds it: the hub grown to hold the nut's pocket and
+    to a radius for its wall, raised onto a flange it overhangs, plus its skirt."""
+    import math
+    from exporters.step_exporter import _nut_dims
+    nut = params.get('screw_nut')
+    waf, t_nut = tuple(nut) if nut else _nut_dims(float(params.get('screw_dia_mm', 0.0)))
+    hub_h = max(float(params.get('hub_height_mm', 0.0)), 2.0 * (waf + 0.5) / math.sqrt(3))
+    eff_r = max(float(params.get('hub_od_mm', 0.0)) / 2.0, float(params['bore_mm']) / 2.0 + 3.0 * t_nut)
+    z_start = float(params['belt_height_mm'])
+    if bool(params.get('flange_enabled', False)):
+        r_od, _ = _compute_rod(params['family'], params['pitch'], int(params['num_teeth']),
+                               float(params.get('print_extra_mm', 0.0)), float(params.get('clearance_mm', 0.0)))
+        if eff_r > r_od:
+            z_start += (float(params.get('flange_height_mm', 1.5)) if bool(params.get('flange_3dprint', True))
+                        else float(params.get('plate_height_mm', 1.0)))
+    return z_start + hub_skirt + hub_h - waf / math.sqrt(3)
+
+
 def _nub_circle_r(r_tooth_od, tooth_ht, nub_dia_mm):
     # Rust NubParams.r_outer_mm = outer edge of nub circle; it subtracts dia/2 for centre.
     r_groove_bottom = r_tooth_od - tooth_ht
@@ -399,6 +420,7 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
 
     sent_hole = None              # the screw hole small_step is told to cut (None: its nominal one)
     hub_skirt = 0.0
+    nut_screw = False             # a captured nut's screw: its height is the app's (--screw-z)
     if hub_od_mm > bore_mm and hub_height_mm > 0.0:
         cmd += ['--hub', str(hub_od_mm), str(hub_height_mm)]
         # A flanged hub without spokes fills the flange's thickness and then stands
@@ -435,6 +457,7 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
                 nut = params.get('screw_nut')
                 if nut and _has_flag(ss_bin, '--nut'):
                     cmd += ['--nut', str(float(nut[0])), str(float(nut[1]))]
+                nut_screw = True
             elif (spline or {}).get('kind') == 'hex':
                 # A hex bar's six flats sit at multiples of 60 degrees from
                 # +X, so the 90 default lands on a CORNER and the screw would
@@ -476,8 +499,11 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         if cb_d > 0.0 and cb_depth > 0.0:
             cmd += ['--counterbore', str(face), str(cb_d), str(cb_depth)]
 
-    if hub_skirt > 0.0 and _has_flag(ss_bin, '--hub-skirt'):
+    skirt_sent = hub_skirt > 0.0 and _has_flag(ss_bin, '--hub-skirt')
+    if skirt_sent:
         cmd += ['--hub-skirt', str(hub_skirt)]
+    if nut_screw and _has_flag(ss_bin, '--screw-z'):
+        cmd += ['--screw-z', str(_nut_screw_z(params, hub_skirt if skirt_sent else 0.0))]
 
     return cmd
 

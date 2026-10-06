@@ -72,10 +72,12 @@ def test_hex_hole_has_a_corner_up(step_mesh):
 
 def test_captured_nut_clearance_hole_and_nut(request, step_mesh):
     if request.node.callspec.params['step_mesh'] == 'small_step':
-        request.applymarker(pytest.mark.xfail(strict=True, reason=(
-            'small_step (0.6.0 and 0.7.0 18352fb6) cuts the --nut pocket at its size but centres the '
-            'screw from its own nearest-metric nut: an #8-32 nut\'s screw sits 1.05 mm high (18.50, '
-            'the STL 17.45)')))
+        # small_step's own height for the screw was 0.75 of the pocket below the top,
+        # 1.05 mm above an #8-32 nut's centre; the app now tells it (--screw-z, 000ca92)
+        import app as A
+        from exporters.step_worker_ss import _has_flag
+        if not _has_flag(A._SS_BIN, '--screw-z'):
+            pytest.skip(f'no small_step with --screw-z ({A._SS_BIN})')
     m = step_mesh(hub_screw_size='#8-32', hub_screw_count=1, hub_screw_hold='nut', hub_captured_nut=1)
     waf = 8.731                                   # the #8-32 nut, not the nearest metric one
     z = HUB_TOP - waf / math.sqrt(3)
