@@ -279,14 +279,17 @@ Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
 - [ ] Pre-screen the other two 0.8.1 refusals, so the user gets the app's words and an Auto-fix, not small_step's 400:
       a set screw (hex by its corner radius af/√3) as wide as the D-flat's half-chord, sqrt(bore_r² − (bore_r − flat)²);
       a plain screw over a keyway with sqrt(hub_r² − r²) ≤ bore_r + keyway_h.
-- [ ] Hex set-screw hole on a D-flat leaves a plug ~one flat-depth thick (STEP; OCCT passes it). Fixed in small_step
-      4c2c0e9, not yet released — take the next small_step binary.
+- [x] Hex set-screw hole on a D-flat leaves a plug ~one flat-depth thick (STEP; OCCT passes it). Fixed in small_step
+      0.8.2 (63eddba) — 2.0.13.
+- [ ] small_step 0.8.2 builds a lobed captured-nut hub WITH its D-flat / keyway / hex bore, so the app's lobed-hub
+      refusal (`geometry/captured_nut_hub.py` case 1) could become an optional suggestion — the owner's call.
 - [ ] A hub under ~1/3 of the captured nut's minimum: small_step grows it round in STEP, the STL lobes it — they differ.
 - [ ] Keyway + partial-height spokes: a key whose back wall (bore/2 + keyway_h) reaches the spokes' hub ring
       (>= ring_r − 0.001) cuts the ring — INVALID body today (fuzz seed 42 #170: Ø8.6 bore, 6x3 key, wall 7.30 vs ring
-      6.875); small_step 0.8.2 refuses it. Pre-screen + Auto-fix (a shallower key, or a ring past 2·(bore/2 + keyway_h)).
+      6.875); small_step 0.8.2 refuses it by name (live since 2.0.13). Pre-screen + Auto-fix (a shallower key, or a ring
+      past 2·(bore/2 + keyway_h)).
 - [ ] A plain set screw on a hex bar wider than the flat it lands on (r > the flat's half-length; sharp hex af/(2√3)):
-      valid STEP with no hole on the screw's axis today; 0.8.2 refuses it. Pre-screen it.
+      was a valid STEP with no hole on the screw's axis; 0.8.2 refuses it by name (live since 2.0.13). Pre-screen it.
 - Note (small_step, 2026-10-07): the D-flat screw rule is the chord only, r >= sqrt(R² − (R − f)²); 0.8.1's extra
   r >= R − f clause was spurious and is gone in 0.8.2 — a pre-screen must not copy it.
 
