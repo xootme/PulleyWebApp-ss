@@ -270,6 +270,15 @@ Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
 - [ ] Wire-order `EDGE_LOOP` bug on a spoke + metal-flange STD-2M 74T pulley — "NOT YET INVESTIGATED" (2026-07-22 entry)
 - [ ] Self-crossing unfilleted spoke void in the "hub overlap" regime (wide spoke vs hub radius) — "NOT fixed" (2026-07-22 bowtie entry).
       Likely avoided now: the spoke fit (ADR-010) rejects self-crossing openings and fits around them — confirm with the repro.
+- [x] A lobed captured-nut hub's bore was built ROUND: a D-flat missing from the hub, a keyway invalid (fuzz, 2026-10-07).
+      small_step 0.8.1 refuses it (gap 57); the app warns with an Auto-fix (Hub OD = bore + 6·t_nut) and the worker refuses
+      first (`geometry/captured_nut_hub.py`) — 2.0.11. The small_step session is building the lobed hub with its flat/keyway next.
+- [ ] Pre-screen the other two 0.8.1 refusals, so the user gets the app's words and an Auto-fix, not small_step's 400:
+      a set screw (hex by its corner radius af/√3) as wide as the D-flat's half-chord, sqrt(bore_r² − (bore_r − flat)²);
+      a plain screw over a keyway with sqrt(hub_r² − r²) ≤ bore_r + keyway_h.
+- [ ] Hex set-screw hole on a D-flat leaves a plug ~one flat-depth thick (STEP; OCCT passes it). Fixed in small_step
+      4c2c0e9, not yet released — take the next small_step binary.
+- [ ] A hub under ~1/3 of the captured nut's minimum: small_step grows it round in STEP, the STL lobes it — they differ.
 
 ## Load Testing Dashboard
 `record_benchmarks.py` and the WSL gunicorn concurrency check exist; the simulator does not.
