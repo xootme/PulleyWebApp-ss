@@ -273,6 +273,9 @@ Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
 - [x] A lobed captured-nut hub's bore was built ROUND: a D-flat missing from the hub, a keyway invalid (fuzz, 2026-10-07).
       small_step 0.8.1 refuses it (gap 57); the app warns with an Auto-fix (Hub OD = bore + 6·t_nut) and the worker refuses
       first (`geometry/captured_nut_hub.py`) — 2.0.11. The small_step session is building the lobed hub with its flat/keyway next.
+- [x] A deep key pushed the captured nut's pocket through the hub wall (INVALID STEP; the STL's pocket through it too):
+      the same module checks small_step's floor and the Auto-fix gives 2·t_nut of wall past the key slot; the worker sends
+      one screw on a flat or key, as the STL cuts it — 2.0.12.
 - [ ] Pre-screen the other two 0.8.1 refusals, so the user gets the app's words and an Auto-fix, not small_step's 400:
       a set screw (hex by its corner radius af/√3) as wide as the D-flat's half-chord, sqrt(bore_r² − (bore_r − flat)²);
       a plain screw over a keyway with sqrt(hub_r² − r²) ≤ bore_r + keyway_h.
