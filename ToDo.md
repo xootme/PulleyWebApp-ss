@@ -282,6 +282,13 @@ Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
 - [ ] Hex set-screw hole on a D-flat leaves a plug ~one flat-depth thick (STEP; OCCT passes it). Fixed in small_step
       4c2c0e9, not yet released — take the next small_step binary.
 - [ ] A hub under ~1/3 of the captured nut's minimum: small_step grows it round in STEP, the STL lobes it — they differ.
+- [ ] Keyway + partial-height spokes: a key whose back wall (bore/2 + keyway_h) reaches the spokes' hub ring
+      (>= ring_r − 0.001) cuts the ring — INVALID body today (fuzz seed 42 #170: Ø8.6 bore, 6x3 key, wall 7.30 vs ring
+      6.875); small_step 0.8.2 refuses it. Pre-screen + Auto-fix (a shallower key, or a ring past 2·(bore/2 + keyway_h)).
+- [ ] A plain set screw on a hex bar wider than the flat it lands on (r > the flat's half-length; sharp hex af/(2√3)):
+      valid STEP with no hole on the screw's axis today; 0.8.2 refuses it. Pre-screen it.
+- Note (small_step, 2026-10-07): the D-flat screw rule is the chord only, r >= sqrt(R² − (R − f)²); 0.8.1's extra
+  r >= R − f clause was spurious and is gone in 0.8.2 — a pre-screen must not copy it.
 
 ## Load Testing Dashboard
 `record_benchmarks.py` and the WSL gunicorn concurrency check exist; the simulator does not.
