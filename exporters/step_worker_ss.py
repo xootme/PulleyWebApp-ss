@@ -440,6 +440,11 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         screw_count  = int(params.get('screw_count', 0))
         captured_nut = bool(params.get('captured_nut', False))
         if screw_dia_mm > 0.0 and screw_count > 0:
+            # One screw on a D-flat or keyway, on the flat / key, as the STL cuts it
+            # (step_exporter: screw_angles = [0.0]); a second, 90° round, had no
+            # part in the model and its nut pocket can leave the hub invalid.
+            if flat_depth_mm > 0.0 or (keyway_w_mm > 0.0 and keyway_h_mm > 0.0):
+                screw_count = 1
             cmd += ['--screws', str(screw_dia_mm), str(screw_count)]
             # The hole the STL and the cadquery STEP cut (ADR-013): threaded round
             # or hex, a nut's clearance hole, an insert's — not the nominal one.
@@ -476,15 +481,17 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         nut=params.get('screw_nut'), hole=sent_hole)
     if why:
         raise Refused(' '.join(w[0].upper() + w[1:] for w in why))
-    # A captured nut in a hub too narrow for it is built with lobes, and small_step
-    # builds a lobed hub's bore round: a D-flat left off, a keyway invalid. 0.8.1
-    # refuses it; an older binary made the wrong part (geometry/captured_nut_hub.py).
+    # A captured nut in a hub too narrow for it: lobed, and small_step builds a lobed
+    # hub's bore round (a D-flat left off, a keyway invalid); or a key slot pushing
+    # the pocket out through the wall round its screw (invalid). small_step refuses
+    # both by name; an older binary made the wrong part (geometry/captured_nut_hub.py).
     from geometry.captured_nut_hub import problems as _nut_hub_problems
     why = _nut_hub_problems(
         bore_mm=bore_mm, hub_od_mm=hub_od_mm, hub_height_mm=hub_height_mm,
         screw_count=int(params.get('screw_count', 0)), captured_nut=bool(params.get('captured_nut', False)),
         screw_dia_mm=float(params.get('screw_dia_mm', 0.0)), flat_depth_mm=flat_depth_mm,
-        keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm, spline=spline, nut=params.get('screw_nut'))
+        keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm, spline=spline, nut=params.get('screw_nut'),
+        hole=sent_hole)
     if why:
         raise Refused(' '.join(w[0].upper() + w[1:] for w in why))
     rt_ = (spline or {}).get('retainer') or {}

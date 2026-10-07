@@ -51,6 +51,31 @@ def test_the_lobed_band_ends_at_2_9_times():
     assert problems(**dict(_DSHAFT, hub_od_mm=11.1))       # 32 < 2.9 x 11.1: lobed, refused
 
 
+# The small_step session's measured case: a deep key pushes the pocket out through
+# the wall round the screw. Ø9.9 bore, 6 x 3 key, #2-56 nut, Ø2.6 hole: the pocket
+# reaches r 10.048; round Ø19.6 and Ø20.2 INVALID, Ø21 valid (2026-10-07).
+_DEEP_KEY = dict(bore_mm=9.9, hub_height_mm=10.0, screw_count=1, captured_nut=True, screw_dia_mm=2.184,
+                 keyway_w_mm=6.0, keyway_h_mm=3.0, nut=(4.763, 1.588), hole={'shape': 'circle', 'diameter': 2.6})
+
+
+@pytest.mark.parametrize('hub, bad', [(19.6, True), (20.2, True), (21.0, False), (22.0, False)])
+def test_no_wall_behind_a_deep_key(hub, bad):
+    out = problems(hub_od_mm=hub, **_DEEP_KEY)
+    assert bool(out) == bad
+    if bad:
+        assert 'no hub wall' in out[0] and '10.05 mm' in out[0] and 'key slot' in out[0]
+
+
+def test_the_fix_measures_the_wall_from_the_key_slot():
+    """2·t_nut past the pocket's back face (the slot's outer face), not the bore."""
+    need = min_hub_od(bore_mm=9.9, screw_dia_mm=2.184, nut=(4.763, 1.588), keyway_h_mm=3.0,
+                      hole={'shape': 'circle', 'diameter': 2.6})
+    assert need == pytest.approx(2 * (9.9 / 2 + 3.0 + 3 * 1.588))
+    assert problems(hub_od_mm=need, **_DEEP_KEY) == []
+    # and the lobed message names the same Hub OD
+    assert 'Ø25.43' in problems(hub_od_mm=16.3, **_DEEP_KEY)[0]
+
+
 # ── the Dimensions panel ──────────────────────────────────────────────────────
 
 DFLAT = {'family': 'HTD', 'pitch': '5M', 'teeth': '30', 'bore': '8', 'belt_height': '10', 'feature_build': '1',
@@ -67,10 +92,17 @@ def _dims(client, q):
 
 
 def _lobed(d):
-    return [w for w in d['warnings'] if 'built with lobes' in w]
+    return [w for w in d['warnings'] if 'built with lobes' in w or 'no hub wall' in w]
 
 
-@pytest.mark.parametrize('q, what', [(DFLAT, 'D-flat'), (KEYWAY, 'keyway')], ids=['D-flat', 'keyway'])
+# The measured case on the page: Ø9.9 bore, 6 x 3 key, #2-56 nut. Ø20.2 is round
+# (19.43 needed) but the pocket goes through the wall behind the slot.
+DEEP_KEY = {**KEYWAY, 'bore': '9.9', 'hub_od': '20.2', 'hub_keyway_w': '6', 'hub_keyway_h': '3',
+            'hub_screw_size': '#2-56'}
+
+
+@pytest.mark.parametrize('q, what', [(DFLAT, 'D-flat'), (KEYWAY, 'keyway'), (DEEP_KEY, 'no hub wall')],
+                         ids=['D-flat', 'keyway', 'deep key'])
 def test_the_panel_warns_and_the_fix_widens_the_hub(client, q, what):
     d = _dims(client, q)
     [w] = _lobed(d)
@@ -80,7 +112,11 @@ def test_the_panel_warns_and_the_fix_widens_the_hub(client, q, what):
     from agent import _fix_params
     assert _fix_params(d['fix']['set'])['hub_od'] == hub
     assert not _lobed(_dims(client, {**q, 'hub_od': str(hub)}))       # the fix clears it
-    assert _lobed(_dims(client, {**q, 'hub_od': str(hub - 0.5)}))     # and is the least that does
+
+
+def test_without_a_key_the_fix_is_the_least_that_clears_it(client):
+    hub = _dims(client, DFLAT)['fix']['set']['hub1_od']
+    assert _lobed(_dims(client, {**DFLAT, 'hub_od': str(hub - 0.5)}))
 
 
 @pytest.mark.parametrize('extra', [{'hub_screw_hold': 'thread'}, {'hub_flat_depth': '0'}, {'feature_build': '0'},
@@ -113,3 +149,30 @@ def test_the_worker_refuses_by_name(monkeypatch, tmp_path):
         w._build_pulley_cmd(_cmd_params(24.0), 'small_step', str(tmp_path / 'p.dxf'))
     cmd = w._build_pulley_cmd(_cmd_params(32.0), 'small_step', str(tmp_path / 'p.dxf'))
     assert '--captured-nut' in cmd and '--flat' in cmd
+
+
+def test_the_worker_refuses_a_pocket_through_the_wall(monkeypatch, tmp_path):
+    from exporters import step_worker_ss as w
+    monkeypatch.setattr(w, '_binary_version', lambda _bin: (0, 8, 1))
+    p = _cmd_params(20.2, bore_mm=9.9, flat_depth_mm=0.0, keyway_w_mm=6.0, keyway_h_mm=3.0,
+                    screw_dia_mm=2.184, screw_nut=[4.763, 1.588])
+    with pytest.raises(w.Refused, match='no hub wall'):
+        w._build_pulley_cmd(p, 'small_step', str(tmp_path / 'p.dxf'))
+    assert '--captured-nut' in w._build_pulley_cmd(dict(p, hub_od_mm=25.5), 'small_step',
+                                                   str(tmp_path / 'p.dxf'))
+
+
+@pytest.mark.parametrize('kw', [{'flat_depth_mm': 1.5}, {'flat_depth_mm': 0.0, 'keyway_w_mm': 5.0, 'keyway_h_mm': 2.0}],
+                         ids=['D-flat', 'keyway'])
+def test_one_screw_on_a_flat_or_key_as_the_stl(monkeypatch, tmp_path, kw):
+    """The STL cuts one screw there (step_exporter: screw_angles = [0.0]); two sent
+    made small_step cut a second pocket the model hasn't got."""
+    from exporters import step_worker_ss as w
+    monkeypatch.setattr(w, '_binary_version', lambda _bin: (0, 8, 1))
+    cmd = w._build_pulley_cmd(_cmd_params(32.0, screw_count=2, screw_dia_mm=4.0, **kw), 'small_step',
+                              str(tmp_path / 'p.dxf'))
+    i = cmd.index('--screws')
+    assert cmd[i + 2] == '1'
+    round_bore = w._build_pulley_cmd(_cmd_params(32.0, screw_count=2, flat_depth_mm=0.0), 'small_step',
+                                     str(tmp_path / 'p.dxf'))
+    assert round_bore[round_bore.index('--screws') + 2] == '2'

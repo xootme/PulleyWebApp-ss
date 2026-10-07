@@ -1298,9 +1298,10 @@ def _set_screw_slot(args, pfx, n, who, root_d):
 
 
 def _captured_nut_hub(args, pfx, n, who, root_d):
-    """A captured nut in a hub too narrow for it, on a D-flat, keyway or hex
-    bore: STEP can't make the lobed hub (geometry/captured_nut_hub.py, the same
-    check the STEP worker refuses on). Returns ([warning], {element id: value},
+    """A captured nut in a hub too narrow for it: lobed on a D-flat, keyway or
+    hex bore, or no wall left round its screw behind a key slot — STEP can't
+    make either (geometry/captured_nut_hub.py, the same check the STEP worker
+    refuses on). Returns ([warning], {element id: value},
     [change text]); the fix is the Hub OD the nut needs (and the spokes' hub,
     which the hub follows), else none: holding the screw another way is a
     choice of screw type, not a number."""
@@ -1311,14 +1312,16 @@ def _captured_nut_hub(args, pfx, n, who, root_d):
     except ValueError:
         return [], {}, []
     bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
-    nut = ss.nut if ss else None
+    nut, hole = (ss.nut, dict(ss.hole)) if ss else (None, None)   # what the STEP worker sends
     sp = _spline_of(args, pfx) if _hex_bore(args, pfx) else None
     warn = _cnh.problems(bore_mm=bore_mm, hub_od_mm=hub_od, hub_height_mm=hub_h, screw_count=sc,
                          captured_nut=cn, screw_dia_mm=sd, flat_depth_mm=fd, keyway_w_mm=kw_w,
-                         keyway_h_mm=kw_h, spline=sp, nut=nut, who=who)
+                         keyway_h_mm=kw_h, spline=sp, nut=nut, hole=hole, who=who)
     if not warn:
         return [], {}, []
-    need = math.ceil(_cnh.min_hub_od(bore_mm=bore_mm, screw_dia_mm=sd, nut=nut) * 2 - 1e-9) / 2
+    kh = kw_h if kw_w > 0 and kw_h > 0 else 0.0
+    need = math.ceil(_cnh.min_hub_od(bore_mm=bore_mm, screw_dia_mm=sd, nut=nut, keyway_h_mm=kh,
+                                     hole=hole) * 2 - 1e-9) / 2
     if need > math.floor((root_d - 2 * SPLINE_WALL) * 2) / 2:
         return warn, {}, []
     spokes_on = args.get(f'{pfx}spokes_enabled') == '1'
