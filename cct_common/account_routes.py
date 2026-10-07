@@ -244,6 +244,40 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                 "<p><a href='/'>Request a new one</a></p>"), status=400)
         return _finish_sign_in(account_id, request.form.get("next"))
 
+    # ── Directory reviewers' sign-in ──────────────────────────────────────
+    # Anthropic's and OpenAI's directory reviewers need a test account they
+    # can enter without our emailed links. A secret link signs into one
+    # account: /account/review?key=<REVIEW_LOGIN_KEY>. It exists only while
+    # REVIEW_LOGIN_EMAIL and REVIEW_LOGIN_KEY (32+ characters) are set; unset
+    # either to shut it. Linked from nowhere; any wrong key is a plain 404.
+    import hmac
+    import os
+    review_email = (os.environ.get("REVIEW_LOGIN_EMAIL") or "").strip()
+    review_key = os.environ.get("REVIEW_LOGIN_KEY") or ""
+    review_on = bool(review_email) and len(review_key) >= 32
+
+    def _review_ok(key: str) -> bool:
+        return review_on and hmac.compare_digest(key.encode(), review_key.encode())
+
+    def review_page():
+        key = request.args.get("key", "")
+        if not _review_ok(key):
+            return _page("Not found", "<p>That page isn't here.</p>", status=404)
+        nxt = _safe_next(request.args.get("next"))
+        # A button, not a sign-in on GET: link previews and prefetchers mustn't sign in.
+        return _page(f"Sign in to {app_name}", (
+            "<p>This is the test account for directory reviewers.</p>"
+            "<form method='post' action='/account/review'>"
+            f"<input type='hidden' name='key' value='{html.escape(key, quote=True)}'>"
+            f"<input type='hidden' name='next' value='{html.escape(nxt, quote=True)}'>"
+            "<button type='submit'>Sign in to the test account</button></form>"))
+
+    def review_submit():
+        if not _review_ok(request.form.get("key", "")):
+            return _page("Not found", "<p>That page isn't here.</p>", status=404)
+        account_id = tokens.get_or_create_account(normalize_email(review_email), signup_grant=0)
+        return _finish_sign_in(account_id, request.form.get("next"))
+
     def _oauth_buttons(nxt: str, safe: str = "/") -> str:
         """'Continue with Google / GitHub …' with each one's logo, for the
         providers this app has set up; empty if none. Back to `nxt` after."""
@@ -602,6 +636,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     app.add_url_rule("/account/device", endpoint="account_device_decide",
                      view_func=device_decide, methods=["POST"])
     app.add_url_rule("/account/device/sign-in", view_func=device_sign_in, methods=["POST"])
+    app.add_url_rule("/account/review", view_func=review_page, methods=["GET"])
+    app.add_url_rule("/account/review", endpoint="account_review_submit",
+                     view_func=review_submit, methods=["POST"])
     app.add_url_rule("/account/sign-in", view_func=sign_in_page, methods=["GET"])
     app.add_url_rule("/account/sign-in", endpoint="account_sign_in_submit",
                      view_func=sign_in_submit, methods=["POST"])

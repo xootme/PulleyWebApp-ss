@@ -263,9 +263,26 @@ def build_server(gateway: Gateway, *, hosted: bool = False, provider=None, auth=
     the caller's OAuth token (provider: cct_common.mcp_oauth), export returns
     a download link, and the device sign-in tools are gone (OAuth does it)."""
     from mcp.server.mcpserver import MCPServer
+    from mcp.types import Icon, ToolAnnotations
+    from . import __version__
     kw = {"auth_server_provider": provider, "auth": auth} if hosted else {}
-    server = MCPServer(name="cct", title="Cheap CAD Tools",
+    server = MCPServer(name="cct", title="CheapCAD Tools", version=__version__,
+                       website_url="https://cheapcadtools.com/ai/",
+                       icons=[Icon(src="https://cheapcadtools.com/assets/img/brand/icon-512.png",
+                                   mime_type="image/png", sizes=["512x512"])],
                        instructions=INSTRUCTIONS_HOSTED if hosted else INSTRUCTIONS, **kw)
+
+    # Every tool has a title and says whether it changes anything (the
+    # directories require it; clients use it to decide what to confirm).
+    def reads(title):
+        return {"title": title, "annotations": ToolAnnotations(
+            title=title, read_only_hint=True, destructive_hint=False, idempotent_hint=True,
+            open_world_hint=False)}
+
+    def acts(title):
+        return {"title": title, "annotations": ToolAnnotations(
+            title=title, read_only_hint=False, destructive_hint=False, idempotent_hint=False,
+            open_world_hint=False)}
 
     def gw() -> Gateway:
         if not hosted:
@@ -280,49 +297,49 @@ def build_server(gateway: Gateway, *, hosted: bool = False, provider=None, auth=
         except GatewayError as e:
             return {"error": str(e)}
 
-    @server.tool(description="The CCT apps this gateway reaches: name, title, summary, parts.")
+    @server.tool(**reads("List the CAD tools"), description="The CCT apps this gateway reaches: name, title, summary, parts.")
     def list_apps() -> list:
         return run("list_apps")
 
-    @server.tool(description="An app's parameters (name, type, unit, min/max, choices, default, "
+    @server.tool(**reads("Describe a tool's parameters"), description="An app's parameters (name, type, unit, min/max, choices, default, "
                              "when they matter), its parts and formats. Read before check/export.")
     def describe(app: str) -> dict:
         return run("describe", app)
 
-    @server.tool(description="Check a design: dimensions, spec warnings, and an Auto-fix — "
+    @server.tool(**reads("Check a design"), description="Check a design: dimensions, spec warnings, and an Auto-fix — "
                              "fix.set holds parameter changes that clear the warnings.")
     def check(app: str, params: dict) -> dict:
         return run("check", app, params)
 
-    @server.tool(description="What exporting the design would cost in tokens (formats: step, "
+    @server.tool(**reads("Quote the token cost"), description="What exporting the design would cost in tokens (formats: step, "
                              "stl, svg, dxf). tokens=false means the app doesn't charge.")
     def quote(app: str, params: dict, formats: list[str] | None = None) -> dict:
         return run("quote", app, params, formats)
 
     if hosted:
-        @server.tool(description="Make the design's files (formats: step, stl, svg, dxf; parts from "
+        @server.tool(**acts("Export the design's files"), description="Make the design's files (formats: step, stl, svg, dxf; parts from "
                                  "describe) as one zip and return its download link for the person. "
                                  "Costs tokens when they download it: quote first and ask them.")
         def export(app: str, params: dict, formats: list[str] | None = None,
                    parts: list[str] | None = None) -> dict:
             return run("export_link", app, params, formats, parts)
     else:
-        @server.tool(description="Write the design's files (formats: step, stl, svg, dxf; parts from "
+        @server.tool(**acts("Export the design's files"), description="Write the design's files (formats: step, stl, svg, dxf; parts from "
                                  "describe) into out_dir; returns their paths. May cost tokens.")
         def export(app: str, params: dict, formats: list[str] | None = None,
                    parts: list[str] | None = None, out_dir: str = ".") -> dict:
             return run("export", app, params, formats, parts, out_dir)
 
-        @server.tool(description="Start device sign-in: returns a code and a URL for the person to "
+        @server.tool(**acts("Start sign-in"), description="Start device sign-in: returns a code and a URL for the person to "
                                  "approve in their browser. Then call sign_in_finish.")
         def sign_in(app: str) -> dict:
             return run("sign_in", app)
 
-        @server.tool(description="Finish sign-in once the person has approved the code; saves the token.")
+        @server.tool(**acts("Finish sign-in"), description="Finish sign-in once the person has approved the code; saves the token.")
         def sign_in_finish(app: str) -> dict:
             return run("sign_in_finish", app)
 
-    @server.tool(description="The signed-in account's token balance.")
+    @server.tool(**reads("Token balance"), description="The signed-in account's token balance.")
     def balance(app: str) -> dict:
         return run("balance", app)
 
