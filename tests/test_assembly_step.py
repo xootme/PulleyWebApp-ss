@@ -276,9 +276,9 @@ def test_a_flanged_drive_keeps_its_flanges_in_place(client):
 
 
 @needs_assemble
-@pytest.mark.xfail(strict=True, reason='small_step assemble (a99954e) double-encodes an extruded part\'s '
-                                       'non-ASCII PRODUCT name: "×" comes out as C3 83 C2 97')
 def test_the_ring_is_named_as_its_label(client):
+    """"DIN 471 26 × 1.2", not "Ã\\x97": small_step a99954e double-encoded an
+    extruded part's non-ASCII PRODUCT name; fixed by c03179c."""
     r = _get(client, dict(SPLINE, parts='sh1'))
     pdef, _, _ = _tree(r.data)
     assert any(n.startswith('DIN 471') and '×' in n for n in pdef.values()), sorted(pdef.values())
