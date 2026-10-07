@@ -476,6 +476,17 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         nut=params.get('screw_nut'), hole=sent_hole)
     if why:
         raise Refused(' '.join(w[0].upper() + w[1:] for w in why))
+    # A captured nut in a hub too narrow for it is built with lobes, and small_step
+    # builds a lobed hub's bore round: a D-flat left off, a keyway invalid. 0.8.1
+    # refuses it; an older binary made the wrong part (geometry/captured_nut_hub.py).
+    from geometry.captured_nut_hub import problems as _nut_hub_problems
+    why = _nut_hub_problems(
+        bore_mm=bore_mm, hub_od_mm=hub_od_mm, hub_height_mm=hub_height_mm,
+        screw_count=int(params.get('screw_count', 0)), captured_nut=bool(params.get('captured_nut', False)),
+        screw_dia_mm=float(params.get('screw_dia_mm', 0.0)), flat_depth_mm=flat_depth_mm,
+        keyway_w_mm=keyway_w_mm, keyway_h_mm=keyway_h_mm, spline=spline, nut=params.get('screw_nut'))
+    if why:
+        raise Refused(' '.join(w[0].upper() + w[1:] for w in why))
     rt_ = (spline or {}).get('retainer') or {}
     if (_binary_version(ss_bin) < NUT_COUNTERBORE_VERSION and bool(params.get('captured_nut', False))
             and int(params.get('screw_count', 0)) > 0 and hub_od_mm > bore_mm and hub_height_mm > 0

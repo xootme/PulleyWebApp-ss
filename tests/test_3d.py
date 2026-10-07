@@ -490,16 +490,20 @@ class TestStepRetention:
         self._check({**self._BASE, 'flat_depth_mm': 1.5})
 
     def test_step_dshaft_with_captured_nut(self):
-        """D-shaft + captured-nut: nut pocket must align with flat face."""
-        self._check({**self._BASE, 'flat_depth_mm': 1.5,
+        """D-shaft + captured-nut: nut pocket must align with flat face. The M5
+        nut needs a Ø32 hub: a narrower one is lobed, which STEP refuses on a
+        D-flat (test_captured_nut_hub)."""
+        self._check({**self._BASE, 'hub_od_mm': 32.0, 'flat_depth_mm': 1.5,
                      'screw_dia_mm': 5.0, 'screw_count': 1, 'captured_nut': True})
 
     def test_step_keyway(self):
         self._check({**self._BASE, 'keyway_w_mm': 4.0, 'keyway_h_mm': 2.0})
 
     def test_step_keyway_with_setscrew(self):
-        self._check({**self._BASE, 'keyway_w_mm': 4.0, 'keyway_h_mm': 2.0,
-                     'screw_dia_mm': 5.0, 'screw_count': 1, 'captured_nut': True})
+        """An M4 captured nut over a 5 mm key: the screw fits the slot it
+        pierces, and the hub is the Ø27.2 the nut needs without lobes."""
+        self._check({**self._BASE, 'hub_od_mm': 28.0, 'keyway_w_mm': 5.0, 'keyway_h_mm': 2.0,
+                     'screw_dia_mm': 4.0, 'screw_count': 1, 'captured_nut': True})
 
     def test_step_spokes_with_hub(self):
         self._check({**self._BASE,

@@ -92,11 +92,15 @@ CASES = [
     ("wide_big_screw",  3.0, 1.4, 5.0, 1, False),
     ("narrow_screw",    6.0, 3.0, 6.0, 1, False),   # screw == keyway width -> narrow branch
     ("narrow_2screw",   6.0, 3.0, 5.0, 2, False),   # screw narrower than keyway + 90°
-    ("captured_keyway", 3.0, 1.4, 4.0, 1, True),    # captured nut pocket + keyway
+    ("captured_keyway", 4.0, 1.8, 4.0, 1, True),    # captured nut pocket + keyway (DIN 6885 4x4)
 ]
 
+# The hub is Ø22 except where a captured nut needs more: bore + 6·t_nut, else it
+# is lobed, which STEP refuses on a keyway (test_captured_nut_hub). M4: Ø29.2.
+HUB_OD = {"captured_keyway": 30.0}
 
-def _gen(binary: str, kw, kh, sd, sc, cap) -> tuple[int, bytes, str]:
+
+def _gen(binary: str, kw, kh, sd, sc, cap, hub_od: float = 22.0) -> tuple[int, bytes, str]:
     dxf = generate_dxf(
         family="HTD", pitch="8M", num_teeth=30, bore_mm=10.0,
         clearance_mm=0, backlash_mm=0, print_extra_mm=0,
@@ -111,7 +115,7 @@ def _gen(binary: str, kw, kh, sd, sc, cap) -> tuple[int, bytes, str]:
     params = dict(
         family="HTD", pitch="8M", num_teeth=30, bore_mm=10.0, belt_height_mm=12.0,
         clearance_mm=0.3, backlash_mm=0.3, print_extra_mm=0.5, spoke_count=0,
-        hub_od_mm=22.0, hub_height_mm=16.0, flat_depth_mm=0,
+        hub_od_mm=hub_od, hub_height_mm=16.0, flat_depth_mm=0,
         keyway_w_mm=kw, keyway_h_mm=kh, screw_dia_mm=sd, screw_count=sc, captured_nut=cap,
         flange_enabled=False, nubs_enabled=False,
     )
@@ -124,9 +128,10 @@ def _gen(binary: str, kw, kh, sd, sc, cap) -> tuple[int, bytes, str]:
         os.unlink(dxf_tmp)
 
 
-def _check_case(binary: str, occ_py: str | None, kw, kh, sd, sc, cap) -> tuple[bool, str]:
+def _check_case(binary: str, occ_py: str | None, kw, kh, sd, sc, cap,
+                hub_od: float = 22.0) -> tuple[bool, str]:
     """Generate one keyway+screw config and validate it. Returns (ok, note)."""
-    rc, out, err = _gen(binary, kw, kh, sd, sc, cap)
+    rc, out, err = _gen(binary, kw, kh, sd, sc, cap, hub_od)
     if rc != 0 or b"ISO-10303-21" not in out:
         return False, f"generation failed rc={rc} {err[:160]}"
     if not occ_py:
@@ -155,7 +160,7 @@ def test_keyway_screw(case):
     if not _BINARY:
         pytest.skip("small_step binary not found (set SMALL_STEP_BIN)")
     name, kw, kh, sd, sc, cap = case
-    ok, note = _check_case(_BINARY, _OCC_PY, kw, kh, sd, sc, cap)
+    ok, note = _check_case(_BINARY, _OCC_PY, kw, kh, sd, sc, cap, HUB_OD.get(name, 22.0))
     assert ok, f"{name}: {note}"
 
 
@@ -169,7 +174,7 @@ def run() -> int:
     print(f"OCC:    {occ_py or '(none — validity checks skipped)'}\n")
     failures = 0
     for name, kw, kh, sd, sc, cap in CASES:
-        ok, note = _check_case(binary, occ_py, kw, kh, sd, sc, cap)
+        ok, note = _check_case(binary, occ_py, kw, kh, sd, sc, cap, HUB_OD.get(name, 22.0))
         print(f"[{'PASS' if ok else 'FAIL'}] {name:16s} {note}")
         failures += 0 if ok else 1
     print(f"\n{len(CASES) - failures}/{len(CASES)} passed")

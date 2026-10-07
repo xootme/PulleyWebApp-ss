@@ -1297,6 +1297,41 @@ def _set_screw_slot(args, pfx, n, who, root_d):
     return [warning], {}, []
 
 
+def _captured_nut_hub(args, pfx, n, who, root_d):
+    """A captured nut in a hub too narrow for it, on a D-flat, keyway or hex
+    bore: STEP can't make the lobed hub (geometry/captured_nut_hub.py, the same
+    check the STEP worker refuses on). Returns ([warning], {element id: value},
+    [change text]); the fix is the Hub OD the nut needs (and the spokes' hub,
+    which the hub follows), else none: holding the screw another way is a
+    choice of screw type, not a number."""
+    from geometry import captured_nut_hub as _cnh
+    hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(args, pfx)
+    try:
+        ss = _set_screw(args, pfx)
+    except ValueError:
+        return [], {}, []
+    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
+    nut = ss.nut if ss else None
+    sp = _spline_of(args, pfx) if _hex_bore(args, pfx) else None
+    warn = _cnh.problems(bore_mm=bore_mm, hub_od_mm=hub_od, hub_height_mm=hub_h, screw_count=sc,
+                         captured_nut=cn, screw_dia_mm=sd, flat_depth_mm=fd, keyway_w_mm=kw_w,
+                         keyway_h_mm=kw_h, spline=sp, nut=nut, who=who)
+    if not warn:
+        return [], {}, []
+    need = math.ceil(_cnh.min_hub_od(bore_mm=bore_mm, screw_dia_mm=sd, nut=nut) * 2 - 1e-9) / 2
+    if need > math.floor((root_d - 2 * SPLINE_WALL) * 2) / 2:
+        return warn, {}, []
+    spokes_on = args.get(f'{pfx}spokes_enabled') == '1'
+    if spokes_on:
+        fit = _spoke_fit(dict(args.items(), **{f'{pfx}hub_od': need, f'{pfx}spokes_hub_od': need}), pfx)
+        if not fit.possible or fit.fitted['hub_od'] < need - 1e-6:
+            return warn, {}, []
+    fix = {f'hub{n}_od': need}
+    if spokes_on:
+        fix[f'spokes{n}_hub_od'] = need
+    return warn, fix, [f'{who}hub OD {hub_od:g} → {need:g} mm (room for the captured nut)']
+
+
 def _flange_rim_fix(args, pfx, n, who, need):
     """Auto-fix for a flange sitting too little on its spoke rim (ADR-021): the
     settings whose rim AS BUILT is at least `need` mm. The spoke fit trims Rim
@@ -1419,9 +1454,17 @@ def _dimensions(args):
 
         if three_d:
             ss_warn, ss_fix, ss_changes = _set_screw_slot(args, pfx, n, who, od - 2 * tooth_ht)
-            warnings += ss_warn
+            cn_warn, cn_fix, cn_changes = _captured_nut_hub(args, pfx, n, who, od - 2 * tooth_ht)
+            hub_key = f'hub{n}_od'
+            if hub_key in ss_fix and hub_key in cn_fix:   # both widen the hub: the wider one does
+                if cn_fix[hub_key] > ss_fix[hub_key]:
+                    ss_fix, ss_changes = {}, []
+                else:
+                    cn_fix, cn_changes = {}, []
+            warnings += ss_warn + cn_warn
             fix_set.update(ss_fix)
-            changes += ss_changes
+            fix_set.update(cn_fix)
+            changes += ss_changes + cn_changes
 
         flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
         p['flanged'] = flanged
