@@ -283,9 +283,12 @@ Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
       0.8.2 (63eddba) — 2.0.13.
 - [x] small_step 0.8.2 builds a lobed captured-nut hub WITH its D-flat / keyway / hex bore: the app's lobed-hub
       refusal is dropped (owner, 2026-10-07; 343 designs measured on 0.9.0 against a round-hub control: the bore
-      matches) — except a hex bore whose captured screw hole is wider than a hex face (bore/√3).
-- [ ] That case gives an INVALID STEP (Ø5 hex bar, M5 nut, Ø12 hub; small_step's bug, reported 2026-10-07): drop the
-      last refusal in `geometry/captured_nut_hub.py` when small_step fixes it.
+      matches). The last case (Ø5 hex bar, M5 nut, Ø12 hub: INVALID on 0.9.0) is refused by name in 0.9.1.
+- [ ] Pre-screen small_step 0.9.1's two new captured-nut refusals with an Auto-fix (today the user meets them as the
+      STEP download's 400; the live 0.9.0 made them as wrong parts):
+      a pocket wider than the lobe's waist (any bore; fix: a slightly wider Hub OD), and a captured screw too big to
+      drill (>= 95 % of the pocket's half-width, the bore radius or the hub radius; e.g. M5 on a Ø5 hex bar).
+      `small_step check` gives both with their fixes — the cct_common wrapper (owner's word to adopt).
 - [ ] small_step grows a non-exact hub to the nut pocket's depth + 0.5 (M5 nut on a 10 mm hub → 10.315); the STL
       doesn't. Send `--hub-exact`, or grow the STL's hub the same way — the owner's call.
 - [ ] A hub under ~1/3 of the captured nut's minimum: small_step grows it round in STEP, the STL lobes it — they differ.

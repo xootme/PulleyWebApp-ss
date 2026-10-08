@@ -481,10 +481,9 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         nut=params.get('screw_nut'), hole=sent_hole)
     if why:
         raise Refused(' '.join(w[0].upper() + w[1:] for w in why))
-    # A captured nut in a hub too narrow for it: lobed on a hex bore whose screw is
-    # wider than a hex face (an invalid STEP, small_step 0.9.0); or a key slot pushing
-    # the pocket out through the wall round its screw (invalid; small_step refuses it
-    # by name) (geometry/captured_nut_hub.py).
+    # A captured nut in a hub too narrow for it: a key slot pushing the pocket out
+    # through the wall round its screw (invalid; small_step refuses it by name)
+    # (geometry/captured_nut_hub.py).
     from geometry.captured_nut_hub import problems as _nut_hub_problems
     why = _nut_hub_problems(
         bore_mm=bore_mm, hub_od_mm=hub_od_mm, hub_height_mm=hub_height_mm,
