@@ -59,7 +59,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 0.11.0: assemble keeps a separate top flange (and metal plates) placed with
 # its pulley, and a round lobe's support cone reaching the spoke band is built
 # (0.10.0 left it out of the STEP, valid and light).
-SMALL_STEP_MIN_VERSION = (0, 11, 0)
+# 0.11.1: two set screws whose holes meet (a round bore, r > 0.707 R) were
+# self-intersecting, and a second screw reaching a D-flat or key slot's side
+# INVALID; both built now, a hex pair past the meeting refused by name
+# (0.11.2: a screw the key's own width builds again, as 0.11.0 built it).
+SMALL_STEP_MIN_VERSION = (0, 11, 2)
 
 _version_checked: dict = {}   # bin_path → True once verified
 # small_step builds a captured nut under a top ring counterbore correctly from
