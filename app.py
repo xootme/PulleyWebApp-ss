@@ -1298,8 +1298,8 @@ def _set_screw_slot(args, pfx, n, who, root_d):
 
 
 def _captured_nut_hub(args, pfx, n, who, root_d):
-    """A captured nut in a hub too narrow for it: lobed on a D-flat, keyway or
-    hex bore, or no wall left round its screw behind a key slot — STEP can't
+    """A captured nut in a hub too narrow for it: lobed on a hex bore with a
+    screw wider than a hex face, or no wall left round its screw behind a key slot — STEP can't
     make either (geometry/captured_nut_hub.py, the same check the STEP worker
     refuses on). Returns ([warning], {element id: value},
     [change text]); the fix is the Hub OD the nut needs (and the spokes' hub,

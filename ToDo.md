@@ -281,8 +281,13 @@ Full repros in `C:\Users\cmyer\Documents\small_step\STEP_SOLUTIONS.md`.
       a plain screw over a keyway with sqrt(hub_r² − r²) ≤ bore_r + keyway_h.
 - [x] Hex set-screw hole on a D-flat leaves a plug ~one flat-depth thick (STEP; OCCT passes it). Fixed in small_step
       0.8.2 (63eddba) — 2.0.13.
-- [ ] small_step 0.8.2 builds a lobed captured-nut hub WITH its D-flat / keyway / hex bore, so the app's lobed-hub
-      refusal (`geometry/captured_nut_hub.py` case 1) could become an optional suggestion — the owner's call.
+- [x] small_step 0.8.2 builds a lobed captured-nut hub WITH its D-flat / keyway / hex bore: the app's lobed-hub
+      refusal is dropped (owner, 2026-10-07; 343 designs measured on 0.9.0 against a round-hub control: the bore
+      matches) — except a hex bore whose captured screw hole is wider than a hex face (bore/√3).
+- [ ] That case gives an INVALID STEP (Ø5 hex bar, M5 nut, Ø12 hub; small_step's bug, reported 2026-10-07): drop the
+      last refusal in `geometry/captured_nut_hub.py` when small_step fixes it.
+- [ ] small_step grows a non-exact hub to the nut pocket's depth + 0.5 (M5 nut on a 10 mm hub → 10.315); the STL
+      doesn't. Send `--hub-exact`, or grow the STL's hub the same way — the owner's call.
 - [ ] A hub under ~1/3 of the captured nut's minimum: small_step grows it round in STEP, the STL lobes it — they differ.
 - [ ] Keyway + partial-height spokes: a key whose back wall (bore/2 + keyway_h) reaches the spokes' hub ring
       (>= ring_r − 0.001) cuts the ring — INVALID body today (fuzz seed 42 #170: Ø8.6 bore, 6x3 key, wall 7.30 vs ring

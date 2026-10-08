@@ -96,7 +96,7 @@ CASES = [
 ]
 
 # The hub is Ø22 except where a captured nut needs more: bore + 6·t_nut, else it
-# is lobed, which STEP refuses on a keyway (test_captured_nut_hub). M4: Ø29.2.
+# is lobed (test_captured_nut_hub). M4: Ø29.2.
 HUB_OD = {"captured_keyway": 30.0}
 
 

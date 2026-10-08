@@ -491,8 +491,7 @@ class TestStepRetention:
 
     def test_step_dshaft_with_captured_nut(self):
         """D-shaft + captured-nut: nut pocket must align with flat face. The M5
-        nut needs a Ø32 hub: a narrower one is lobed, which STEP refuses on a
-        D-flat (test_captured_nut_hub)."""
+        nut needs a Ø32 hub: a narrower one is lobed (test_captured_nut_hub)."""
         self._check({**self._BASE, 'hub_od_mm': 32.0, 'flat_depth_mm': 1.5,
                      'screw_dia_mm': 5.0, 'screw_count': 1, 'captured_nut': True})
 

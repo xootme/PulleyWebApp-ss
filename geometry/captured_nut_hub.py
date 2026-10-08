@@ -6,17 +6,20 @@ A captured nut needs 2·t_nut of wall past its pocket. Two ways a hub falls
 short, both refused by small_step by name, and both said here first with the
 Hub OD that works:
 
-1. Lobed, on a bore that isn't round. A hub of radius under bore_r + 3·t_nut
-   is built with a lobe bulging out in each screw direction, and small_step
-   0.8.1 builds that lobed hub's bore ROUND: before 0.8.1 a D-flat was
-   silently left off the hub (a valid STEP, the wrong part), and a keyway gave
-   an invalid one (fuzz #103, #109). 0.8.1 refuses a lobed hub on a D-flat,
-   keyway or shaped (hex) bore. small_step's rule (ss-pulley `build_hub`):
+1. Lobed, on a hex bore, with a screw hole wider than a hex face. A hub of
+   radius under bore_r + 3·t_nut is built with a lobe bulging out in each
+   screw direction. small_step's rule (ss-pulley `build_hub`):
 
        hub_r < min_hub_r < 2.9 · hub_r        min_hub_r = bore_r + 3 · t_nut
 
    Past 2.9 · hub_r the lobes would detach, and small_step grows the hub round
-   to min_hub_r instead, which carries the bore's shape.
+   to min_hub_r instead. Since 0.8.2 the lobed hub carries the bore's shape
+   (before, a D-flat was left off and a keyway gave an invalid STEP), so a
+   lobed hub on a D-flat, keyway or hex bore builds (2026-10-07, 343 designs
+   measured against a round-hub control; the owner dropped the refusal). One
+   case still gives an INVALID STEP: a hex bore whose captured screw hole is
+   wider than a hex face (bore/√3; Ø5 hex bar, M5 nut, Ø12 hub) — refused
+   here until small_step fixes it.
 
 2. No wall round the screw. A keyway pushes the pocket out behind the slot,
    but min_hub_r measures the wall from the bore, so a deep key leaves the
@@ -88,17 +91,16 @@ def problems(*, bore_mm: float, hub_od_mm: float, hub_height_mm: float, screw_co
     need = min_hub_od(bore_mm=bore_mm, screw_dia_mm=screw_dia_mm, nut=nut, keyway_h_mm=kh, hole=hole)
 
     lobed = min_hub_r > hub_r + 1e-6 and min_hub_r - hub_r < 1.9 * hub_r
-    what = ('keyway' if has_keyway else 'D-flat' if flat_depth_mm > 0
-            else 'hex bore' if spline else None)
-    if lobed and what:
+    r = _reach(screw_dia_mm, hole)
+    face = bore_mm / math.sqrt(3)
+    if lobed and spline and 2.0 * r > face + 1e-9:
         return [f"{who}a captured nut this size needs a Hub OD of at least Ø{need:.2f} mm; the "
                 f"Ø{hub_od_mm:g} mm hub would be built with lobes, and STEP can't make a lobed hub "
-                f"with a {what} yet — widen the Hub OD, or hold the screw by its thread or an "
-                f"insert instead of a nut."]
+                f"on a hex bore yet when the Ø{2.0 * r:.2f} mm screw hole is wider than a hex face "
+                f"({face:.2f} mm) — widen the Hub OD, or use a smaller screw."]
 
     big_r, off = ((hub_r, min_hub_r - hub_r) if lobed else
                   (min_hub_r, 0.0) if min_hub_r > hub_r + 1e-6 else (hub_r, 0.0))
-    r = _reach(screw_dia_mm, hole)
     xo = bore_mm / 2.0 + kh + POCKET_KEEPOUT + t + POCKET_CLEARANCE
     if off + math.sqrt(max(big_r * big_r - r * r, 0.0)) <= xo + WELD_TOL:
         why = ' (the key slot pushes it out)' if has_keyway else ''
