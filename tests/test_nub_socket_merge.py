@@ -142,15 +142,18 @@ CASES = [
     #     carve the notch and the socket↔web inner wall. → OCCT-valid.
     ("partial_height_deep", _base(spoke_height_mm=5.0, nub_height_mm=2.0),       False, True),
     # WIDE spokes (fillet_base does not reach the hub): connected star web cap.
+    #   (an M3 set screw: _base's 5 mm one can't be drilled through a 5 mm
+    #   bore, which small_step 0.11.0 refuses — screw_too_big — and 0.10.0
+    #   built with the hole silently left out)
     #   - filleted wide (the real "P2": 11 wide spokes on a hub_od 15) → valid
-    ("partial_height_wide", _base(num_teeth=75, bore_mm=5.0, spoke_count=11,
+    ("partial_height_wide", _base(num_teeth=75, bore_mm=5.0, screw_dia_mm=3.0, spoke_count=11,
                                   spoke_width_mm=7.0, spoke_hub_od_mm=15.0,
                                   hub_od_mm=15.0, rim_depth_mm=10.0,
                                   keyway_w_mm=0.0, keyway_h_mm=0.0, spoke_height_mm=5.0,
                                   flange_enabled=False, nubs_enabled=False),       False, True),
     #   - non-filleted wide: the flanks converge onto the hub; the notch is clipped
     #     off the hub so the cap outline never pinches its own hub hole → valid
-    ("partial_height_wide_nofillet", _base(num_teeth=75, bore_mm=5.0, spoke_count=11,
+    ("partial_height_wide_nofillet", _base(num_teeth=75, bore_mm=5.0, screw_dia_mm=3.0, spoke_count=11,
                                   spoke_width_mm=7.0, spoke_hub_od_mm=15.0,
                                   hub_od_mm=15.0, rim_depth_mm=10.0,
                                   fillet_tip_mm=0.0, fillet_base_mm=0.0,
@@ -158,7 +161,7 @@ CASES = [
                                   flange_enabled=False, nubs_enabled=False),       False, True),
     #   - wide spokes WITH flange + nub sockets (the recessed web carries the
     #     sockets too) → valid; exercises the wide path's socket handling.
-    ("partial_height_wide_nubs", _base(num_teeth=75, bore_mm=5.0, spoke_count=11,
+    ("partial_height_wide_nubs", _base(num_teeth=75, bore_mm=5.0, screw_dia_mm=3.0, spoke_count=11,
                                   spoke_width_mm=7.0, spoke_hub_od_mm=15.0,
                                   hub_od_mm=15.0, rim_depth_mm=10.0,
                                   keyway_w_mm=0.0, keyway_h_mm=0.0, spoke_height_mm=5.0,
@@ -264,7 +267,7 @@ def test_wide_spoke_partial_height_valid():
         pytest.skip("small_step binary not found")
     # HTD-8M-75T, hub_od 15, rim_depth 10, 11 wide spokes (the real "P2").
     params = _base(
-        num_teeth=75, bore_mm=5.0, spoke_count=11, spoke_width_mm=7.0,
+        num_teeth=75, bore_mm=5.0, screw_dia_mm=3.0, spoke_count=11, spoke_width_mm=7.0,
         spoke_hub_od_mm=15.0, hub_od_mm=15.0, rim_depth_mm=10.0,
         keyway_w_mm=0.0, keyway_h_mm=0.0, spoke_height_mm=5.0,
         flange_enabled=False, nubs_enabled=False,
