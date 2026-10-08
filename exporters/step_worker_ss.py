@@ -53,7 +53,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Minimum compatible small_step binary version (MAJOR, MINOR, PATCH).
 # Bump MINOR when a new subcommand or flag is required; MAJOR on breaking CLI changes.
-SMALL_STEP_MIN_VERSION = (0, 6, 0)
+# A PATCH too when the app relies on what it fixes: 0.9.1 refuses by name the lobed
+# captured-nut hubs it can't make, which the app stopped refusing itself (2026-10-07);
+# 0.8.0 brought assemble, extrude, --color, --screw-z and --hub-skirt.
+SMALL_STEP_MIN_VERSION = (0, 9, 1)
 
 _version_checked: dict = {}   # bin_path → True once verified
 # small_step builds a captured nut under a top ring counterbore correctly from
