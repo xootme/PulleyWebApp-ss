@@ -548,8 +548,14 @@ def build_socket_meshes(
 # Print support ribs (integrated top-flange mode only)
 # ---------------------------------------------------------------------------
 
+# How far every print support stands from the part's vertical faces: the ribs'
+# tips from the teeth, the grid's outline wall from the bore, flange, spoke
+# openings and hub (the owner, 2026-10-08: fixed, not a setting).
+_SUPPORT_SIDE_GAP = 1.0
+
+
 def _build_buttress_mesh(
-    r_ti: float, z_ti: float,    # inner tip: (R_OD, flat_underside - air_gap)
+    r_ti: float, z_ti: float,    # inner tip: (R_OD + 1 mm, flat_underside - air_gap)
     r_to: float, z_to: float,    # outer tip: (r_outer, angled_underside - air_gap)
     r_tube: float,               # tube inner radius (r_outer + 1mm); outer face is flush here
     z_bed: float,                # bed level (tube bottom)
@@ -613,6 +619,9 @@ def build_support_ribs(
     A thin-walled vertical tube sits on the bed 1mm outside the lower flange
     outer edge (r = R_OD + rim_r + 1mm).  The tube extends from the bed up to
     the height of the upper flange outer rim.
+
+    Each rib's tip stands _SUPPORT_SIDE_GAP (1 mm) out from the tooth tips,
+    so no rib touches the teeth.
 
     Each rib has a vertical outer face flush with the tube inner face, so both
     the rib top (at flange level) and rib bottom (at bed level) merge into the
@@ -682,10 +691,13 @@ def build_support_ribs(
         start_angle = math.pi / n_ribs
 
         meshes = [tube_mesh]
+        # the rib's tip stands _SUPPORT_SIDE_GAP clear of the tooth tips, so it
+        # never touches the teeth (the owner, 2026-10-08)
+        r_tip = min(R_OD + _SUPPORT_SIDE_GAP, r_outer - nozzle_dia)
         for k in range(n_ribs):
             theta = start_angle + k * 2.0 * math.pi / n_ribs
             meshes.append(_build_buttress_mesh(
-                R_OD, z_ti, r_outer, z_to, r_tube, z_bed, hw_tip, hw_base, theta,
+                r_tip, z_ti, r_outer, z_to, r_tube, z_bed, hw_tip, hw_base, theta,
             ))
         return meshes
     except Exception:
@@ -714,8 +726,12 @@ def build_center_supports(
     bed. Under each — the hub ring, then the web less its openings — this
     stands a grid of walls one nozzle wide, at most `support_max_spacing`
     apart, with an outline so a narrow ring is never missed; each stops
-    `support_air_gap` below the part and keeps that gap from the bore and the
-    bottom flange's inner edge, so it breaks away. Each grid stands on a solid
+    `support_air_gap` below the part, so it breaks away. The outline is a wall
+    _SUPPORT_SIDE_GAP (1 mm) clear of every vertical face — the bore, the
+    bottom flange's inner edge, the spoke openings and, where the web is
+    shorter than the face, the hub's side above the web's grid — and the
+    hatch stops at it, so no support touches a vertical face (the owner,
+    2026-10-08). Each grid stands on a solid
     adhesion layer one layer thick (a layer is half the nozzle diameter),
     covering the grid's whole area, so the thin walls have a first layer to
     hold the bed (the owner, 2026-10-06).
@@ -740,15 +756,20 @@ def build_center_supports(
     web_h = min(web_height_mm, face_height_mm) if web_height_mm > 0 else face_height_mm
     z_web = (face_height_mm - web_h) / 2.0          # the web's underside (it is centred)
 
-    keep = Point(0, 0).buffer(r_rim_mm - gap, resolution=96).difference(
-        Point(0, 0).buffer(bore_reach_mm + gap, resolution=96))
-    hub = keep.intersection(Point(0, 0).buffer(r_hub_mm, resolution=96))
-    web = keep.difference(Point(0, 0).buffer(r_hub_mm, resolution=96))
+    side = max(_SUPPORT_SIDE_GAP, gap)              # clear of every vertical face
+
+    keep = Point(0, 0).buffer(r_rim_mm - side, resolution=96).difference(
+        Point(0, 0).buffer(bore_reach_mm + side, resolution=96))
     voids = [Polygon(v).buffer(0) for v in _spoke_void_polygons(
         r_hub_mm, r_rim_mm, spoke_count, spoke_width_mm,
         fillet_tip_mm=fillet_tip_mm, fillet_base_mm=fillet_base_mm) if len(v) >= 3]
     if voids:
-        web = web.difference(unary_union(voids).buffer(gap))
+        keep = keep.difference(unary_union(voids).buffer(side, resolution=32))
+    hub = keep.intersection(Point(0, 0).buffer(r_hub_mm, resolution=96))
+    # a web shorter than the face leaves the hub's side bare between the two
+    # undersides: the web's (taller) grid keeps clear of it too
+    web = keep.difference(Point(0, 0).buffer(
+        r_hub_mm + (side if z_web > 1e-6 else 0.0), resolution=96))
     regions = [(hub, 0.0 - gap), (web, z_web - gap)] if z_web > 1e-6 else \
               [(unary_union([hub, web]), 0.0 - gap)]
 

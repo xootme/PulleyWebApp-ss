@@ -135,8 +135,11 @@ top flange's overhang — the part of the flange outside the teeth.</p>
 <ul>
   <li><strong>Add Print Supports</strong> — Enables the support structure. A thin-walled tube sits
       1 mm outside the lower flange edge; radial ribs inside it stand on the lower flange and stop
-      just under the upper flange's overhang (the Air Gap). Two 1 mm slits cut through opposite
-      sides of the tube for easy removal after printing. <em>Supports are only shown in the export file (Assembly STL) — not in the 3D preview.</em></li>
+      just under the upper flange's overhang (the Air Gap), their tips 1 mm clear of the teeth. Two 1 mm slits cut through opposite
+      sides of the tube for easy removal after printing. On a spoked pulley, whose hub and spokes
+      hang a flange height above the bed, a breakaway grid stands under them too, on a one-layer
+      base. Its outline wall keeps 1 mm clear of every upright face (the bore, the lower flange's
+      inner edge, the spoke openings and the hub's side), so the grid never touches one. <em>Supports are only shown in the export file (Assembly STL) — not in the 3D preview.</em></li>
   <li><strong>Nozzle Dia. (mm)</strong> — Nozzle diameter of your printer (default 0.4 mm).
       Controls rib tip width and tube wall thickness so the supports are one extrusion width wide.</li>
   <li><strong>Max Spacing (mm)</strong> — Maximum angular spacing between adjacent support ribs

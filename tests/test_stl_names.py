@@ -142,8 +142,8 @@ def test_a_spoked_pulley_gets_a_grid_under_its_hub_and_web(client, web, z_web):
     r = np.hypot(v[:, 0], v[:, 1])
     assert v[:, 2].min() == pytest.approx(-1.5, abs=1e-6)             # stands on the bed
     assert v[:, 2].max() == pytest.approx(z_web - 0.2, abs=1e-6)      # one air gap below the web
-    assert r.min() >= r_bore + 0.2 - 1e-3                             # clear of the bore (the circle is a 384-gon)
-    assert r.max() <= r_rim - 0.2 + 1e-3                              # clear of the flange's inner edge
+    assert r.min() >= r_bore + 1.0 - 1e-3                             # 1 mm clear of the bore (a 384-gon)
+    assert r.max() <= r_rim - 1.0 + 1e-3                              # 1 mm clear of the flange's inner edge
     under_hub = v[r < 8.0 - 1e-3]                                      # the hub is Ø16
     assert len(under_hub) and under_hub[:, 2].max() == pytest.approx(-0.2, abs=1e-6)   # the hub sits at z = 0
     # every grid wall is one nozzle wide, and they are in the -w-supports STL
@@ -183,6 +183,52 @@ def test_each_grid_stands_on_a_one_layer_adhesion_layer():
         under = _footprint(pads)                       # every wall stands on a layer
         for w in walls:
             assert _footprint([w]).difference(under).area < 1e-3, 'a wall off its layer'
+
+
+@pytest.mark.parametrize('web', ['0', '4'], ids=['full web', 'web 4 mm, centred'])
+def test_the_grid_keeps_1mm_clear_of_every_vertical_face(web):
+    """The grid's outline wall stands 1 mm from the part's vertical faces and
+    the hatch stops at it (the owner, 2026-10-08): the bore, the bottom
+    flange's inner edge, every spoke opening and, under a web shorter than
+    the face, the hub's bare side above the web's taller grid."""
+    from shapely.geometry import Point, Polygon
+    from shapely.ops import unary_union
+    from exporters.png_exporter import _spoke_void_polygons
+    q = {**SPOKED, 'spokes_height': web}
+    grid, v, r_rim, r_bore = _grid(q)
+    assert grid
+    r_hub = 8.0                                                        # the hub is Ø16
+    openings = unary_union([Polygon(p).buffer(0) for p in _spoke_void_polygons(
+        r_hub, r_rim, 5, 5.0, fillet_tip_mm=1.0, fillet_base_mm=1.5) if len(p) >= 3])
+    faces = [('bore', Point(0, 0).buffer(r_bore, 96).exterior),
+             ("flange's inner edge", Point(0, 0).buffer(r_rim, 96).exterior),
+             ('spoke opening', openings.boundary)]
+    tall = [m for m in grid if m.vertices[:, 2].max() > 0]             # the web's grid, above the hub's underside
+    if web != '0':
+        assert tall
+        faces.append(("hub's side", Point(0, 0).buffer(r_hub, 96).exterior))
+    for name, face in faces:
+        for m in (tall if name == "hub's side" else grid):
+            d = _footprint([m]).distance(face)
+            assert d >= 1.0 - 2e-3, f'a support {d:.2f} mm from the {name}'
+
+
+@pytest.mark.parametrize('extra', [{}, {'teeth': '60', 'belt_height': '10', 'flange_rim_radius': '4'}],
+                         ids=['GT2 30T', 'GT2 60T, rim 4'])
+def test_the_ribs_keep_1mm_clear_of_the_teeth(extra):
+    """Each rib under the top flange stops 1 mm out from the tooth tips, so
+    no support touches the teeth (the owner, 2026-10-08)."""
+    import app as A
+    from exporters.flange_exporter import _pulley_radii
+    q = {**BASE, **SUPPORTS, **extra}
+    family, pitch, teeth, _b, _bh, cl, _bl, pr = A._parse_stl_params(q, '1')
+    r_od = _pulley_radii(family, pitch, teeth, cl, pr)[0]
+    ribs = A._print_supports(q, '1', A._parse_flange_params(q, ''))
+    assert ribs
+    v = np.vstack([m.vertices for m in ribs])
+    beside = v[v[:, 2] > 0]                                            # beside the teeth, above the lower flange
+    assert len(beside)
+    assert np.hypot(beside[:, 0], beside[:, 1]).min() >= r_od + 1.0 - 1e-6
 
 
 def _footprint(meshes):
