@@ -413,6 +413,26 @@ def test_design_matches_ignores_the_spline_part():
     assert 'part' not in canonical_design(dict(SPLINED, part='shaft'))
 
 
+def test_bundle_takes_files_carrying_the_whole_design(paid, monkeypatch):
+    """Every Download-window file carries the whole design as `design` (JSON)
+    for Import (2.0.16) — a delivery key, not a setting. 2.0.16 refused every
+    paid download as "/download/assembly-step isn't part of this design"."""
+    import json
+    monkeypatch.setenv('PULLEY_TESTING', '1')
+    did = charges.designs.register(paid.acct, SPLINED)
+    whole = json.dumps(dict(SPLINED, belt_height='12'))
+    r = _bundle(paid, [{'path': '/download/stl', 'params': dict(SPLINED, design=whole)},
+                       {'path': '/download/spline-stl', 'params': dict(SPLINED, part='shaft', design=whole)}],
+                did)
+    assert r.status_code == 200, r.data[:300]
+    status = paid.client.get(r.get_json()['status_url']).get_json()
+    assert status['status'] == 'done', status
+    assert len(_zip_names(paid.client, status)) == 2
+    from charging import canonical_design
+    assert 'design' not in canonical_design(dict(SPLINED, design=whole))
+    assert charges.design_key_for(dict(SPLINED, design=whole)) == charges.design_key_for(SPLINED)
+
+
 # ── Paid only for what arrives (cct_common.charging "delivery"; the owner,
 # 2026-10-02: a download failed and was still charged) ──────────────────
 
