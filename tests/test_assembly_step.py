@@ -268,8 +268,6 @@ def test_a_splined_pulley_with_its_shaft_washers_and_rings(client):
 
 
 @needs_assemble
-@pytest.mark.xfail(strict=True, reason="small_step assemble (a99954e) keeps only a part file's first PRODUCT: "
-                                       "a flanged pulley's top_flange/bottom_flange are left loose, unplaced")
 def test_a_flanged_drive_keeps_its_flanges_in_place(client):
     r = _get(client, FLANGED)
     _check_tree(r.data, asm.manifest(FLANGED))

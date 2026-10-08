@@ -56,7 +56,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # A PATCH too when the app relies on what it fixes: 0.9.1 refuses by name the lobed
 # captured-nut hubs it can't make, which the app stopped refusing itself (2026-10-07);
 # 0.8.0 brought assemble, extrude, --color, --screw-z and --hub-skirt.
-SMALL_STEP_MIN_VERSION = (0, 9, 1)
+# 0.11.0: assemble keeps a separate top flange (and metal plates) placed with
+# its pulley, and a round lobe's support cone reaching the spoke band is built
+# (0.10.0 left it out of the STEP, valid and light).
+SMALL_STEP_MIN_VERSION = (0, 11, 0)
 
 _version_checked: dict = {}   # bin_path → True once verified
 # small_step builds a captured nut under a top ring counterbore correctly from
