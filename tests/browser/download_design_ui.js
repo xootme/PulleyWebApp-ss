@@ -128,6 +128,16 @@ async function main() {
         const withSup = rec.files.filter(f => f.part === 'p' + n && f.fmt === 'stl' && f.params.with_supports === '1');
         check(`${label}: pulley ${n} STL with supports only with supports in place`, withSup.length === (sup(n) ? 1 : 0), withSup.length);
       }
+      // STEP is one assembly file of every part ticked (the owner, 2026-10-06): the zip asks
+      // once, naming them all — the merged request downloads and is part of the design too
+      if (mode === '3d') {
+        const steps = rec.files.filter(f => f.fmt === 'step');
+        const merged = await js(`_oneAssembly(${JSON.stringify(rec.files)}).filter(f => f.path === '/download/assembly-step')`);
+        check(`${label}: one STEP file naming every STEP part`, merged.length === 1
+              && merged[0].params.parts === steps.map(f => f.part).join(','), [steps.map(f => f.part), merged.map(f => f.params.parts)]);
+        if (merged.length === 1 && steps.length > 1)
+          rec.files.push({ part: 'all', fmt: 'step', path: merged[0].path, params: merged[0].params });
+      }
       // every file downloads (tokens off)
       for (const f of rec.files) {
         const url = f.path + '?' + new URLSearchParams(f.params);

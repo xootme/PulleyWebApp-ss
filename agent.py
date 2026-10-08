@@ -176,10 +176,14 @@ PARTS = [
     Part("pulley2", "Pulley 2", ("step", "stl", "svg", "dxf"), when="dual"),
     Part("belt", "Belt", ("step", "stl", "svg", "dxf"), when="a belt family; STEP and STL need dual"),
     Part("drive", "Whole drive drawing", ("dxf",), when="dual, a belt family"),
-    Part("shaft1", "Pulley 1 sample splined shaft", ("stl", "svg", "dxf"), when="pulley 1 has a spline or hex bore"),
-    Part("washer1", "Pulley 1 splined washer", ("stl", "svg", "dxf"), when="pulley 1 has a ring and spline_washer"),
-    Part("shaft2", "Pulley 2 sample splined shaft", ("stl", "svg", "dxf"), when="pulley 2 has a spline or hex bore"),
-    Part("washer2", "Pulley 2 splined washer", ("stl", "svg", "dxf"), when="pulley 2 has a ring and spline_washer"),
+    Part("shaft1", "Pulley 1 sample splined shaft", ("step", "stl", "svg", "dxf"),
+         when="pulley 1 has a spline or hex bore"),
+    Part("washer1", "Pulley 1 splined washer", ("step", "stl", "svg", "dxf"),
+         when="pulley 1 has a ring and spline_washer"),
+    Part("shaft2", "Pulley 2 sample splined shaft", ("step", "stl", "svg", "dxf"),
+         when="pulley 2 has a spline or hex bore"),
+    Part("washer2", "Pulley 2 splined washer", ("step", "stl", "svg", "dxf"),
+         when="pulley 2 has a ring and spline_washer"),
 ]
 
 
@@ -197,6 +201,8 @@ def describe(version: str = "") -> Description:
                "check returns the dimensions, the spec warnings and an Auto-fix: fix.set holds the "
                "parameter changes (keyed by the page's field ids) and fix.changes says what they do.",
                "STL files carry the print compensation; STEP, SVG and DXF are nominal.",
+               "STEP is one file for the whole design: an assembly of every part asked for, each a "
+               "component placed as assembled (a shaft carries its retaining rings).",
                "With a splined or hex bore the STEP needs the cadquery backend; the small_step build "
                "refuses it for now."],
         version=version)
@@ -263,15 +269,24 @@ def files(query: dict, parts: list, formats: list) -> list:
     stem = f"{family}-{pitch}"
     out = []
 
+    asm = []                     # STEP is one assembly file of every part asked for (the owner, 2026-10-06)
+    ids = {"pulley1": "p1", "pulley2": "p2", "belt": "belt",
+           "shaft1": "sh1", "washer1": "wa1", "shaft2": "sh2", "washer2": "wa2"}
+
     def add(part, fmt, path, params, name):
         if part in parts and fmt in formats:
+            if fmt == "step":
+                asm.append(part)
+                if len(asm) == 1:
+                    out.append(None)                         # the assembly's place in the list
+                return
             out.append((part, fmt, path, params, name))
 
     for n, pfx in ((1, ""), (2, "p2_")) if dual else ((1, ""),):
         base = dict(query, pulley=str(n)) if n == 2 else dict(query)
         teeth = query.get(f"{pfx}teeth", "")
         name = f"{stem}-{teeth}T{'-P2' if n == 2 else ''}"
-        add(f"pulley{n}", "step", "/download/step", base, f"{name}.step")
+        add(f"pulley{n}", "step", None, None, None)
         # The server's STL names: -1flange when the top flange is a separate part, and
         # with print supports (a top printed in place) a -w-supports copy too.
         printed = query.get(f"{pfx}flange_enabled") == "1" and query.get(f"{pfx}flange_3dprint") == "1"
@@ -286,6 +301,9 @@ def files(query: dict, parts: list, formats: list) -> list:
         sp = _spline_of(query, pfx)
         if sp:
             rt = sp["retainer"]
+            add(f"shaft{n}", "step", None, None, None)
+            if rt and rt["washer_t"] > 0:
+                add(f"washer{n}", "step", None, None, None)
             for fmt in ("stl", "svg", "dxf"):
                 add(f"shaft{n}", fmt, f"/download/spline-{fmt}", dict(base, pulley=str(n), part="shaft"),
                     f"{name}-spline-shaft.{fmt}")
@@ -307,6 +325,12 @@ def files(query: dict, parts: list, formats: list) -> list:
             add("belt", fmt, f"/download/belt-{fmt}", belt, f"{stem}-belt.{fmt}")
         if dual:
             add("drive", "dxf", "/download/all-dxf", belt, f"{stem}-drive.dxf")
+    if asm:
+        design = f"{stem}-{query.get('teeth', '')}T" + (f"-{query.get('p2_teeth', '')}T" if dual else "")
+        params = dict(query, parts=",".join(ids[p] for p in asm))
+        if dual and has_belt:
+            params["n_belt"] = belt["n_belt"]
+        out[out.index(None)] = (",".join(asm), "step", "/download/assembly-step", params, f"{design}.step")
     return out
 
 

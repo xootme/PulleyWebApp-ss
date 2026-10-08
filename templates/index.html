@@ -2947,13 +2947,13 @@ function _dlParts(threeD) {
   } else if (dual && hasBelt) {
     parts.push({ id: 'drive', label: 'Whole drive drawing', only: 'dxf', note: 'DXF only' });
   }
-  // A splined bore's own parts (ADR-017): a sample shaft that fits it, and the
-  // washer under the ring — STL and drawings, no STEP.
+  // A splined bore's own parts (ADR-017): a sample shaft that fits it (its STEP
+  // with the retaining rings in its grooves), and the washer under the ring.
   for (const n of dual ? [1, 2] : [1]) {
     if (boreShape(n) !== 'spline') continue;
-    parts.push({ id: `sh${n}`, label: `Pulley ${n} sample splined shaft`, note: threeD ? 'no STEP' : '' });
+    parts.push({ id: `sh${n}`, label: `Pulley ${n} sample splined shaft` });
     if ((_ck(n, 'ring_top') || _ck(n, 'ring_bottom')) && _ck(n, 'washer'))
-      parts.push({ id: `wa${n}`, label: `Pulley ${n} splined washer`, note: threeD ? 'no STEP' : '' });
+      parts.push({ id: `wa${n}`, label: `Pulley ${n} splined washer` });
   }
   return parts;
 }
@@ -2968,18 +2968,41 @@ function _splinePartParams(n, part) {
   return p;
 }
 
+// STEP is one file for the whole design, a real assembly (the owner, 2026-10-06):
+// each ticked part asks /download/assembly-step for itself, and _oneAssembly
+// folds those into one request naming them all (parts=p1,p2,belt,sh1,wa1).
+const _ASM_STEP = '/download/assembly-step';
+function _asmStepParams(part) {
+  const p = buildParams();
+  p.belt_height = document.getElementById('belt_height').value;
+  if (document.getElementById('dual_enable').checked) p.n_belt = document.getElementById('belt_teeth').value || 0;
+  p.parts = part;
+  return p;
+}
+function _oneAssembly(files) {
+  const asm = files.filter(f => f.path === _ASM_STEP);
+  if (asm.length < 2) return files;
+  const one = { path: _ASM_STEP,
+                params: Object.assign({}, asm[0].params, { parts: asm.map(f => f.params.parts).join(',') }) };
+  const at = files.indexOf(asm[0]);
+  return files.filter((f, i) => i === at || f.path !== _ASM_STEP).map(f => (f === asm[0] ? one : f));
+}
+
 // The requests one part needs in one format — the same routes and parameters
 // the per-part buttons used.
 function _dlFiles(part, fmt) {
   const q = (path, params) => ({ path, params });
   const beltH = () => document.getElementById('belt_height').value;
+  if (fmt === 'step' && /^(p[12]|belt|sh[12]|wa[12])$/.test(part)) {
+    if (part === 'belt' && !document.getElementById('dual_enable').checked) return [];
+    return [q(_ASM_STEP, _asmStepParams(part))];
+  }
   if (part === 'p1' || part === 'p2') {
     const n = part === 'p2' ? 2 : 1;
     const base = () => { const p = buildParams(); if (n === 2) p.pulley = '2'; return p; };
     const rimWrap = document.getElementById(`rim-layer${n}-wrap`);
     const rim = rimWrap && rimWrap.style.display !== 'none'
                 && document.getElementById(`rim_layer${n}_enabled`).checked;
-    if (fmt === 'step') return [q('/download/step', _stepParams(n))];
     if (fmt === 'stl')  { const p = base(); p.belt_height = beltH();
                           return [q('/download/stl', p)].concat(
                             _supportsOn(n) ? [q('/download/stl', Object.assign({}, p, { with_supports: '1' }))] : []); }
@@ -2989,14 +3012,14 @@ function _dlFiles(part, fmt) {
                           return [q('/download/dxf', p)].concat(rim ? [q('/download/dxf-rim', p)] : []); }
   }
   if (part === 'belt') {
-    if ((fmt === 'step' || fmt === 'stl') && !document.getElementById('dual_enable').checked) return [];
+    if (fmt === 'stl' && !document.getElementById('dual_enable').checked) return [];
     const p = buildBeltParams();
-    if (fmt === 'step' || fmt === 'stl') p.belt_height = beltH();
+    if (fmt === 'stl') p.belt_height = beltH();
     return [q(`/download/belt-${fmt}`, p)];
   }
   if (part.startsWith('fl') && fmt === 'stl') return _flangeFiles(Number(part.slice(2)));
   if (part === 'drive' && fmt === 'dxf') return [q('/download/all-dxf', buildBeltParams())];
-  if ((part.startsWith('sh') || part.startsWith('wa')) && fmt !== 'step') {
+  if (part.startsWith('sh') || part.startsWith('wa')) {
     const n = Number(part.slice(2));
     return [q(`/download/spline-${fmt}`, _splinePartParams(n, part.startsWith('sh') ? 'shaft' : 'washer'))];
   }
@@ -3036,6 +3059,7 @@ async function openDownloadWindow() {
     zipName: _dlZipName(),
     charging,
     submit: async (body, ui) => {
+      body.files = _oneAssembly(body.files);
       if (!tokensOn) {
         const tok = await _cctGetToken();
         if (tok && tok.ok === false) { ui.close(); _cctLimitMsg(tok.count, tok.limit); return; }
