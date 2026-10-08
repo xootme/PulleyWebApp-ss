@@ -720,9 +720,10 @@ def generate_belt_dxf_for_step(
     _segs_to_dxf(msp, outer_segs, {'layer': 'BELT_BACK'})
     _segs_to_dxf(msp, inner_segs, {'layer': 'BELT_TEETH'})
 
-    # Close the inner loop: the last tooth's end may not coincide with the
-    # first tooth's start (belt_outline_segments doesn't add a return segment).
-    # Add a closing LINE so small_step's build_one_loop can complete the loop.
+    # The last tooth ends exactly on the first tooth's start (build_two_pulley_belt
+    # spaces the teeth over the loop's exact length), so this LINE is never
+    # written; it stays only as a guard. A closing line once doubled back over
+    # the first tooth and made the belt STEP invalid (STD 5M 20/100, cd 183.86).
     if inner_segs:
         first_pt = inner_segs[0][1][0]
         last_pt  = inner_segs[-1][1][-1]

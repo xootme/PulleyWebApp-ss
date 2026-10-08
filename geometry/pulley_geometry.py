@@ -2192,16 +2192,8 @@ def build_two_pulley_belt(family: str, pitch: str, left_teeth: int, right_teeth:
     total_belt  = 2*s_tangent + R_right*sweep_right + R_left*sweep_left
     n_belt = max(0, round(total_belt / p_mm))
 
-    # ── Arc-length table ──────────────────────────────────────────────────────
+    # ── Back surface: pitch_line offset outwards ──────────────────────────────
     n = len(pitch_line)
-    S = [0.0] * n
-    for i in range(1, n):
-        S[i] = S[i-1] + math.hypot(pitch_line[i][0]-pitch_line[i-1][0],
-                                    pitch_line[i][1]-pitch_line[i-1][1])
-    close_len = math.hypot(pitch_line[0][0]-pitch_line[-1][0],
-                            pitch_line[0][1]-pitch_line[-1][1])
-    total_s = S[-1] + close_len
-
     tangents_v = []
     for i in range(n):
         j = (i+1) % n
@@ -2220,37 +2212,56 @@ def build_two_pulley_belt(family: str, pitch: str, left_teeth: int, right_teeth:
     back_path   = _offset_path(offset_back)
     od_path     = _offset_path(-aa)   # OD-land surface; used to close the tooth chain
 
+    # The teeth sit on the exact pitch path (lines and true arcs), not on the
+    # chords of pitch_line: the chords are shorter than the arcs, so n_belt
+    # teeth laid on them ran past the start (STD 5M 20/100 at cd 183.86 ended
+    # 0.03 mm past it, its closing line doubling back: an invalid belt STEP).
+    seg_lens = (s_tangent, R_right*sweep_right, s_tangent, R_left*sweep_left)
+    exact_s  = sum(seg_lens)
+
     def _interp_at(s):
-        s = s % total_s
-        lo, hi = 0, n-1
-        while hi - lo > 1:
-            mid = (lo+hi)//2
-            if S[mid] <= s: lo = mid
-            else:            hi = mid
-        frac = (s-S[lo]) / max(1e-12, S[hi]-S[lo]) if hi > lo else 0.0
-        ppx = pitch_line[lo][0] + frac*(pitch_line[hi][0]-pitch_line[lo][0])
-        ppy = pitch_line[lo][1] + frac*(pitch_line[hi][1]-pitch_line[lo][1])
-        nnx = normals_v[lo][0]  + frac*(normals_v[hi][0] -normals_v[lo][0])
-        nny = normals_v[lo][1]  + frac*(normals_v[hi][1] -normals_v[lo][1])
-        d   = math.hypot(nnx, nny)
-        if d > 1e-12: nnx, nny = nnx/d, nny/d
-        return ppx, ppy, nnx, nny
+        s = s % exact_s
+        if s < seg_lens[0]:                       # top run, L_top → R_top
+            f = s / seg_lens[0]
+            tx, ty = R_top[0]-L_top[0], R_top[1]-L_top[1]
+            d = math.hypot(tx, ty)
+            return L_top[0] + f*tx, L_top[1] + f*ty, -ty/d, tx/d
+        s -= seg_lens[0]
+        if s < seg_lens[1]:                       # right arc, clockwise
+            a = a_rt - s / R_right
+            return ox+C + R_right*math.cos(a), R_right*math.sin(a), math.cos(a), math.sin(a)
+        s -= seg_lens[1]
+        if s < seg_lens[2]:                       # bottom run, R_bot → L_bot
+            f = s / seg_lens[2]
+            tx, ty = L_bot[0]-R_bot[0], L_bot[1]-R_bot[1]
+            d = math.hypot(tx, ty)
+            return R_bot[0] + f*tx, R_bot[1] + f*ty, -ty/d, tx/d
+        s -= seg_lens[2]
+        a = a_lb - s / R_left                     # left arc, clockwise
+        return ox + R_left*math.cos(a), R_left*math.sin(a), math.cos(a), math.sin(a)
 
     # Build inner (toothed) surface by concatenating all tooth profiles.
-    # Shift tooth chain by +p_mm/2 so the first tooth's left land falls exactly
-    # at s=0 (= pitch_line[0] = L_top tangent point).  This makes inner_pts[0]
+    # Shift tooth chain by +p/2 so the first tooth's left land falls exactly
+    # at s=0 (the L_top tangent point).  This makes inner_pts[0]
     # and inner_pts[-1] align with back_path[0] and back_path[-1] at the same
     # belt arc-length, so the polygon closes with perpendicular cross-sections
     # and no diagonal kink above the left pulley.
+    # The n_belt teeth share the path's length evenly (p_eff): the centre is
+    # whole-tooth only to its shown 0.01 mm (or not at all), and a chain of
+    # exact pitches would overrun or fall short of its start by the remainder.
+    p_eff = exact_s / n_belt if n_belt else p_mm
+    stretch = p_eff / p_mm
     inner_pts = []
     for k in range(n_belt):
-        s_c = k * p_mm + p_mm * 0.5   # tooth k spans s ∈ [k·p, (k+1)·p]
+        s_c = k * p_eff + p_eff * 0.5   # tooth k spans s ∈ [k·p, (k+1)·p]
         tooth_inner = []
         for bx, by in one_tooth_pts:
-            ppx, ppy, nnx, nny = _interp_at(s_c + bx)
+            ppx, ppy, nnx, nny = _interp_at(s_c + bx * stretch)
             d = by - aa
             tooth_inner.append((ppx + d*nnx, ppy + d*nny))
         inner_pts.extend(tooth_inner if k == 0 else tooth_inner[1:])
+    if inner_pts:
+        inner_pts[-1] = inner_pts[0]   # the loop closes on its own start
 
     # Return outer and inner as separate closed paths.
     # The renderer combines them with fill-rule="evenodd" so no seam is needed:
