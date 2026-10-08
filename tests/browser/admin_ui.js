@@ -186,7 +186,7 @@ async function main() {
   await js("document.querySelector('nav [data-tab=status]').click()");
   await waitFor("document.querySelectorAll('#status .row').length > 5");
   const st = await js("Object.fromEntries([...document.querySelectorAll('#status .row')].map(r => [r.firstChild.textContent, r.lastChild.textContent]))");
-  check('status: app and version', st.App === 'Timing Pulleys 2.0.19', st.App);
+  check('status: app and version', st.App === 'Timing Pulleys 2.0.20', st.App);
   check('status: database', st.Database === 'sqlite — OK', st.Database);
   check('status: accounts', st.Accounts === '5', st.Accounts);
   check('status: admins', st.Admins === 'admin@example.com', st.Admins);
