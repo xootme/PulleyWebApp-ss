@@ -251,7 +251,7 @@ def _run_ss_worker(worker_kw: dict, *, timeout: int = 110) -> bytes:
     worker_ss = os.path.join(root, 'exporters', 'step_worker_ss.py')
     env       = dict(os.environ, SMALL_STEP_BIN=_SS_BIN)
     result    = subprocess.run(
-        [python, worker_ss, json.dumps(worker_kw)],
+        [python, worker_ss, '-'], input=json.dumps(worker_kw).encode('utf-8'),
         capture_output=True, cwd=root, timeout=timeout, env=env,
     )
     if result.returncode != 0:

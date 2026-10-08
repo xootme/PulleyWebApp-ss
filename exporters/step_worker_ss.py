@@ -3,7 +3,7 @@ step_worker_ss.py
 Subprocess worker that generates STEP using the small_step Rust binary.
 
 Usage:
-    python step_worker_ss.py <json-params>
+    python step_worker_ss.py -  < params.json     (or the JSON as the one argument)
 
 Accepts the same JSON parameter format as step_worker.py.
 export_type controls the operation:
@@ -786,7 +786,10 @@ def run(params: dict, ss_bin: str) -> bytes:
 
 
 def main():
-    params = json.loads(sys.argv[1])
+    # The design comes on stdin ('-'): an assembly's manifest is past Windows'
+    # 32,767-character command line (WinError 206), and Linux's 128 KB per argument.
+    arg = sys.argv[1] if len(sys.argv) > 1 else '-'
+    params = json.loads(sys.stdin.read() if arg == '-' else arg)
 
     ss_bin = os.environ.get('SMALL_STEP_BIN', '')
     if not ss_bin or not os.path.isfile(ss_bin):
