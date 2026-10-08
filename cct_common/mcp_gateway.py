@@ -72,6 +72,7 @@ class Gateway:
         """local=False is the hosted gateway: never read CCT_TOKEN or a token
         file — each call brings its own (with_token)."""
         self.apps = dict(apps)
+        self.local = local
         self.token_path = Path(token_path)
         self.token = token or ((os.environ.get("CCT_TOKEN") or self._read_token()) if local else None)
         self.http = http or _urllib_http
@@ -95,11 +96,21 @@ class Gateway:
             raise GatewayError(f"unknown app {app!r}; configured: {', '.join(self.apps) or 'none'}")
         return self.apps[app]
 
+    def _url(self, app: str, path: str) -> str:
+        """A URL the app gave (or a path to call) as a full URL. Paths are
+        the app's own, under its base: "/download/x" and "download/x" both
+        mean <base>/download/x, because online an app lives at
+        /tools/<slug>/ and the site's root paths belong to another app."""
+        from urllib.parse import urlsplit
+        if urlsplit(path).scheme:
+            return path
+        return self._base(app) + "/" + path.lstrip("/")
+
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.token}"} if self.token else {}
 
     def _call(self, app: str, method: str, path: str, body: dict | None = None) -> dict:
-        status, _h, data = self.http(method, self._base(app) + path, body, self._headers())
+        status, _h, data = self.http(method, self._url(app, path), body, self._headers())
         try:
             payload = json.loads(data or b"{}")
         except ValueError:
@@ -129,7 +140,12 @@ class Gateway:
         return self._call(app, "POST", "/api/v1/check", {"params": params})
 
     def quote(self, app: str, params: dict, formats: list | None = None) -> dict:
-        return self._call(app, "POST", "/api/v1/quote", {"params": params, "formats": formats})
+        q = self._call(app, "POST", "/api/v1/quote", {"params": params, "formats": formats})
+        if not self.local:
+            # Hosted, an AI app's directory may forbid pointing at a checkout
+            # (OpenAI's does): no buy link. Tokens are bought on the site.
+            q.pop("buy_url", None)
+        return q
 
     def export(self, app: str, params: dict, formats: list | None = None, parts: list | None = None,
                out_dir: str = ".") -> dict:
@@ -137,10 +153,9 @@ class Gateway:
                              {"params": params, "formats": formats, "parts": parts})
         out = Path(out_dir).expanduser()
         out.mkdir(parents=True, exist_ok=True)
-        base = self._base(app)
         saved, charged, balance, problems = [], 0, None, []
         for f in listing.get("files", []):
-            status, headers, data = self.http("GET", base + f["url"], None, self._headers())
+            status, headers, data = self.http("GET", self._url(app, f["url"]), None, self._headers())
             h = {k.lower(): v for k, v in headers.items()}
             if status >= 400:
                 try:
@@ -196,9 +211,8 @@ class Gateway:
             sleep(2.0)
             waited += 2.0
         out = st.get("output_file") or ""
-        if out.startswith("/"):
-            base = urlsplit(self._base(app))
-            out = f"{base.scheme}://{base.netloc}{out}"
+        if out:
+            out = self._url(app, out)
         return {"download_url": out, "files": [f["name"] for f in listing.get("files", [])],
                 "design_id": listing.get("design_id"),
                 "note": "Give the person this link. Tokens are taken only when the zip is downloaded "

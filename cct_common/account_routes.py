@@ -278,6 +278,35 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         account_id = tokens.get_or_create_account(normalize_email(review_email), signup_grant=0)
         return _finish_sign_in(account_id, request.form.get("next"))
 
+    # The same account by email and password, for a review form that wants
+    # a login rather than a link (OpenAI's): /account/review-login, with
+    # REVIEW_LOGIN_EMAIL and REVIEW_LOGIN_KEY as the password. A 404 while off.
+    def _review_login_form(nxt: str, error: str = "", status: int = 200) -> Response:
+        return _page(f"Sign in to {app_name}", (
+            "<p>The test account for directory reviewers.</p>"
+            + (f"<p><strong>{html.escape(error)}</strong></p>" if error else "")
+            + "<form method='post' action='/account/review-login'>"
+            f"<input type='hidden' name='next' value='{html.escape(nxt, quote=True)}'>"
+            "<p><label>Email<br><input type='email' name='email' autocomplete='username' required></label></p>"
+            "<p><label>Password<br><input type='password' name='password' "
+            "autocomplete='current-password' required></label></p>"
+            "<button type='submit'>Sign in</button></form>"), status=status)
+
+    def review_login_page():
+        if not review_on:
+            return _page("Not found", "<p>That page isn't here.</p>", status=404)
+        return _review_login_form(_safe_next(request.args.get("next")))
+
+    def review_login_submit():
+        if not review_on:
+            return _page("Not found", "<p>That page isn't here.</p>", status=404)
+        email_ok = request.form.get("email", "").strip().lower() == review_email.lower()
+        if not (_review_ok(request.form.get("password", "")) and email_ok):
+            return _review_login_form(_safe_next(request.form.get("next")),
+                                      "Wrong email or password.", status=403)
+        account_id = tokens.get_or_create_account(normalize_email(review_email), signup_grant=0)
+        return _finish_sign_in(account_id, request.form.get("next"))
+
     def _oauth_buttons(nxt: str, safe: str = "/") -> str:
         """'Continue with Google / GitHub …' with each one's logo, for the
         providers this app has set up; empty if none. Back to `nxt` after."""
@@ -639,6 +668,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     app.add_url_rule("/account/review", view_func=review_page, methods=["GET"])
     app.add_url_rule("/account/review", endpoint="account_review_submit",
                      view_func=review_submit, methods=["POST"])
+    app.add_url_rule("/account/review-login", view_func=review_login_page, methods=["GET"])
+    app.add_url_rule("/account/review-login", endpoint="account_review_login_submit",
+                     view_func=review_login_submit, methods=["POST"])
     app.add_url_rule("/account/sign-in", view_func=sign_in_page, methods=["GET"])
     app.add_url_rule("/account/sign-in", endpoint="account_sign_in_submit",
                      view_func=sign_in_submit, methods=["POST"])
