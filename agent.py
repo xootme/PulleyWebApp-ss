@@ -331,7 +331,11 @@ def files(query: dict, parts: list, formats: list) -> list:
         if dual and has_belt:
             params["n_belt"] = belt["n_belt"]
         out[out.index(None)] = (",".join(asm), "step", "/download/assembly-step", params, f"{design}.step")
-    return out
+    # every file embeds the whole design for Import, whatever its own request names
+    # (a single belt's is only its profile): app._design_of
+    import json
+    whole = json.dumps(query)
+    return [(pt, fmt, path, dict(params, design=whole), name) for pt, fmt, path, params, name in out]
 
 
 # ── charging: register the design, price it ─────────────────────────────────

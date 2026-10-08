@@ -2616,11 +2616,13 @@ async function updatePreview() {
   document.getElementById('preview-placeholder').style.display = 'none';
 }
 
-function buildParams() {
+// whole: the hubs too in the 2D view, which leaves them out of its own requests
+// (designParams: a file downloaded in 2D carries them, the Sprocket session's find).
+function buildParams(whole = false) {
   const cp   = document.getElementById('clearance_preset').value;
   const bp   = document.getElementById('backlash_preset').value;
   const dual = document.getElementById('dual_enable').checked;
-  const fb   = document.getElementById('feature_build').checked;
+  const fb   = whole || document.getElementById('feature_build').checked;
   const p = {
     family:           document.getElementById('family').value,
     pitch:            document.getElementById('pitch').value,
@@ -2731,6 +2733,18 @@ function buildParams() {
   p.sv = CCT_SCHEMA_VERSION;
   return p;
 }
+
+// The whole design, as every downloaded file carries it for Import: buildParams (with
+// the hubs, in the 2D view too) and the Belt Height. Each download sends it as `design` (JSON),
+// since a file's own request can name fewer settings (a flat drawing has no height, a
+// single belt only its profile) or other names (a flange's), and the file saved those
+// (the owner, 2026-10-07: "ensure that full metadata is saved in all files").
+function designParams() {
+  const p = buildParams(true);
+  p.belt_height = document.getElementById('belt_height').value;
+  return p;
+}
+const _designJson = () => JSON.stringify(designParams());
 
 // ── Download popup menu ───────────────────────────────────────────────────────
 function toggleDlMenu(id, event) {
@@ -2988,9 +3002,16 @@ function _oneAssembly(files) {
   return files.filter((f, i) => i === at || f.path !== _ASM_STEP).map(f => (f === asm[0] ? one : f));
 }
 
+// The requests one part needs in one format, each carrying the whole design for
+// the file to embed (designParams).
+function _dlFiles(part, fmt) {
+  const design = _designJson();
+  return _dlFileRequests(part, fmt).map(f => ({ path: f.path, params: Object.assign({}, f.params, { design }) }));
+}
+
 // The requests one part needs in one format — the same routes and parameters
 // the per-part buttons used.
-function _dlFiles(part, fmt) {
+function _dlFileRequests(part, fmt) {
   const q = (path, params) => ({ path, params });
   const beltH = () => document.getElementById('belt_height').value;
   if (fmt === 'step' && /^(p[12]|belt|sh[12]|wa[12])$/.test(part)) {
@@ -3603,7 +3624,8 @@ function _dlUrl(url) {
     finalUrl += sep + 'session_id=' + encodeURIComponent(sessionId);
   }
   const sep = finalUrl.includes('?') ? '&' : '?';
-  return finalUrl + sep + '_ts=' + Date.now();
+  // the whole design, for the file to embed (designParams)
+  return finalUrl + sep + 'design=' + encodeURIComponent(_designJson()) + '&_ts=' + Date.now();
 }
 
 // Download a server-generated file by navigating a hidden iframe straight to
@@ -3840,7 +3862,10 @@ function showDims(data) {
   if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
   if (data.error) return;
 
-  if (clearanceAuto && data.pulleys.length) {
+  // Not in the 2D view: its check leaves the hubs out, so switching to 2D changed the
+  // design's clearance height, and a drawing downloaded there carried the 2D one
+  // (roundtrip_ui.js, 2026-10-07). The drawings don't use it.
+  if (clearanceAuto && document.getElementById('feature_build').checked && data.pulleys.length) {
     const bw = data.pulleys[0].belt_width;
     const needs = data.pulleys.filter(c => c.face_width_min !== undefined)
                               .map(c => c.face_width_min - c.belt_width);
@@ -5377,6 +5402,7 @@ function _startAsyncJob(endpoint, params, retryFn) {
   _currentJobId = null;
   const sessionId = new URLSearchParams(window.location.search).get('session_id');
   if (sessionId) params.session_id = sessionId;
+  params.design = _designJson();          // the whole design, for the file to embed
   const done = _busy('Generating your file…');
   fetch(endpoint, {
     method: 'POST',
@@ -5524,6 +5550,7 @@ async function startAsyncDownload(type) {
     }
     if (_asyncTok && _asyncTok.token) params._fpt = _asyncTok.token;
   }
+  params.design = _designJson();          // the whole design, for the file to embed
 
   fetch(endpoint, {
     method: 'POST',

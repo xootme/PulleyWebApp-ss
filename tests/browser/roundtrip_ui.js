@@ -7,8 +7,11 @@
 // then random changes through the controls themselves — click a checkbox, pick
 // a menu option, nudge a number — so the page's own handlers shape the design.
 // Then:
-//   A = the parameters the page sends (buildParams, as a download does)
-//   export its STL (the design is embedded), import it on a blank page -> B
+//   A = the whole design (designParams: what a link carries)
+//   every file the Download window makes, in every format, must embed A key for key
+//     (an SVG and DXF had no Belt Height, a single belt only its profile: 2026-10-07),
+//     and so must every drawing the 2D view makes (its requests leave the hubs out)
+//   import the pulley's STL, SVG, DXF and the 2D view's DXF, each on a blank page -> B
 //   open it as a link on a blank page                                   -> C
 // B and C must equal A key for key, and the same controls must be visible.
 //
@@ -89,7 +92,19 @@ const WALKER = `(() => {
     },
   };
 })()`;
-const PARAMS = `(() => { const p = buildParams(); p.belt_height = document.getElementById('belt_height').value; return p; })()`;
+const PARAMS = `designParams()`;
+// Every file the Download window would make for this design: each part shown, in every
+// format (STEP folded into its one assembly, as the window sends it).
+const FILES = `_oneAssembly(_dlParts(true).flatMap(pt => ['step', 'stl', 'svg', 'dxf'].flatMap(f => _dlFiles(pt.id, f))))`;
+// ... and in the 2D view, which offers the drawings only.
+const FILES_2D = `_dlParts(false).flatMap(pt => ['svg', 'dxf'].flatMap(f => _dlFiles(pt.id, f)))`;
+// The design a file embeds (app._design_of): STEP / STL trailer, DXF 999 comment, SVG metadata.
+function embedded(buf) {
+  const t = buf.toString('latin1');
+  const m = t.match(/\/\* CCT:(\{.+?\}) \*\//) || t.match(/999\r?\nCCT:(\{.+\})/) || t.match(/<cct>([\s\S]+?)<\/cct>/);
+  if (!m) return null;
+  try { const d = JSON.parse(Buffer.from(m[1], 'latin1').toString('utf8')); return d.cct || d; } catch (e) { return null; }
+}
 // Controls of the view, not the design (not sent with it, so a load needn't keep them):
 // Show sample shaft only shows the shaft in the 3D preview.
 const VIEW_ONLY = /^spline\d_show_shaft$/;
@@ -183,14 +198,40 @@ async function main() {
 
     // Fetched here, not in the page: a big pulley's STL is tens of MB, and passing it
     // back through the debugger as base64 hung the run (HTD 20M 24T, 2026-10-02).
-    const res = await fetch(`${BASE}/download/stl?${qs}`);
-    const stl = [res.status, Buffer.from(await res.arrayBuffer())];
     const rec = { seed, steps, A, problems: [] };
-    if (stl[0] !== 200) { refused++; rec.problems.push(`export refused (${stl[0]}), import not tried`); }
-    else {
+    const got = {};
+    for (const f of await js(FILES)) {
+      const res = await fetch(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
+      const what = `${f.path}${f.params.pulley === '2' ? ' (pulley 2)' : ''}${f.params.with_supports ? ' (supports)' : ''}`
+                   + `${f.params.part ? ' ' + f.params.part : ''}${f.params.flange_which ? ' flange' : ''}`;
+      if (res.status !== 200) { rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
+      const buf = Buffer.from(await res.arrayBuffer());
+      const meta = embedded(buf);
+      if (!meta) rec.problems.push(`file: ${what} embeds no design`);
+      else for (const k of diffKeys(A, meta)) rec.problems.push(`file: ${what} ${k}: ${A[k] ?? '∅'} -> ${meta[k] ?? '∅'}`);
+      const ext = f.path.match(/^\/download\/(stl|svg|dxf)$/);
+      if (ext && !f.params.pulley && !f.params.with_supports && !got[ext[1]]) got[ext[1]] = buf;
+    }
+    // The 2D view's drawings: its own requests leave the hubs out, but each file must
+    // still embed the whole design (Sprocket's find: a 2D DXF imported as a plain plate).
+    if (await js(MODE)) { await js(`document.getElementById('feature_build').click()`); await sleep(2500); }
+    if (await js(MODE)) rec.problems.push('could not switch to the 2D view');
+    for (const x of diffKeys(A, await js(PARAMS))) rec.problems.push(`2D view designParams: ${x}`);
+    for (const f of await js(FILES_2D)) {
+      const res = await fetch(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
+      const what = `2D view ${f.path}${f.params.pulley === '2' ? ' (pulley 2)' : ''}${f.params.part ? ' ' + f.params.part : ''}`;
+      if (res.status !== 200) { rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
+      const buf = Buffer.from(await res.arrayBuffer());
+      const meta = embedded(buf);
+      if (!meta) rec.problems.push(`file: ${what} embeds no design`);
+      else for (const k of diffKeys(A, meta)) rec.problems.push(`file: ${what} ${k}: ${A[k] ?? '∅'} -> ${meta[k] ?? '∅'}`);
+      if (f.path === '/download/dxf' && !f.params.pulley) got['2d.dxf'] = buf;
+    }
+    if (!Object.keys(got).length) refused++;
+    for (const [ext, buf] of Object.entries(got)) {
       exported++;
-      const file = path.join(tmp, `design-${seed}.stl`);
-      fs.writeFileSync(file, stl[1]);
+      const file = path.join(tmp, `design-${seed}.${ext}`);
+      fs.writeFileSync(file, buf);
       await blank();
       await js('openImportDialog()');
       const doc = await send('DOM.getDocument', { depth: -1 });
@@ -199,11 +240,11 @@ async function main() {
       await js('executeImport()');
       await sleep(3500);
       const B = await js(PARAMS);
-      if (has3d(A) && !(await js(MODE))) rec.problems.push('import: a 3D design opened in 2D mode');
+      if (has3d(A) && !(await js(MODE))) rec.problems.push(`import ${ext}: a 3D design opened in 2D mode`);
       if ((await js(MODE)) !== modeA) { await js(`document.getElementById('feature_build').click()`); await sleep(800); }
       const visB = await js(VISIBLE);
-      for (const x of await diffParams(A, B)) rec.problems.push(`import: ${x}`);
-      for (const x of diffVisible(visA, visB)) rec.problems.push(`import visible: ${x}`);
+      for (const x of await diffParams(A, B)) rec.problems.push(`import ${ext}: ${x}`);
+      for (const x of diffVisible(visA, visB)) rec.problems.push(`import ${ext} visible: ${x}`);
     }
     await blank(qs);
     const C = await js(PARAMS);
@@ -225,14 +266,15 @@ async function main() {
 
     report.push(rec);
     const bad = rec.problems.filter(p => !p.startsWith('export refused'));
-    console.log(`${bad.length ? 'FAIL' : 'PASS'}  design ${seed} (${steps.length} changes${stl[0] !== 200 ? ', export refused' : ''})`
+    const nRefused = rec.problems.length - bad.length;
+    console.log(`${bad.length ? 'FAIL' : 'PASS'}  design ${seed} (${steps.length} changes${nRefused ? `, ${nRefused} file(s) refused` : ''})`
                 + (bad.length ? '\n      ' + bad.join('\n      ') : ''));
   }
   fs.writeFileSync(path.join(tmp, 'report.json'), JSON.stringify(report, null, 1));
   const failed = report.filter(r => r.problems.some(p => !p.startsWith('export refused'))).length;
   console.log(`report: ${path.join(tmp, 'report.json')}`);
   console.log('page errors:', errors.length ? [...new Set(errors)].slice(0, 5) : 'none');
-  console.log(`${DESIGNS - failed}/${DESIGNS} designs came back whole (${exported} imported, ${refused} not exportable, link only)`);
+  console.log(`${DESIGNS - failed}/${DESIGNS} designs came back whole (${exported} files imported, ${refused} designs with no importable file, link only)`);
   process.exitCode = failed || errors.length ? 1 : 0;
   ws.close(); chrome.kill();
 }

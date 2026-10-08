@@ -2079,33 +2079,51 @@ def _api_error(message, status=400):
     return jsonify({'error': message}), status
 
 
+def _design_of(args) -> dict:
+    """The design a file embeds for Import: the page's whole design when the request
+    sends it (`design`, JSON: buildParams and the Belt Height), else the request's own
+    parameters (a link, an older page). A file's own request can name fewer settings
+    (a flat drawing has no height, a single belt only its profile) or other names (a
+    flange's), and the file used to save those: an SVG imported with no Belt Height
+    (the owner, 2026-10-07: "ensure that full metadata is saved in all files")."""
+    raw = args.get('design')
+    if raw:
+        try:
+            d = json.loads(raw) if isinstance(raw, str) else raw
+        except ValueError:
+            d = None
+        if isinstance(d, dict):
+            return dict(d)
+    return {k: v for k, v in dict(args).items() if k != 'design'}
+
+
 def _cct_meta(args) -> dict:
     """CCT metadata dict for this tool — delegates to cct_common.build_meta."""
     from cct_common import build_meta
-    return build_meta(dict(args), tool='pulleys', version=APP_VERSION,
+    return build_meta(_design_of(args), tool='pulleys', version=APP_VERSION,
                       schema_version=CCT_SCHEMA_VERSION)
 
 
 def _embed_step(step_bytes: bytes, args) -> bytes:
-    return _lib_embed_step(step_bytes, dict(args),
+    return _lib_embed_step(step_bytes, _design_of(args),
                            tool='pulleys', version=APP_VERSION,
                            schema_version=CCT_SCHEMA_VERSION)
 
 
 def _embed_stl(stl_bytes: bytes, args) -> bytes:
-    return _lib_embed_stl(stl_bytes, dict(args),
+    return _lib_embed_stl(stl_bytes, _design_of(args),
                           tool='pulleys', version=APP_VERSION,
                           schema_version=CCT_SCHEMA_VERSION)
 
 
 def _embed_dxf(dxf_bytes: bytes, args) -> bytes:
-    return _lib_embed_dxf(dxf_bytes, dict(args),
+    return _lib_embed_dxf(dxf_bytes, _design_of(args),
                           tool='pulleys', version=APP_VERSION,
                           schema_version=CCT_SCHEMA_VERSION)
 
 
 def _embed_svg(svg_str: str, args) -> str:
-    return _lib_embed_svg(svg_str, dict(args),
+    return _lib_embed_svg(svg_str, _design_of(args),
                           tool='pulleys', version=APP_VERSION,
                           schema_version=CCT_SCHEMA_VERSION)
 
