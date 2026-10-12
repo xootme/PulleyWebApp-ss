@@ -12,6 +12,13 @@ the ring (the STEP assembly: the ring placed on the shaft at retaining_rings.sta
     o.to_dxf(path)                 # the loops as LINE / ARC entities
     o.as_dict()                    # JSON for a STEP job
 
+    ro.groove_section(segs, ring)  # a shaft's outline clipped to the groove's floor d2
+    ro.loop_json(segs)             # Line / Arc segments as the JSON loops below
+
+Every app shows and exports the ring as installed(ring) — the 3D view's
+ring is its polygon() extruded by its thickness, the same shape as the STEP's
+(Timing Pulley Generator's, which first drew the ring this way).
+
     ro.HEIGHTS["DIN 471"][26]      # 1.2: every ring's thickness, by series and shaft size
 
 The shape (DIN 471 Figure 1: "shape of ring at manufacturer's discretion"; the
@@ -273,3 +280,141 @@ def installed(ring: Ring, groove_d: float | None = None) -> Outline:
 def all_outlines() -> list:
     """Every ring in the tables, DIN 471 then SH."""
     return [outline(r) for r in RINGS + INCH_RINGS]
+
+
+# ── a shaft's section at a ring's groove, and loops as JSON ──────────────────
+# Timing Pulley Generator's (exporters/assembly.py), shared so every app's
+# sample shaft is cut the same: a shaft's outline (a spline's, a hex bar's)
+# clipped to the groove's floor d2, exact lines and arcs, for the extruded
+# section of the shaft where the ring sits. Segments in are any Line / Arc
+# with cct_common.splines' fields (p0, p1 / center, radius, start_angle,
+# sweep) — an app's own classes too; segments out are cct_common.splines'.
+#
+#     loops = [ro.loop_json(ro.groove_section(shaft_outline, ring))]
+#
+# The ring itself, in a 3D view or a file: installed(ring) — polygon()
+# extruded by its thickness — never a plain open annulus.
+
+def _own(seg):
+    """Any Line / Arc as cct_common.splines'."""
+    from .splines import Arc, Line
+    if hasattr(seg, "radius"):
+        return Arc(tuple(seg.center), seg.radius, seg.start_angle, seg.sweep)
+    return Line(tuple(seg.p0), tuple(seg.p1))
+
+
+def seg_json(seg) -> list:
+    """A Line / Arc as the JSON segment: ["line", [x0, y0], [x1, y1]] or
+    ["arc", [cx, cy], r, start_deg, end_deg, ccw]."""
+    if not hasattr(seg, "radius"):
+        return ["line", list(seg.p0), list(seg.p1)]
+    a0 = math.degrees(seg.start_angle)
+    full = abs(abs(seg.sweep) - 2 * math.pi) < 1e-12
+    a1 = a0 if full else math.degrees(seg.start_angle + seg.sweep)
+    return ["arc", list(seg.center), seg.radius, a0, a1, seg.sweep > 0]
+
+
+def loop_json(segs) -> list:
+    return [seg_json(s) for s in segs]
+
+
+def reversed_loop(segs) -> list:
+    """A closed path run the other way round (an outline used as a hole)."""
+    return [s.reversed() for s in reversed(segs)]
+
+
+def circle(r: float, ccw: bool = True) -> list:
+    """A full circle on the origin, as one Arc."""
+    from .splines import Arc
+    return [Arc((0.0, 0.0), r, 0.0, 2 * math.pi if ccw else -2 * math.pi)]
+
+
+def _hits(seg, r: float) -> list:
+    """Parameters t in (0, 1) where the segment crosses the circle of radius r on the origin."""
+    eps = 1e-12
+    if not hasattr(seg, "radius"):
+        (x0, y0), (x1, y1) = seg.p0, seg.p1
+        dx, dy = x1 - x0, y1 - y0
+        a, b, c = dx * dx + dy * dy, 2 * (x0 * dx + y0 * dy), x0 * x0 + y0 * y0 - r * r
+        disc = b * b - 4 * a * c
+        if a < eps or disc < 0:
+            return []
+        q = math.sqrt(disc)
+        return sorted(t for t in ((-b - q) / (2 * a), (-b + q) / (2 * a)) if eps < t < 1 - eps)
+    cx, cy = seg.center
+    L = math.hypot(cx, cy)
+    R = seg.radius
+    if L < 1e-12:
+        return []                              # concentric: inside or outside throughout
+    k = (r * r - L * L - R * R) / (2 * R)       # L cos(theta - gamma) = k
+    if abs(k) > L:
+        return []
+    gamma, d = math.atan2(cy, cx), math.acos(k / L)
+    out = []
+    for th in (gamma + d, gamma - d):
+        off = (th - seg.start_angle) % (2 * math.pi)
+        if seg.sweep < 0:
+            off -= 2 * math.pi
+        t = off / seg.sweep
+        if eps < t < 1 - eps:
+            out.append(t)
+    return sorted(out)
+
+
+def _piece(seg, t0: float, t1: float):
+    from .splines import Arc, Line
+    if not hasattr(seg, "radius"):
+        (x0, y0), (x1, y1) = seg.p0, seg.p1
+        at = lambda t: (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)   # noqa: E731
+        return Line(at(t0), at(t1))
+    return Arc(seg.center, seg.radius, seg.start_angle + seg.sweep * t0, seg.sweep * (t1 - t0))
+
+
+def _mid(seg):
+    if not hasattr(seg, "radius"):
+        return ((seg.p0[0] + seg.p1[0]) / 2, (seg.p0[1] + seg.p1[1]) / 2)
+    return seg.point_at(seg.start_angle + seg.sweep / 2)
+
+
+def clip_to_circle(segs, r: float) -> list:
+    """The part of a closed anticlockwise outline (star-shaped about the origin,
+    as a spline's or a hex bar's is) inside the circle of radius r: exact lines
+    and arcs, the outline's own where they lie inside, arcs of the circle where
+    they don't."""
+    from .splines import Arc
+    segs = [_own(s) for s in segs]
+    pieces = []
+    for s in segs:
+        ts = [0.0] + _hits(s, r) + [1.0]
+        pieces += [_piece(s, a, b) for a, b in zip(ts, ts[1:]) if b - a > 1e-12]
+    inside = [math.hypot(*_mid(p)) < r for p in pieces]
+    if all(inside):
+        return segs
+    if not any(inside):
+        return circle(r)
+    n = len(pieces)
+    start = next(i for i in range(n) if inside[i] and not inside[i - 1])   # where the outline comes back in
+    out, i, gap_from = [], start, None
+    for _ in range(n):
+        if inside[i]:
+            if gap_from is not None:                       # close the gap along the circle
+                p, q = gap_from, pieces[i].start
+                a0, a1 = math.atan2(p[1], p[0]), math.atan2(q[1], q[0])
+                out.append(Arc((0.0, 0.0), r, a0, (a1 - a0) % (2 * math.pi)))
+                gap_from = None
+            out.append(pieces[i])
+        elif gap_from is None:
+            gap_from = out[-1].end if out else pieces[i - 1].end
+        i = (i + 1) % n
+    if gap_from is not None:                               # back round to the start
+        p, q = gap_from, out[0].start
+        a0, a1 = math.atan2(p[1], p[0]), math.atan2(q[1], q[0])
+        out.append(Arc((0.0, 0.0), r, a0, (a1 - a0) % (2 * math.pi)))
+    return out
+
+
+def groove_section(shaft_outline, ring: Ring) -> list:
+    """The shaft's section where `ring` sits: its outline clipped to the
+    groove's floor, diameter d2 — so the ring sits in a groove rather than
+    through the teeth."""
+    return clip_to_circle(shaft_outline, ring.d2 / 2.0)

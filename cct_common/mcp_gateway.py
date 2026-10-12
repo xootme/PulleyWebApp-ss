@@ -261,15 +261,18 @@ INSTRUCTIONS = (
     "writes the files. Downloads can cost tokens: quote first; if an app answers "
     "SIGN_IN_REQUIRED, use sign_in / sign_in_finish. All sizes are mm.")
 
+# Names only the tools below, and says the Auto-fix is the caller's own next
+# check call: OpenAI's scan flags instructions that read as hidden operations.
 INSTRUCTIONS_HOSTED = (
-    "CCT (Cheap CAD Tools) parametric part generators, at cheapcadtools.com. Start with "
-    "list_apps, then describe(app) for the app's parameters (their names, units, limits and "
-    "choices). check(app, params) returns the design's dimensions, spec warnings and an "
-    "Auto-fix (fix.set = parameter changes to apply) — apply it and check again until there "
-    "are no warnings. Exporting costs the person tokens: call quote first and tell them the "
-    "price, and export only once they agree. export(app, params, formats, parts) returns a "
-    "download link for them to open; tokens are taken only when it is downloaded. "
-    "All sizes are mm.")
+    "CheapCAD Tools designs mechanical parts (today: timing belt pulleys and two-pulley "
+    "drives) with six tools and nothing else. list_apps names the generators. describe gives "
+    "one generator's parameters: names, units, limits and choices. check returns the "
+    "design's dimensions, any spec warnings and a suggested fix: fix.set lists parameter "
+    "values; to use them, put them in the params yourself and call check again, until "
+    "there are no warnings. quote gives the token cost of the files without making them. "
+    "export returns a download link for the person; it is the only tool that leads to a "
+    "charge, and only when they open the link, so call quote first and export only after "
+    "they agree. balance shows the account's tokens. All sizes are mm.")
 
 
 def build_server(gateway: Gateway, *, hosted: bool = False, provider=None, auth=None):

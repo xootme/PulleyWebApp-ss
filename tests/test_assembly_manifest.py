@@ -59,10 +59,16 @@ def _part(m, name):
 
 
 def _all_loops(part):
+    if 'bodies' in part:
+        return [b['extrude']['loops'] for b in part['bodies']]
     e = part.get('extrude')
-    if not e:
-        return []
-    return [s['loops'] for s in e['sections']] if 'sections' in e else [e['loops']]
+    return [e['loops']] if e else []
+
+
+def _sections(part):
+    """A bodies part's bodies as (z0, z1, loops), bottom up."""
+    return [dict(z0=b['extrude']['z0'], z1=b['extrude']['z0'] + b['extrude']['thickness'],
+                 loops=b['extrude']['loops']) for b in part['bodies']]
 
 
 # ── pulleys and belt ─────────────────────────────────────────────────────────
@@ -118,11 +124,13 @@ def test_the_rings_washers_and_shaft_sit_where_the_standard_puts_them(client):
     assert zw == pytest.approx([lo + ring.m, hi - ring.m - w])
     assert washers['extrude']['thickness'] == w
 
-    shaft = _part(m, 'HTD-5M-40T-spline-shaft')['extrude']['sections']
+    part = _part(m, 'HTD-5M-40T-spline-shaft')
+    assert 'extrude' not in part and part['placement']['origin'][2] == 0.0     # one part, bodies in its frame
+    shaft = _sections(part)
     for a, b in zip(shaft, shaft[1:]):
-        assert a['z1'] == pytest.approx(b['z0'])                              # one solid, no gaps
+        assert a['z1'] == pytest.approx(b['z0'])                              # one part, no gaps
     assert shaft[0]['z0'] < lo and shaft[-1]['z1'] > hi
-    grooves = [s for s in shaft if s['groove']]
+    grooves = [s for s in shaft if s['loops'] != shaft[0]['loops']]
     assert len(grooves) == 2
     for g, ring_z in zip(grooves, zr):
         assert g['z1'] - g['z0'] == pytest.approx(ring.m)                     # the groove is m wide

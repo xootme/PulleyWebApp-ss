@@ -3,8 +3,8 @@
 small_step's `assemble` (Documents\\CCT_Assembly_STEP_Handoff.md, item 2).
 
 Without a binary: which parts go in (the Download window's ticks), a pulley
-ticked alone being its own STEP, the shaft's sections as pieces while
-small_step's extrude takes none, the agent API listing one STEP file.
+ticked alone being its own STEP, the shaft's bodies as pieces for a
+small_step without `bodies`, the agent API listing one STEP file.
 
 With a small_step that can assemble (SMALL_STEP_BIN, or bin/small_step_linux on
 Linux; there is no Windows build with it yet): the route's file is one
@@ -73,18 +73,18 @@ def test_one_pulley_alone_is_its_own_step(client):
     assert out == b'STEP' and made == [{'kind': 'pulley', 'pulley': 2, 'color': colors.PULLEY[2]}]   # no binary
 
 
-def test_the_shaft_in_pieces_while_extrude_takes_no_sections(client):
+def test_the_shaft_in_pieces_without_bodies(client):
     m = asm.manifest(SPLINE)
     shaft = next(p for p in m['parts'] if p['name'].endswith('shaft'))
-    sections = shaft['extrude']['sections']
-    low = asm.lower_sections(m)
+    bodies = [b['extrude'] for b in shaft['bodies']]
+    low = asm.split_bodies(m)
     pieces = [p for p in low['parts'] if p['name'].startswith(shaft['name'] + '-')]
-    assert [p['name'] for p in pieces] == [f"{shaft['name']}-{i}" for i in range(1, len(sections) + 1)]
+    assert [p['name'] for p in pieces] == [f"{shaft['name']}-{i}" for i in range(1, len(bodies) + 1)]
     z = shaft['placement']['origin'][2]
-    for p, s in zip(pieces, sections):
-        assert p['extrude']['thickness'] == pytest.approx(s['z1'] - s['z0'])
-        assert p['extrude']['loops'] == s['loops'] and p['extrude']['name'] == p['name']
-        assert p['placement']['origin'][2] == pytest.approx(z + s['z0'])
+    for p, b in zip(pieces, bodies):
+        assert p['extrude']['thickness'] == pytest.approx(b['thickness'])
+        assert p['extrude']['loops'] == b['loops'] and p['extrude']['name'] == p['name']
+        assert p['placement']['origin'][2] == pytest.approx(z + b['z0'])
         assert p['placement']['rotate_z_deg'] == shaft['placement']['rotate_z_deg']
         assert p['color'] == shaft['color'] == colors.SHAFT
     assert [p for p in low['parts'] if p not in pieces] == [p for p in m['parts'] if p is not shaft]
@@ -260,8 +260,8 @@ def test_one_pulley_ticked_is_a_plain_part(client):
 def test_a_splined_pulley_with_its_shaft_washers_and_rings(client):
     r = _get(client, SPLINE)
     m = asm.manifest(SPLINE)
-    if not asm.can_sections(BIN):
-        m = asm.lower_sections(m)
+    if not asm.can_bodies(BIN):
+        m = asm.split_bodies(m)
     _check_tree(r.data, m)
     _check_places(r.data, m)
     _check_colours(r.data, m)

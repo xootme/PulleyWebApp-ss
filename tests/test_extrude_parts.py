@@ -41,8 +41,6 @@ def _pts(loop, step=0.1):
 def _want_volume(spec):
     from shapely.geometry import Polygon
     area = lambda loops: Polygon(_pts(loops[0]), [_pts(h) for h in loops[1:]]).area   # noqa: E731
-    if 'sections' in spec:
-        return sum(area(s['loops']) * (s['z1'] - s['z0']) for s in spec['sections'])
     return area(spec['loops']) * spec['thickness']
 
 
@@ -69,15 +67,21 @@ def test_a_ring(d1, state):
 def test_the_washer_and_the_shaft_as_one_piece(client):
     m = asm.manifest(SPLINE)
     _check(next(p for p in m['parts'] if p['name'].endswith('washer'))['extrude'])
-    sections = next(p for p in m['parts'] if p['name'].endswith('shaft'))['extrude']['sections']
-    _check({'name': 'shaft', 'thickness': sections[-1]['z1'] - sections[0]['z0'], 'loops': sections[0]['loops']})
+    bodies = [b['extrude'] for b in next(p for p in m['parts'] if p['name'].endswith('shaft'))['bodies']]
+    _check({'name': 'shaft', 'thickness': bodies[-1]['z0'] + bodies[-1]['thickness'] - bodies[0]['z0'],
+            'loops': bodies[0]['loops']})
 
 
-@pytest.mark.xfail(strict=True, reason='small_step extrude takes no stacked sections yet (handoff item 1, '
-                                       'added 2026-10-06): the grooved shaft waits on them')
-def test_the_grooved_shaft(client):
-    m = asm.manifest(SPLINE)
-    _check(next(p for p in m['parts'] if p['name'].endswith('shaft'))['extrude'])
+def test_the_grooved_shaft_is_one_part(client):
+    """Its bodies (shaft, groove, shaft, groove, shaft) under ONE product: one
+    shape representation holding a solid per body (small_step c03179c)."""
+    if not asm.can_bodies(BIN):
+        pytest.skip(f'this small_step ({BIN}) has no `bodies`')
+    shaft = next(p for p in asm.manifest(SPLINE)['parts'] if p['name'].endswith('shaft'))
+    data = asm.assemble_step({'name': 'shaft only', 'parts': [shaft]}, lambda mk: b'', BIN)
+    assert data.count(b'=MANIFOLD_SOLID_BREP(') == len(shaft['bodies']) == 5
+    assert data.count(b'=ADVANCED_BREP_SHAPE_REPRESENTATION(') == 1
+    assert data.count(b"=PRODUCT('" + shaft['name'].encode() + b"'") == 1
 
 
 def test_an_extrude_failure_says_so():
