@@ -2,7 +2,13 @@
 test_nightly_random.py — Nightly randomized pulley generation tests.
 
 Generates 5 random pulley configurations and verifies that all exports
-(SVG, DXF, STL preview, STL download, STEP) succeed without errors.
+(SVG, DXF, STL preview, STL download, STEP) succeed without errors, and that
+each pulley's STEP is its STL: every solid valid and of positive volume, the
+total the STL's (tests/step_checks.py). A design the page shows without a
+warning must make a STEP: a refusal there is a promise the page can't keep.
+(The owner, 2026-10-12: a GT2 30T's inside-out flange and an HTD 3M's
+refused D-flat screw reached the site's samples because this test's STEP
+check needed cadquery, long gone, and skipped itself.)
 
 Runs only when PULLEY_NIGHTLY=1 is set — excluded from normal test runs.
 
@@ -165,8 +171,8 @@ def _parse_and_clamp(raw):
 
     # ── Hub ───────────────────────────────────────────────────────────────────
     hub_od, hub_h, sd, sc, cn, fd, kw, kh = _parse_hub_params(qs, '')
-    if hub_od > 0 and hub_od / 2.0 >= R_tr - 1.0:
-        raise ValueError(f'hub_od {hub_od} >= tooth root {R_tr:.1f}')
+    # A hub wider than the teeth is a real design (it stands on the top
+    # flange; the site's GT2 30T sample): no longer thrown away here.
     if kw > 0 and (bore_mm / 2.0 + kh) >= R_tr - 1.0:
         raise ValueError('keyway extends outside pulley')
     if fd > 0 and fd >= bore_mm / 2.0 - 0.5:
@@ -315,12 +321,25 @@ def test_random_stl_download(client, random_configs, idx):
 
 @pytest.mark.parametrize('idx', range(5))
 def test_random_step(client, random_configs, idx):
-    pytest.importorskip('cadquery', reason='cadquery not installed')
+    """Each pulley's STEP, as the Download window makes it alone, is its STL
+    (step_checks); and a design the page shows without a warning makes one."""
+    from step_checks import STEP_REL, problems, reference_volume
+    from app import _SS_BIN
+    pytest.importorskip('OCP', reason='OCP not installed (needs .venv312)')
+    if not (_SS_BIN and os.path.isfile(_SS_BIN)):
+        pytest.skip('no small_step binary')
     cfg = random_configs[idx]
-    r   = client.get('/download/step', query_string=_qs(cfg))
-    assert r.status_code == 200, \
-        f'STEP failed config[{idx}]: {r.data[:300]}\n{json.dumps(cfg, indent=2)}'
-    assert b'ISO-10303-21' in r.data
+    q = _qs(cfg)
+    warnings = client.get('/api/dimensions', query_string=q).get_json().get('warnings') or []
+    for n in ((1, 2) if q.get('dual') == 'true' else (1,)):
+        r = client.get('/download/assembly-step', query_string=dict(q, parts=f'p{n}'))
+        if r.status_code != 200:
+            assert warnings, (f'config[{idx}] pulley {n}: the page shows no warning but STEP '
+                              f'refuses: {r.data[:300]}\n{json.dumps(cfg, indent=2)}')
+            continue
+        assert b'ISO-10303-21' in r.data
+        bad = problems(r.data, reference_volume(client, q, n), STEP_REL)
+        assert not bad, f'config[{idx}] pulley {n}: {bad}\n{json.dumps(cfg, indent=2)}'
 
 
 @pytest.mark.parametrize('idx', range(5))

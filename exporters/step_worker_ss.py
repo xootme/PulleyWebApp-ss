@@ -382,6 +382,15 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
             r_inner_top = flange_inner_r_3dprint(
                 bore_mm, hub_od_mm, spokes_on, spoke_hub_od_mm,
                 r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
+            if r_inner_top >= R_OD:
+                # A hub wider than the pulley stands on the top flange: the flange
+                # is a full disc from the bore under it, as the STL builds it. Its
+                # hole at the hub's radius would reach past the tooth tips it flares
+                # from: small_step 0.12 made that an inside-out solid, later ones
+                # refuse it (the owner, 2026-10-12; GT2 30T with a 20 mm hub).
+                r_inner_top = flange_inner_r_3dprint(
+                    bore_mm, 0.0, spokes_on, spoke_hub_od_mm,
+                    r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
             r_inner_bot = flange_inner_r_3dprint_bottom(
                 bore_mm, spokes_on, spoke_hub_od_mm,
                 r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)

@@ -119,6 +119,36 @@ or push code that breaks the suite.
 - [ ] `run_tests.py` exited 0 (all tests passed — dashboard shows ✓ All passed)
 - [ ] No new test failures vs the previous run
 
+#### 4a2 — STEP against STL on the site's sample designs (every deploy)
+
+Every pulley in cheapcadtools.com's sample designs (CCT_WebSite's
+`site/data/samples.generated.json`, the owner's printed drives among them) is
+made as the Download window makes its STEP and read by OpenCASCADE. Every
+solid must be valid AND of positive volume, and the total must be within 1 %
+of the STL's. A design the page shows without a warning must make a STEP. Needs
+OCP, which `.venv314` lacks, so it runs with the OCP venv and the Windows binary
+(about 2 minutes):
+
+```bash
+SMALL_STEP_BIN=C:/Users/cmyer/Documents/small_step/target/x86_64-pc-windows-gnu/release/small_step.exe \
+QUEUE_DISABLED=1 C:/Users/cmyer/Documents/PulleyWebApp/.venv312/Scripts/python.exe \
+  -m pytest -q -rxX tests/test_sample_designs_step.py tests/test_step_small_step.py
+```
+
+Known faults are listed in the test's `KNOWN`, each with the small_step version
+that fixes it (or none yet). They show as xfail; one that starts passing fails
+the run, so its entry gets removed. Added 2026-10-12: a GT2 30T's top flange
+was inside out while OpenCASCADE called it valid, and an HTD 3M's STEP was
+refused with no warning on the page. Both were found only when CCT_WebSite
+packaged the samples for GrabCAD.
+
+For a wider sweep: `PULLEY_NIGHTLY=1` with the same command on
+`tests/test_nightly_random.py` makes 5 random designs per day with the same
+checks (`logs/nightly_random/` keeps them for repro).
+
+**Checklist:**
+- [ ] 4a2 passes: no failures, and no XPASS (a fixed fault whose `KNOWN` entry is still there)
+
 #### 4b — Performance benchmarks
 
 Record a benchmark snapshot against the current code.

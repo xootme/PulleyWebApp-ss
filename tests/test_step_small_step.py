@@ -91,26 +91,11 @@ def _step(client, monkeypatch, q):
 
 
 def _solids(data):
-    from OCP.STEPControl import STEPControl_Reader
-    from OCP.TopExp import TopExp_Explorer
-    from OCP.TopAbs import TopAbs_SOLID
-    from OCP.BRepCheck import BRepCheck_Analyzer
-    from OCP.GProp import GProp_GProps
-    from OCP.BRepGProp import BRepGProp
-    with tempfile.NamedTemporaryFile(suffix='.step', delete=False) as f:
-        f.write(data)
-        path = f.name
-    rd = STEPControl_Reader(); rd.ReadFile(path); rd.TransferRoots()
-    ex = TopExp_Explorer(rd.OneShape(), TopAbs_SOLID)
-    n = 0; ok = True; vol = 0.0
-    while ex.More():
-        s = ex.Current(); n += 1
-        if not BRepCheck_Analyzer(s).IsValid():
-            ok = False
-        g = GProp_GProps(); BRepGProp.VolumeProperties_s(s, g); vol += g.Mass()
-        ex.Next()
-    Path(path).unlink(missing_ok=True)
-    return n, ok, vol
+    """(solids, ok, total volume): ok only when every solid is valid AND of
+    positive volume — OCCT calls an inside-out solid valid (step_checks)."""
+    from step_checks import solids
+    got = solids(data)
+    return len(got), all(ok and v > 0 for v, ok in got), sum(v for v, _ok in got)
 
 
 @ss_only
@@ -245,3 +230,44 @@ def test_small_step_metal_flanges_on_spokes(client, monkeypatch, rim):
     assert ok
     stl = _load(client.get('/download/stl', query_string=q).data).volume
     assert vol == pytest.approx(stl, rel=5e-3)
+
+
+# The owner's printed GT2 30T (site sample gt2-30t-45t-printed-three-spoke-pulleys,
+# pulley 1): a 20 mm hub on a pulley 18.2 mm across, so the hub stands on the top
+# flange. 2.0.22 sent the flange the hub's radius for its hole, past the tooth tips
+# it flares from: small_step 0.12.1 built it inside out (-208 mm3, OCCT "valid").
+WIDE_HUB = {'family': 'GT', 'pitch': '2M', 'teeth': '30', 'bore': '5', 'print_extra': '0.2',
+            'belt_height': '5.5', 'clearance_height': '1', 'feature_build': '1',
+            'hub_od': '20', 'hub_height': '6', 'hub_screw_size': 'M3', 'hub_screw_hold': 'nut',
+            'hub_screw_count': '2', 'hub_captured_nut': '1',
+            'flange_enabled': '1', 'flange_3dprint': '1', 'flange_angle': '15',
+            'flange_rim_radius': '3', 'flange_height': '2', 'flange_top_separate': '0'}
+
+
+@ss_only
+def test_a_hub_wider_than_the_pulley_gets_a_full_top_flange():
+    """The top flange's hole is the bore's, not the hub's, when the hub is
+    wider than the tooth tips: a full disc under the hub, as the STL builds it."""
+    from werkzeug.datastructures import MultiDict
+    import app as A
+    from exporters.step_worker_ss import _build_pulley_cmd
+    cmd = _build_pulley_cmd(A._step_kw_of(MultiDict(WIDE_HUB), ''), _ss_bin(), 'x.dxf')
+    i = cmd.index('--top-3d')
+    assert float(cmd[i + 1]) == pytest.approx(2.5) and float(cmd[i + 2]) > 9.0   # bore r, tooth tips r
+    q = dict(WIDE_HUB, hub_od='16')                                  # a hub inside the teeth keeps its hole
+    cmd = _build_pulley_cmd(A._step_kw_of(MultiDict(q), ''), _ss_bin(), 'x.dxf')
+    assert float(cmd[cmd.index('--top-3d') + 1]) == pytest.approx(8.0)
+
+
+@ss_only
+def test_small_step_wide_hub_top_flange_is_not_inside_out(client, monkeypatch):
+    from exporters.step_worker_ss import _binary_version
+    from step_checks import problems, solids, stl_volume
+    r = _step(client, monkeypatch, WIDE_HUB)
+    assert r.status_code == 200, r.data[:200]
+    assert len(solids(r.data)) == 4                        # body, top flange, bottom flange, hub
+    # small_step before 0.13.0 raises a captured nut's hub 0.5 mm above the
+    # app's (0.13.0 drops that to 0.01, the owner 2026-10-12): +3 % here.
+    rel = 0.01 if _binary_version(_ss_bin()) >= (0, 13, 0) else 0.04
+    stl = stl_volume(client.get('/download/stl', query_string=WIDE_HUB).data)
+    assert problems(r.data, stl, rel) == []
