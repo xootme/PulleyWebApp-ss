@@ -125,7 +125,11 @@ Every pulley in cheapcadtools.com's sample designs (CCT_WebSite's
 `site/data/samples.generated.json`, the owner's printed drives among them) is
 made as the Download window makes its STEP and read by OpenCASCADE. Every
 solid must be valid AND of positive volume, and the total must be within 1 %
-of the STL's. A design the page shows without a warning must make a STEP. Needs
+of the STL's. Every face must also be wound to agree with its neighbours: in
+the raw file, each edge is walked once each way by its two faces' loops.
+OpenCASCADE re-winds faces silently when it reads them, while eDrawings draws
+a backwards face inside out. That's how the GT2 30T's hub looked until small_step
+0.13.4 (2026-10-13). A design the page shows without a warning must make a STEP. Needs
 OCP, which `.venv314` lacks, so it runs with the OCP venv and the Windows binary
 (about 2 minutes):
 

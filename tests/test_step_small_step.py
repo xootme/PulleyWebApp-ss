@@ -92,10 +92,12 @@ def _step(client, monkeypatch, q):
 
 def _solids(data):
     """(solids, ok, total volume): ok only when every solid is valid AND of
-    positive volume — OCCT calls an inside-out solid valid (step_checks)."""
-    from step_checks import solids
+    positive volume — OCCT calls an inside-out solid valid — and no face is
+    wound against its neighbours, which OCCT re-winds unseen (step_checks)."""
+    from step_checks import solids, wrong_way_edges
     got = solids(data)
-    return len(got), all(ok and v > 0 for v, ok in got), sum(v for v, _ok in got)
+    ok = all(ok and v > 0 for v, ok in got) and not wrong_way_edges(data)
+    return len(got), ok, sum(v for v, _ok in got)
 
 
 @ss_only
@@ -271,3 +273,20 @@ def test_small_step_wide_hub_top_flange_is_not_inside_out(client, monkeypatch):
     rel = 0.01 if _binary_version(_ss_bin()) >= (0, 13, 0) else 0.04
     stl = stl_volume(client.get('/download/stl', query_string=WIDE_HUB).data)
     assert problems(r.data, stl, rel) == []
+
+
+@ss_only
+def test_a_face_wound_backwards_is_caught(client, monkeypatch):
+    """eDrawings drew the GT2 30T's hub wall inside out: its end circles were
+    wound as a bore's, which OCCT re-winds on reading (small_step 0.13.4 fixed
+    it). The raw-entity check must pass the real file and catch one face's
+    bound turned round."""
+    import re
+    from step_checks import problems, wrong_way_edges
+    r = _step(client, monkeypatch, WIDE_HUB)
+    assert r.status_code == 200, r.data[:200]
+    assert wrong_way_edges(r.data) == {}
+    bound = re.search(rb"(#\d+\s*=\s*FACE_OUTER_BOUND\('[^']*',#\d+,)\.T\.\)", r.data)
+    flipped = r.data[:bound.start()] + bound.group(1) + b'.F.)' + r.data[bound.end():]
+    assert wrong_way_edges(flipped)
+    assert any('wound against' in p for p in problems(flipped))

@@ -7,9 +7,16 @@ out (-208 mm3) while BRepCheck called every solid valid, so "valid" alone
 passes a broken file. Each solid must also enclose a positive volume, and the
 whole must be the STL's (the app's own model of the same part).
 
-    from step_checks import solids, problems
+The owner, 2026-10-13: eDrawings drew a hub's outer wall inside out, its end
+circles wound as a bore's. OpenCASCADE re-winds faces as it reads them, so
+nothing above could see it. The file is read raw for that: in a closed solid
+every edge is walked once each way by the loops of its two faces.
+
+    from step_checks import solids, problems, wrong_way_edges
 
     solids(step_bytes)      [(volume mm3, valid), ...] one per solid
+    wrong_way_edges(step_bytes)
+                            {surface types: count} of edges two faces walk the same way
     problems(step_bytes, stl_volume=v, rel=0.01)
                             [] for a good file, else what's wrong, in words
     reference_volume(client, query, n)
@@ -17,7 +24,9 @@ whole must be the STL's (the app's own model of the same part).
 """
 from __future__ import annotations
 
+import collections
 import os
+import re
 import tempfile
 
 # How far a STEP's volume may sit from its STL's. Measured 2026-10-12 on the
@@ -63,14 +72,59 @@ def stl_volume(data: bytes) -> float:
     return float(np.einsum('ij,ij->i', v[:, 0], np.cross(v[:, 1], v[:, 2])).sum() / 6.0)
 
 
+_ENTITY = re.compile(rb'#(\d+)\s*=\s*([A-Z_0-9]+)\s*\((.*?)\)\s*;', re.S)
+_REF = re.compile(r'#(\d+)')
+
+
+def _last_flag(args: str) -> bool:
+    return args.rsplit(',', 1)[1].strip().rstrip(')') == '.T.'
+
+
+def wrong_way_edges(data: bytes) -> dict:
+    """Edges that the loops of their two faces walk the SAME way, by the
+    surface types of the two faces ({} for a well-wound file). Read from the
+    raw entities as SmallStep's edge_senses.py does: an ORIENTED_EDGE's own
+    flag, flipped by its bound's flag; the face's same_sense doesn't enter.
+    An edge with other than two uses is skipped, as there: small_step's files
+    have such edges (9 in a plain captured-nut hub) and they aren't a winding."""
+    ents = {int(m.group(1)): (m.group(2).decode(), m.group(3).decode('utf-8', 'replace'))
+            for m in _ENTITY.finditer(data)}
+    refs = lambda s: [int(x) for x in _REF.findall(s)]                          # noqa: E731
+    loop_of, bound_of, face_of = {}, {}, {}
+    for i, (t, a) in ents.items():
+        if t == 'EDGE_LOOP':
+            for o in refs(a):
+                loop_of[o] = i
+        elif t in ('FACE_OUTER_BOUND', 'FACE_BOUND'):
+            bound_of[refs(a)[0]] = i
+        elif t == 'ADVANCED_FACE':
+            r = refs(a)
+            for b in r[:-1]:
+                face_of[b] = ents[r[-1]][0]
+    uses = collections.defaultdict(list)
+    for i, (t, a) in ents.items():
+        if t == 'ORIENTED_EDGE' and i in loop_of and loop_of[i] in bound_of:
+            bound = bound_of[loop_of[i]]
+            walk = _last_flag(a) ^ (not _last_flag(ents[bound][1]))
+            uses[refs(a)[-1]].append((walk, face_of.get(bound, '?')))
+    out = collections.Counter()
+    for u in uses.values():
+        if len(u) == 2 and u[0][0] == u[1][0]:
+            out['/'.join(sorted(x[1].replace('_SURFACE', '') for x in u))] += 1
+    return dict(out)
+
+
 def problems(data: bytes, stl_volume: float | None = None, rel: float = STEP_REL) -> list[str]:
     """Why this STEP isn't the part ([] if it is): no solids, an invalid solid,
-    a solid of zero or negative volume (inside out), or a total off the STL's
-    by more than `rel`."""
+    a solid of zero or negative volume (inside out), a face wound against its
+    neighbours (wrong_way_edges), or a total off the STL's by more than `rel`."""
     got = solids(data)
     if not got:
         return ['no solids']
     out = [f'solid {i}: OpenCASCADE says invalid' for i, (_v, ok) in enumerate(got) if not ok]
+    wrong = wrong_way_edges(data)
+    if wrong:
+        out.append(f'faces wound against their neighbours (edges walked the same way, by surface): {wrong}')
     out += [f'solid {i}: volume {v:.1f} mm3 (inside out or empty)' for i, (v, _ok) in enumerate(got)
             if v <= 0.0]
     if stl_volume is not None:
