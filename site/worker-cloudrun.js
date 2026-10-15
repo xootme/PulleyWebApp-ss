@@ -6,6 +6,8 @@ const PULLEYS = 'https://pulley-925396938485.us-central1.run.app';
 const SPROCKETS = 'https://sprocket-925396938485.us-central1.run.app';
 // Gear (GearWebApp-ss): relative URLs too, wholly under /tools/gears/ (its ADR-040).
 const GEARS = 'https://gear-925396938485.us-central1.run.app';
+// Worm Gear (WormGearWebApp): relative URLs too, wholly under /tools/worm-gears/.
+const WORMGEARS = 'https://wormgear-925396938485.us-central1.run.app';
 // The hosted MCP gateway (Documents\CCT_MCP_Gateway): MCP at /mcp and its OAuth
 // at the site's root, so AI apps can connect with cheapcadtools.com alone.
 const MCP = 'https://mcp-925396938485.us-central1.run.app';
@@ -37,6 +39,12 @@ export default {
     }
     if (path.startsWith('/tools/gears/')) {
       return toApp(request, env, GEARS, path.slice('/tools/gears'.length), url);
+    }
+    if (path === '/tools/worm-gears') {
+      return Response.redirect(`${url.origin}/tools/worm-gears/${url.search}`, 301);
+    }
+    if (path.startsWith('/tools/worm-gears/')) {
+      return toApp(request, env, WORMGEARS, path.slice('/tools/worm-gears'.length), url);
     }
     if (path.startsWith('/tools/pulleys')) {
       return toApp(request, env, PULLEYS, path.slice('/tools/pulleys'.length) || '/', url);
