@@ -466,16 +466,51 @@ def _increment_download_count(fmt=None, ip=None):
         _send_milestone_email(count)
 
 
-def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCADTools <info@cheapcadtools.com>'):
+def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCADTools <info@cheapcadtools.com>',
+               reply_to: str = ''):
     """Send email via Resend API — delegates to cct_common.resend_email.send.
 
     Returns (True, '') on success or (False, error_message) on failure.
     Reads the API key from the RESEND_API_KEY environment variable (set in
     Render) instead of the hardcoded key this used to carry — rotate that
     key since it was committed to git history.
+
+    reply_to (a bug reporter's address) is set only when it looks like one
+    address; cct_common's send has no Reply-To yet, so that goes through
+    _resend_with_reply_to, and if Resend refuses it the mail goes again
+    without it — a bad address must never lose the notification.
     """
+    if reply_to and _ONE_ADDRESS_RE.match(reply_to):
+        ok, err = _resend_with_reply_to(to, subject, body, from_addr, reply_to)
+        if ok:
+            return ok, err
     return _cc_send_email(to, subject, body, from_addr=from_addr,
                           user_agent='CCT-PulleyApp/1.0', logger=app.logger)
+
+
+_ONE_ADDRESS_RE = re.compile(r'^[^@\s<>",;:()\[\]\\]{1,64}@[^@\s<>",;:()\[\]\\]{1,190}\.[A-Za-z]{2,24}$')
+
+
+def _resend_with_reply_to(to, subject, body, from_addr, reply_to):
+    """cct_common.resend_email.send plus a Reply-To. Never raises."""
+    import urllib.request
+    from cct_common.resend_email import RESEND_URL
+    api_key = os.environ.get('RESEND_API_KEY', '').strip()
+    if not api_key:
+        return False, 'RESEND_API_KEY not configured'
+    payload = json.dumps({'from': from_addr, 'to': [to], 'reply_to': reply_to,
+                          'subject': subject, 'text': body}).encode()
+    try:
+        req = urllib.request.Request(RESEND_URL, data=payload, method='POST', headers={
+            'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}',
+            'User-Agent': 'CCT-PulleyApp/1.0'})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if json.loads(resp.read()).get('id'):
+                return True, ''
+        return False, 'resend failed'
+    except Exception as exc:
+        app.logger.warning('Resend email with Reply-To failed (%s); sending without it', exc)
+        return False, str(exc)
 
 
 def _send_milestone_email(count):
@@ -3802,8 +3837,9 @@ from cct_common.bug_report import _report_id as _cc_report_id
 
 def _notify_bug_report(report_id, report_label, timestamp, label_seeing, label_should,
                        seeing, should_see, email):
-    """Email info@ that a report came in, through Resend: the description and
-    the reporter's address (to reply), NOT the design — an emailed design
+    """Email support@ that a report came in, through Resend: the description and
+    the reporter's address (in the body, and as Reply-To so a reply reaches
+    them), NOT the design — an emailed design
     can't be deleted on request; the log and the database copy can.
     Skips without RESEND_API_KEY; a send failure never fails the report."""
     if not os.environ.get('RESEND_API_KEY', '').strip():
@@ -3815,7 +3851,8 @@ def _notify_bug_report(report_id, report_label, timestamp, label_seeing, label_s
                 f'{label_should}:\n  {should_see or "(not provided)"}\n\n'
                 f'Contact email:\n  {email or "(not provided)"}\n\n'
                 f'The design is in the report log / database under {report_id}.\n')
-        _smtp_send('info@cheapcadtools.com', f'[Pulley Generator] {report_label} {report_id}', body)
+        _smtp_send('support@cheapcadtools.com', f'[Pulley Generator] {report_label} {report_id}', body,
+                   reply_to=email)
     except Exception:
         pass
 

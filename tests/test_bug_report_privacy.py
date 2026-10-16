@@ -39,7 +39,8 @@ def emails(monkeypatch):
     import app as app_module
     sent = []
     monkeypatch.setenv("RESEND_API_KEY", "re_test")
-    monkeypatch.setattr(app_module, "_smtp_send", lambda to, subject, body: sent.append((to, subject, body)))
+    monkeypatch.setattr(app_module, "_smtp_send",
+                        lambda to, subject, body, reply_to="": sent.append((to, subject, body, reply_to)))
     return sent
 
 
@@ -54,10 +55,46 @@ def test_issue_has_the_description_but_no_design_or_address(client, issues):
 
 def test_email_has_the_address_but_not_the_design(client, emails):
     r = _report(client)
-    (to, subject, body) = emails[-1]
-    assert to == "info@cheapcadtools.com" and r.get_json()["report_id"] in subject
-    assert EMAIL in body and "flange looks wrong" in body
+    (to, subject, body, reply_to) = emails[-1]
+    assert to == "support@cheapcadtools.com" and r.get_json()["report_id"] in subject
+    assert EMAIL in body and "flange looks wrong" in body and reply_to == EMAIL
     assert "DESIGN-XYZ" not in body and "8.25" not in body
+
+
+@pytest.fixture
+def resend(monkeypatch):
+    """_smtp_send's two paths, recorded: with a Reply-To (local) and plain (cct_common)."""
+    import app as app_module
+    calls = {"reply_to": [], "plain": [], "reply_to_ok": True}
+
+    def with_reply_to(to, subject, body, from_addr, reply_to):
+        calls["reply_to"].append(reply_to)
+        return (True, "") if calls["reply_to_ok"] else (False, "422 invalid reply_to")
+
+    monkeypatch.setattr(app_module, "_resend_with_reply_to", with_reply_to)
+    monkeypatch.setattr(app_module, "_cc_send_email", lambda to, *a, **kw: calls["plain"].append(to) or (True, ""))
+    return calls
+
+
+def test_reply_to_is_the_reporters_address(resend):
+    from app import _smtp_send
+    assert _smtp_send("support@cheapcadtools.com", "s", "b", reply_to=EMAIL) == (True, "")
+    assert resend["reply_to"] == [EMAIL] and resend["plain"] == []
+
+
+@pytest.mark.parametrize("bad", ["", "not an address", "a@b.com, evil@x.com", "a@b.com\nBcc: evil@x.com",
+                                 "Name <a@b.com>", "a@b"])
+def test_no_reply_to_unless_it_is_one_address(resend, bad):
+    from app import _smtp_send
+    _smtp_send("support@cheapcadtools.com", "s", "b", reply_to=bad)
+    assert resend["reply_to"] == [] and resend["plain"] == ["support@cheapcadtools.com"]
+
+
+def test_a_refused_reply_to_still_sends_the_report(resend):
+    from app import _smtp_send
+    resend["reply_to_ok"] = False
+    assert _smtp_send("support@cheapcadtools.com", "s", "b", reply_to=EMAIL) == (True, "")
+    assert resend["reply_to"] == [EMAIL] and resend["plain"] == ["support@cheapcadtools.com"]
 
 
 def test_log_keeps_everything_under_the_report_id(client):
@@ -97,3 +134,22 @@ def test_no_forwarding_to_the_old_desktop_path(client, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen",
                         lambda *a, **k: pytest.fail("report forwarded over the network"))
     assert _report(client).status_code == 200
+
+
+def test_the_reply_to_request_carries_the_address(monkeypatch):
+    import io
+    import urllib.request
+    import app as app_module
+    posted = []
+
+    def fake_urlopen(req, timeout):
+        posted.append(json.loads(req.data))
+        return io.BytesIO(b'{"id": "e1"}')
+
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert app_module._resend_with_reply_to("support@cheapcadtools.com", "s", "b",
+                                            "CheapCADTools <info@cheapcadtools.com>", EMAIL) == (True, "")
+    (p,) = posted
+    assert p["reply_to"] == EMAIL and p["to"] == ["support@cheapcadtools.com"]
+    assert p["from"] == "CheapCADTools <info@cheapcadtools.com>"
