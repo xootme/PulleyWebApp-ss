@@ -321,7 +321,7 @@ def _create_start_menu_shortcut():
     ps = (
         f'$s = (New-Object -COM WScript.Shell).CreateShortcut("{shortcut_path}");'
         f'$s.TargetPath = "{exe_path}";'
-        f'$s.Description = "CheapCAD Tools — PulleyApp";'
+        f'$s.Description = "CheapCADTools — PulleyApp";'
         f'$s.Save()'
     )
     try:
@@ -349,7 +349,7 @@ def _first_run_setup():
     from tkinter import ttk
 
     root = tk.Tk()
-    root.title('CheapCAD Tools — Setup')
+    root.title('CheapCADTools — Setup')
     root.resizable(False, False)
     root.geometry('420x170')
     root.update_idletasks()

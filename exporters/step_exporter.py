@@ -2543,6 +2543,11 @@ def generate_drive_stl_preview(
         place['origin2'] = [cx2 + offset[0], offset[1], offset[2]]
         place['bounds1'] = (float(p1.bounds[0][2]), float(p1.bounds[1][2]))
         place['bounds2'] = (float(p2.bounds[0][2]), float(p2.bounds[1][2]))
+        # The belt's frame, for the Turn (geometry/belt_motion.drive_motion).
+        place['offset'] = [float(v) for v in offset]
+        place['cx1'], place['center_dist'] = cx1, center_dist_mm
+        place['belt_z'] = clearance_height_mm / 2.0
+        place['belt_h'] = _belt_h
 
     # Apply the shared offset to every part so all responses share one origin
     p1.apply_translation(offset)

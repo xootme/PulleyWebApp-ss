@@ -4,7 +4,7 @@
   <link rel="icon" href="/static/favicon.png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Timing Pulley Generator — Cheap CAD Tools</title>
+  <title>Timing Pulley Generator — CheapCADTools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
   <link rel="stylesheet" href="/static/cct_theme.css?v=1">
   <link rel="stylesheet" href="/static/style.css?v=45">
@@ -157,8 +157,8 @@
 
 <header>
   <div class="header-inner">
-    <a href="https://cheapcadtools.com" target="_blank" rel="noopener" title="Cheap CAD Tools home">
-      <img src="/static/logo.png" alt="Cheap CAD Tools" class="logo">
+    <a href="https://cheapcadtools.com" target="_blank" rel="noopener" title="CheapCADTools home">
+      <img src="/static/logo.png" alt="CheapCADTools" class="logo">
     </a>
     <div class="header-title-block">
       <span class="header-title">Timing Pulley Generator</span>
@@ -607,6 +607,10 @@
           <option value="drive">Drive</option>
           <option value="1">Pulley 1</option><option value="2">Pulley 2</option>
         </select>
+        <!-- Turn, as Sprocket and Gear Designer: the Drive view only (geometry/belt_motion.py). -->
+        <button id="spin_btn" class="preview-tab fb-3d hidden" type="button" aria-pressed="false"
+                onclick="setSpin(this.getAttribute('aria-pressed') !== 'true')"
+                title="Turn both pulleys and run the belt round them">&#10227; Turn</button>
         <button class="drive-info-btn fb-3d"
                 onclick="openHelpUrl('/static/3d_mouse_nav_help.html')"
                 title="3D navigation and snap view help">&#9432; Mouse Nav</button>
@@ -1032,7 +1036,7 @@
       <div id="bug-status" class="bug-status"></div>
     </div>
     <div class="bug-philosophy">
-      <strong>Cheap CAD Tools — Software Design Philosophy</strong><br>
+      <strong>CheapCADTools — Software Design Philosophy</strong><br>
       Don't try to catch every setting that could make a part go wrong. Over-constraining the inputs leads to a poor user experience — for example, typing a number only to have the software reject it with a cryptic message. If you enter a value that produces a strange result, simply go back and try a smaller change.
     </div>
     <div class="bug-footer">
@@ -3585,7 +3589,7 @@ async function executeImport() {
     const text   = await file.text();
     const params = _parseCctFromText(text, ext);
     if (!params) {
-      statusEl.textContent = 'No CheapCAD Tools design data found in this file. Only files exported from this tool contain embedded parameters.';
+      statusEl.textContent = 'No CheapCADTools design data found in this file. Only files exported from this tool contain embedded parameters.';
       statusEl.className   = 'bug-status bug-status-error';
       btn.disabled = false;
       return;
@@ -4043,8 +4047,12 @@ async function init3D() {
   });
   resizeObs.observe(canvas);
 
-  function animate() {
+  let lastFrame = 0;
+  function animate(t) {
     requestAnimationFrame(animate);
+    const dt = lastFrame ? Math.min(0.1, (t - lastFrame) / 1000) : 0;
+    lastFrame = t;
+    if (turnOn && turnMotion && _turnShown()) setTurnAngle(turnU + dt * _turnRate());
     threeControls.update();
     threeRenderer.render(threeScene, threeCamera);
   }
@@ -4075,6 +4083,7 @@ function _loadSplineParts(url, gen, isDual) {
           mesh.userData.part = String(n);              // whose spline parts (the picker)
           threeScene.add(mesh);
           threeSplineParts.push(mesh);
+          setTurnAngle(turnU);
           applyView3dWhich(false);
         }
       })
@@ -4188,8 +4197,136 @@ function applyView3dWhich(refit) {
     if (!obj.isMesh || obj.userData.part === undefined) return;
     obj.visible = !dual || which === 'drive' || obj.userData.part === which;
   });
+  syncSpinButton();
+  if (!_turnShown() && turnU) setTurnAngle(0);       // one pulley alone: shown at rest
   if (refit) _fitCameraToScene();
 }
+
+// ── Turn (as Sprocket's ADR-066 and Gear's ADR-043) ─────────────────────────
+// On the Drive view both pulleys turn the same way, pulley k at rates[k]·u
+// (pulley 2 at z1/z2), and the belt runs round them: /api/preview-stl's
+// part=belt-motion sends each pulley's axis and the belt as one tooth-long
+// piece in path coordinates (s along the pitch path, d out from it, z), which
+// the page lays n times round the loop and moves r_eff·u back along it
+// (geometry/belt_motion.py, mirrored by _beltPlace). Exact at any u: at every
+// whole tooth each piece is where the next one started. The button keeps its
+// state while the drive reloads.
+let turnMotion = null, turnU = 0, turnOn = false;
+let beltBase = null;                  // the whole belt in (s, d, z), with its normals
+function _turnShown() {
+  const dual = document.getElementById('dual_enable').checked;
+  return dual && document.getElementById('view3d_which').value === 'drive'
+    && document.getElementById('three-canvas').style.display !== 'none';
+}
+function syncSpinButton() {
+  const dual = document.getElementById('dual_enable').checked;
+  document.getElementById('spin_btn').classList.toggle('hidden',
+    !(dual && document.getElementById('view3d_which').value === 'drive'));
+}
+function setSpin(on) {
+  const b = document.getElementById('spin_btn');
+  b.setAttribute('aria-pressed', String(on));
+  b.classList.toggle('active', on);
+  turnOn = !!on;
+}
+// The fastest pulley turns one radian a second.
+function _turnRate() { return 1 / Math.max(...turnMotion.rates.map(Math.abs)); }
+
+// Turned th about the vertical axis through o: rotate, then shift so o stays put.
+function _turnAbout(mesh, o, th) {
+  if (!mesh) return;
+  const c = Math.cos(th), s = Math.sin(th);
+  mesh.rotation.z = th;
+  mesh.position.set(o[0] - (c * o[0] - s * o[1]), o[1] - (s * o[0] + c * o[1]), 0);
+}
+
+function setTurnAngle(u) {
+  turnU = u;
+  if (!turnMotion) return;
+  const [o1, o2] = turnMotion.origins, [r1, r2] = turnMotion.rates;
+  _turnAbout(threeModel, o1, r1 * u);
+  _turnAbout(threeModel2, o2, r2 * u);
+  for (const m of threeSplineParts) _turnAbout(m, m.userData.part === '2' ? o2 : o1, (m.userData.part === '2' ? r2 : r1) * u);
+  if (threeBelt && beltBase) _beltPlace(threeBelt.geometry, -turnMotion.belt.r_eff * u);
+}
+
+// Path coordinates to the scene, as geometry/belt_motion.place: the pitch
+// path clockwise from pulley 1's top tangent point, N outward, T along it.
+function _beltPlace(geo, shift) {
+  const b = turnMotion.belt, { s, d, z, ns, nd, nz } = beltBase;
+  const pos = geo.attributes.position.array, nor = geo.attributes.normal.array;
+  const [s0, s1, s2] = b.seg, L = b.L, [R1, R2] = b.R;
+  const [c1, c2] = b.centre, [lt, rt, rb, lb] = b.tangent;
+  const t0x = (rt[0] - lt[0]) / s0, t0y = (rt[1] - lt[1]) / s0;
+  const t2x = (lb[0] - rb[0]) / s2, t2y = (lb[1] - rb[1]) / s2;
+  for (let i = 0, n = s.length; i < n; i++) {
+    let q = (s[i] + shift) % L;
+    if (q < 0) q += L;
+    let px, py, nx, ny, tx, ty;
+    if (q < s0) {
+      px = lt[0] + q * t0x; py = lt[1] + q * t0y; tx = t0x; ty = t0y; nx = -ty; ny = tx;
+    } else if (q < s0 + s1) {
+      const a = b.a_rt - (q - s0) / R2, ca = Math.cos(a), sa = Math.sin(a);
+      px = c2[0] + R2 * ca; py = c2[1] + R2 * sa; nx = ca; ny = sa; tx = sa; ty = -ca;
+    } else if (q < s0 + s1 + s2) {
+      const r = q - s0 - s1;
+      px = rb[0] + r * t2x; py = rb[1] + r * t2y; tx = t2x; ty = t2y; nx = -ty; ny = tx;
+    } else {
+      const a = b.a_lb - (q - s0 - s1 - s2) / R1, ca = Math.cos(a), sa = Math.sin(a);
+      px = c1[0] + R1 * ca; py = c1[1] + R1 * sa; nx = ca; ny = sa; tx = sa; ty = -ca;
+    }
+    pos[3 * i] = px + d[i] * nx; pos[3 * i + 1] = py + d[i] * ny; pos[3 * i + 2] = z[i] + b.z0;
+    nor[3 * i] = ns[i] * tx + nd[i] * nx; nor[3 * i + 1] = ns[i] * ty + nd[i] * ny; nor[3 * i + 2] = nz[i];
+  }
+  geo.attributes.position.needsUpdate = true;
+  geo.attributes.normal.needsUpdate = true;
+}
+
+// The belt from part=belt-motion: n pieces laid round the loop, at the current u.
+function _beltFromMotion(motion) {
+  const THREE = window._THREE, b = motion.belt;
+  const tri = new Float32Array(Uint8Array.from(atob(motion.piece), c => c.charCodeAt(0)).buffer);
+  const per = tri.length / 3, total = per * b.n;
+  const base = { s: new Float32Array(total), d: new Float32Array(total), z: new Float32Array(total),
+                 ns: new Float32Array(total), nd: new Float32Array(total), nz: new Float32Array(total) };
+  for (let v = 0; v < per; v += 3) {                    // each triangle's own normal, in (s, d, z)
+    const a = v * 3, e1 = [0, 1, 2].map(k => tri[a + 3 + k] - tri[a + k]), e2 = [0, 1, 2].map(k => tri[a + 6 + k] - tri[a + k]);
+    let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const len = Math.hypot(...n) || 1;
+    n = n.map(x => x / len);
+    for (let k = 0; k < b.n; k++) {
+      for (let j = 0; j < 3; j++) {
+        const i = k * per + v + j, src = (v + j) * 3;
+        base.s[i] = tri[src] + k * b.p_eff; base.d[i] = tri[src + 1]; base.z[i] = tri[src + 2];
+        base.ns[i] = n[0]; base.nd[i] = n[1]; base.nz[i] = n[2];
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(total * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(total * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  beltBase = base;
+  _beltPlace(geo, -b.r_eff * turnU);
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+// For the browser harness (tests/browser/turn_ui.js).
+window.pulleyTurn = () => {
+  const out = { spinning: turnOn, u: turnU, shown: _turnShown(),
+                rates: turnMotion ? turnMotion.rates : null, origins: turnMotion ? turnMotion.origins : null,
+                belt: turnMotion && turnMotion.belt ? { n: turnMotion.belt.n, p_eff: turnMotion.belt.p_eff,
+                  r_eff: turnMotion.belt.r_eff, pitch: turnMotion.belt.pitch, L: turnMotion.belt.L } : null,
+                angles: [threeModel ? threeModel.rotation.z : null, threeModel2 ? threeModel2.rotation.z : null],
+                pieces: null };
+  if (threeBelt && beltBase) {     // each piece's first vertex, where it is now
+    const per = beltBase.s.length / turnMotion.belt.n, p = threeBelt.geometry.attributes.position.array;
+    out.pieces = [...Array(turnMotion.belt.n).keys()].map(k => [p[3 * k * per], p[3 * k * per + 1], p[3 * k * per + 2]]);
+  }
+  return out;
+};
+window.pulleySetTurn = (u) => setTurnAngle(u);
 
 function load3DModel(url) {
   const THREE     = window._THREE;
@@ -4204,6 +4341,7 @@ function load3DModel(url) {
   if (threeModel)  { threeScene.remove(threeModel);  threeModel  = null; }
   if (threeModel2) { threeScene.remove(threeModel2); threeModel2 = null; }
   if (threeBelt)   { threeScene.remove(threeBelt);   threeBelt   = null; }
+  turnMotion = null; beltBase = null;
   for (const m of threeSplineParts) threeScene.remove(m);
   threeSplineParts = [];
 
@@ -4219,12 +4357,12 @@ function load3DModel(url) {
   if (isDual) {
     const p1Url   = url + '&part=p1';
     const p2Url   = url + '&part=p2';
-    const beltUrl = url + '&part=belt';
 
     _loadSTL(p1Url, pulleyMat, (mesh) => {
       if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeModel = mesh;
       mesh.userData.part = '1';
+      setTurnAngle(turnU);
       applyView3dWhich(false);
       const size = _fitCameraToScene();
       if (size) document.getElementById('preview-footer').textContent =
@@ -4235,16 +4373,26 @@ function load3DModel(url) {
       if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
       threeModel2 = mesh;
       mesh.userData.part = '2';
+      setTurnAngle(turnU);
       applyView3dWhich(false);
       _fitCameraToScene();
     });
 
-    _loadSTL(beltUrl, beltMat, (mesh) => {
-      if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
-      threeBelt = mesh;
-      mesh.userData.part = 'belt';
-      applyView3dWhich(false);
-    });
+    // The belt and the Turn's motion in one answer: the still belt is its rest place.
+    fetch(url + '&part=belt-motion')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`belt-motion ${r.status}`)))
+      .then(motion => {
+        if (_loadGen !== gen) return;                           // stale — discard
+        turnMotion = motion;
+        if (motion.belt) {
+          threeBelt = new THREE.Mesh(_beltFromMotion(motion), beltMat);
+          threeBelt.userData.part = 'belt';
+          threeScene.add(threeBelt);
+        }
+        setTurnAngle(turnU);
+        applyView3dWhich(false);
+      })
+      .catch(e => console.error('belt', e));
 
   } else {
     _loadSTL(url, pulleyMat, (mesh, geo) => {

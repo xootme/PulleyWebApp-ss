@@ -2078,6 +2078,90 @@ def center_dist_from_belt_teeth(pitch_mm: float, left_teeth: int, right_teeth: i
     return (C_lo + C_hi) / 2.0
 
 
+def _belt_tooth(family: str, pitch: str):
+    """(belt spec, one tooth's points) for a belt family and pitch, or None."""
+    if family == 'HTD':
+        key = 'H' + pitch
+        if key not in H_BELT_SPECS:
+            return None
+        belt_spec = H_BELT_SPECS[key]
+        one_tooth_pts = _build_h_belt_tooth(belt_spec, res=24)
+    elif family == 'GT':
+        key = 'G' + pitch
+        if key not in G_BELT_SPECS:
+            return None
+        belt_spec = G_BELT_SPECS[key]
+        one_tooth_pts = _build_h_belt_tooth(belt_spec, res=24)   # same arc construction
+    elif family == 'RPP':
+        key = 'R' + pitch
+        if key not in R_BELT_SPECS:
+            return None
+        belt_spec = R_BELT_SPECS[key]
+        one_tooth_pts = _build_r_belt_tooth(belt_spec, res=48)
+    elif family == 'T':
+        if pitch not in T_BELT_SPECS:
+            return None
+        belt_spec = T_BELT_SPECS[pitch]
+        one_tooth_pts = _build_ta_belt_tooth(belt_spec)
+    elif family == 'AT':
+        if pitch not in AT_BELT_SPECS:
+            return None
+        belt_spec = AT_BELT_SPECS[pitch]
+        one_tooth_pts = _build_ta_belt_tooth(belt_spec)
+    elif family == 'Imperial':
+        if pitch not in IMPERIAL_BELT_SPECS:
+            return None
+        belt_spec = IMPERIAL_BELT_SPECS[pitch]
+        one_tooth_pts = _build_ta_belt_tooth(belt_spec)
+    else:   # STD
+        key = 'S' + pitch
+        if key not in S_BELT_SPECS:
+            return None
+        belt_spec = S_BELT_SPECS[key]
+        one_tooth_pts = _build_s_belt_tooth(belt_spec, res=24)
+    return belt_spec, one_tooth_pts
+
+
+def belt_path(family: str, pitch: str, left_teeth: int, right_teeth: int,
+              center_dist_mm: float, x_offset: float = 0.0):
+    """The open belt's pitch path as build_two_pulley_belt lays its teeth on
+    it (the same formulas), for the 3D view's Turn (geometry/belt_motion.py):
+    tangent points, arc start angles, the four segments' lengths (top run,
+    right arc, bottom run, left arc, clockwise from L_top), the whole length L,
+    the belt's teeth and their spacing p_eff = L / n_belt, and the tooth.
+    None for families without belt tooth data."""
+    if family not in BELT_FAMILIES:
+        return None
+    found = _belt_tooth(family, pitch)
+    if not found:
+        return None
+    belt_spec, tooth = found
+    p_mm = belt_spec["pitch"]
+    R_left = left_teeth * p_mm / (2.0 * math.pi)
+    R_right = right_teeth * p_mm / (2.0 * math.pi)
+    C = max(float(center_dist_mm), R_right + R_left)
+    alpha = math.asin(max(-1.0, min(1.0, (R_right - R_left) / C)))
+    ox = x_offset
+    L_top = (ox - R_left * math.sin(alpha), R_left * math.cos(alpha))
+    L_bot = (ox - R_left * math.sin(alpha), -R_left * math.cos(alpha))
+    R_top = (ox + C - R_right * math.sin(alpha), R_right * math.cos(alpha))
+    R_bot = (ox + C - R_right * math.sin(alpha), -R_right * math.cos(alpha))
+    s_tangent = C * math.cos(alpha)
+    seg = (s_tangent, R_right * (math.pi + 2.0 * alpha), s_tangent, R_left * (math.pi - 2.0 * alpha))
+    L = sum(seg)
+    n_belt = max(0, round(L / p_mm))
+    if not n_belt:
+        return None
+    p_eff = L / n_belt
+    return {'pitch': p_mm, 'aa': belt_spec["aa"], 'ht': belt_spec["ht"], 'hs': belt_spec["hs"],
+            'tooth': tooth, 'R_left': R_left, 'R_right': R_right, 'C': C, 'alpha': alpha,
+            'c_left': (ox, 0.0), 'c_right': (ox + C, 0.0),
+            'L_top': L_top, 'R_top': R_top, 'R_bot': R_bot, 'L_bot': L_bot,
+            'a_rt': math.atan2(R_top[1], R_top[0] - (ox + C)),
+            'a_lb': math.atan2(L_bot[1], L_bot[0] - ox),
+            'seg': seg, 'L': L, 'n_belt': n_belt, 'p_eff': p_eff, 'stretch': p_eff / p_mm}
+
+
 def build_two_pulley_belt(family: str, pitch: str, left_teeth: int, right_teeth: int,
                           center_dist_mm: float, x_offset: float = 0.0):
     """
@@ -2094,49 +2178,14 @@ def build_two_pulley_belt(family: str, pitch: str, left_teeth: int, right_teeth:
     phi_right      : float  groove-phase offset (rad) for right pulley
 
     Returns ([], [], 0.0, 0.0) for families without belt tooth data.
+    The path itself (for the 3D view's Turn): belt_path, the same formulas.
     """
     if family not in BELT_FAMILIES:
         return [], [], 0.0, 0.0
-
-    if family == 'HTD':
-        key = 'H' + pitch
-        if key not in H_BELT_SPECS:
-            return [], [], 0.0, 0.0
-        belt_spec = H_BELT_SPECS[key]
-        one_tooth_pts = _build_h_belt_tooth(belt_spec, res=24)
-    elif family == 'GT':
-        key = 'G' + pitch
-        if key not in G_BELT_SPECS:
-            return [], [], 0.0, 0.0
-        belt_spec = G_BELT_SPECS[key]
-        one_tooth_pts = _build_h_belt_tooth(belt_spec, res=24)   # same arc construction
-    elif family == 'RPP':
-        key = 'R' + pitch
-        if key not in R_BELT_SPECS:
-            return [], [], 0.0, 0.0
-        belt_spec = R_BELT_SPECS[key]
-        one_tooth_pts = _build_r_belt_tooth(belt_spec, res=48)
-    elif family == 'T':
-        if pitch not in T_BELT_SPECS:
-            return [], [], 0.0, 0.0
-        belt_spec = T_BELT_SPECS[pitch]
-        one_tooth_pts = _build_ta_belt_tooth(belt_spec)
-    elif family == 'AT':
-        if pitch not in AT_BELT_SPECS:
-            return [], [], 0.0, 0.0
-        belt_spec = AT_BELT_SPECS[pitch]
-        one_tooth_pts = _build_ta_belt_tooth(belt_spec)
-    elif family == 'Imperial':
-        if pitch not in IMPERIAL_BELT_SPECS:
-            return [], [], 0.0, 0.0
-        belt_spec = IMPERIAL_BELT_SPECS[pitch]
-        one_tooth_pts = _build_ta_belt_tooth(belt_spec)
-    else:   # STD
-        key = 'S' + pitch
-        if key not in S_BELT_SPECS:
-            return [], [], 0.0, 0.0
-        belt_spec = S_BELT_SPECS[key]
-        one_tooth_pts = _build_s_belt_tooth(belt_spec, res=24)
+    found = _belt_tooth(family, pitch)
+    if not found:
+        return [], [], 0.0, 0.0
+    belt_spec, one_tooth_pts = found
 
     p_mm = belt_spec["pitch"]
     aa   = belt_spec["aa"]

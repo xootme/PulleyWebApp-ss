@@ -85,7 +85,7 @@ def make_backup_alert(email_sender: Callable, *, alert_to: str, logger):
     def alert(message: str):
         logger.error(message)
         if alert_to:
-            email_sender(alert_to, "CheapCAD Tools: database backup problem", message)
+            email_sender(alert_to, "CheapCADTools: database backup problem", message)
     return alert
 
 
@@ -156,7 +156,7 @@ def start_housekeeping(accounts, notify, logger, *, interval_s: float = 24 * 360
 
 def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                   email_sender: Callable, signup_grant: int = 20,
-                  app_name: str = "CheapCAD Tools",
+                  app_name: str = "CheapCADTools",
                   backup_dir: str | None = None,
                   backup_alert: Callable[[str], None] | None = None,
                   backup_upload: Callable[[str], None] | None = None,

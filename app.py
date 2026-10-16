@@ -466,7 +466,7 @@ def _increment_download_count(fmt=None, ip=None):
         _send_milestone_email(count)
 
 
-def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCAD Tools <info@cheapcadtools.com>'):
+def _smtp_send(to: str, subject: str, body: str, from_addr: str = 'CheapCADTools <info@cheapcadtools.com>'):
     """Send email via Resend API — delegates to cct_common.resend_email.send.
 
     Returns (True, '') on success or (False, error_message) on failure.
@@ -2437,7 +2437,7 @@ def api_preview_stl():
                                       request.args.get('p2_backlash_custom', 0.0))
             center_dist = float(request.args.get('center_distance', 100.0))
             clearance_h = max(0.0, float(request.args.get('clearance_height', 0.0)))
-            part = 'p1' if spline_part else want
+            part = 'p1' if spline_part or want == 'belt-motion' else want
             place = {}
             hub_od1, hub_h1, sd1, sc1, cn1, fd1, kw_w1, kw_h1 = _parse_hub_params(request.args, '')
             hub_od2, hub_h2, sd2, sc2, cn2, fd2, kw_w2, kw_h2 = _parse_hub_params(request.args, 'p2_')
@@ -2479,6 +2479,8 @@ def api_preview_stl():
                 n = '2' if spline_part == 'spline2' else '1'
                 return _spline_preview_json(request.args, 'p2_' if n == '2' else '', place[f'origin{n}'],
                                             place[f'bounds{n}'])
+            if want == 'belt-motion':
+                return _belt_motion_json(family, pitch, num_teeth1, num_teeth2, place)
         else:
             pulley = request.args.get('pulley', '1')
             family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex = \
@@ -2543,6 +2545,22 @@ def api_preview_stl():
         import traceback
         app.logger.error('STL preview failed:\n%s', traceback.format_exc())
         return _api_error(f'Error generating STL preview: {e}')
+
+
+def _belt_motion_json(family, pitch, z1, z2, place):
+    """The 3D drive view's ⟳ Turn (geometry/belt_motion.py): each pulley's
+    rate and axis, and the belt — its path in the scene and one tooth-long
+    piece's triangles in path coordinates (s, d, z) as base64 float32, nine
+    numbers a triangle. The page lays n copies round the loop, as the still
+    belt, and moves them along it. belt is null without belt tooth data."""
+    import base64
+    import numpy as np
+    from geometry.belt_motion import drive_motion
+    out, _path, piece = drive_motion(family, pitch, z1, z2, None, place, place['belt_h'])
+    if piece is not None:
+        tri = np.asarray(piece.vertices, dtype=np.float32)[piece.faces].reshape(-1)
+        out['piece'] = base64.b64encode(tri.tobytes()).decode('ascii')
+    return jsonify(out), 200, {'Cache-Control': 'no-store'}
 
 
 def _pulley_stl(args):
@@ -4632,13 +4650,13 @@ register_download_signal(app)  # default download_prefix='/download/' already ma
 
 
 def _licence_email_subject(key, order_id, valid_until):
-    return f'Your CheapCAD Tools licence key — Order #{order_id}'
+    return f'Your CheapCADTools licence key — Order #{order_id}'
 
 
 def _licence_email_body(key, order_id, valid_until):
     return (
         f'Hi,\n\n'
-        f'Thank you for purchasing CheapCAD Tools Timing Pulleys for FreeCAD!\n\n'
+        f'Thank you for purchasing CheapCADTools Timing Pulleys for FreeCAD!\n\n'
         f'Your licence key is:\n\n'
         f'    {key}\n\n'
         f'Valid until: {valid_until}\n\n'
@@ -4653,20 +4671,20 @@ def _licence_email_body(key, order_id, valid_until):
         f'Order: #{order_id}\n\n'
         f'If you have any questions, reply to this email or visit\n'
         f'https://cheapcadtools.com/contact/\n\n'
-        f'— CheapCAD Tools'
+        f'— CheapCADTools'
     )
 
 
 def _purchase_welcome_email_body(txn_id):
     return (
         f'Hi,\n\n'
-        f'Thank you for subscribing to CheapCAD Tools on the Autodesk App Store!\n\n'
-        f'Your subscription is now active. Restart Fusion 360 and the CheapCAD Tools '
+        f'Thank you for subscribing to CheapCADTools on the Autodesk App Store!\n\n'
+        f'Your subscription is now active. Restart Fusion 360 and the CheapCADTools '
         f'panel will install automatically.\n\n'
         f'Transaction ID: {txn_id}\n\n'
         f'If you have any questions, reply to this email or visit '
         f'https://cheapcadtools.com/contact/\n\n'
-        f'— CheapCAD Tools'
+        f'— CheapCADTools'
     )
 
 
@@ -4678,7 +4696,7 @@ register_licensing_routes(
     licence_expiry=_LICENCE_EXPIRY, email_sender=_smtp_send,
     licence_email_subject=_licence_email_subject,
     licence_email_body=_licence_email_body,
-    purchase_welcome_email_subject='Welcome to CheapCAD Tools — your subscription is active',
+    purchase_welcome_email_subject='Welcome to CheapCADTools — your subscription is active',
     purchase_welcome_email_body=_purchase_welcome_email_body,
     wc_webhook_secret=_WC_WEBHOOK_SECRET, lmfwc_site_url=_LMFWC_SITE_URL,
     lmfwc_consumer_key=_LMFWC_CONSUMER_KEY, lmfwc_consumer_secret=_LMFWC_CONSUMER_SECRET,
@@ -4732,7 +4750,7 @@ _accounts_state = init_accounts(
     # account closes and its remaining tokens expire — each after a reminder
     # email. Not in tests.
     inactivity_notify=None if os.environ.get('PULLEY_TESTING') else make_inactivity_notify(
-        _accounts_email, app_name='CheapCAD Tools',
+        _accounts_email, app_name='CheapCADTools',
         site_url=os.environ.get('SITE_URL', 'https://cheapcadtools.com/tools/pulleys')),
     # Daily token limit on each add-in/agent token (blank: no limit by default).
     device_daily_budget=(int(os.environ['TOKENS_DEVICE_DAILY_BUDGET'])
@@ -4759,7 +4777,7 @@ charges.attach(app, _accounts_state,  # per-export token charging — see chargi
                # The buy page, once a payment provider is set up.
                buy_url=(os.environ.get('TOKENS_BUY_URL', '').strip()
                         or ('/account/buy' if _accounts_state.payment_providers else '')),
-               limit_notify=make_limit_notify(_accounts_email, app_name='CheapCAD Tools'))
+               limit_notify=make_limit_notify(_accounts_email, app_name='CheapCADTools'))
 
 # Finished background downloads live at unguessable, expiring links —
 # see results.py (replaces the old /download/<job_id>.step). RESULTS_BUCKET

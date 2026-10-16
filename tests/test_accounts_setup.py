@@ -56,7 +56,7 @@ def test_enabled_email_sign_in_end_to_end(tmp_path):
     c = app.test_client()
     assert c.post('/api/account/login-link', json={'email': 'a@example.com'}).get_json() == {'ok': True}
     to, subject, body = sent[-1]
-    assert to == 'a@example.com' and subject == 'Sign in to CheapCAD Tools'
+    assert to == 'a@example.com' and subject == 'Sign in to CheapCADTools'
     r = c.post('/account/login', data={'token': _token_from(body)})
     assert r.status_code == 303
     info = c.get('/api/account').get_json()
@@ -203,7 +203,7 @@ def test_backup_alert_logs_and_emails_when_address_set(caplog):
     with caplog.at_level(logging.ERROR):
         alert('No database backup in the last 7200 s')
     assert 'No database backup' in caplog.text
-    assert sent == [('ops@example.com', 'CheapCAD Tools: database backup problem',
+    assert sent == [('ops@example.com', 'CheapCADTools: database backup problem',
                      'No database backup in the last 7200 s')]
 
 
@@ -222,7 +222,7 @@ def test_there_is_no_separate_free_token_reminder_any_more():
     from accounts_setup import make_inactivity_notify
     sent = []
     notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
-                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+                                    app_name='CheapCADTools', site_url='https://example.com/p')
     assert notify('a@example.com', 'free_tokens', 1_893_456_000, 7) is False
     assert sent == []
 
@@ -231,7 +231,7 @@ def test_account_closing_reminder_email_and_failed_send():
     from accounts_setup import make_inactivity_notify
     sent = []
     notify = make_inactivity_notify(lambda *a: sent.append(a) or (False, 'down'),
-                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+                                    app_name='CheapCADTools', site_url='https://example.com/p')
     assert notify('a@example.com', 'account', 1_893_456_000, 0) is False   # not sent -> nothing happens
     assert 'will be closed' in sent[0][1] and 'holds no tokens' in sent[0][2]
 
@@ -240,7 +240,7 @@ def test_account_closing_reminder_names_the_tokens_at_stake():
     from accounts_setup import make_inactivity_notify
     sent = []
     notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
-                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+                                    app_name='CheapCADTools', site_url='https://example.com/p')
     assert notify('a@example.com', 'account', 1_893_456_000, 57) is True
     body = sent[0][2]
     assert 'the 57 tokens left in it will expire' in body
@@ -290,7 +290,7 @@ def test_inactivity_run_with_the_real_store_sends_this_apps_email(tmp_path):
     tokens.credit(acct, 40, ref='order:1')
     sent = []
     notify = make_inactivity_notify(lambda *a: sent.append(a) or (True, ''),
-                                    app_name='CheapCAD Tools', site_url='https://example.com/p')
+                                    app_name='CheapCADTools', site_url='https://example.com/p')
     clock.t += 3 * 365 * 24 * 3600                   # the old free-token rule would have fired
     accounts.housekeeping(notify)
     assert sent == [] and tokens.balance(acct) == 60
