@@ -172,7 +172,7 @@ class CCTOAuthProvider:
         req = self.store.request(rid)
         if not req:
             return HTMLResponse(_page("This sign-in has expired",
-                                      "Start connecting CheapCAD Tools again from your AI app."), 400)
+                                      "Start connecting CheapCADTools again from your AI app."), 400)
         params = json.loads(req["params"])
         state = (self.accounts.device_request(req["user_code"]) or {}).get("state")
         if state == "approved":
@@ -251,6 +251,6 @@ class CCTOAuthProvider:
 
 def _page(title: str, body: str) -> str:
     return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
-            f"<title>{title} — CheapCAD Tools</title>"
+            f"<title>{title} — CheapCADTools</title>"
             "<body style='font-family:system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem'>"
             f"<h1 style='font-size:1.4rem'>{title}</h1><p>{body}</p></body>")

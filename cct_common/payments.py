@@ -412,7 +412,7 @@ class Stripe:
 def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
                             paypal: Optional[PayPalConfig] = None,
                             stripe: Optional[StripeConfig] = None,
-                            app_name: str = "CheapCAD Tools", http=None,
+                            app_name: str = "CheapCADTools", http=None,
                             clock: Callable[[], float] = time.time) -> list[str]:
     """Registers the buy page and each provider whose keys are given.
     Returns the providers enabled."""

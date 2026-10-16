@@ -1,5 +1,5 @@
 """
-cct_common — shared CheapCAD Tools platform code.
+cct_common — shared CheapCADTools platform code.
 
 Embed/extract design parameters in CAD export files (see
 CCT_Architecture.md "Embedded metadata") so a file exported by any CCT tool
@@ -130,4 +130,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.24.0"
+__version__ = "0.24.3"

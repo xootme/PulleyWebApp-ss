@@ -7,7 +7,7 @@ cct_common.oauth, registered here when oauth_clients are given.
     from cct_common.account_routes import register_account_routes, current_account_id
 
     register_account_routes(app, accounts, email_sender=send_email,
-                            app_name="CheapCAD Tools")
+                            app_name="CheapCADTools")
     ...
     account_id = current_account_id()   # inside a request; None if signed out
 
@@ -137,7 +137,7 @@ def _safe_then(target: Optional[str]) -> Optional[str]:
 
 
 def register_account_routes(app, accounts: AccountStore, *, email_sender,
-                            app_name: str = "CheapCAD Tools",
+                            app_name: str = "CheapCADTools",
                             email_subject: Optional[str] = None,
                             email_body=None, secure_cookies: bool = True,
                             oauth_clients: Optional[dict] = None, oauth_http=None):
@@ -185,7 +185,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             ".logo{display:block;margin-bottom:1.5rem}.logo img{height:44px;width:auto}"
             "h1{font-size:1.6rem;line-height:1.25}</style></head><body>"
             # Every CCT app ships the shared logo at /static/logo.png (cct_common/static).
-            "<a class='logo' href='/'><img src='/static/logo.png' alt='CheapCAD Tools'></a>"
+            "<a class='logo' href='/'><img src='/static/logo.png' alt='CheapCADTools'></a>"
             f"<h1>{html.escape(title)}</h1>{inner}</body></html>")
         r = Response(doc, status=status, mimetype="text/html")
         r.headers["Cache-Control"] = "no-store"
@@ -473,7 +473,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         return jsonify(body)
 
     def _device_page(title, inner, status=200, ai=False):
-        warn = ("Only approve if you just chose to connect CheapCAD Tools from your own AI app."
+        warn = ("Only approve if you just chose to connect CheapCADTools from your own AI app."
                 if ai else "Only approve a code you just saw in your own CAD add-in.")
         return _page(title, inner + f"<p style='color:#666;font-size:.9rem'>{warn} "
                      "Never approve a request someone sent you.</p>", status)

@@ -240,7 +240,7 @@ class Gateway:
 
     def balance(self, app: str) -> dict:
         if not self.token:
-            raise GatewayError("not signed in: call sign_in (hosted: reconnect the CheapCAD Tools connector)")
+            raise GatewayError("not signed in: call sign_in (hosted: reconnect the CheapCADTools connector)")
         d = self._call(app, "GET", "/api/account")
         return {"email": d.get("email"), "balance": d.get("balance")}
 
@@ -254,7 +254,7 @@ def _filename(disposition: str, fallback: str) -> str:
 # ── the MCP server ───────────────────────────────────────────────────────────
 
 INSTRUCTIONS = (
-    "CCT (Cheap CAD Tools) parametric part generators. Start with list_apps, then "
+    "CCT (CheapCADTools) parametric part generators. Start with list_apps, then "
     "describe(app) for the app's parameters (their names, units, limits and choices). "
     "check(app, params) returns the design's dimensions, spec warnings and an Auto-fix "
     "(fix.set = parameter changes to apply). export(app, params, formats, parts, out_dir) "
@@ -264,8 +264,9 @@ INSTRUCTIONS = (
 # Names only the tools below, and says the Auto-fix is the caller's own next
 # check call: OpenAI's scan flags instructions that read as hidden operations.
 INSTRUCTIONS_HOSTED = (
-    "CheapCAD Tools designs mechanical parts (today: timing belt pulleys and two-pulley "
-    "drives) with six tools and nothing else. list_apps names the generators. describe gives "
+    "CheapCADTools designs mechanical parts (today: timing belt pulleys, roller-chain "
+    "sprockets and involute gears, each alone or as a two-part drive) with six tools and "
+    "nothing else. list_apps names the generators. describe gives "
     "one generator's parameters: names, units, limits and choices. check returns the "
     "design's dimensions, any spec warnings and a suggested fix: fix.set lists parameter "
     "values; to use them, put them in the params yourself and call check again, until "
@@ -283,7 +284,7 @@ def build_server(gateway: Gateway, *, hosted: bool = False, provider=None, auth=
     from mcp.types import Icon, ToolAnnotations
     from . import __version__
     kw = {"auth_server_provider": provider, "auth": auth} if hosted else {}
-    server = MCPServer(name="cct", title="CheapCAD Tools", version=__version__,
+    server = MCPServer(name="cct", title="CheapCADTools", version=__version__,
                        website_url="https://cheapcadtools.com/ai/",
                        icons=[Icon(src="https://cheapcadtools.com/assets/img/brand/icon-512.png",
                                    mime_type="image/png", sizes=["512x512"])],

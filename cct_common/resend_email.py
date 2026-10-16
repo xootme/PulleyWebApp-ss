@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 
 RESEND_URL = "https://api.resend.com/emails"
-DEFAULT_FROM = "CheapCAD Tools <info@cheapcadtools.com>"
+DEFAULT_FROM = "CheapCADTools <info@cheapcadtools.com>"
 
 
 def send(to: str, subject: str, body: str, from_addr: str = DEFAULT_FROM,

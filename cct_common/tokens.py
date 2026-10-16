@@ -41,7 +41,7 @@ from typing import Callable, Iterator, Optional
 
 from .sqlite_db import INTEGRITY_ERRORS, SqliteDB
 
-TOKEN_PRICE_CENTS = 10
+TOKEN_PRICE_CENTS = 5   # every pack in payments.DEFAULT_PACKS sells at this rate
 UNLOCK_WINDOW_S = 24 * 60 * 60
 
 # 1 token = 5 cents. 2D 10c, STL 15c, STEP 20c: each tier adds one token.

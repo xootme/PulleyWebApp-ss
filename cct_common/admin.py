@@ -56,7 +56,7 @@ def admin_emails() -> frozenset:
     return frozenset(emails)
 
 
-def register_admin(app, accounts, *, app_name: str = "CheapCAD Tools", app_version: str = "",
+def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_version: str = "",
                    bug_reports=None, default_app: str = "", download_failures=None,
                    clock=time.time) -> None:
     """Mount the admin dashboard. `accounts` is the AccountStore (its
