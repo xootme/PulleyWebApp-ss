@@ -13,7 +13,14 @@ lines of defence:
 
 ## One-time setup (owner — nothing here is automatic)
 
+Done 2026-10-16 (job `cct-db-backup`, schedule `cct-db-backup-daily`). Kept here
+to rebuild it; run step 3 from a clean worktree of a deployed commit
+(`git worktree add --detach <dir> <commit>`), since `--source .` uploads the folder.
+
 ```bash
+# 0. Cloud Scheduler, once per project (it was off until 2026-10-16).
+gcloud --configuration=cheapcadtools services enable cloudscheduler.googleapis.com
+
 # 1. The encryption key. Keep a SECOND copy offline (password manager) — without
 #    it the backups can't be read. Pipe it; never paste it into a chat or a file.
 .venv314/Scripts/python db_offsite_backup.py newkey \
@@ -46,7 +53,14 @@ gcloud --configuration=cheapcadtools scheduler jobs create http cct-db-backup-da
   --uri "https://run.googleapis.com/v2/projects/cheapcadtools/locations/us-central1/jobs/cct-db-backup:run" \
   --http-method POST \
   --oauth-service-account-email pulley-run@cheapcadtools.iam.gserviceaccount.com
+
+# 6. Prove the trigger works (not just the job): a second execution appears.
+gcloud --configuration=cheapcadtools scheduler jobs run cct-db-backup-daily --location us-central1
+gcloud --configuration=cheapcadtools run jobs executions list --job cct-db-backup --region us-central1
 ```
+
+The job runs the image it was deployed with: redeploy it (step 3) when
+`db_offsite_backup.py` changes, not on every app deploy.
 
 If a backup fails the job exits non-zero and Cloud Run shows it as failed;
 add a log-based alert on `cct-db-backup` failures to get an email.
