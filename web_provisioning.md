@@ -97,7 +97,22 @@ If so, update the metadata schema in both places and bump the version number.
 .venv314/Scripts/python tests/run_tests.py
 ```
 
-This starts Flask automatically on port 5099, launches a live dashboard at
+Or the plain pytest suite, side by side (pytest-xdist, from `requirements-dev.txt`)
+in a test turn, with as many workers as the turn's share (`CCT_TEST_CPUS`; never
+`-n auto` or a fixed number — `tests/test_cpu_cap.py` holds this). Each worker
+gets its own app logs folder (`tests/conftest.py`):
+
+```bash
+SMALL_STEP_BIN=C:/Users/cmyer/Documents/small_step/target/x86_64-pc-windows-gnu/release/small_step.exe \
+python C:/Users/cmyer/Documents/CCT_Controller/bin/cct.py test --from PulleyWebApp --label "full suite" -- \
+  C:/Users/cmyer/Documents/PulleyWebApp/.venv312/Scripts/python.exe tests/suite.py
+```
+
+`tests/suite.py` passes `-n` from the turn's share and prints the wall time (`--serial`
+runs it in one process). On 2026-10-16 the whole suite took 486 s this way against
+936 s serial (3 workers), with identical counts.
+
+`run_tests.py` starts Flask automatically on port 5099, launches a live dashboard at
 `http://localhost:5098`, opens it in the browser, runs all tests (pytest groups +
 queue system tests), and keeps the app running so repro links stay clickable.
 

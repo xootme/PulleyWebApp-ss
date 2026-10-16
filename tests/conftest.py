@@ -1,7 +1,28 @@
 """
 conftest.py — shared fixtures and test-matrix helpers.
+
+The suite runs side by side under pytest-xdist, sized from the machine's
+share (tests/cpu_cap.py), by tests/suite.py inside a test turn.
 """
+import os
+import tempfile
+
 import pytest
+
+from cpu_cap import test_cpus
+
+# The app's logs folder (bug reports, download counts, metrics, results,
+# bundles, the failure log): each run and each xdist worker gets its own, set
+# before any test imports app — workers writing one folder would race, and
+# tests have no business writing the repo's logs/ anyway.
+if not os.environ.get('PULLEY_LOG_DIR'):
+    os.environ['PULLEY_LOG_DIR'] = tempfile.mkdtemp(
+        prefix=f"pulley-tests-{os.environ.get('PYTEST_XDIST_WORKER', 'main')}-")
+
+
+def pytest_xdist_auto_num_workers(config):
+    """`-n auto` is the machine's share, never every CPU."""
+    return test_cpus()
 
 from geometry.pulley_geometry import (
     PULLEY_SPECS, PROFILE_KEY_PREFIX, BELT_FAMILIES,
