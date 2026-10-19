@@ -2300,7 +2300,7 @@ def _step_screw_kw(args, prefix=''):
 
 def _hex_bore(args, prefix=''):
     """A hex bar bore (ADR-018): unlike a spline it takes every Retention
-    method, one or two screws, each on a flat (step_exporter._std_screw_step)."""
+    method, one or two screws, each on a flat (step_exporter._screw_angles)."""
     return (args.get(f'{prefix}bore_shape') == 'spline'
             and args.get(f'{prefix}spline_type') == 'hex')
 

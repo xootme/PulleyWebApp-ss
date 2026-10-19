@@ -11,10 +11,17 @@ Timing Pulleys' hub set screws).
     screws.clearance_diameter(m3)                         # 3.4 (ISO 273 medium fit)
     screws.nut("M5")                                      # (8.0, 4.0) hex nut across flats, height
 
-Only sizes and diameters live here. Cutting the hole — where it goes, which
-way it points, how the part's mesh or solid is built — stays in each app,
-and so does print compensation (each app grows holes by its own offset at
-export time).
+    screws.hex_hole_outline(3.28)                         # a hex hole's corners, corner-up
+    screws.set_screw_angles(2, hex_bar=True)              # [0, 2π/3]: both on flats
+
+Sizes and diameters live here, and two rules every hub with set screws
+shares: which way a hex hole stands (`hex_hole_outline`, corner along the
+part's axis, as small_step's STEP cuts it) and where a second screw goes
+(`set_screw_angles`). Cutting the hole into a part — the cutter, its
+placement, how the mesh or solid is built — stays in each app, and so does
+print compensation (each app grows holes by its own offset at export
+time). `cct_common.checks.hex_hole` checks an app's STL hole against its
+STEP's, since the two are built by different code.
 
 Sizes: ISO metric coarse M2–M10 and UNC #2-56 to 1/4-20. Moved here from
 E-Box Designer's geometry/thread_table.py (which now re-exports this, limited
@@ -33,6 +40,7 @@ Sources, rounded to 3 decimal places:
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -164,3 +172,43 @@ def nut(size: Size) -> tuple:
     if s.nut is None:
         raise ValueError(f"no nut size for {s.name}")
     return s.nut
+
+
+# ── set screws in a hub ───────────────────────────────────────────────────
+
+def hex_hole_outline(flats: float, grow: float = 0.0) -> list:
+    """A hex self-tapping hole's six corners, in the hole's own cross-section,
+    as (across, along) pairs: `along` runs with the part's axis (the hub's
+    length, the print's layer direction), `across` round the hub, square to
+    both it and the hole's axis.
+
+    The hex stands corner-up: one corner points along the part's axis (+along),
+    flats face ±across. That is how small_step's STEP cuts it
+    (`--screw-hole hex`), and it prints without support with the part
+    upright: the hole's roof is a 60° peak, not a flat bridge. An app's STL
+    and STEP must agree; `checks.hex_hole` compares them.
+
+    `grow` offsets every flat outward by that much (3D-print compensation): a
+    true offset, so across-flats grows by 2·grow and each corner by
+    2·grow/√3."""
+    if flats <= 0:
+        raise ValueError(f"a hex hole needs flats > 0, not {flats}")
+    r = (flats / 2 + grow) * 2 / math.sqrt(3)              # corner radius
+    return [(r * math.cos(math.pi / 2 + k * math.pi / 3), r * math.sin(math.pi / 2 + k * math.pi / 3))
+            for k in range(6)]
+
+
+def set_screw_angles(count: int, *, nut: bool = False, hex_bar: bool = False) -> list:
+    """Where a hub's set screws point, in radians round the part's axis from
+    the first (which an app puts over its key or flat). A second screw goes
+    90° round, so the two push the shaft into one side; 180° with captured
+    nuts (the pockets need the room); on a hex bar 120°, the next-but-one
+    flat (90° would be a corner) — 180° with nuts is a flat too. Timing
+    Pulleys' ADR-018, kept by every hub app since."""
+    if count < 1:
+        return []
+    if count == 1:
+        return [0.0]
+    if count > 2:
+        raise ValueError(f"at most two set screws, not {count}")
+    return [0.0, math.pi if nut else (2 * math.pi / 3 if hex_bar else math.pi / 2)]

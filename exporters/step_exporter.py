@@ -36,6 +36,7 @@ from geometry.flange_geometry import (
     flange_inner_r_metal_top, flange_inner_r_metal_bottom,
 )
 from shapely.affinity import rotate as shapely_rotate
+from cct_common import screws
 
 # ── RDP curve simplification ─────────────────────────────────────────────────
 def _perpendicular_distance(p, p1, p2):
@@ -140,13 +141,14 @@ def _screw_hole_cutter(screw_dia_mm: float, length: float, set_screw=None) -> tr
     """A set-screw hole cutter along Z, centred on the origin; callers turn it
     onto the radial X axis. The hole is set_screw.hole (ADR-013: a
     self-tapping bore, a nut's clearance hole, or an insert's hole), else
-    the nominal diameter older designs were cut with. A hex bore keeps a
-    corner up once turned radial, so its roof prints without support."""
+    the nominal diameter older designs were cut with. A hex bore stands
+    corner-up (cct_common.screws.hex_hole_outline, as small_step cuts it), so
+    its roof prints without support."""
     hole = set_screw.hole if set_screw is not None else {"shape": "circle", "diameter": screw_dia_mm}
     if hole["shape"] == "hex":
-        r = hole["flats"] / math.sqrt(3)               # corner radius
-        hexagon = ShapelyPolygon([(r * math.cos(k * math.pi / 3), r * math.sin(k * math.pi / 3))
-                                  for k in range(6)])
+        # The callers turn +Z onto +X about Y: this X becomes the part's -Z
+        # (the outline's `along`), this Y stays the hole's `across`.
+        hexagon = ShapelyPolygon([(-along, across) for across, along in screws.hex_hole_outline(hole["flats"])])
         cutter = trimesh.creation.extrude_polygon(hexagon, length)
         cutter.apply_translation([0.0, 0.0, -length / 2.0])
         return cutter
@@ -293,12 +295,14 @@ def _cut_counterbore(mesh, spline, printed: bool = True):
     return mesh
 
 
-def _std_screw_step(spline) -> float:
-    """The angle between two standard (threaded / insert) set screws: 90°, so
-    they push the shaft to one side; on a hex bar 120°, the next-but-one flat
-    (90° is a corner). Captured nuts go 180° apart, flats on a hex too."""
+def _screw_angles(screw_count: int, captured_nut: bool, spline) -> list:
+    """Where the set screws point (ADR-018, now cct_common.screws.set_screw_angles):
+    two standard screws 90° apart, so they push the shaft to one side; on a
+    hex bar 120°, the next-but-one flat (90° is a corner); captured nuts
+    180° apart, flats on a hex too. At most two."""
     sp = _as_spline(spline)
-    return 2 * math.pi / 3 if sp is not None and sp.kind == 'hex' else math.pi / 2.0
+    return screws.set_screw_angles(min(screw_count, 2), nut=captured_nut,
+                                   hex_bar=sp is not None and sp.kind == 'hex')
 
 
 def _spline_slot_h(spline, bore_mm: float) -> float:
@@ -633,15 +637,13 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         need_oblong = R_hub < min_hub_r
         eff_r = max(R_hub, min_hub_r)
 
-        step = math.pi                 # 180° between captured-nut screws
     else:
         waf = t_nut = R_circ = pkt_z = pkt_y = pkt_x = R_pkt = pkt_depth = 0.0
         min_hub_r = 0.0
         need_oblong = False
         eff_r = R_hub
-        step = _std_screw_step(spline)   # 90° between standard screws (a hex bar: 120°)
 
-    screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
+    screw_angles = _screw_angles(screw_count, captured_nut, spline) if do_screws else []
 
     _ext_h       = hub_height_mm + flange_ext_mm
     hub_top      = hub_z_start + _ext_h
@@ -1067,15 +1069,13 @@ def generate_pulley_step(
         min_hub_r  = R_bore + 3.0 * t_nut
         need_oblong = R_hub < min_hub_r
         eff_r = max(R_hub, min_hub_r)
-        step  = math.pi
     else:
         waf = t_nut = R_circ = pkt_y = pkt_x = R_pkt = pkt_depth_nut = 0.0
         min_hub_r   = 0.0
         need_oblong = False
         eff_r = R_hub
-        step  = _std_screw_step(spline)
 
-    screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
+    screw_angles = _screw_angles(screw_count, captured_nut, spline) if do_screws else []
 
     # ── Spoke pre-calculations ────────────────────────────────────────────────
     has_spokes = spoke_count > 0 and spoke_width_mm > 0.0
@@ -2030,15 +2030,13 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         min_hub_r  = R_bore + 3.0 * t_nut
         need_oblong = R_hub < min_hub_r
         eff_r = max(R_hub, min_hub_r)
-        step  = math.pi
     else:
         waf = t_nut = R_circ = pkt_y = pkt_x = R_pkt = pkt_depth = 0.0
         min_hub_r   = 0.0
         need_oblong = False
         eff_r = R_hub
-        step  = _std_screw_step(spline)
 
-    screw_angles = [k * step for k in range(min(screw_count, 2))] if do_screws else []
+    screw_angles = _screw_angles(screw_count, captured_nut, spline) if do_screws else []
 
     # ── 2D bore cross-section (D-shaped / keyway / round) ────────────────────
     bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline,

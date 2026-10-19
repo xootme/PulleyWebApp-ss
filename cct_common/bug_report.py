@@ -40,7 +40,7 @@ Live mode needs its own credentials per channel (each silently no-ops
 without them — a delivery failure must never break the log write or the
 user-facing response):
     - GitHub issue:  FEEDBACK_GITHUB_PAT, FEEDBACK_GITHUB_REPO
-    - Email:         SENDGRID_API_KEY
+    - Email:         SENDGRID_API_KEY (to BUG_REPORT_TO, from BUG_REPORT_FROM)
 
 Flask (and, in live mode, the `sendgrid` package) are only imported
 inside register_bug_report_route()/the helpers that need them, so
@@ -51,6 +51,11 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
+
+# The notification's addresses. Reports go to the support inbox, which
+# CCT_CRM watches (the owner, 2026-10-16); info@ is the public contact.
+BUG_REPORT_TO = "support@cheapcadtools.com"
+BUG_REPORT_FROM = "noreply@cheapcadtools.com"
 
 
 def _report_id(timestamp, seeing, should_see):
@@ -173,8 +178,8 @@ def _send_report_email(report_id, report_label, timestamp, label_seeing,
             "the bug is fixed.",
         ]
         message = Mail(
-            from_email="noreply@cheapcadtools.com",
-            to_emails="info@cheapcadtools.com",
+            from_email=BUG_REPORT_FROM,
+            to_emails=BUG_REPORT_TO,
             subject="[%s] %s %s" % (tool_name, report_label, report_id),
             plain_text_content="\n".join(lines) + "\n",
         )
