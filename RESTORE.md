@@ -62,8 +62,12 @@ gcloud --configuration=cheapcadtools run jobs executions list --job cct-db-backu
 The job runs the image it was deployed with: redeploy it (step 3) when
 `db_offsite_backup.py` changes, not on every app deploy.
 
-If a backup fails the job exits non-zero and Cloud Run shows it as failed;
-add a log-based alert on `cct-db-backup` failures to get an email.
+If a backup fails the job exits non-zero and Cloud Run shows it as failed.
+The alert policy **"cct-db-backup failed"** (Cloud Monitoring, since 2026-10-21)
+emails **support@cheapcadtools.com** (channel "CCT backups: support@") when the
+job or its schedule logs an error, a non-zero exit, "failed" or a traceback; at
+most one email an hour. It can't see a backup that never started without an
+error: glance at `run jobs executions list` now and then.
 
 ## Restoring
 
@@ -82,10 +86,16 @@ restore refuses a target that already has tables.
 3. **Make an empty target** — a new Neon branch/database, or locally
    `CREATE SCHEMA restore_test` for a drill. Its URL is `TARGET_URL`.
 4. **Restore** (from a checkout with `.venv314`; `BACKUP_KEY` from Secret
-   Manager or the offline copy, piped into the environment):
+   Manager or the offline copy, piped into the environment). Off Cloud Run,
+   download the encrypted file first: the script's own Cloud Storage reader
+   signs in only as the Cloud Run service (found by the 2026-10-21 drill).
+   Use a Windows path for the destination (`gcloud storage cp` mangles
+   Git Bash's `/c/...` paths):
    ```bash
-   BACKUP_BUCKET=cheapcadtools-backups BACKUP_KEY=… \
-     .venv314/Scripts/python db_offsite_backup.py restore postgres/2026/10/01/cct-20261001T031500Z.zip.enc "$TARGET_URL"
+   gcloud --configuration=cheapcadtools storage cp \
+     gs://cheapcadtools-backups/postgres/2026/10/01/cct-20261001T031500Z.zip.enc 'C:\restore\'
+   BACKUP_KEY=… .venv314/Scripts/python db_offsite_backup.py restore \
+     'C:\restore\cct-20261001T031500Z.zip.enc' "$TARGET_URL"
    ```
    It prints the rows restored and fails if any table's count differs
    from the backup's manifest. Identity counters are moved past the
@@ -117,3 +127,7 @@ scratch schema on the local Postgres (`docker start cct-pg`, then
 compare the printed counts with the manifest, then `DROP SCHEMA drill
 CASCADE`. `tests/test_db_offsite_backup.py` runs the same round trip on
 every test run that has `CCT_TEST_POSTGRES` set.
+
+- **2026-10-21:** `cct-20261021T031639Z` (key from Secret Manager) restored
+  562 rows in 20 tables into the local `drill` schema in 3 s, the manifest's
+  counts; schema dropped.
