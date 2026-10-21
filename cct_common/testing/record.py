@@ -9,11 +9,18 @@ the tests that should catch each negative control.
 Python 3.12+'s sys.monitoring, not coverage or pytest-testmon (no extra
 package): a PY_START callback notes a function's code object the first time
 it starts in a test, then disables itself for that code until the next test
-(restart_events), so each function costs one call per test. What runs in a
-test's setup (a module-scoped fixture's work) is the first test's that
-needs it; the file's record is the union of its tests', so a whole file
-still sees everything its tests share. Measured on Bevel's geometry tests,
-the record costs nothing: 31.1 s without it, 31.5 s with it.
+(restart_events), so each function costs one call per test. Measured on
+Bevel's geometry tests, the record costs nothing: 31.1 s without it, 31.5 s
+with it.
+
+A shared fixture's work (module-, class-, package- or session-scoped) runs
+once, in the setup of the first test that needs it, and is every test's
+that uses that instance (0.25.3): what its setup ran is kept per fixture
+and param, and each test that uses it after setup gets it too. Before,
+only the first test had it, so a control broke a function whose checks
+were the other tests (Worm Gear Designer's side supports: `built`, one per
+design, set up by one test and checked by eight) and its scope ran the
+setup's test alone.
 
 The app's caches are cleared when the test file changes, or a later file
 served from the cache would never be seen running the code that built it:
@@ -57,6 +64,8 @@ class Recorder:
         self.tests: dict = {}                 # node id -> {"ok", "seconds", "ran": set}
         self.lines: dict = {}                 # node id -> {code index: {line}}, in big functions only
         self.codes: dict = {}                 # (path, qualname) -> its index
+        self.shared: dict = {}                # (id(fixturedef), param index) -> {"ran": set, "lines": {code: {line}}}
+        self._setting_up: list = []           # the shared fixtures whose setup is running, their keys
         self._paths: dict = {}
         self._watched: dict = {}              # code object -> its index, LINE events on
         mon = sys.monitoring
@@ -84,6 +93,8 @@ class Recorder:
                 self.files[self.file]["ran"].add(c)
                 if self.test is not None:
                     self.tests[self.test]["ran"].add(c)
+                for k in self._setting_up:
+                    self.shared[k]["ran"].add(c)
                 if self.big and code not in self._watched and (p, code.co_qualname.split(".<locals>")[0]) in self.big:
                     self._watched[code] = c                   # its lines from now on, once a test each
                     sys.monitoring.set_local_events(self.tool, code, sys.monitoring.events.LINE)
@@ -94,6 +105,8 @@ class Recorder:
             c = self._watched.get(code)
             if c is not None:
                 self.lines.setdefault(self.test, {}).setdefault(c, set()).add(line)
+                for k in self._setting_up:
+                    self.shared[k]["lines"].setdefault(c, set()).add(line)
         return sys.monitoring.DISABLE
 
     def _entry(self, f):
@@ -135,6 +148,41 @@ class Recorder:
         self.test = item.nodeid
         self.tests.setdefault(item.nodeid, {"ok": True, "seconds": 0.0, "ran": set()})
         sys.monitoring.restart_events()
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_fixture_setup(self, fixturedef, request):
+        """A shared fixture's setup: what it runs is its own, from its first
+        line (restart_events: a function this test already ran counts again)."""
+        if fixturedef.scope == "function":
+            yield
+            return
+        key = (id(fixturedef), getattr(request, "param_index", 0))
+        self.shared[key] = {"ran": set(), "lines": {}}
+        self._setting_up.append(key)
+        sys.monitoring.restart_events()
+        try:
+            yield
+        finally:
+            self._setting_up.remove(key)
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_setup(self, item):
+        """Every shared fixture instance the test uses is set up by now: its
+        work is the test's too."""
+        yield
+        info = getattr(item, "_fixtureinfo", None)
+        indices = getattr(getattr(item, "callspec", None), "indices", {})
+        t = self.tests.get(item.nodeid)
+        if info is None or t is None:
+            return
+        for name in item.fixturenames:
+            defs = info.name2fixturedefs.get(name)
+            got = self.shared.get((id(defs[-1]), indices.get(name, 0))) if defs else None
+            if got:
+                t["ran"] |= got["ran"]
+                self._entry(item.nodeid.split("::")[0])["ran"] |= got["ran"]
+                for c, ln in got["lines"].items():
+                    self.lines.setdefault(item.nodeid, {}).setdefault(c, set()).update(ln)
 
     def pytest_runtest_logreport(self, report):
         e = self._entry(report.nodeid.split("::")[0])

@@ -1,5 +1,5 @@
 """Negative controls: break one formula or check at a time; the tests meant
-to catch it must fail; then restore (cct_common 0.25.2; Bevel Gear Designer's
+to catch it must fail; then restore (cct_common 0.25.3; Bevel Gear Designer's
 tools/neg_controls.py, its ADR-031, Planetary's before it). An app keeps its
 controls as data and hands them over, after configuring
 cct_common.testing.affected:
@@ -28,6 +28,14 @@ cct_common.testing.affected:
   it, the scope didn't: a test served from a cache another test filled) or
   MISSED. --whole-suite runs every control on the whole suites, fast first.
   A run that ran no test (pytest's exit 5) caught nothing.
+- **Not by the controls' own check.** An app's test that checks its
+  controls (each one's text once in its file: Bevel's
+  test_every_control_has_a_scope) fails in every lane, as the break takes
+  that text out. Every run has CCT_NEG_CONTROL set to the control's name,
+  and such a test skips when it is set; the whole suites leave out the test
+  files that import the app's controls module, too, so an app that forgot
+  the skip still can't catch a control with it (0.25.3: Worm's four SCOPE
+  catches were that test, the side supports' own tests none of them).
 - **In lanes.** Each lane breaks its own copy of the tree (git's files and
   .git, in a temporary folder), so CCT_TEST_CPUS controls run at once, each
   on one process; a control on the whole suite runs after them, one at a
@@ -250,14 +258,26 @@ def budget() -> float:
         return BUDGET
 
 
-def run_control(root: Path, path, old, new, files, workers, limit=None):
+def controls_users(source, graph: dict) -> list:
+    """The test files that import the app's controls module (`source`, the
+    file holding BREAKS), at any depth: left out of the whole suites."""
+    try:
+        rel = Path(source).resolve().relative_to(Path(affected.ROOT).resolve()).as_posix()
+    except (TypeError, ValueError):                          # none given, or outside the repo
+        return []
+    return affected.importers(rel, graph)
+
+
+def run_control(root: Path, path, old, new, files, workers, limit=None, name="", skip=()):
     """Break `path` in the tree at `root`, run `files` (node ids or test
     files; all of tests/ when empty) with -x, in their order, restore. True
-    when the tests failed; None when they ran past `limit` seconds."""
+    when the tests failed; None when they ran past `limit` seconds. The run
+    has CCT_NEG_CONTROL set (`name`, else `path`); the test files in `skip`
+    are left out (--ignore)."""
     f = root / path
     raw = f.read_bytes()
     src = raw.decode("utf-8").replace("\r\n", "\n")
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "CCT_NEG_CONTROL": name or path,
            "PYTHONPATH": os.pathsep.join([str(root), str(root / "tests"), os.environ.get("PYTHONPATH", "")])}
     if workers == 1:                                        # a lane: one CPU, its native pools too
         env.update({v: "1" for v in THREAD_VARS})
@@ -272,7 +292,8 @@ def run_control(root: Path, path, old, new, files, workers, limit=None):
     try:
         f.write_bytes(src.replace(old, new).encode("utf-8"))
         code = _run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider",
-                     "-p", "cct_common.testing.select", "-n", str(workers if workers > 1 else 0), *marker, *args],
+                     "-p", "cct_common.testing.select", "-n", str(workers if workers > 1 else 0), *marker,
+                     *(f"--ignore={s}" for s in skip), *args],
                     root, env, limit)
     finally:
         f.write_bytes(raw)
@@ -282,14 +303,18 @@ def run_control(root: Path, path, old, new, files, workers, limit=None):
 
 
 # -- the run -----------------------------------------------------------------
-def main(breaks: dict, argv) -> int:
-    """Run the app's controls (name -> (path, old, new)); 0 when every one ran was caught."""
+def main(breaks: dict, argv, source=None) -> int:
+    """Run the app's controls (name -> (path, old, new)); 0 when every one ran
+    was caught. `source`: the file holding BREAKS (the caller's, unless given),
+    whose importers the whole suites leave out."""
+    source = source or sys._getframe(1).f_globals.get("__file__")
     sys.stdout.reconfigure(encoding="utf-8")
     workers = test_cpus()
     every, whole = "--all" in argv, "--whole-suite" in argv
     only = [a for a in argv if not a.startswith("--")]
     snap, tstate = affected.snapshot(), affected.load_state()
     index, graph, lines = scope_index(tstate, snap), affected.import_graph(snap), affected.line_record(tstate)
+    users = controls_users(source, graph)
     if not index:
         print(f"no record of what the tests run ({affected.STATE}): run the suites with the record first; "
               "until then each control's scope is every test file importing what it breaks", flush=True)
@@ -348,7 +373,7 @@ def main(breaks: dict, argv) -> int:
                     return
                 name, (path, old, new), files, how, ck = c
                 t = time.time()
-                caught = run_control(roots[i], path, old, new, files, 1, limit)
+                caught = run_control(roots[i], path, old, new, files, 1, limit, name=name)
                 if caught:
                     done(name, ck, True, how, files, time.time() - t)
                 else:
@@ -359,29 +384,30 @@ def main(breaks: dict, argv) -> int:
             th.start()
         for th in threads:
             th.join()
-        def whole_suites(path, old, new):
-            """The whole fast suite, then the whole slow suite: the one that caught it, or None."""
+        def whole_suites(name, path, old, new):
+            """The whole fast suite, then the whole slow suite, without the
+            controls' own check: the one that caught it, or None."""
             for suite, files in (("fast", []), ("slow", SLOW_SUITE)):
-                if run_control(roots[0], path, old, new, files, workers):
+                if run_control(roots[0], path, old, new, files, workers, name=name, skip=users):
                     return suite
             return None
 
         for c in broad:                                               # a wide scope: on the turn's workers
             name, (path, old, new), files, how, ck = c
             t = time.time()
-            caught = run_control(roots[0], path, old, new, files, workers, limit)
+            caught = run_control(roots[0], path, old, new, files, workers, limit, name=name)
             if caught:
                 done(name, ck, True, how + f", on {workers} workers", files, time.time() - t)
             else:
                 later.append(c if caught is not None else (*c[:3], f"{how}; past its {limit:.0f} s", ck))
         for name, (path, old, new), files, how, ck in big:            # the whole suites are its scope
             t = time.time()
-            suite = whole_suites(path, old, new)
+            suite = whole_suites(name, path, old, new)
             done(name, ck, suite is not None, how + (", its slow suite" if suite == "slow" else ""), files,
                  time.time() - t)
         for name, (path, old, new), files, how, ck in later:         # the whole suites, to tell a scope's gap
             t = time.time()
-            suite = whole_suites(path, old, new)
+            suite = whole_suites(name, path, old, new)
             if suite:
                 shown = ", ".join(files[:3]) + (f" and {len(files) - 3} more" if len(files) > 3 else "")
                 scope_missed.append(f"{name} ({how}: {shown}; the whole {suite} suite caught it)")
