@@ -22,11 +22,17 @@ names (`cct_test_caches = app:_CACHE geometry.spiral_design:_GEN`). Within
 a file, a test served from a cache isn't seen building it: a control's
 tests are the ones that did, and the whole suite is its fallback.
 
+With CCT_TEST_LINES naming a file of "path<TAB>qualname" lines (the big
+functions, affected.record_env's; 0.25.2), LINE events are turned on for
+those functions' code objects alone (set_local_events), once a line each
+per test, so a control in one can take only the tests that ran its line:
+about 3 % of a fast suite's CPU time.
+
 Each process that runs tests (each xdist worker) writes
 `<CCT_TEST_MAP>/<pid>.json`: {"codes": [[path, qualname], ...],
 "files": {file: {"selected", "finished", "ok", "seconds", "ran": [code]}},
-"tests": {node id: {"ok", "seconds", "ran": [code]}}}, the codes by their
-index in "codes". Module-level code runs at import, outside any test:
+"tests": {node id: {"ok", "seconds", "ran": [code]}},
+"lines": {node id: {code: [line]}}}, the codes by their index in "codes". Module-level code runs at import, outside any test:
 affected.py hashes it apart (top_hash). The repo is pytest's rootdir, or
 CCT_TEST_MAP_ROOT."""
 from __future__ import annotations
@@ -43,17 +49,21 @@ MODULE = "<module>"
 
 
 class Recorder:
-    def __init__(self, out: Path, root: Path, caches=()):
+    def __init__(self, out: Path, root: Path, caches=(), big=()):
         self.out, self.root, self.caches = out, root, list(caches)
+        self.big = set(big)                   # (path, qualname): functions whose lines each test runs are noted
         self.file = self.test = None
         self.files: dict = {}                 # test file -> {"selected", "finished", "ok", "seconds", "ran": set}
         self.tests: dict = {}                 # node id -> {"ok", "seconds", "ran": set}
+        self.lines: dict = {}                 # node id -> {code index: {line}}, in big functions only
         self.codes: dict = {}                 # (path, qualname) -> its index
         self._paths: dict = {}
+        self._watched: dict = {}              # code object -> its index, LINE events on
         mon = sys.monitoring
         self.tool = next(t for t in (4, 3, 5, 2) if mon.get_tool(t) is None)
         mon.use_tool_id(self.tool, "cct-test-record")
         mon.register_callback(self.tool, mon.events.PY_START, self._start)
+        mon.register_callback(self.tool, mon.events.LINE, self._line)
 
     def _path(self, filename: str):
         p = self._paths.get(filename)
@@ -74,6 +84,16 @@ class Recorder:
                 self.files[self.file]["ran"].add(c)
                 if self.test is not None:
                     self.tests[self.test]["ran"].add(c)
+                if self.big and code not in self._watched and (p, code.co_qualname.split(".<locals>")[0]) in self.big:
+                    self._watched[code] = c                   # its lines from now on, once a test each
+                    sys.monitoring.set_local_events(self.tool, code, sys.monitoring.events.LINE)
+        return sys.monitoring.DISABLE
+
+    def _line(self, code, line):
+        if self.test is not None:
+            c = self._watched.get(code)
+            if c is not None:
+                self.lines.setdefault(self.test, {}).setdefault(c, set()).add(line)
         return sys.monitoring.DISABLE
 
     def _entry(self, f):
@@ -134,7 +154,8 @@ class Recorder:
         self.out.mkdir(parents=True, exist_ok=True)
         data = {"codes": [list(k) for k in sorted(self.codes, key=self.codes.get)],
                 "files": {f: {**e, "ran": sorted(e["ran"])} for f, e in self.files.items()},
-                "tests": {t: {**e, "ran": sorted(e["ran"])} for t, e in self.tests.items()}}
+                "tests": {t: {**e, "ran": sorted(e["ran"])} for t, e in self.tests.items()},
+                "lines": {t: {str(c): sorted(ln) for c, ln in by.items()} for t, by in self.lines.items()}}
         (self.out / f"{os.getpid()}.json").write_text(json.dumps(data), encoding="utf-8")
 
 
@@ -149,4 +170,11 @@ def pytest_configure(config):
         return
     root = Path(os.environ.get("CCT_TEST_MAP_ROOT") or config.rootpath).resolve()
     caches = [tuple(spec.partition(":")[::2]) for spec in config.getini("cct_test_caches")]   # cleared once imported
-    config.pluginmanager.register(Recorder(Path(out), root, caches), "cct-test-recorder")
+    big = []                                              # cct_common.testing.affected.record_env's list
+    if os.environ.get("CCT_TEST_LINES"):
+        try:
+            text = Path(os.environ["CCT_TEST_LINES"]).read_text(encoding="utf-8")
+            big = [tuple(ln.split("\t", 1)) for ln in text.splitlines() if "\t" in ln]
+        except OSError:
+            pass
+    config.pluginmanager.register(Recorder(Path(out), root, caches, big), "cct-test-recorder")

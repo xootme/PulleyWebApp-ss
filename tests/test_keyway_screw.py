@@ -51,6 +51,9 @@ def _find_occ_python() -> str | None:
         return sys.executable
     except Exception:
         pass
+    env = os.environ.get("CCT_OCC_PYTHON")          # the test host's OCC interpreter (msi)
+    if env and Path(env).is_file():
+        return env
     p = Path.home() / "Documents" / "PulleyWebApp" / ".venv312" / "Scripts" / "python.exe"
     if p.is_file() and subprocess.run([str(p), "-c", "import OCP"], capture_output=True).returncode == 0:
         return str(p)

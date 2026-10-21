@@ -25,13 +25,13 @@ def test_harness_rules():
     assert set(affected.harnesses_for(["tests/browser/turn_ui.js"])) == {"turn_ui"}
 
 
-def test_deps_are_one_key_that_reaches_everything():
+def test_the_snapshot_is_the_apps_own_files():
+    """.deps/ (third-party packages, untracked since 9406753) stays out of it."""
     snap = affected.snapshot()
-    assert affected.FOLDED in snap and affected.FOLDED in affected.EVERYTHING
-    assert not [k for k in snap if k.startswith(affected.FOLDED) and k != affected.FOLDED]
+    assert not [k for k in snap if k.startswith(".deps/")]
     assert "app.py" in snap and any(k.startswith("app.py::") for k in snap)
 
 
-def test_the_shared_code_uses_this_snapshot():
+def test_the_shared_code_has_the_pulleys_rules():
     from cct_common.testing import affected as shared
-    assert shared.snapshot is affected.snapshot and shared.APP == "PulleyWebApp"
+    assert shared.APP == "PulleyWebApp" and shared.TEST_RULES == affected.TEST_RULES

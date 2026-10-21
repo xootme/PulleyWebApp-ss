@@ -1,7 +1,7 @@
 """What the work in progress touches: the test files and browser harnesses to run
 while working (tests/suite.py --affected). The whole set runs at night
 (tools/nightly_test.py, CCT_Controller's nightly run). The selection is
-cct_common.testing.affected (0.25.0, from Bevel Gear Designer's pilot); these are
+cct_common.testing.affected (0.25.2, from Bevel Gear Designer's pilot); these are
 the pulley app's rules for it:
 
 - TEST_RULES: the page's template reaches every test that fetches the page;
@@ -15,8 +15,6 @@ The record (what each test runs, when each passed) lives outside the repo:
 CCT_TEST_RECORD_DIR, else %LOCALAPPDATA%/cct/test-records/PulleyWebApp.
 
     .venv314\\Scripts\\python.exe tools/affected.py      (prints the selection, and why)"""
-import hashlib
-import subprocess
 import sys
 from pathlib import Path
 
@@ -25,11 +23,7 @@ sys.path.insert(0, str(ROOT))                            # the vendored cct_comm
 from cct_common.testing import affected as _affected  # noqa: E402
 
 ALL = _affected.ALL
-# Third-party packages committed in 32ddabe (2,270 files, nothing imports them): hashed as
-# one key that reaches everything, not parsed file by file (33,436 of the snapshot's 36,506
-# keys, 17 s a run). cct_common 0.25.0 has no exclude option; this snapshot replaces its.
-FOLDED = ".deps/"
-EVERYTHING = ("pytest.ini", "requirements.txt", "requirements-dev.txt", FOLDED)
+EVERYTHING = ("pytest.ini", "requirements.txt", "requirements-dev.txt")
 # a non-Python file the app reads without the tests naming it -> the tests whose source matches
 TEST_RULES = [("templates/*", r"""\.get\(f?['"]/[?'"]""")]   # the page: the tests that fetch it
 
@@ -51,29 +45,8 @@ HARNESS_RULES = [
     ("static/*_help.html", ["help_ui"]), ("static/help/*", ["help_ui"]),
 ]
 
-def snapshot() -> dict:
-    """cct_common.testing.affected.snapshot with FOLDED's files as one key."""
-    out = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=ROOT, capture_output=True)
-    snap, folded = {}, hashlib.sha1()
-    for f in sorted(set(out.stdout.decode("utf-8").split("\0")) - {""}):
-        p = ROOT / f
-        if not p.is_file():
-            continue
-        data = p.read_bytes().replace(b"\r\n", b"\n")
-        if f.startswith(FOLDED):
-            folded.update(f.encode("utf-8") + b"\0" + hashlib.sha1(data).digest())
-            continue
-        snap[f] = hashlib.sha1(data).hexdigest()
-        if f.endswith(".py"):
-            snap[f + _affected.TOP] = _affected.top_hash(data)
-            snap.update({f + _affected.FN + q: h for q, h in _affected.fn_hashes(data).items()})
-    snap[FOLDED] = folded.hexdigest()
-    return snap
-
-
 _affected.configure(ROOT, "PulleyWebApp", test_rules=TEST_RULES, harness_rules=HARNESS_RULES,
                     everything=EVERYTHING, naming_skip={"test_affected.py"})   # it names them all
-_affected.snapshot = snapshot             # select() and cct_common.testing.controls call it by name
 from cct_common.testing.affected import *  # noqa: E402,F401,F403  (after configure: STATE is the pulley's)
 
 if __name__ == "__main__":

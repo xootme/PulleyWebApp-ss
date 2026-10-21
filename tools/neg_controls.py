@@ -6,8 +6,8 @@ catch it must fail; then restore. From the repo root, with the test interpreter
       [name filter ...] [--all] [--whole-suite]
 
 The controls are this file's BREAKS: name -> (file, the text, its broken form).
-The runner is cct_common.testing.controls (0.25.0, from Bevel Gear Designer's
-pilot): by default only the controls whose check changed since each was last
+The runner is cct_common.testing.controls (0.25.2, from Bevel Gear Designer's
+pilot; in a big function, only the tests that reached the broken line): by default only the controls whose check changed since each was last
 caught; each on the *tests* that ran what it breaks (tests/suite.py records
 them), cheapest first, with -x, the first that fails ending it, the whole suite
 as the fallback (SCOPE or MISSED); CCT_TEST_CPUS lanes, each breaking its own
@@ -16,8 +16,6 @@ them all (tools/nightly_test.py does, every night).
 
 A starter set (2026-10-21): the breaks that matter most, not yet every check."""
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -25,29 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affected  # noqa: E402,F401  (configures cct_common.testing.affected with the pulley's rules)
 import nightly_test  # noqa: E402
 from cct_common.testing import controls  # noqa: E402
-
-_copy_tree = controls.copy_tree
-
-
-def copy_tree(dst: Path):
-    """controls.copy_tree, also in a git worktree (the nightly run's), whose .git is a
-    file naming its gitdir, which 0.25.0's copytree refuses: copied as it is, so the
-    lane reads that gitdir (its tests only read git). Told to Controller for 0.25.1."""
-    root = affected.ROOT
-    if (root / ".git").is_dir():
-        return _copy_tree(dst)
-    out = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root, capture_output=True,
-                         check=True)
-    for f in sorted(set(out.stdout.decode("utf-8").split("\0")) - {""}):
-        if (root / f).is_file():
-            (dst / f).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(root / f, dst / f)
-    shutil.copy2(root / ".git", dst / ".git")
-    subprocess.run([sys.executable, "-m", "compileall", "-q", "--invalidation-mode", "checked-hash",
-                    "-x", r"[\\/]\.git[\\/]", str(dst)], check=True, capture_output=True)
-
-
-controls.copy_tree = copy_tree
 
 PG, SE, SF, SS = ("geometry/pulley_geometry.py", "exporters/step_exporter.py", "geometry/spoke_fit.py",
                   "geometry/set_screw.py")
@@ -98,7 +73,6 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "tests: the caches cleared exist": ("pytest.ini", "exporters.step_worker_ss:_versions", "exporters.step_worker_ss:_nothing"),
     "tests: the page's template reaches its tests": ("tools/affected.py", 'TEST_RULES = [("templates/*",',
                                                      'TEST_RULES = [("nothing/*",'),
-    "tests: .deps folded into one key": ("tools/affected.py", "        if f.startswith(FOLDED):", "        if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }
 

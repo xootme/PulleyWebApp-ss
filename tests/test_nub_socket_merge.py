@@ -61,6 +61,7 @@ def _find_occ_python() -> str | None:
     except Exception:
         pass
     for p in [
+        *([Path(os.environ["CCT_OCC_PYTHON"])] if os.environ.get("CCT_OCC_PYTHON") else []),   # the test host's
         Path.home() / "Documents" / "PulleyWebApp" / ".venv312" / "Scripts" / "python.exe",
     ]:
         if p.is_file():

@@ -25,7 +25,8 @@ the current files doesn't run again. A test file runs again when, since:
 - **a non-Python file it names changed** (help pages, pictures, JS, CSS,
   templates, …), or quotes the file's folders and a glob that matches it, or
   that the app's test_rules give it; Markdown is left out;
-- **one of `everything` changed** (pytest.ini, the requirements: everything).
+- **one of `everything` changed** (pytest.ini, the requirements: everything),
+  or a file in a `fold` glob (a vendored tree, hashed as one key; 0.25.1).
 
 Harnesses: by the app's harness_rules (glob -> harnesses, or ALL). Files are
 hashed with their line endings made LF, so a checkout with git's CRLF (the
@@ -51,6 +52,7 @@ ALL = "*"
 TOP = "#top"                    # snapshot key: a Python file's module level
 FN = "::"                       # snapshot key: path::qualname, one function or method
 KINDS = ("fast", "slow")        # pytest.ini's -m "not slow", and -m slow: recorded apart
+LINE_MIN = 50                   # a function more tests than this run has its lines recorded (0.25.2)
 
 # The app's, set by configure()
 ROOT = Path.cwd()
@@ -61,6 +63,8 @@ HARNESS_RULES: list = []        # (glob, harnesses or ALL): a changed file -> th
 HARNESS_GLOB = "tests/browser/*_ui.js"
 HARNESS_DIR = "tests/browser/"
 NAMING_SKIP: set = set()        # test files that name every file (the tool's own tests)
+FOLD: list = []                 # globs whose files hash as one key each (vendored trees): a change there reaches all
+FOLDED = "fold:"                # snapshot key: a folded glob's files, together
 
 
 def record_dir() -> Path:
@@ -73,15 +77,20 @@ STATE = record_dir() / "test_state.json"
 
 
 def configure(root, app: str, test_rules=(), harness_rules=(), everything=None,
-              harness_glob="tests/browser/*_ui.js", naming_skip=()):
-    """The app's repo and rules. Call it before anything else here."""
-    global ROOT, APP, TEST_RULES, HARNESS_RULES, EVERYTHING, HARNESS_GLOB, HARNESS_DIR, NAMING_SKIP, STATE
+              harness_glob="tests/browser/*_ui.js", naming_skip=(), fold=()):
+    """The app's repo and rules. Call it before anything else here. `fold`:
+    globs (fnmatch: `*` crosses folders) for vendored or third-party trees,
+    whose files hash as one key per glob instead of thousands (Pulley's
+    2,270 .deps/ files: 17 s a snapshot, 3.3 s folded); a change there
+    reaches every test and harness, as `everything` does (0.25.1)."""
+    global ROOT, APP, TEST_RULES, HARNESS_RULES, EVERYTHING, HARNESS_GLOB, HARNESS_DIR, NAMING_SKIP, STATE, FOLD
     ROOT, APP = Path(root).resolve(), app
     TEST_RULES, HARNESS_RULES = list(test_rules), list(harness_rules)
     if everything is not None:
         EVERYTHING = tuple(everything)
     HARNESS_GLOB, HARNESS_DIR = harness_glob, harness_glob.rpartition("/")[0] + "/"
     NAMING_SKIP = set(naming_skip)
+    FOLD = list(fold)
     STATE = record_dir() / "test_state.json"
 
 
@@ -97,17 +106,23 @@ class Pick:
 def snapshot() -> dict:
     """Every file git would see (ignored ones left out), hashed; each Python
     file's module level as `<path>#top`, and its every function and method
-    as `<path>::<qualname>`."""
+    as `<path>::<qualname>`; the files of a `fold` glob together, as
+    `fold:<glob>`."""
     out = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=ROOT, capture_output=True)
-    snap = {}
+    snap, folds = {}, {}
     for f in sorted(set(out.stdout.decode("utf-8").split("\0")) - {""}):
         p = ROOT / f
         if p.is_file():
             data = p.read_bytes().replace(b"\r\n", b"\n")
+            glob = next((g for g in FOLD if fnmatch.fnmatchcase(f, g)), None)
+            if glob is not None:
+                folds.setdefault(glob, hashlib.sha1()).update(f.encode("utf-8") + b"\0" + hashlib.sha1(data).digest())
+                continue
             snap[f] = hashlib.sha1(data).hexdigest()
             if f.endswith(".py"):
                 snap[f + TOP] = top_hash(data)
                 snap.update({f + FN + q: h for q, h in fn_hashes(data).items()})
+    snap.update({FOLDED + g: h.hexdigest() for g, h in folds.items()})
     return snap
 
 
@@ -273,7 +288,7 @@ def load_state() -> dict:
         state = json.loads(STATE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         state = {}
-    for k in ("snaps", "passed", "ran", "seconds", "tests"):
+    for k in ("snaps", "passed", "ran", "seconds", "tests", "lines"):
         state.setdefault(k, {})
     state.setdefault("codes", [])
     return state
@@ -289,22 +304,23 @@ def save_state(state: dict):
 
 
 def _worker_files(folder: Path):
-    """Each run_map file as (codes, files, tests); the codes resolved."""
+    """Each record file as (files, tests, lines); the codes resolved."""
     for f in sorted(Path(folder).glob("*.json")):
         data = json.loads(f.read_text(encoding="utf-8"))
         if "files" not in data:                                    # a record of files alone
-            yield {t: {**e, "ran": [tuple(r) for r in e["ran"]]} for t, e in data.items()}, {}
+            yield {t: {**e, "ran": [tuple(r) for r in e["ran"]]} for t, e in data.items()}, {}, {}
             continue
         codes = [tuple(c) for c in data["codes"]]
         yield ({t: {**e, "ran": [codes[i] for i in e["ran"]]} for t, e in data["files"].items()},
-               {t: {**e, "ran": [codes[i] for i in e["ran"]]} for t, e in data["tests"].items()})
+               {t: {**e, "ran": [codes[i] for i in e["ran"]]} for t, e in data["tests"].items()},
+               {t: {codes[int(c)]: set(ln) for c, ln in by.items()} for t, by in data.get("lines", {}).items()})
 
 
 def merge_map(folder: Path) -> dict:
     """tests/run_map.py's per-process files as one: test file -> {"ok", "ran"}.
     Every xdist worker collects every file, each runs some of its tests."""
     out = {}
-    for files, _ in _worker_files(folder):
+    for files, _, _ in _worker_files(folder):
         for test, e in files.items():
             m = out.setdefault(test, {"selected": 0, "finished": 0, "ok": True, "seconds": 0.0, "ran": set()})
             m["selected"] = max(m["selected"], e["selected"])
@@ -320,9 +336,58 @@ def merge_map(folder: Path) -> dict:
 def merge_tests(folder: Path) -> dict:
     """node id -> {"ok", "seconds", "ran": set}: each test's own record (one worker ran it)."""
     out = {}
-    for _, tests in _worker_files(folder):
+    for _, tests, _ in _worker_files(folder):
         for t, e in tests.items():
             out[t] = {"ok": e["ok"], "seconds": e["seconds"], "ran": set(e["ran"])}
+    return out
+
+
+def merge_lines(folder: Path) -> dict:
+    """node id -> {(path, qualname): {line}}: the lines each test ran in the big functions."""
+    out = {}
+    for _, _, lines in _worker_files(folder):
+        for t, by in lines.items():
+            for c, ln in by.items():
+                out.setdefault(t, {}).setdefault(c, set()).update(ln)
+    return out
+
+
+def big_functions(state: dict, line_min: int = LINE_MIN) -> list:
+    """(path, qualname) of each function more than `line_min` tests ran (the
+    last record, fast and slow): those a change scopes to by line (0.25.2)."""
+    count = {}
+    for kind in KINDS:
+        for e in test_record(state, kind).values():
+            for path, q in {(p, q.split(".<locals>")[0]) for p, q in e["ran"]}:
+                count[(path, q)] = count.get((path, q), 0) + 1
+    return sorted(k for k, n in count.items() if n > line_min and k[1] != "<module>")
+
+
+def record_env(folder: Path, state: dict | None = None, line_min: int = LINE_MIN) -> dict:
+    """The environment a suite run records with (cct_common.testing.record):
+    CCT_TEST_MAP, and CCT_TEST_LINES naming the big functions whose lines each
+    test runs are noted too, so a control in one runs only the tests that
+    reached its line (0.25.2)."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    big = big_functions(load_state() if state is None else state, line_min)
+    listed = folder / "big_functions.txt"
+    listed.write_text("".join(f"{path}\t{q}\n" for path, q in big), encoding="utf-8")
+    return {"CCT_TEST_MAP": str(folder), "CCT_TEST_LINES": str(listed)}
+
+
+def line_record(state: dict) -> dict:
+    """(path, qualname) -> {node id: {line}}: the lines each test ran in the big
+    functions (nested functions under their outer one's name), from tests whose
+    file last passed."""
+    codes, out = state["codes"], {}
+    for key, by in state["lines"].items():
+        kind, _, node = key.partition(":")
+        if f"{kind}:{node.split('::')[0]}" not in state["passed"]:
+            continue
+        for c, ln in by.items():
+            path, q = codes[int(c)]
+            out.setdefault((path, q.split(".<locals>")[0]), {}).setdefault(node, set()).update(ln)
     return out
 
 
@@ -343,7 +408,7 @@ def record_run(kind: str, folder: Path, snap: dict, state: dict | None = None) -
     state = load_state() if state is None else state
     sid = _sid(snap)
     state["snaps"][sid] = snap
-    files, tests = merge_map(folder), merge_tests(folder)
+    files, tests, lines = merge_map(folder), merge_tests(folder), merge_lines(folder)
     index = {tuple(c): i for i, c in enumerate(state["codes"])}
 
     def code(c):
@@ -353,8 +418,9 @@ def record_run(kind: str, folder: Path, snap: dict, state: dict | None = None) -
         return index[c]
     for test, m in files.items():
         key = f"{kind}:{test}"
-        for t in [t for t in state["tests"] if t.startswith(key + "::")]:    # its tests as of this run
-            del state["tests"][t]
+        for record in (state["tests"], state["lines"]):          # its tests as of this run
+            for t in [t for t in record if t.startswith(key + "::")]:
+                del record[t]
         if m["ok"]:
             state["passed"][key] = sid
             state["ran"][key] = sorted(m["ran"])
@@ -363,6 +429,9 @@ def record_run(kind: str, folder: Path, snap: dict, state: dict | None = None) -
                 if node.split("::")[0] == test:
                     state["tests"][f"{kind}:{node}"] = {"s": round(e["seconds"], 3),
                                                         "r": sorted(code(c) for c in e["ran"])}
+                    if lines.get(node):
+                        state["lines"][f"{kind}:{node}"] = {str(code(c)): sorted(ln)
+                                                            for c, ln in lines[node].items()}
         else:
             state["passed"].pop(key, None)
     save_state(state)
@@ -392,6 +461,8 @@ def harnesses_for(files) -> list:
     out = set()
     every = all_harnesses()
     for f in files:
+        if f.startswith(FOLDED):                                  # a vendored tree: everything
+            out.update(every)
         if fnmatch.fnmatchcase(f, HARNESS_GLOB):
             out.add(Path(f).stem)
         for pattern, hs in HARNESS_RULES:
@@ -410,7 +481,7 @@ def tests_naming(files) -> list:
     out = set()
     for f in files:
         p = Path(f)
-        if p.suffix in (".py", ".md") or TOP in f or FN in f or f.startswith(HARNESS_DIR):
+        if p.suffix in (".py", ".md") or TOP in f or FN in f or f.startswith((HARNESS_DIR, FOLDED)):
             continue
         folders = [part for part in p.parent.parts if part not in (".", "")]
         for t, src in text.items():
@@ -437,7 +508,7 @@ def why_run(key: str, test: str, snap: dict, state: dict, graph: dict, named: di
         return None
     if test in changed:
         return "the test file changed"
-    every = [f for f in changed if f in EVERYTHING]
+    every = [f for f in changed if f in EVERYTHING or f.startswith(FOLDED)]
     if every:
         return f"{every[0]} changed"
     old = state["snaps"][state["passed"][key]]

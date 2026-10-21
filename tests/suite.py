@@ -49,7 +49,8 @@ def main(args):
     with tempfile.TemporaryDirectory(prefix='pulley-run-map-') as folder:
         cmd = [sys.executable, '-m', 'pytest', '-p', 'no:cacheprovider',
                *([] if serial else ['-n', str(n)]), *args]
-        rc = subprocess.call(cmd, cwd=ROOT, env={**os.environ, 'CCT_TEST_MAP': folder})
+        # CCT_TEST_MAP, and CCT_TEST_LINES: big functions get line scopes for the controls (0.25.2)
+        rc = subprocess.call(cmd, cwd=ROOT, env={**os.environ, **affected.record_env(Path(folder))})
         if rc in (0, 1):                            # ran (1: some failed); not a usage or collection error
             affected.record_run('fast', Path(folder), snap)
     print(f"suite: {'serial' if serial else f'{n} workers'}, {time.monotonic() - start:.0f} s wall", flush=True)
