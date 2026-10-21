@@ -1,0 +1,4 @@
+{"test": ["{repo}/.venv314/Scripts/python.exe", "{worktree}/tools/nightly_test.py", "--keep-logs", "{repo}"],
+ "release": ["{repo}/.venv314/Scripts/python.exe", "{worktree}/tools/release.py"],
+ "timeout_min": 120,
+ "release_timeout_min": 90}
