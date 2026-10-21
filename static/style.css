@@ -1096,6 +1096,8 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
 .dims th { color: #888; font-weight: 600; }
 .dims td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dims td.short { color: #b91c1c; font-weight: 600; }
+/* a setting the server refused (geometry/labels.py): Auto-fix types in its value */
+.setting-refused { outline: 2px solid #b91c1c; outline-offset: 1px; }
 .approx { color: #b91c1c; font-weight: 600; cursor: help; margin-left: 2px; }
 .approx-note { font-size: 11px; color: #666; margin-top: 6px; }
 

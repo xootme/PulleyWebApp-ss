@@ -541,6 +541,8 @@ from geometry.pulley_geometry import (
     BELT_FAMILIES,
     correct_center_distance, center_dist_from_belt_teeth,
 )
+from geometry import labels as _labels
+from geometry import set_screw as _ss_mod
 from exporters.svg_exporter import generate_svg, generate_svg_dual, generate_rim_layer_svg
 from exporters.png_exporter import generate_png, generate_png_dual
 from exporters.belt_svg_exporter import generate_belt_svg, generate_belt_png
@@ -646,6 +648,37 @@ _CACHE_MAX_AGE = 3600   # 1 hour; Cloudflare + browser cache
 @app.before_request
 def _count_request():
     _increment_request_count()
+
+
+# A setting the page couldn't have sent ("abc", 99999 teeth) is refused before any route
+# reads it, with the page's label, its field and a value the Auto-fix can type in
+# (geometry/labels.py; the owner, 2026-10-21). The downloads too: a link once drew a 32 m
+# pulley, and text in a number gave Python's own message.
+_SETTINGS_CHECKED = ('/api/dimensions',)   # the previews answer an <img>: always a picture
+
+
+@app.before_request
+def _refuse_bad_settings():
+    path = request.path
+    if path in _SETTINGS_CHECKED or (path.startswith('/download/') and not path.startswith('/download/result/')):
+        try:
+            _labels.check(request.values)
+        except _labels.SettingError as e:
+            return jsonify(error=str(e), field=e.field, fix=e.fix), 400
+    return None
+
+
+@app.after_request
+def _label_agent_refusals(response):
+    """The agent API's refusals name the page's label beside the key (cct_common's
+    agent_api words them by key alone)."""
+    if request.path.startswith('/api/v1/') and response.status_code == 400 and response.is_json:
+        body = response.get_json(silent=True) or {}
+        if body.get('code') == 'BAD_PARAMS':
+            body['error'] = _labels.agent_message(body.get('error', ''))
+            body['details'] = [_labels.agent_message(d) for d in body.get('details', [])]
+            response.set_data(json.dumps(body))
+    return response
 
 
 @app.route('/api/subscribers/<path:_>', methods=['OPTIONS'])
@@ -4874,6 +4907,7 @@ def _finish_job(job_id, **kw):
 # cct_common's MCP gateway and CAD plugins.
 import agent as _agent
 _agent.register(app, charges, version=APP_VERSION)
+_labels.configure(_agent._params(FAMILIES, list(_ss_mod.METRIC) + list(_ss_mod.INCH)))
 
 from bundles import register_bundle_routes
 register_bundle_routes(

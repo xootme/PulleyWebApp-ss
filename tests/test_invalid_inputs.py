@@ -5,7 +5,8 @@ Simulates a user entering bad data through the web UI.  The contract:
   • JSON API endpoints  (/api/spec, /api/od, /api/belt)
       → 400 + JSON {'error': '...'} on bad input, never 500
   • Download endpoints  (/download/svg, /download/belt-svg)
-      → 400 + plain text on bad input, never 500
+      → 400 on bad input, never 500; a setting outside its range (geometry/labels.py,
+        2026-10-21) → 400 + JSON {'error', 'field', 'fix'}, the fix a value
   • Preview endpoints   (/api/preview, /api/belt-preview)
       → always 200 + valid PNG (error image on failure), never 500
 
@@ -630,6 +631,9 @@ class TestBoreValidation:
             f'/download/svg?family=HTD&pitch=5M&teeth=20&bore={bore}'
             '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
         )
+        if bore < 0:                 # refused since 2026-10-21, with 0 (no bore) as the fix
+            assert r.status_code == 400 and r.get_json()['fix'] == '0'
+            return
         assert r.status_code == 200
         assert b'<svg' in r.data
 
@@ -639,6 +643,9 @@ class TestBoreValidation:
             f'/download/dxf?family=HTD&pitch=5M&teeth=20&bore={bore}'
             '&print_extra=0&clearance_preset=STANDARD&backlash_preset=STANDARD'
         )
+        if bore < 0:                 # refused since 2026-10-21, with 0 (no bore) as the fix
+            assert r.status_code == 400 and r.get_json()['fix'] == '0'
+            return
         assert r.status_code == 200
         assert len(r.data) > 0
 

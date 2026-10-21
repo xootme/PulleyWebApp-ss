@@ -7,7 +7,7 @@
   <title>Timing Pulley Generator — CheapCADTools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
   <link rel="stylesheet" href="/static/cct_theme.css?v=1">
-  <link rel="stylesheet" href="/static/style.css?v=45">
+  <link rel="stylesheet" href="/static/style.css?v=46">
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
@@ -3825,6 +3825,14 @@ function _withMcMaster(text, part, after = '') {
   span.append(after);
   return span;
 }
+// A message's lengths ("… mm", "0 to 5 mm") in inches when the page shows inches
+// (Planetary's inchMessage; the server words every message in mm).
+const MM_LENGTH = /-?\d+(?:\.\d+)?(?:e[+-]?\d+)?(?:\s+to\s+-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)?\s?mm\b(?![²³/·])/g;
+function inchMessage(text) {
+  if (!CCTUnits.inch()) return text;
+  return text.replace(MM_LENGTH, m => m.replace(/\s?mm$/, ' in')
+    .replace(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g, n => CCTUnits.tidy(Number(n) / CCTUnits.INCH, 4)));
+}
 const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height',
                     flange_overlap: 'flange_min_overlap' };
 let dimsTimer = null, dimsSeq = 0, dimsFix = null;
@@ -3844,7 +3852,10 @@ async function refreshDims() {
   try {
     const r = await fetch('/api/dimensions?' + new URLSearchParams(p));
     data = await r.json();
-    if (!r.ok) data = { error: data.error || `HTTP ${r.status}` };
+    // A refused setting (geometry/labels.py) names its field and a value: Auto-fix types it in.
+    if (!r.ok) data = { error: data.error || `HTTP ${r.status}`, field: data.field,
+                        fix: data.field && data.fix != null
+                          ? { set: { [data.field]: data.fix }, changes: [inchMessage(data.error)] } : null };
   } catch (e) {
     data = { error: e.message };
   }
@@ -3859,7 +3870,9 @@ function showDims(data) {
   table.replaceChildren();
   drive.replaceChildren();
   const lines = data.error ? [data.error] : data.warnings;
-  warn.replaceChildren(...lines.map(w => { const li = document.createElement('li'); li.textContent = w; return li; }));
+  warn.replaceChildren(...lines.map(w => { const li = document.createElement('li'); li.textContent = inchMessage(w); return li; }));
+  document.querySelectorAll('.setting-refused').forEach(el => el.classList.remove('setting-refused'));
+  if (data.field) document.getElementById(data.field)?.classList.add('setting-refused');
   dimsFix = data.fix || null;
   const fixBtn = document.getElementById('dims_fix');
   fixBtn.classList.toggle('hidden', !dimsFix);
@@ -3947,7 +3960,11 @@ function applyDimsFix() {
   if ('clearance_height' in dimsFix.set) clearanceAuto = false;
   for (const [id, value] of Object.entries(dimsFix.set)) {
     const el = document.getElementById(id);
-    if (!el) continue;
+    if (!el) {                             // a radio group (the threaded hole's shape): its name
+      const radio = document.querySelector(`input[type="radio"][name="${id}"][value="${value}"]`);
+      if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+      continue;
+    }
     if (el.type === 'checkbox') {          // a tick (the ring's Make counterbore): set it, act on change
       el.checked = !!value;
       el.dispatchEvent(new Event('change', { bubbles: true }));

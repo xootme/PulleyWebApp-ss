@@ -112,13 +112,27 @@ def test_made_up_design_id_is_priced_as_its_own_design(paid):
     assert r.headers['X-CCT-Tokens-Charged'] == '2'
 
 
-def test_failed_export_is_refunded(paid):
-    r = paid.client.get('/download/step?family=BOGUS&pitch=5M&teeth=20&bore=8&belt_height=10',
+def test_failed_export_is_refunded(paid, monkeypatch):
+    import app as app_module
+
+    def fails(*a, **k):
+        raise ValueError('the export failed')
+    monkeypatch.setattr(app_module, '_parse_stl_params', fails)
+    r = paid.client.get('/download/step?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=10',
                         headers=paid.auth)
     assert r.status_code >= 400
     assert paid.balance() == 20
     kinds = [row['kind'] for row in paid.tokens.history(paid.acct)]
     assert kinds[:2] == ['refund', 'spend']
+
+
+def test_a_refused_setting_is_never_charged(paid):
+    """A setting the page couldn't have sent is refused before the charge (geometry/labels.py)."""
+    r = paid.client.get('/download/step?family=BOGUS&pitch=5M&teeth=20&bore=8&belt_height=10',
+                        headers=paid.auth)
+    assert r.status_code == 400 and r.get_json()['field'] == 'family'
+    assert paid.balance() == 20
+    assert 'spend' not in [row['kind'] for row in paid.tokens.history(paid.acct)]
 
 
 def test_not_enough_tokens_is_402_and_nothing_is_generated(paid):

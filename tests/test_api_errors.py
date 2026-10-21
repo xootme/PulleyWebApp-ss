@@ -17,7 +17,7 @@ APP = Path(__file__).resolve().parent.parent / 'app.py'
 def test_unknown_profile_is_a_json_error(client):
     r = client.get('/download/svg?family=HTD&pitch=99M&teeth=20&bore=8')
     assert r.status_code == 400 and r.is_json
-    assert 'Unknown profile' in r.get_json()['error']
+    assert "Pitch: “99M” isn't one of its choices." == r.get_json()['error']   # labelled since 2026-10-21
 
 
 @pytest.mark.parametrize('path,target', [
