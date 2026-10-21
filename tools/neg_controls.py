@@ -68,6 +68,11 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                       "False"),
     "labels: the page keeps the refusal's fix": ("templates/index.html", "fix: data.field && data.fix != null",
                                                  "fix: false && data.fix != null"),
+    # the agent API's belt_teeth (for the Drive Train Designer, 2026-10-21)
+    "belt_teeth sets the centre": ("agent.py", "    return dict(query, center_distance=_wire_number(centre))",
+                                   "    return query"),
+    "belt_teeth: a centre past the limit is refused": ("agent.py", "    if centre is None or centre > c_max:",
+                                                       "    if centre is None:"),
     # the test tooling (cct_common.testing)
     "tests: every suite run can record": ("pytest.ini", " -p cct_common.testing.record", ""),
     "tests: the caches cleared exist": ("pytest.ini", "exporters.step_worker_ss:_versions", "exporters.step_worker_ss:_nothing"),

@@ -81,6 +81,67 @@ def test_autofix_face_width_is_not_a_float_tenth_over(client):
     assert d['fix']['params']['clearance_height'] == 4.3
 
 
+# ── belt_teeth: a belt's tooth count sets the centre (Sprocket's links; for the Drive Train Designer) ──
+
+def _check(client, **params):
+    return client.post('/api/v1/check', json={"params": params})
+
+
+def test_describe_lists_belt_teeth(client):
+    d = client.get('/api/v1/describe').get_json()
+    p = next(p for p in d['params'] if p['name'] == 'belt_teeth')
+    assert (p['type'], p['min'], p['max'], p['when'], p['group']) == ('integer', 10, 20000, {'dual': True}, 'Drive')
+
+
+@pytest.mark.parametrize('family,pitch,t1,t2,n', [
+    ('HTD', '5M', 24, 36, 79), ('HTD', '5M', 24, 36, 80), ('GT', '2M', 20, 20, 100),
+    ('Imperial', 'MXL', 18, 60, 401), ('T', 'T10', 40, 15, 61), ('RPP', '3M', 8, 8, 14)])
+def test_belt_teeth_sets_the_centre(client, family, pitch, t1, t2, n):
+    """The centre check returns is the one that wraps exactly n teeth of belt, and
+    it is the same belt sent back as center_distance (also as the page shows it, to 0.01)."""
+    import math
+    from app import PULLEY_SPECS, _resolve_key
+    from geometry.pulley_geometry import open_belt_length
+    p = PULLEY_SPECS[_resolve_key(family, pitch)]['pitch']
+    d = _check(client, family=family, pitch=pitch, teeth=t1, dual=True, p2_teeth=t2, belt_teeth=n,
+               center_distance=500).get_json()                  # belt_teeth wins over the centre
+    centre = d['drive']['centre']
+    assert d['drive']['belt_teeth'] == n and d['drive']['belt_length'] == pytest.approx(n * p)
+    r1, r2 = t1 * p / (2 * math.pi), t2 * p / (2 * math.pi)
+    assert open_belt_length(r1, r2, centre) == pytest.approx(n * p, abs=1e-6)
+    for back in (centre, round(centre, 2)):
+        again = _check(client, family=family, pitch=pitch, teeth=t1, dual=True, p2_teeth=t2,
+                       center_distance=back).get_json()
+        assert again['drive']['belt_teeth'] == n and again['drive']['centre'] == pytest.approx(centre, abs=1e-6)
+
+
+def test_belt_teeth_reach_the_files(client):
+    """The files' belt and drive downloads are of that belt, at its centre."""
+    d = client.post('/api/v1/files', json={"params": dict(DRIVE, belt_teeth=90)}).get_json()
+    belt = next(f for f in d['files'] if (f['part'], f['format']) == ('belt', 'dxf'))
+    assert 'n_belt=90' in belt['url'] and 'center_distance=120&' not in belt['url']
+    r = client.get(belt['url'])
+    assert r.status_code == 200
+
+
+def test_belt_teeth_out_of_range_name_the_range(client):
+    """Too short to go round the pulleys, or a centre past center_distance's
+    10000 mm: refused, with the belts that fit; both ends of that range work."""
+    import re
+    drive = dict(family="HTD", pitch="5M", teeth=24, dual=True, p2_teeth=36)
+    r = _check(client, **drive, belt_teeth=40)
+    assert r.status_code == 400 and r.get_json()['code'] == 'BAD_PARAMS'
+    msg = r.get_json()['error']
+    assert 'belt_teeth 40 is too short to go round 24 and 36 teeth' in msg, msg
+    lo, hi = map(int, re.search(r'(\d+) to (\d+) teeth fit', msg).groups())
+    assert lo == 50 and hi == 4030, msg            # 247.4 mm at touching pitch circles; ~20150 mm at 10000
+    for n in (lo, hi):
+        assert _check(client, **drive, belt_teeth=n).get_json()['drive']['belt_teeth'] == n
+    r = _check(client, **drive, belt_teeth=hi + 1)
+    assert r.status_code == 400 and 'over the 10000 mm centre distance limit' in r.get_json()['error']
+    assert _check(client, **drive, belt_teeth=lo - 1).status_code == 400
+
+
 def test_files_list_the_design(client):
     d = client.post('/api/v1/files', json={"params": DRIVE}).get_json()
     got = {(f['part'], f['format']) for f in d['files']}

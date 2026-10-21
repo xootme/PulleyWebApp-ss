@@ -10,6 +10,8 @@ the server. `register(app)` wires the four /api/v1 routes.
 """
 from __future__ import annotations
 
+import math
+
 from cct_common.agent_api import Description, Param, Part, AgentError, register_agent_api
 
 APP_ID = "pulleys"
@@ -45,8 +47,13 @@ def _params(families: dict, screw_sizes: list) -> list:
         # ── a two-pulley drive ──
         P("dual", "boolean", "Two-pulley drive: pulley 2 takes the p2_ parameters", default=False,
           group="Drive", wire=_BOOL_TF),
-        P("center_distance", "number", "Centre distance (snapped to a whole-tooth belt; check reports "
-          "the corrected value)", unit="mm", min=1, max=10000, when={"dual": True}, group="Drive"),
+        P("center_distance", "number", "Centre distance, when belt_teeth isn't given (snapped to a "
+          "whole-tooth belt; check reports the corrected value)", unit="mm", min=1, max=10000,
+          when={"dual": True}, group="Drive"),
+        P("belt_teeth", "integer", "Belt teeth (sets the centre distance; check's drive.centre is the "
+          "one it gives). Refused, with the range that fits, when too short to go round the pulleys "
+          "or its centre is past center_distance's limit", min=10, max=20000, when={"dual": True},
+          group="Drive"),
         # ── bore shape ──
         P("hub_flat_depth", "number", "D-flat: how far the flat sits in from the bore wall (0: none)", unit="mm",
           min=0, max=50, group="Bore shape", per_part=True),
@@ -235,9 +242,36 @@ def _fix_params(fix_set: dict) -> dict:
     return out
 
 
+def _belt_centre(query: dict) -> dict:
+    """belt_teeth (like Sprocket's links) as the centre distance that gives that belt:
+    the query with center_distance set to it, so check, the files and their downloads
+    all read one centre (correct_center_distance snaps it back to the same belt)."""
+    if query.get("dual") != "true" or not query.get("belt_teeth"):
+        return query
+    from app import PULLEY_SPECS, _resolve_key
+    from cct_common.agent_api import _wire_number
+    from geometry import labels
+    from geometry.pulley_geometry import center_dist_from_belt_teeth, open_belt_length
+    spec = PULLEY_SPECS[_resolve_key(query.get("family", "HTD"), query.get("pitch", "5M"))]
+    p = spec["pitch"]
+    t1, t2 = (max(spec["min_teeth"], int(query.get(k, spec["min_teeth"]))) for k in ("teeth", "p2_teeth"))
+    n = int(query["belt_teeth"])
+    r1, r2 = t1 * p / (2 * math.pi), t2 * p / (2 * math.pi)
+    shortest = math.ceil(open_belt_length(r1, r2, (r1 + r2) * 1.0001) / p)
+    c_max = labels.limits()["center_distance"].max
+    longest = math.floor(open_belt_length(r1, r2, c_max) / p)
+    centre = center_dist_from_belt_teeth(p, t1, t2, n)
+    if centre is None or centre > c_max:
+        why = "too short to go round" if centre is None else f"over the {c_max:g} mm centre distance limit for"
+        raise AgentError(f"belt_teeth {n} is {why} {t1} and {t2} teeth ({p:g} mm pitch): "
+                         f"{shortest} to {longest} teeth fit")
+    return dict(query, center_distance=_wire_number(centre))
+
+
 def check(query: dict) -> dict:
     from app import _dimensions, _spline_of, _spoke_fit
     from cct_common import splines
+    query = _belt_centre(query)
     out = _dimensions(dict(query, feature_build="1"))
     if out.get("fix"):
         out["fix"]["params"] = _fix_params(out["fix"]["set"])
@@ -263,6 +297,7 @@ def check(query: dict) -> dict:
 def files(query: dict, parts: list, formats: list) -> list:
     from app import PULLEY_SPECS, _resolve_key, _spline_of
     from geometry.pulley_geometry import BELT_FAMILIES, correct_center_distance
+    query = _belt_centre(query)
     dual = query.get("dual") == "true"
     has_belt = query.get("family", "HTD") in BELT_FAMILIES
     family, pitch = query.get("family", "HTD"), query.get("pitch", "5M")
