@@ -265,7 +265,8 @@ INSTRUCTIONS = (
 # check call: OpenAI's scan flags instructions that read as hidden operations.
 INSTRUCTIONS_HOSTED = (
     "CheapCADTools designs mechanical parts (today: timing belt pulleys, roller-chain "
-    "sprockets and involute gears, each alone or as a two-part drive) with six tools and "
+    "sprockets, involute gears, worm gears and bevel gears, each alone or as a two-part "
+    "drive) with six tools and "
     "nothing else. list_apps names the generators. describe gives "
     "one generator's parameters: names, units, limits and choices. check returns the "
     "design's dimensions, any spec warnings and a suggested fix: fix.set lists parameter "

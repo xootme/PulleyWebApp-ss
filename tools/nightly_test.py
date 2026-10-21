@@ -7,9 +7,11 @@ nightly.py runs it inside a test turn with cwd = a clean worktree of HEAD:
 
 It runs tests/suite.py (pytest-xdist on CCT_TEST_CPUS workers) with the interpreter and
 small_step binary the day runs use, plus the nightly random designs (PULLEY_NIGHTLY=1,
-test_nightly_random.py). The random designs' repro files are written under the worktree,
+test_nightly_random.py), then every negative control (tools/neg_controls.py --all), scoped
+by what the suite just recorded (pytest args narrow the suite and skip the controls). The
+random designs' repro files are written under the worktree,
 which nightly.py removes afterwards, so --keep-logs copies them to <repo>/logs/nightly_random.
-Exits with pytest's code.
+Exits non-zero when the suite or a control fails.
 """
 import os
 import shutil
@@ -42,6 +44,9 @@ def main(args):
           f"{ver.stdout.strip() or 'small_step ?'} ({env['SMALL_STEP_BIN']})", flush=True)
     rc = subprocess.call([test_py, str(ROOT / 'tests' / 'suite.py'), '-p', 'no:warnings', '-rfEX', *args],
                          cwd=ROOT, env=env)
+    if not args:              # the whole set: every negative control too, scoped by the record just made
+        print('nightly_test: negative controls (tools/neg_controls.py --all)', flush=True)
+        rc = subprocess.call([test_py, str(ROOT / 'tools' / 'neg_controls.py'), '--all'], cwd=ROOT, env=env) or rc
     if keep:
         src, dst = ROOT / 'logs' / 'nightly_random', keep / 'logs' / 'nightly_random'
         for f in sorted(src.glob('*.json')) if src.is_dir() else []:
