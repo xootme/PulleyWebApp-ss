@@ -201,8 +201,10 @@ def _check_case(binary, occ_py, name, params, expect_merge, check_occ) -> tuple[
 
     diag = "applied" if "merge: v2 applied" in err else \
            "fallback" if "merge: v2 fallback" in err else "none"
-    if expect_merge and diag != "applied":
-        return False, f"expected merge applied, got '{diag}' (ribbon may have returned)"
+    # small_step 0.10+ prints no merge line at all ("none"): the solid is still checked
+    # below, and the test reports the merge itself as unverified (xfail), not passed.
+    if expect_merge and diag == "fallback":
+        return False, "expected merge applied, got 'fallback' (ribbon may have returned)"
     if not expect_merge and diag == "applied":
         return False, "merge unexpectedly engaged (expected full-circle path)"
 
@@ -237,6 +239,8 @@ def test_nub_socket_merge(case):
     name, params, expect_merge, check_occ = case
     ok, note = _check_case(_BINARY, _OCC_PY, name, params, expect_merge, check_occ)
     assert ok, f"{name}: {note}"
+    if expect_merge and note.startswith("merge=none"):
+        pytest.xfail(f"{name}: the binary no longer reports the merge, so only the solid was checked")
 
 
 def run() -> int:
