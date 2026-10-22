@@ -68,6 +68,8 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                       "False"),
     "labels: the page keeps the refusal's fix": ("templates/index.html", "fix: data.field && data.fix != null",
                                                  "fix: false && data.fix != null"),
+    # belt heights: ISO 5296-1 Table 4a (2026-10-21)
+    "belt height: MXL is ISO 5296's 1.14": (PG, '"aa": 0.254, "hs":  1.14,', '"aa": 0.254, "hs":  1.65,'),
     # the agent API's belt_teeth (for the Drive Train Designer, 2026-10-21)
     "belt_teeth sets the centre": ("agent.py", "    return dict(query, center_distance=_wire_number(centre))",
                                    "    return query"),

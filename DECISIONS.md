@@ -1,5 +1,47 @@
 # Architectural Decision Records
 
+## ADR-023 — Belt data checked against the standards: belt heights fixed, the rest deferred
+**Date:** 2026-10-21 · **Status:** Active (fix 1 made; 2–5 and the G tooth form deferred by the owner)
+
+**Context:** DriveTrainWebApp's research (its `docs/specs/belts.md`) found five places where
+this app's belt data disagreed with the standards. Each was re-checked here against page
+images of the sources: ISO 5296-1:1989, ISO 13050:2014, the ISO 17396:2014 preview (all in
+`Pdf/`) and Gates' *Light Power & Precision Drive Design Manual* (LPP, `Pdf/`; printed page =
+PDF page − 2). All five hold. The owner chose to fix only the first.
+
+**1. Imperial belt heights — FIXED.** ISO 5296-1 Table 4a (PDF p.6) gives the overall height
+h_s: MXL 1.14, XL 2.3, L 3.6, H 4.3, XH 11.2, XXH 15.7 mm (LPP Table 15, printed p.72: MXL
+1.14, XL 2.29). `IMPERIAL_BELT_SPECS` had 1.65 / 3.84 / 6.48 / 8.64 / 17.53 / 25.41. h_s is
+used only by belt geometry (belt SVG/DXF/STEP/STL, the drive animation), so the belt files got
+thinner and nothing else moved. Test `test_imperial_belt_is_iso_5296_high`, control "belt
+height: MXL is ISO 5296's 1.14", CHANGELOG.md.
+
+**Found, owner chose to defer** (each changes geometry people download, or a warning):
+
+2. **T and AT pitch line differential.** ISO 17396 Table 4's belt length measuring pulleys
+   (PDF p.10) give a = (z·p/π − OD)/2: T2.5 0.248, T5 0.420, T10 0.931, T20 1.427; AT3 0.204,
+   AT5 0.610, AT10 0.912, AT20 1.412. The app uses 0.25 / 0.50 / 0.60 / 1.00 and AT3 0.40,
+   AT20 1.25 ("existing sample table defaults", no source). The same route gives the published
+   a exactly for MXL–XXH (ISO 5296 Table 5), H and G (ISO 13050), but these ODs have a
+   −0.05/−0.08 tolerance, so a may be up to ~0.04 larger: confirm against the full ISO
+   17396:2017 pulley tables before changing. Effect: pulley OD = PD − 2a moves (app minus ISO:
+   T5 −0.16, T10 +0.66, T20 +0.85, AT3 −0.39, AT20 +0.33 mm) and the grooves with it; T/AT
+   flange minimum heights (ht + a fallback), teeth-from-OD and the belt files' tooth placement
+   change; belt length does not.
+3. **GT 8M/14M pitch line differential.** ISO 13050 Table 1 (PDF p.7) gives a = 0.80 / 1.40,
+   and Table 3's measuring pulleys agree (G8M 34 grooves OD 84.980 → 0.800; G14M 40 grooves
+   OD 175.454 → 1.400); `FLANGE_MIN_H` already uses them. `PULLEY_SPECS` and `G_BELT_SPECS`
+   use 0.686 / 1.397. Effect: GT8M OD −0.228 mm; GT14M −0.006 (negligible).
+   **Also found: the GT 8M/14M tooth form isn't ISO's.** ISO 13050 Table 5 (PDF p.11) has
+   groove depth h_r 3.45–3.54 (G8M) and 6.02–6.17 (G14M) and starts at 22 / 27 grooves; the
+   app's scaled GT2 shape has 2.845 / 4.978 and allows 20 / 24. A separate rework.
+4. **GT 3M/5M minimum teeth.** LPP p.74–75 (PDF 76–77) star 3 mm 12–15 and 5 mm 14–17 grooves
+   as "subminimal diameters not recommended for PowerGrip GT3"; the rating tables (p.19–20)
+   start at 16 / 18 (2 mm lists from 12). `min_teeth` is 10 / 12 (2 mm 10). Recommendation was
+   a warning for a loaded pulley, keeping the floor (LPP Table 9 allows 12 / 14-groove idlers).
+5. **60° minimum wrap citation.** The rule is LPP printed p.68 (PDF 70), §V.C; `belt_specs.py`
+   and the app.py warning cite "p. 64" (registration and alignment). Text only.
+
 ## ADR-021 — A flange sits on the pulley: inward overlap ≥ max(3 mm, h)
 **Date:** 2026-10-01 · **Status:** Active (STL, cadquery STEP, small_step STEP)
 

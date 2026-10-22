@@ -1557,27 +1557,28 @@ AT_BELT_SPECS = {
 # rr    : OD-corner fillet (ISO 5296-1:1989 Table 2  r_r)
 # ra    : tooth-tip fillet  (ISO 5296-1:1989 Table 2  r_a)
 # aa    : pitch line differential (ISO 5294:2012)
-# hs    : total section height = ht + belt body (Fenner/Gates handbooks)
+# hs    : overall belt height h_s, teeth included (ISO 5296-1:1989 Table 4a; Gates LPP
+#         Table 15 agrees for MXL/XL; until 2026-10-21 these were 1.65/3.84/6.48/8.64/17.53/25.41)
 # s_dim : "OD" — S measured at OD surface (same as T-belt S_r convention)
 IMPERIAL_BELT_SPECS = {
     "MXL": {"pitch":  2.032, "beta2": 40.0,
             "S":  1.14, "ht": 0.51, "rr": 0.13, "ra": 0.13,
-            "aa": 0.254, "hs": 1.65, "s_dim": "OD"},
+            "aa": 0.254, "hs":  1.14, "s_dim": "OD"},
     "XL":  {"pitch":  5.080, "beta2": 50.0,
             "S":  2.57, "ht": 1.27, "rr": 0.38, "ra": 0.38,
-            "aa": 0.254, "hs": 3.84, "s_dim": "OD"},
+            "aa": 0.254, "hs":  2.30, "s_dim": "OD"},
     "L":   {"pitch":  9.525, "beta2": 40.0,
             "S":  4.65, "ht": 1.91, "rr": 0.51, "ra": 0.51,
-            "aa": 0.381, "hs": 6.48, "s_dim": "OD"},
+            "aa": 0.381, "hs":  3.60, "s_dim": "OD"},
     "H":   {"pitch": 12.700, "beta2": 40.0,
             "S":  6.12, "ht": 2.29, "rr": 1.02, "ra": 1.02,
-            "aa": 0.686, "hs": 8.64, "s_dim": "OD"},
+            "aa": 0.686, "hs":  4.30, "s_dim": "OD"},
     "XH":  {"pitch": 22.225, "beta2": 40.0,
             "S": 12.57, "ht": 6.35, "rr": 1.57, "ra": 1.19,
-            "aa": 1.397, "hs": 17.53, "s_dim": "OD"},
+            "aa": 1.397, "hs": 11.20, "s_dim": "OD"},
     "XXH": {"pitch": 31.750, "beta2": 40.0,
             "S": 19.05, "ht": 9.53, "rr": 2.29, "ra": 1.52,
-            "aa": 1.524, "hs": 25.41, "s_dim": "OD"},
+            "aa": 1.524, "hs": 15.70, "s_dim": "OD"},
 }
 
 # Families that have belt tooth profiles

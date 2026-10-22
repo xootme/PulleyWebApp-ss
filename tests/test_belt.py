@@ -53,3 +53,20 @@ def test_the_belt_loop_closes_on_its_start(family, pitch):
         teeth = doc.modelspace().query('*[layer=="BELT_TEETH"]')
         assert len(teeth.query('LINE')) == 0, f'{t1}/{t2} cd {cd}: a closing line'
         assert len(teeth.query('SPLINE')) == n
+
+
+# Imperial belts are ISO 5296-1:1989 Table 4a's overall height h_s (teeth included);
+# Gates LPP Table 15 gives MXL 1.14 and XL 2.29. Until 2026-10-21 the belt files were
+# 1.65 / 3.84 / 6.48 / 8.64 / 17.53 / 25.41 mm thick (owner's fix 1 of DriveTrainWebApp's check).
+_ISO5296_HS = {'MXL': 1.14, 'XL': 2.3, 'L': 3.6, 'H': 4.3, 'XH': 11.2, 'XXH': 15.7}
+
+
+@pytest.mark.parametrize('pitch,hs', sorted(_ISO5296_HS.items()))
+def test_imperial_belt_is_iso_5296_high(pitch, hs):
+    """The belt's cross-section (the belt SVG/DXF's shape, and the loop the STEP and
+    STL sweep) is h_s from tooth tip to back, and its pitch line lies inside the body."""
+    from geometry.pulley_geometry import generate_imperial_belt_profile
+    pts, geo = generate_imperial_belt_profile(pitch, n_teeth=3)
+    ys = [y for _x, y in pts]
+    assert max(ys) - min(ys) == pytest.approx(hs, abs=1e-9)
+    assert geo['hs'] - geo['ht'] > geo['aa']
