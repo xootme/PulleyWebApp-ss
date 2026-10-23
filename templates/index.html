@@ -3898,10 +3898,14 @@ function showDims(data) {
   else { refusals.cancel(); showWarnings(); }
   if (data.error) return;
 
-  // Not in the 2D view: its check leaves the hubs out, so switching to 2D changed the
-  // design's clearance height, and a drawing downloaded there carried the 2D one
-  // (roundtrip_ui.js, 2026-10-07). The drawings don't use it.
-  if (clearanceAuto && document.getElementById('feature_build').checked && data.pulleys.length) {
+  // Not in the 2D view with a flange on: its check leaves the flanges out (an unflanged
+  // face needs more), so switching to 2D changed the design's clearance height, and a
+  // drawing downloaded there carried the 2D one (roundtrip_ui.js, 2026-10-07; the drawings
+  // don't use it). Without flanges both views ask the same, and a new design, which opens
+  // in 2D, needs it: its face was left too narrow, warned of (dims_ui.js, 2026-10-22).
+  const flangeOn = document.getElementById('flange1_enabled').checked
+    || (document.getElementById('dual_enable').checked && document.getElementById('flange2_enabled')?.checked);
+  if (clearanceAuto && (document.getElementById('feature_build').checked || !flangeOn) && data.pulleys.length) {
     const bw = data.pulleys[0].belt_width;
     const needs = data.pulleys.filter(c => c.face_width_min !== undefined)
                               .map(c => c.face_width_min - c.belt_width);

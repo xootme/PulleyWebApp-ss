@@ -6,6 +6,12 @@ an entry sits under "Unreleased".
 
 ## Unreleased
 
+- **A new design no longer opens with a face-width warning.** Since 2026-10-08
+  the 2D view, where a new design opens, left the clearance height
+  at 0.5 mm, so the face was too narrow and the Dimensions panel warned of it.
+  The clearance height again makes the face the standard's minimum in 2D as in
+  3D, except on a flanged design (the 2D view leaves flanges out), whose
+  clearance stays the 3D one.
 - **"Drawing the pulley…" over the preview.** While the picture or the 3D
   model is redrawn, a large card covers the preview (it was a small "Loading
   3D…" in the footer). Auto-fix and the spoke card's Auto-fit now close their

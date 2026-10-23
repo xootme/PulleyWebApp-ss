@@ -147,8 +147,12 @@ async function main() {
   const parts = await js('_dlParts(true).map(x => x.id)');
   check('download window: the sample shaft and the washer', parts.includes('sh1') && parts.includes('wa1'), parts);
   const files = await js("_dlFiles('sh1', 'stl').concat(_dlFiles('wa1', 'dxf'), _dlFiles('sh1', 'step'))");
-  check('…their routes, no STEP', files.length === 2 && files[0].path === '/download/spline-stl' && files[0].params.part === 'shaft'
-    && files[1].path === '/download/spline-dxf' && files[1].params.part === 'washer', files);
+  // STEP: the shaft goes into the one assembly file, as every part's (2026-10-06, small_step assemble)
+  check('…their routes; the shaft\'s STEP in the assembly', files.length === 3
+    && files[0].path === '/download/spline-stl' && files[0].params.part === 'shaft'
+    && files[1].path === '/download/spline-dxf' && files[1].params.part === 'washer'
+    && files[2].path === '/download/assembly-step' && files[2].params.parts === 'sh1',
+    files.map(f => [f.path, f.params.part || f.params.parts]));
   const shaft = await js(`fetch('/download/spline-stl?' + new URLSearchParams(_dlFiles('sh1', 'stl')[0].params)).then(r => r.status)`);
   check('…and the shaft downloads', shaft === 200, shaft);
   const tick = id => js(`document.getElementById('${id}').click()`);
@@ -326,5 +330,6 @@ function finish(errors) {
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : '  -> ' + String(JSON.stringify(r.detail)).slice(0, 600)}`);
   console.log(`page errors: ${errors.length ? JSON.stringify(errors.slice(0, 5)) : 'none'}`);
   console.log(`${results.filter(r => r.ok).length}/${results.length} passed`);
+  process.exitCode = results.every(r => r.ok) ? 0 : 1;   // a failed check fails the run
 }
 main().catch(e => { console.error(e); finish([]); chrome.kill(); process.exit(1); });

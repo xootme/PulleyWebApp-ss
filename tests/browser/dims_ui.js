@@ -109,6 +109,19 @@ async function main() {
   await load(BASE + '/');
   check('a reload keeps it automatic', await js('clearanceAuto'));
 
+  // ── 2D leaves a flanged design's clearance alone: its check leaves the flanges out ──
+  // (HTD 5M, a 10 mm belt: unflanged 16 mm, clearance 6; flanged 12 mm, clearance 2)
+  await js("localStorage.clear()");
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=10');
+  await js("(() => { const d = document.getElementById('dual_enable'); if (d.checked) d.click(); })()");
+  check('2D, no flanges: clearance 6', await waitFor("document.getElementById('clearance_height').value === '6'", 8000), await ch());
+  await js("(() => { const f = document.getElementById('feature_build'); if (!f.checked) f.click(); })()");
+  await js("(() => { const f = document.getElementById('flange1_enabled'); if (!f.checked) f.click(); })()");
+  check('3D, flanged: clearance 2', await waitFor("document.getElementById('clearance_height').value === '2'", 8000), await ch());
+  await js("(() => { const f = document.getElementById('feature_build'); if (f.checked) f.click(); })()");
+  await settle(); await settle();
+  check('back in 2D: the flanged design keeps 2', (await ch()) === '2', await ch());
+
   // ── a face-width warning and Auto-fix ──
   await js("localStorage.clear()");
   await load(BASE + '/?family=HTD&pitch=5M&teeth=20&bore=8');
@@ -158,5 +171,6 @@ function finish(errors) {
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : '  -> ' + String(JSON.stringify(r.detail)).slice(0, 600)}`);
   console.log(`page errors: ${errors.length ? JSON.stringify(errors.slice(0, 5)) : 'none'}`);
   console.log(`${results.filter(r => r.ok).length}/${results.length} passed`);
+  process.exitCode = results.every(r => r.ok) ? 0 : 1;   // a failed check fails the run
 }
 main().catch(e => { console.error(e); finish([]); chrome.kill(); process.exit(1); });

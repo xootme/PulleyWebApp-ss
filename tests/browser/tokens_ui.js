@@ -260,5 +260,6 @@ function finish(errors) {
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : '  -> ' + String(JSON.stringify(r.detail)).slice(0, 600)}`);
   console.log(`page errors: ${errors.length ? JSON.stringify(errors.slice(0, 5)) : 'none'}`);
   console.log(`${results.filter(r => r.ok).length}/${results.length} passed`);
+  process.exitCode = results.every(r => r.ok) ? 0 : 1;   // a failed check fails the run
 }
 main().catch(e => { console.error(e); finish([]); chrome.kill(); process.exit(1); });
