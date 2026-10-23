@@ -1099,7 +1099,7 @@
 <script src="/static/tokens.js?v=8"></script>
 <script src="/static/cct_units.js?v=1"></script>
 <script src="/static/cct_download.js?v=1"></script>
-<script src="/static/cct_busy.js?v=1"></script>
+<script src="/static/cct_busy.js?v=2"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -3848,7 +3848,8 @@ const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_heig
 let dimsTimer = null, dimsSeq = 0, dimsFix = null;
 // The warnings and their Auto-fix wait while a value is part-way typed ("1" on the way
 // to "18"), until 2 s after the last keystroke, Enter, Tab or leaving the field (cct_busy.js;
-// the owner, 2026-10-22). A design with nothing to warn of clears them at once.
+// the owner, 2026-10-22). A design with nothing to warn of clears them at once. The ticket,
+// taken as the request goes out, drops warnings of a value changed since (cct_common 0.25.8).
 const refusals = CCTBusy.refusalGate();
 
 function scheduleDims() {
@@ -3863,6 +3864,7 @@ async function refreshDims() {
   p.clearance_height = document.getElementById('clearance_height').value;
   p.feature_build    = document.getElementById('feature_build').checked ? '1' : '0';
   let data;
+  const ticket = refusals.ticket();
   try {
     const r = await fetch('/api/dimensions?' + new URLSearchParams(p));
     data = await r.json();
@@ -3874,10 +3876,10 @@ async function refreshDims() {
     data = { error: e.message };
   }
   if (seq !== dimsSeq) return;               // a newer request superseded this one
-  showDims(data);
+  showDims(data, ticket);
 }
 
-function showDims(data) {
+function showDims(data, ticket) {
   const warn = document.getElementById('dims-warnings');
   const table = document.getElementById('dims-table');
   const drive = document.getElementById('drive-dims');
@@ -3894,7 +3896,7 @@ function showDims(data) {
     if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
     document.getElementById('dims-warn-row').classList.remove('hidden');   // Auto-fix closed it
   };
-  if (lines.length) refusals.show(showWarnings);
+  if (lines.length) refusals.show(showWarnings, ticket);
   else { refusals.cancel(); showWarnings(); }
   if (data.error) return;
 
@@ -5133,6 +5135,7 @@ async function _runSpokeFit(n) {
   if (!warn) return;
   if (!on) { _spokeFitGate[n].cancel(); warn.style.display = 'none'; return; }
   let fit;
+  const ticket = _spokeFitGate[n].ticket();
   try {
     const r = await fetch('/api/spoke-fit?' + _spokeFitQuery(n));
     fit = await r.json();
@@ -5140,7 +5143,7 @@ async function _runSpokeFit(n) {
   } catch (e) { return; }                     // leave the last message; the preview still works
   if (seq !== _spokeFitSeq[n]) return;        // a newer check is on its way
   if (fit.ok) { _spokeFitGate[n].cancel(); warn.style.display = 'none'; return; }
-  _spokeFitGate[n].show(() => _showSpokeFit(n, warn, fit));
+  _spokeFitGate[n].show(() => _showSpokeFit(n, warn, fit), ticket);
 }
 
 function _showSpokeFit(n, warn, fit) {

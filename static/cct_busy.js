@@ -37,6 +37,16 @@
  * leaving the field, or a choice from a list, a tick or a spinner's arrows
  * (a "change") is a finished entry and shows a waiting refusal at once.
  * TYPING_DELAY_MS is the one delay every app uses.
+ *
+ * A refusal belongs to the value it was asked about (0.25.8, Bevel's find:
+ * "4"'s refusal, waiting while "45" was typed, showed when 45's answer took
+ * over 2 s). A keystroke, or any other new value, drops the refusal waiting,
+ * since the new value is asked again; and an app that takes a ticket when it
+ * asks drops one that comes back after a field changed:
+ *
+ *   const ticket = gate.ticket();            // as the request goes out
+ *   ... the server refuses ...
+ *   gate.show(() => showInvalidPanel(data), ticket);   // dropped if typed since
  */
 (function (root) {
   "use strict";
@@ -104,7 +114,7 @@
     const now = opts.now || (() => Date.now());
     const later = opts.setTimeout || ((f, ms) => root.setTimeout(f, ms));
     const stop = opts.clearTimeout || ((id) => root.clearTimeout(id));
-    let lastKey = -Infinity, pending = null, timer = null;
+    let lastKey = -Infinity, keys = 0, pending = null, timer = null;
 
     const fire = () => {
       if (timer !== null) { stop(timer); timer = null; }
@@ -116,27 +126,30 @@
       if (timer !== null) stop(timer);
       timer = later(fire, Math.max(0, lastKey + delay - now()));
     };
+    const drop = () => {
+      pending = null;
+      if (timer !== null) { stop(timer); timer = null; }
+    };
     const finished = () => { lastKey = -Infinity; if (pending) fire(); };
 
     doc.addEventListener("input", (e) => {
-      if (!typed(e.target)) return;               // a list, a tick, a slider: complete at once (their change)
-      lastKey = now();
-      if (pending) arm();                         // every keystroke restarts the wait
+      keys++;                                     // a new value, asked again: a refusal of the old one is stale
+      drop();
+      if (typed(e.target)) lastKey = now();       // a list, a tick, a slider: complete at once (their change)
     }, true);
     doc.addEventListener("change", finished, true);
     doc.addEventListener("focusout", finished, true);
     doc.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === "Tab") finished(); }, true);
 
     return {
-      show(f) {
+      ticket() { return keys; },
+      show(f, ticket) {
+        if (ticket !== undefined && ticket !== keys) return;   // asked before the last keystroke: stale
         pending = f;
         if (now() - lastKey >= delay) fire();
         else arm();
       },
-      cancel() {
-        pending = null;
-        if (timer !== null) { stop(timer); timer = null; }
-      },
+      cancel: drop,
       get waiting() { return pending !== null; },
     };
   }

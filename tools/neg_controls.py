@@ -80,7 +80,12 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), _applyDimsFix, busyText());",
         "  _applyDimsFix();"),
     "busy: the warnings wait while a value is typed": ("templates/index.html",
-        "  if (lines.length) refusals.show(showWarnings);", "  if (lines.length) showWarnings();"),
+        "  if (lines.length) refusals.show(showWarnings, ticket);", "  if (lines.length) showWarnings();"),
+    "busy: a refusal of a value changed since never shows": ("templates/index.html",
+        "  if (lines.length) refusals.show(showWarnings, ticket);", "  if (lines.length) refusals.show(showWarnings);"),
+    "busy: the spoke panel of a value changed since never shows": ("templates/index.html",
+        "  _spokeFitGate[n].show(() => _showSpokeFit(n, warn, fit), ticket);",
+        "  _spokeFitGate[n].show(() => _showSpokeFit(n, warn, fit));"),
     # the test tooling (cct_common.testing)
     "tests: every suite run can record": ("pytest.ini", " -p cct_common.testing.record", ""),
     "tests: the caches cleared exist": ("pytest.ini", "exporters.step_worker_ss:_versions", "exporters.step_worker_ss:_nothing"),

@@ -6,8 +6,10 @@
 // - Auto-fix's Apply closes the warnings at once, the overlay showing the redraw;
 // - a value invalid only part-way through typing shows no warning; one left
 //   invalid shows it 2 s after the last keystroke; leaving the field shows it at once;
-// - the spoke card's Auto-fit closes its panel at once too.
-// The preview's requests are held back (CDP Fetch) to look at the overlay.
+// - the spoke card's Auto-fit closes its panel at once too;
+// - a refusal of a value typed over before its answer came back never shows (0.25.8).
+// The preview's requests are held back (CDP Fetch) to look at the overlay, and the
+// Dimensions check's answers to time them against the typing.
 //
 // Needs a running app (tokens off is fine):
 //   QUEUE_DISABLED=1 python app.py --port 5197 --no-debug
@@ -37,12 +39,14 @@ async function main() {
   await new Promise(r => ws.addEventListener('open', r));
   let id = 0; const pending = new Map(); const errors = [];
   const held = []; let holding = false;
+  const dimsHeld = []; let holdingDims = false;   // the Dimensions check's answers, held once answered
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
     if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
     if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
     if (m.method === 'Fetch.requestPaused') {
-      if (holding) held.push(m.params.requestId);
+      const dims = m.params.request.url.includes('/api/dimensions');
+      if (dims ? holdingDims : holding) (dims ? dimsHeld : held).push(m.params.requestId);
       else send('Fetch.continueRequest', { requestId: m.params.requestId });
     }
   });
@@ -76,7 +80,8 @@ async function main() {
   const val = id => js(`document.getElementById('${id}').value`);
 
   // Hold the preview's requests (2D picture, 3D model) until released.
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*api/preview?*' }, { urlPattern: '*api/preview-stl*' }] });
+  await send('Fetch.enable', { patterns: [{ urlPattern: '*api/preview?*' }, { urlPattern: '*api/preview-stl*' },
+                                          { urlPattern: '*api/dimensions?*', requestStage: 'Response' }] });
   const release = async () => {
     holding = false;
     for (const rid of held.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
@@ -173,9 +178,10 @@ async function main() {
 
   // ── Auto-fix ──
   holding = true;
-  await js("document.getElementById('dims_fix').click()");
-  check('Apply: the warnings close at once, the overlay up',
-        (await js("document.getElementById('dims-warn-row').classList.contains('hidden')")) && await busy());
+  const applied = await js(`(() => { document.getElementById('dims_fix').click();
+    return { closed: document.getElementById('dims-warn-row').classList.contains('hidden'),
+             busy: CCTBusy.shown(document.getElementById('preview-box')) }; })()`);
+  check('Apply: the warnings close at once, the overlay up', applied.closed && applied.busy, applied);
   check('…the redraw under way (held)', await waitHeld());
   await sleep(500);
   // (the fixed design's own check may answer meanwhile: nothing to warn of, an empty row)
@@ -203,6 +209,32 @@ async function main() {
   await release();
   check('…drawn, the overlay gone, the panel still closed',
         await waitFor('!CCTBusy.shown(document.getElementById("preview-box"))', 8000) && await spokeClosed());
+
+  // ── a refusal of a value changed since never shows (0.25.8, Bevel's find) ──
+  // 1's answer comes back just after the 0 of 10 is typed, and 10's takes 3 s: past the
+  // 2 s wait, 1's refusal would show if the check's ticket didn't drop it.
+  await load(BASE + '/?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=15&clearance_height=8');
+  await js("document.getElementById('dims-details').open = true");
+  await sleep(1500);
+  await js(`window.__warnSeen = false; new MutationObserver(() => {
+    if (document.querySelectorAll('#dims-warnings li').length) window.__warnSeen = true;
+  }).observe(document.getElementById('dims-warnings'), { childList: true })`);
+  holdingDims = true;
+  await type('clearance_height', '1');
+  let ok = false;
+  for (let i = 0; i < 60 && !dimsHeld.length; i++) await sleep(50);
+  check('typing 1: its check answered (held)', dimsHeld.length === 1, dimsHeld.length);
+  await type('clearance_height', '10');
+  await send('Fetch.continueRequest', { requestId: dimsHeld.shift() });   // 1's answer, after the 0
+  for (let i = 0; i < 40 && !dimsHeld.length; i++) await sleep(50);
+  ok = dimsHeld.length === 1;
+  await sleep(2600);                                                       // 10's answer held past 2 s
+  check('…10 asked again, its answer slow', ok);
+  check('…1\'s refusal never shows, typed over before it came back', !(await js('window.__warnSeen')) && !(await warned()));
+  holdingDims = false;
+  for (const rid of dimsHeld.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
+  await sleep(1500);
+  check('…and 10, valid, no warning', !(await js('window.__warnSeen')) && !(await warned()), await val('clearance_height'));
 
   check('no page errors', errors.length === 0, errors);
 }

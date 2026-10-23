@@ -54,7 +54,8 @@ def test_busy_overlay_matches_the_vendored_commit():
 def test_page_draws_and_fixes_through_the_busy_overlay(page, client):
     """cct_common 0.25.7 (the owner, 2026-10-22): "Drawing the pulley…" over the
     preview while it is redrawn; Auto-fix and Auto-fit close their warnings at
-    once; the warnings wait while a value is part-way typed."""
+    once; the warnings wait while a value is part-way typed. 0.25.8: each check
+    takes a ticket as it asks, so a refusal of a value changed since never shows."""
     assert client.get('/static/cct_busy.js').status_code == 200
     assert '.cct-busy-card' in client.get('/static/cct_theme.css').get_data(as_text=True)
     assert 'cct_busy.js' in page
@@ -62,8 +63,10 @@ def test_page_draws_and_fixes_through_the_busy_overlay(page, client):
     assert "Loading 3D…'" not in page
     for use in ("CCTBusy.show(previewBox(), busyText())", "CCTBusy.hide(previewBox())",
                 "CCTBusy.applyFix(document.getElementById('dims-warn-row')",
-                "CCTBusy.applyFix(warn, previewBox()", "refusals.show(showWarnings)",
-                "_spokeFitGate[n].show("):
+                "CCTBusy.applyFix(warn, previewBox()",
+                "const ticket = refusals.ticket();", "refusals.show(showWarnings, ticket)",
+                "const ticket = _spokeFitGate[n].ticket();",
+                "_spokeFitGate[n].show(() => _showSpokeFit(n, warn, fit), ticket)"):
         assert use in page, use
 
 
