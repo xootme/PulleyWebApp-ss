@@ -56,6 +56,11 @@ def main(args):
         rc = subprocess.call([test_py, str(ROOT / 'tools' / 'neg_controls.py'), '--all'], cwd=ROOT, env=env) or rc
     if keep:
         src, dst = ROOT / 'logs' / 'nightly_random', keep / 'logs' / 'nightly_random'
+        # On a test host the repo and the worktree map to the same copy, so they're already
+        # kept there: copying a file onto itself is WinError 32 on 3.12 (night of 2026-10-22).
+        if dst.resolve() == src.resolve():
+            print(f'nightly_test: random designs kept in {src}', flush=True)
+            return rc
         for f in sorted(src.glob('*.json')) if src.is_dir() else []:
             dst.mkdir(parents=True, exist_ok=True)
             shutil.copy2(f, dst / f.name)
