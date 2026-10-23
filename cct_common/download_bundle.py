@@ -129,9 +129,10 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
             for path, params in planned:
                 if not charges.matches(params, design):
                     return jsonify({"error": f"{path} isn't part of this design"}), 400
-            context, refusal = charges.begin_design(did, top)
-            if refusal:
-                return refusal
+            if top is not None:                            # only free files (a README, a report): no charge
+                context, refusal = charges.begin_design(did, top)
+                if refusal:
+                    return refusal
         else:
             record_trial(body)
 

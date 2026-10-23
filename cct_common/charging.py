@@ -353,6 +353,9 @@ class Charges:
             fmt = self.formats.get(endpoint)
             if not fmt:
                 return jsonify({"error": "not a charged download"}), 400
+            if fmt not in FORMAT_TIER:                     # a free route, listed with no tier: costs nothing
+                return jsonify({"fmt": fmt, "tier": None, "cost": 0, "held_tier": None, "unlocked_until": None,
+                                "balance": self.state.tokens.balance(acct), "buy_url": self.buy_url})
             q = self.state.tokens.quote(acct, self.design_key_for(params), fmt)
             return jsonify({"fmt": q.fmt, "tier": q.tier, "cost": q.cost,
                             "held_tier": q.held_tier, "unlocked_until": q.unlocked_until,

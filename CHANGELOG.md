@@ -6,6 +6,12 @@ an entry sits under "Unreleased".
 
 ## Unreleased
 
+- **"Drawing the pulley…" over the preview.** While the picture or the 3D
+  model is redrawn, a large card covers the preview (it was a small "Loading
+  3D…" in the footer). Auto-fix and the spoke card's Auto-fit now close their
+  warning at once, the card showing until the new part is drawn. A warning no
+  longer appears while a value is still being typed: it waits until 2 s after
+  the last keystroke, or until Enter, Tab or leaving the field.
 - **Imperial belts (MXL, XL, L, H, XH, XXH) have the right thickness.** Belt
   files (SVG, DXF, STEP, STL) and the drive animation drew these belts too
   thick: they now use ISO 5296-1's overall belt height (MXL 1.14, XL 2.3,

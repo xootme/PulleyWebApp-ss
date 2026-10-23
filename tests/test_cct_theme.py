@@ -41,6 +41,32 @@ def test_theme_matches_the_vendored_commit():
         == upstream.replace(b'\r\n', b'\n')
 
 
+@pytest.mark.skipif(not UPSTREAM.is_dir(), reason="cct_common checkout not on this machine")
+def test_busy_overlay_matches_the_vendored_commit():
+    text = (ROOT / 'cct_common' / '_VENDORED_FROM.txt').read_text(encoding='utf-8')
+    commit = re.search(r'source commit: ([0-9a-f]{40})', text).group(1)
+    upstream = subprocess.run(['git', 'show', f'{commit}:static/cct_busy.js'],
+                              cwd=UPSTREAM, capture_output=True, check=True).stdout
+    assert (ROOT / 'static' / 'cct_busy.js').read_bytes().replace(b'\r\n', b'\n') \
+        == upstream.replace(b'\r\n', b'\n')
+
+
+def test_page_draws_and_fixes_through_the_busy_overlay(page, client):
+    """cct_common 0.25.7 (the owner, 2026-10-22): "Drawing the pulley…" over the
+    preview while it is redrawn; Auto-fix and Auto-fit close their warnings at
+    once; the warnings wait while a value is part-way typed."""
+    assert client.get('/static/cct_busy.js').status_code == 200
+    assert '.cct-busy-card' in client.get('/static/cct_theme.css').get_data(as_text=True)
+    assert 'cct_busy.js' in page
+    assert page.index('cct_busy.js') < page.index('function updatePreview')
+    assert "Loading 3D…'" not in page
+    for use in ("CCTBusy.show(previewBox(), busyText())", "CCTBusy.hide(previewBox())",
+                "CCTBusy.applyFix(document.getElementById('dims-warn-row')",
+                "CCTBusy.applyFix(warn, previewBox()", "refusals.show(showWarnings)",
+                "_spokeFitGate[n].show("):
+        assert use in page, use
+
+
 def test_title_bar_privacy_policy_left_of_bug_report(page):
     """The CCT title bar (2026-10-01 audit, row 7): a Privacy Policy icon button
     just left of Report a bug, both drawn by cct_theme.css."""

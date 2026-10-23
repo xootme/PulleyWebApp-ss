@@ -1,5 +1,5 @@
 """Negative controls: break one formula or check at a time; the tests meant
-to catch it must fail; then restore (cct_common 0.25.3; Bevel Gear Designer's
+to catch it must fail; then restore (cct_common 0.25.5; Bevel Gear Designer's
 tools/neg_controls.py, its ADR-031, Planetary's before it). An app keeps its
 controls as data and hands them over, after configuring
 cct_common.testing.affected:
@@ -281,7 +281,9 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
            "PYTHONPATH": os.pathsep.join([str(root), str(root / "tests"), os.environ.get("PYTHONPATH", "")])}
     if workers == 1:                                        # a lane: one CPU, its native pools too
         env.update({v: "1" for v in THREAD_VARS})
-    args, marker = files or ["tests"], []                  # pytest.ini's own -m: the fast suite
+    # none: the whole fast suite, pytest.ini's own -m; any scope runs its tests whatever their
+    # marker, test files too (a module-level break's importers: 0.25.5, Worm's PARITY)
+    args, marker = (files, ["-m", "slow or not slow"]) if files else (["tests"], [])
     listed = root / ".control_tests.txt"
     if files == SLOW_SUITE:
         args, marker = ["tests"], ["-m", "slow"]

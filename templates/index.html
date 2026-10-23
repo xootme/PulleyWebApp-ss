@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — CheapCADTools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/cct_theme.css?v=1">
+  <link rel="stylesheet" href="/static/cct_theme.css?v=2">
   <link rel="stylesheet" href="/static/style.css?v=46">
 </head>
 <body>
@@ -623,7 +623,7 @@
     </div>
     <!-- Dimensions and spec warnings (the Sprocket app's panel; /api/dimensions) -->
     <div class="dims-results" id="dims-results">
-      <div class="warn-row">
+      <div class="warn-row" id="dims-warn-row">
         <button type="button" class="spoke-fit-btn hidden" id="dims_fix" onclick="applyDimsFix()">Auto-fix</button>
         <ul class="dims-warnings" id="dims-warnings"></ul>
       </div>
@@ -1099,6 +1099,7 @@
 <script src="/static/tokens.js?v=8"></script>
 <script src="/static/cct_units.js?v=1"></script>
 <script src="/static/cct_download.js?v=1"></script>
+<script src="/static/cct_busy.js?v=1"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -2589,6 +2590,13 @@ function setPreviewTab(tab) {
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
+// While the preview is redrawn, cct_common's overlay covers it (cct_busy.js; the
+// owner, 2026-10-22: the footer's "Loading 3D…" was "not that visible"). Up when a
+// picture or model is asked for, down when it is in, refused or failed.
+const previewBox = () => document.getElementById('preview-box');
+const busyText = () => previewTab === 'belt' ? 'Drawing the belt…'
+  : document.getElementById('dual_enable').checked ? 'Drawing the pulleys…' : 'Drawing the pulley…';
+
 function schedulePreview() {
   _syncNubHeightMax();
   checkSpokeFit(1);
@@ -2615,6 +2623,8 @@ async function updatePreview() {
     params._t = Date.now();
     url = '/api/preview?' + new URLSearchParams(params);
   }
+  CCTBusy.show(previewBox(), busyText());
+  img.onload = img.onerror = () => CCTBusy.hide(previewBox());
   img.src = url;
   img.style.display = 'block';
   document.getElementById('preview-placeholder').style.display = 'none';
@@ -3836,6 +3846,10 @@ function inchMessage(text) {
 const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height',
                     flange_overlap: 'flange_min_overlap' };
 let dimsTimer = null, dimsSeq = 0, dimsFix = null;
+// The warnings and their Auto-fix wait while a value is part-way typed ("1" on the way
+// to "18"), until 2 s after the last keystroke, Enter, Tab or leaving the field (cct_busy.js;
+// the owner, 2026-10-22). A design with nothing to warn of clears them at once.
+const refusals = CCTBusy.refusalGate();
 
 function scheduleDims() {
   clearTimeout(dimsTimer);
@@ -3870,13 +3884,18 @@ function showDims(data) {
   table.replaceChildren();
   drive.replaceChildren();
   const lines = data.error ? [data.error] : data.warnings;
-  warn.replaceChildren(...lines.map(w => { const li = document.createElement('li'); li.textContent = inchMessage(w); return li; }));
-  document.querySelectorAll('.setting-refused').forEach(el => el.classList.remove('setting-refused'));
-  if (data.field) document.getElementById(data.field)?.classList.add('setting-refused');
-  dimsFix = data.fix || null;
-  const fixBtn = document.getElementById('dims_fix');
-  fixBtn.classList.toggle('hidden', !dimsFix);
-  if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
+  const showWarnings = () => {
+    warn.replaceChildren(...lines.map(w => { const li = document.createElement('li'); li.textContent = inchMessage(w); return li; }));
+    document.querySelectorAll('.setting-refused').forEach(el => el.classList.remove('setting-refused'));
+    if (data.field) document.getElementById(data.field)?.classList.add('setting-refused');
+    dimsFix = data.fix || null;
+    const fixBtn = document.getElementById('dims_fix');
+    fixBtn.classList.toggle('hidden', !dimsFix);
+    if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
+    document.getElementById('dims-warn-row').classList.remove('hidden');   // Auto-fix closed it
+  };
+  if (lines.length) refusals.show(showWarnings);
+  else { refusals.cancel(); showWarnings(); }
   if (data.error) return;
 
   // Not in the 2D view: its check leaves the hubs out, so switching to 2D changed the
@@ -3954,9 +3973,13 @@ function showDims(data) {
   }
 }
 
-// Auto-fix: set each field the server named and let its own handler run.
+// Auto-fix: set each field the server named and let its own handler run. The warnings
+// close at once and the overlay shows until the redraw is in (cct_busy.js).
 function applyDimsFix() {
   if (!dimsFix) return;
+  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), _applyDimsFix, busyText());
+}
+function _applyDimsFix() {
   if ('clearance_height' in dimsFix.set) clearanceAuto = false;
   for (const [id, value] of Object.entries(dimsFix.set)) {
     const el = document.getElementById(id);
@@ -3988,6 +4011,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function update3DPreview() {
   if (previewTab !== '3d') return;
+  CCTBusy.show(previewBox(), busyText());
   try {
     const params = buildParams();
     params.belt_height = document.getElementById('belt_height').value;
@@ -4000,6 +4024,7 @@ async function update3DPreview() {
     load3DModel(url);
   } catch (e) {
     console.error('3D preview error:', e);
+    CCTBusy.hide(previewBox());
     document.getElementById('preview-footer').textContent = '3D error: ' + e.message;
   }
 }
@@ -4362,9 +4387,12 @@ function load3DModel(url) {
   for (const m of threeSplineParts) threeScene.remove(m);
   threeSplineParts = [];
 
-  document.getElementById('preview-footer').textContent = 'Loading 3D…';
-
   const isDual = url.includes('dual=true');
+  // The overlay (update3DPreview put it up) comes down when this load's pulleys and
+  // belt are in or failed; a newer load's own count takes it over.
+  let left = isDual ? 3 : 1;
+  const done = () => { if (_loadGen === gen && --left === 0) CCTBusy.hide(previewBox()); };
+  const failed = what => e => { console.error(what, e); done(); };
   document.getElementById('view3d_which').classList.toggle('hidden', !isDual);
   _loadSplineParts(url, gen, isDual);
   const pulleyMat  = new THREE.MeshStandardMaterial({ color: 0x4a9fd4, metalness: 0.10, roughness: 0.55, side: THREE.DoubleSide });
@@ -4384,7 +4412,8 @@ function load3DModel(url) {
       const size = _fitCameraToScene();
       if (size) document.getElementById('preview-footer').textContent =
         `3D drive  ·  ${fmtSize(size)}  ·  drag to orbit`;
-    });
+      done();
+    }, failed('STL error'));
 
     _loadSTL(p2Url, pulley2Mat, (mesh) => {
       if (_loadGen !== gen) { threeScene.remove(mesh); return; }  // stale — discard
@@ -4393,7 +4422,8 @@ function load3DModel(url) {
       setTurnAngle(turnU);
       applyView3dWhich(false);
       _fitCameraToScene();
-    });
+      done();
+    }, failed('STL error'));
 
     // The belt and the Turn's motion in one answer: the still belt is its rest place.
     fetch(url + '&part=belt-motion')
@@ -4408,8 +4438,9 @@ function load3DModel(url) {
         }
         setTurnAngle(turnU);
         applyView3dWhich(false);
+        done();
       })
-      .catch(e => console.error('belt', e));
+      .catch(failed('belt'));
 
   } else {
     _loadSTL(url, pulleyMat, (mesh, geo) => {
@@ -4418,9 +4449,11 @@ function load3DModel(url) {
       const size = _fitCamera(geo);
       document.getElementById('preview-footer').textContent =
         `3D  ·  ${fmtSize(size)}  ·  drag to orbit`;
+      done();
     }, (err) => {
       console.error('STL load error:', err);
       document.getElementById('preview-footer').textContent = '3D load error — check console';
+      done();
     });
   }
 }
@@ -5063,6 +5096,7 @@ function _syncSpokeHubLock(n) {
 // the fields. Nothing the user typed is changed without that click.
 const _spokeFitTimer = {1: null, 2: null};
 const _spokeFitSeq   = {1: 0, 2: 0};
+const _spokeFitGate  = {1: CCTBusy.refusalGate(), 2: CCTBusy.refusalGate()};   // as the warnings' (refusals)
 
 function _spokeFitQuery(n) {
   const v  = id => document.getElementById(id).value;
@@ -5093,7 +5127,7 @@ async function _runSpokeFit(n) {
             && (n === 1 || document.getElementById('dual_enable').checked);
   const seq  = ++_spokeFitSeq[n];
   if (!warn) return;
-  if (!on) { warn.style.display = 'none'; return; }
+  if (!on) { _spokeFitGate[n].cancel(); warn.style.display = 'none'; return; }
   let fit;
   try {
     const r = await fetch('/api/spoke-fit?' + _spokeFitQuery(n));
@@ -5101,8 +5135,11 @@ async function _runSpokeFit(n) {
     if (!r.ok) throw new Error(fit.error || r.status);
   } catch (e) { return; }                     // leave the last message; the preview still works
   if (seq !== _spokeFitSeq[n]) return;        // a newer check is on its way
-  if (fit.ok) { warn.style.display = 'none'; return; }
+  if (fit.ok) { _spokeFitGate[n].cancel(); warn.style.display = 'none'; return; }
+  _spokeFitGate[n].show(() => _showSpokeFit(n, warn, fit));
+}
 
+function _showSpokeFit(n, warn, fit) {
   warn.replaceChildren();
   const head = document.createElement('div');
   head.className = 'spoke-fit-head';
@@ -5123,9 +5160,11 @@ async function _runSpokeFit(n) {
     btn.className = 'spoke-fit-btn';
     btn.textContent = 'Auto-fit';
     btn.title = 'Put these values in the spoke settings';
-    btn.onclick = () => applySpokeFit(n, fit.fitted);
+    // Closes at once, the overlay up until the redraw is in (cct_busy.js)
+    btn.onclick = () => CCTBusy.applyFix(warn, previewBox(), () => applySpokeFit(n, fit.fitted), busyText());
     warn.append(btn);
   }
+  warn.classList.remove('hidden');            // Auto-fit closed it
   warn.style.display = 'block';
 }
 

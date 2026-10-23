@@ -53,8 +53,10 @@ async function main() {
     await waitFor("document.readyState === 'complete' && typeof buildParams === 'function'");
     await sleep(1500);
   };
+  // input, then change: a finished entry, so the warnings show at once (cct_busy.js holds
+  // them 2 s after a bare keystroke)
   const setVal = (sel, v) => js(`(() => { const e = document.querySelector('${sel}'); e.value = ${JSON.stringify(v)};
-    e.dispatchEvent(new Event('change', {bubbles:true})); e.dispatchEvent(new Event('input', {bubbles:true})); })()`);
+    e.dispatchEvent(new Event('input', {bubbles:true})); e.dispatchEvent(new Event('change', {bubbles:true})); })()`);
   const warnings = () => js("[...document.querySelectorAll('#dims-warnings li')].map(li => li.textContent)");
   const settle = () => sleep(1200);
   let w;

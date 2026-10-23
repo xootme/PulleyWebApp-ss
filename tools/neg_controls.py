@@ -75,6 +75,12 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                    "    return query"),
     "belt_teeth: a centre past the limit is refused": ("agent.py", "    if centre is None or centre > c_max:",
                                                        "    if centre is None:"),
+    # cct_common 0.25.7's busy overlay (the owner, 2026-10-22; tests/browser/busy_ui.js drives it)
+    "busy: Auto-fix closes the warnings at once": ("templates/index.html",
+        "  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), _applyDimsFix, busyText());",
+        "  _applyDimsFix();"),
+    "busy: the warnings wait while a value is typed": ("templates/index.html",
+        "  if (lines.length) refusals.show(showWarnings);", "  if (lines.length) showWarnings();"),
     # the test tooling (cct_common.testing)
     "tests: every suite run can record": ("pytest.ini", " -p cct_common.testing.record", ""),
     "tests: the caches cleared exist": ("pytest.ini", "exporters.step_worker_ss:_versions", "exporters.step_worker_ss:_nothing"),
