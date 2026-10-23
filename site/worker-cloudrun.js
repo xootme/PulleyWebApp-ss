@@ -10,6 +10,9 @@ const GEARS = 'https://gear-925396938485.us-central1.run.app';
 const WORMGEARS = 'https://wormgear-925396938485.us-central1.run.app';
 // Bevel Gear (BevelGearWebApp): relative URLs too, wholly under /tools/bevel-gears/.
 const BEVELGEARS = 'https://bevelgear-925396938485.us-central1.run.app';
+// Planetary Gear (PlanetaryGearWebApp): relative URLs too, wholly under /tools/planetary-gears/.
+// Cloud Run's address follows from the service name, so it is right once planetarygear is deployed.
+const PLANETARYGEARS = 'https://planetarygear-925396938485.us-central1.run.app';
 // The hosted MCP gateway (Documents\CCT_MCP_Gateway): MCP at /mcp and its OAuth
 // at the site's root, so AI apps can connect with cheapcadtools.com alone.
 const MCP = 'https://mcp-925396938485.us-central1.run.app';
@@ -53,6 +56,12 @@ export default {
     }
     if (path.startsWith('/tools/bevel-gears/')) {
       return toApp(request, env, BEVELGEARS, path.slice('/tools/bevel-gears'.length), url);
+    }
+    if (path === '/tools/planetary-gears') {
+      return Response.redirect(`${url.origin}/tools/planetary-gears/${url.search}`, 301);
+    }
+    if (path.startsWith('/tools/planetary-gears/')) {
+      return toApp(request, env, PLANETARYGEARS, path.slice('/tools/planetary-gears'.length), url);
     }
     if (path.startsWith('/tools/pulleys')) {
       return toApp(request, env, PULLEYS, path.slice('/tools/pulleys'.length) || '/', url);
