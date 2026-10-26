@@ -492,6 +492,14 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
                 # +X, so the 90 default lands on a CORNER and the screw would
                 # meet an edge instead of a face (report section 4).
                 cmd += ['--screw-step', '120']
+    else:
+        # No hub: the bore's flat or key still goes through the belt section, as the STL
+        # cuts it. Sent only with a hub before, so a hubless keyed pulley's STEP had a
+        # round bore (nightly random design, 2026-10-23: 1.5 % heavier than its STL).
+        if flat_depth_mm > 0.0:
+            cmd += ['--flat', str(flat_depth_mm)]
+        if keyway_w_mm > 0.0 and keyway_h_mm > 0.0:
+            cmd += ['--keyway', str(keyway_w_mm), str(keyway_h_mm)]
 
     # A captured nut and a top ring counterbore share the hub's top face: refuse
     # what can't be built, by name (geometry/nut_counterbore.py; the small_step

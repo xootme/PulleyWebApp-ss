@@ -6,6 +6,12 @@ an entry sits under "Unreleased".
 
 ## Unreleased
 
+- **Keyed and D-flat bores in STEP files.** A pulley with a keyway or D-flat
+  but no hub got a STEP file with a plain round bore; it now has the key or
+  flat, as its STL always did. And a hub with two captured-nut set screws on a
+  keyway or flat (where only one screw is made) no longer gets a second,
+  empty bulge on its STL and 3D view. **These files come out different if
+  downloaded again.**
 - **No warning about a value already typed over.** Typing "45" on a busy
   server could show 4's warning once 45's answer took over 2 s. A warning or
   spoke panel now shows only for the value still in the field.

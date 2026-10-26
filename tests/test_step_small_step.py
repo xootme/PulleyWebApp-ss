@@ -290,3 +290,28 @@ def test_a_face_wound_backwards_is_caught(client, monkeypatch):
     flipped = r.data[:bound.start()] + bound.group(1) + b'.F.)' + r.data[bound.end():]
     assert wrong_way_edges(flipped)
     assert any('wound against' in p for p in problems(flipped))
+
+
+# Nightly random designs (2026-10-23, 10-25) showed two faults: a key or flat in a pulley with
+# no hub never reached small_step, so its STEP had a round bore (+1.5 %); and on a keyed hub
+# the STL built a second captured-nut lobe, 180° round, with no screw in it (the STEP -5.3 %).
+KEYED = {
+    'no hub, keyway': {'family': 'STD', 'pitch': '2M', 'teeth': '59', 'bore': '10.4', 'print_extra': '0.14',
+                       'belt_height': '11.8', 'clearance_height': '0.1', 'hub_keyway_w': '5', 'hub_keyway_h': '2.5'},
+    'no hub, D-flat': {'family': 'STD', 'pitch': '2M', 'teeth': '59', 'bore': '10.4', 'belt_height': '11.8',
+                       'hub_flat_depth': '1'},
+    'captured nuts, keyway': {'family': 'HTD', 'pitch': '3M', 'teeth': '50', 'bore': '16.6', 'print_extra': '0.27',
+                              'clearance_preset': 'LOOSE', 'backlash_preset': 'LOOSE', 'belt_height': '20.7',
+                              'clearance_height': '0.29', 'hub_keyway_w': '6', 'hub_keyway_h': '3',
+                              'hub_od': '28.4', 'hub_height': '11.1', 'hub_screw_dia': '5', 'hub_screw_count': '2',
+                              'hub_captured_nut': '1'},
+}
+
+
+@ss_only
+@pytest.mark.parametrize('q', KEYED.values(), ids=KEYED.keys())
+def test_small_step_keyed_bore_is_the_stl(client, monkeypatch, q):
+    from step_checks import problems, reference_volume
+    r = _step(client, monkeypatch, {**q, 'sv': '1'})
+    assert r.status_code == 200, r.data[:200]
+    assert problems(r.data, reference_volume(client, q, 1)) == []

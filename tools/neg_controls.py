@@ -93,6 +93,11 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                                      'TEST_RULES = [("nothing/*",'),
     "night: every browser harness runs": ("tools/nightly_test.py", "str(ROOT / 'tools' / 'harnesses.py')",
                                           "str(ROOT / 'tools' / 'nothing.py')"),
+    "step: a hubless bore's key or flat reaches small_step": ("exporters/step_worker_ss.py",
+        "    else:\n        # No hub: the bore's flat or key", "    elif False:\n        # No hub: the bore's flat or key"),
+    "stl: one screw on a keyed hub, before its lobes": ("exporters/step_exporter.py",
+        "return screws.set_screw_angles(1 if keyed else min(screw_count, 2)",
+        "return screws.set_screw_angles(min(screw_count, 2)"),
     "night: a skip fails the night": ("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

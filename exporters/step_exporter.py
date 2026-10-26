@@ -295,13 +295,16 @@ def _cut_counterbore(mesh, spline, printed: bool = True):
     return mesh
 
 
-def _screw_angles(screw_count: int, captured_nut: bool, spline) -> list:
+def _screw_angles(screw_count: int, captured_nut: bool, spline, keyed: bool = False) -> list:
     """Where the set screws point (ADR-018, now cct_common.screws.set_screw_angles):
     two standard screws 90° apart, so they push the shaft to one side; on a
     hex bar 120°, the next-but-one flat (90° is a corner); captured nuts
-    180° apart, flats on a hex too. At most two."""
+    180° apart, flats on a hex too. At most two. `keyed` (a D-flat, a key or a
+    spline's slot): one, over it. Decided here, before the hub's lobes, which
+    follow the screws: deciding it after left a second captured-nut lobe with
+    no screw in it, the STL 5 % heavier than the STEP (nightly, 2026-10-23)."""
     sp = _as_spline(spline)
-    return screws.set_screw_angles(min(screw_count, 2), nut=captured_nut,
+    return screws.set_screw_angles(1 if keyed else min(screw_count, 2), nut=captured_nut,
                                    hex_bar=sp is not None and sp.kind == 'hex')
 
 
@@ -643,7 +646,8 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
         need_oblong = False
         eff_r = R_hub
 
-    screw_angles = _screw_angles(screw_count, captured_nut, spline) if do_screws else []
+    keyed = (flat_depth_mm or 0.0) > 0.0 or (keyway_h_mm or 0.0) > 0.0 or _spline_slot_h(spline, bore_mm) > 0.0
+    screw_angles = _screw_angles(screw_count, captured_nut, spline, keyed) if do_screws else []
 
     _ext_h       = hub_height_mm + flange_ext_mm
     hub_top      = hub_z_start + _ext_h
@@ -715,8 +719,6 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
     # (Same as _build_pulley_mesh; the D-flat case was missing here, which left
     # a wall between the flat and the pocket in the downloaded STL.)
     keyway_h_mm = keyway_h_mm or _spline_slot_h(spline, bore_mm)   # a spline's slot: as a key
-    if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
-        screw_angles = [0.0]
 
     if do_screws and body.is_watertight:
         if captured_nut:
@@ -1075,7 +1077,8 @@ def generate_pulley_step(
         need_oblong = False
         eff_r = R_hub
 
-    screw_angles = _screw_angles(screw_count, captured_nut, spline) if do_screws else []
+    keyed = (flat_depth_mm or 0.0) > 0.0 or (keyway_h_mm or 0.0) > 0.0 or _spline_slot_h(spline, bore_mm) > 0.0
+    screw_angles = _screw_angles(screw_count, captured_nut, spline, keyed) if do_screws else []
 
     # ── Spoke pre-calculations ────────────────────────────────────────────────
     has_spokes = spoke_count > 0 and spoke_width_mm > 0.0
@@ -1326,8 +1329,6 @@ def generate_pulley_step(
 
     # ── 6. Set-screw holes + nut pockets ──────────────────────────────────────
     keyway_h_mm = keyway_h_mm or _spline_slot_h(spline, bore_mm)   # a spline's slot: as a key
-    if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
-        screw_angles = [0.0]
 
     if do_screws:
         R_screw = screw_dia_mm / 2.0
@@ -2036,7 +2037,8 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
         need_oblong = False
         eff_r = R_hub
 
-    screw_angles = _screw_angles(screw_count, captured_nut, spline) if do_screws else []
+    keyed = (flat_depth_mm or 0.0) > 0.0 or (keyway_h_mm or 0.0) > 0.0 or _spline_slot_h(spline, bore_mm) > 0.0
+    screw_angles = _screw_angles(screw_count, captured_nut, spline, keyed) if do_screws else []
 
     # ── 2D bore cross-section (D-shaped / keyway / round) ────────────────────
     bore_2d = _build_bore_2d(bore_mm, flat_depth_mm, keyway_w_mm, keyway_h_mm, spline=spline,
@@ -2202,8 +2204,6 @@ def _build_pulley_mesh(family, pitch, num_teeth, bore_mm, belt_height_mm,
     # D-shaft: force screw at angle=0 (aligned with flat), nut against flat face.
     # Keyway:  force screw at angle=0 (into keyway slot), nut against slot outer face.
     keyway_h_mm = keyway_h_mm or _spline_slot_h(spline, bore_mm)   # a spline's slot: as a key
-    if (flat_depth_mm > 0.0 or keyway_h_mm > 0.0) and do_screws:
-        screw_angles = [0.0]
 
     if do_screws and body.is_watertight:
         if captured_nut:
