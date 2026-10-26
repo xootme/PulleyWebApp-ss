@@ -14,7 +14,9 @@ an entry sits under "Unreleased".
   downloaded again.**
 - **No warning about a value already typed over.** Typing "45" on a busy
   server could show 4's warning once 45's answer took over 2 s. A warning or
-  spoke panel now shows only for the value still in the field.
+  spoke panel now shows only for the value still in the field. Typing
+  somewhere that asks nothing new, such as the bug-report box, no longer
+  throws away a warning that was waiting; it shows 2 s after the last key.
 - **A new design no longer opens with a face-width warning.** Since 2026-10-08
   the 2D view, where a new design opens, left the clearance height
   at 0.5 mm, so the face was too narrow and the Dimensions panel warned of it.

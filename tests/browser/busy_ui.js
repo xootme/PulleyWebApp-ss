@@ -190,6 +190,21 @@ async function main() {
   await sleep(1500);
   check('a valid value takes the warning down at once', !(await warned()));
 
+  // An input that asks nothing again keeps the waiting warning (0.25.9, Sprocket's find:
+  // 0.25.8 dropped it on any input): a keystroke in the bug-report box, the focus left
+  // where it is, only restarts the 2 s wait.
+  await type('clearance_height', '1');
+  await sleep(1000);
+  await js(`(() => { const e = document.getElementById('bug-seeing'); e.value = 'x';
+    e.dispatchEvent(new Event('input', {bubbles:true})); })()`);
+  await sleep(1000);
+  check('a keystroke elsewhere (the bug-report box): the warning still waits', !(await warned()));
+  check('…and shows 2 s after it, kept', await waitFor('(' + fixShownExpr() + ')', 4000));
+  await js("document.getElementById('bug-seeing').value = ''");
+  await type('clearance_height', '10');
+  await sleep(1500);
+  check('…10 again: no warning', !(await warned()));
+
   await type('clearance_height', '1');
   await sleep(400);
   check('too narrow, still typing: no warning yet', !(await warned()));

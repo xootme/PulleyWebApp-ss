@@ -38,15 +38,20 @@
  * (a "change") is a finished entry and shows a waiting refusal at once.
  * TYPING_DELAY_MS is the one delay every app uses.
  *
- * A refusal belongs to the value it was asked about (0.25.8, Bevel's find:
- * "4"'s refusal, waiting while "45" was typed, showed when 45's answer took
- * over 2 s). A keystroke, or any other new value, drops the refusal waiting,
- * since the new value is asked again; and an app that takes a ticket when it
- * asks drops one that comes back after a field changed:
+ * A refusal belongs to the request that asked it, and only the latest
+ * request's may show (0.25.8, Bevel's find: "4"'s refusal, waiting while
+ * "45" was typed, showed when 45's answer took over 2 s). The app takes a
+ * ticket as its request goes out; that drops the refusal waiting, and any
+ * answer to an older ticket:
  *
  *   const ticket = gate.ticket();            // as the request goes out
  *   ... the server refuses ...
- *   gate.show(() => showInvalidPanel(data), ticket);   // dropped if typed since
+ *   gate.show(() => showInvalidPanel(data), ticket);   // dropped if asked again since
+ *
+ * An input that asks nothing again (a bug-report box, the view's Explode
+ * slider) never drops one (0.25.9, Sprocket's find: 0.25.8 dropped on any
+ * input, and the view stayed blank with no panel). An app that takes no
+ * tickets gets 0.25.7's gate: the wait, but no drop.
  */
 (function (root) {
   "use strict";
@@ -114,7 +119,7 @@
     const now = opts.now || (() => Date.now());
     const later = opts.setTimeout || ((f, ms) => root.setTimeout(f, ms));
     const stop = opts.clearTimeout || ((id) => root.clearTimeout(id));
-    let lastKey = -Infinity, keys = 0, pending = null, timer = null;
+    let lastKey = -Infinity, asked = 0, pending = null, timer = null;
 
     const fire = () => {
       if (timer !== null) { stop(timer); timer = null; }
@@ -133,18 +138,18 @@
     const finished = () => { lastKey = -Infinity; if (pending) fire(); };
 
     doc.addEventListener("input", (e) => {
-      keys++;                                     // a new value, asked again: a refusal of the old one is stale
-      drop();
-      if (typed(e.target)) lastKey = now();       // a list, a tick, a slider: complete at once (their change)
+      if (!typed(e.target)) return;               // a list, a tick, a slider: complete at once (their change)
+      lastKey = now();
+      if (pending) arm();                         // every keystroke restarts the wait
     }, true);
     doc.addEventListener("change", finished, true);
     doc.addEventListener("focusout", finished, true);
     doc.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === "Tab") finished(); }, true);
 
     return {
-      ticket() { return keys; },
+      ticket() { drop(); return ++asked; },       // a request goes out: older refusals are stale
       show(f, ticket) {
-        if (ticket !== undefined && ticket !== keys) return;   // asked before the last keystroke: stale
+        if (ticket !== undefined && ticket !== asked) return;  // asked again since: stale
         pending = f;
         if (now() - lastKey >= delay) fire();
         else arm();

@@ -101,7 +101,7 @@ The page side lives in static/ (copied into each app, as cct_theme.css):
 cct_download.js (the Download window), cct_units.js (the mm / inch switch),
 cct_busy.js (0.25.7: the "Drawing the parts…" overlay over the preview,
 Auto-fix's Apply closing its panel at once, and the Invalid panel held back
-2 s while someone types; 0.25.8: a refusal of an old value never shows).
+2 s while someone types; 0.25.8/0.25.9: only the latest request's refusal shows).
 
 Accounts and email-link sign-in on the same database (linked identities,
 hashed revocable sessions, account deletion), plus its Flask routes:
@@ -133,4 +133,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.25.8"
+__version__ = "0.25.9"
