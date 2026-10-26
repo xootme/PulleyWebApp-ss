@@ -20,9 +20,10 @@ const fs = require('fs');
 const [BASE, COOKIES] = process.argv.slice(2);
 const cookies = JSON.parse(fs.readFileSync(COOKIES, 'utf8'));
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PORT = 9345;
+// Chrome picks a free debug port and writes it to DevToolsActivePort: harnesses run side by side
+const devPort = () => { try { return Number(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]); } catch (e) { return 0; } };
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-adm-'));
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`,
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0',
   `--user-data-dir=${profile}`, '--no-first-run', '--window-size=1400,1000', 'about:blank']);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
@@ -30,7 +31,10 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
 
 async function main() {
   // Who gets in — plain HTTP, no browser needed.
-  const get = (p, c) => fetch(BASE + p, { redirect: 'manual', headers: c ? { Cookie: `cct_session=${c}` } : {} });
+  // Each body read at once (and kept for .text()): Node 24.20's fetch crashes when the server
+  // closes a connection whose body was never read (roundtrip_ui on msi, 2026-10-25)
+  const whole = async res => { const body = await res.text(); res.text = async () => body; return res; };
+  const get = (p, c) => fetch(BASE + p, { redirect: 'manual', headers: c ? { Cookie: `cct_session=${c}` } : {} }).then(whole);
   let r = await get('/admin');
   check('signed out: sent to the sign-in page', r.status === 302 && /\/account\/sign-in\?next=\/admin$/.test(r.headers.get('location')),
         [r.status, r.headers.get('location')]);
@@ -46,12 +50,12 @@ async function main() {
   r = await get('/admin/api/accounts', cookies.plain);
   check('not an admin: API 404 too', r.status === 404, r.status);
   r = await fetch(BASE + '/admin/api/accounts/x/grant', { method: 'POST', body: '{"amount":5,"reason":"x"}',
-    headers: { Cookie: `cct_session=${cookies.admin}`, 'Content-Type': 'application/json', Origin: 'https://evil.example' } });
+    headers: { Cookie: `cct_session=${cookies.admin}`, 'Content-Type': 'application/json', Origin: 'https://evil.example' } }).then(whole);
   check('admin, but from another site: refused', r.status === 403, r.status);
 
   let target;
   for (let i = 0; i < 50 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); }
+    try { target = (await (await fetch(`http://127.0.0.1:${devPort()}/json/list`)).json()).find(t => t.type === 'page'); }
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);

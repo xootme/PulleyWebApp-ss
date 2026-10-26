@@ -24,9 +24,10 @@ const [BASE, LOGDIR, PY, MODE] = process.argv.slice(2);
 const ERRLOG = path.join(LOGDIR, 'server_errors.log');
 const APPDIR = path.resolve(__dirname, '..', '..');
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PORT = 9344;
+// Chrome picks a free debug port and writes it to DevToolsActivePort: harnesses run side by side
+const devPort = () => { try { return Number(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]); } catch (e) { return 0; } };
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-tok-'));
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`,
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0',
   `--user-data-dir=${profile}`, '--no-first-run', '--window-size=1400,1000', 'about:blank']);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
@@ -45,7 +46,7 @@ const countExt = names => names.reduce((m, n) => { const e = n.split('.').pop();
 async function main() {
   let target;
   for (let i = 0; i < 50 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); }
+    try { target = (await (await fetch(`http://127.0.0.1:${devPort()}/json/list`)).json()).find(t => t.type === 'page'); }
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -206,7 +207,8 @@ async function main() {
   check('balance 16', (await balance()) === 16);
   const names = newestZip();
   const ext = countExt(names);
-  check('zip: STEP for both pulleys and the belt', ext.step === 3, names);
+  // one assembly file holds both pulleys and the belt (2026-10-06, small_step assemble)
+  check('zip: STEP for both pulleys and the belt, as one assembly', ext.step === 1 && names.includes('HTD-3M-20T-30T.step'), names);
   check('zip: STL for both pulleys, belt and flange', ext.stl >= 4, names);
   check('zip: SVG and DXF for both pulleys and belt', ext.svg >= 3 && ext.dxf >= 3, names);
   check('header shows 16 tokens', await waitFor("document.getElementById('cct-balance')?.textContent === '16 tokens'", 5000));

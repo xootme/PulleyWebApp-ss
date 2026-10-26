@@ -45,7 +45,9 @@ Never `git push` unless the user explicitly says "deploy".
   captured nut / heat-set insert) and the app-wide threaded-hole settings, via the shared
   `cct_common.screws` (ADR-013). The page has no screw table of its own — don't add one
 - `tests/browser/*.js` — Chrome/CDP harnesses run by hand against a running app
-  (`node tests/browser/help_ui.js http://127.0.0.1:<port>`); see each file's header
+  (`node tests/browser/help_ui.js http://127.0.0.1:<port>`); see each file's header.
+  `tools/harnesses.py` runs them all side by side, each lane on its own server; the nightly
+  run includes it, and a failed harness fails the night (owner, 2026-10-25)
 - `web_provisioning.md` — deploy checklist and local release build procedure
 - `db_offsite_backup.py` + `RESTORE.md` — the encrypted daily copy of the Postgres database in Cloud Storage, and how to restore it (Neon point-in-time restore first)
 - `DECISIONS.md` — architectural decision log

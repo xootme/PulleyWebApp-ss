@@ -25,9 +25,10 @@ const WRITE = process.argv.includes('--write');
 const ROOT = path.join(__dirname, '..', '..');
 const PY = process.env.PYTHON || path.join(ROOT, '.venv314', 'Scripts', 'python.exe');
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PORT = 9391;
+// Chrome picks a free debug port and writes it to DevToolsActivePort: harnesses run side by side
+const devPort = () => { try { return Number(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]); } catch (e) { return 0; } };
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-dlfiles-'));
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`,
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0',
   `--user-data-dir=${profile}`, '--no-first-run', '--window-size=1500,1000', 'about:blank']);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
@@ -57,7 +58,7 @@ const DESIGNS = [
 async function main() {
   let target;
   for (let i = 0; i < 50 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); }
+    try { target = (await (await fetch(`http://127.0.0.1:${devPort()}/json/list`)).json()).find(t => t.type === 'page'); }
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);

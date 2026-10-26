@@ -8,11 +8,12 @@ nightly.py runs it inside a test turn with cwd = a clean worktree of HEAD, with 
 
 It runs tests/suite.py (pytest-xdist on CCT_TEST_CPUS workers) with the interpreter and
 small_step binary the day runs use, plus the nightly random designs (PULLEY_NIGHTLY=1,
-test_nightly_random.py), then every negative control (tools/neg_controls.py --all), scoped
-by what the suite just recorded (pytest args narrow the suite and skip the controls). The
+test_nightly_random.py), then every browser harness side by side (tools/harnesses.py; the
+owner, 2026-10-25), then every negative control (tools/neg_controls.py --all), scoped by
+what the suite just recorded (pytest args narrow the suite and skip the rest). The
 random designs' repro files are written under the worktree,
 which nightly.py removes afterwards, so --keep-logs copies them to <repo>/logs/nightly_random.
-Exits non-zero when the suite or a control fails.
+Exits non-zero when the suite, a harness or a control fails.
 """
 import os
 import shutil
@@ -51,7 +52,9 @@ def main(args):
           f"{ver.stdout.strip() or 'small_step ?'} ({env['SMALL_STEP_BIN']})", flush=True)
     rc = subprocess.call([test_py, str(ROOT / 'tests' / 'suite.py'), '-p', 'no:warnings', '-rfEX', *args],
                          cwd=ROOT, env=env)
-    if not args:              # the whole set: every negative control too, scoped by the record just made
+    if not args:              # the whole set: every browser harness, every negative control
+        print('nightly_test: browser harnesses (tools/harnesses.py)', flush=True)
+        rc = subprocess.call([test_py, str(ROOT / 'tools' / 'harnesses.py')], cwd=ROOT, env=env) or rc
         print('nightly_test: negative controls (tools/neg_controls.py --all)', flush=True)
         rc = subprocess.call([test_py, str(ROOT / 'tools' / 'neg_controls.py'), '--all'], cwd=ROOT, env=env) or rc
     if keep:

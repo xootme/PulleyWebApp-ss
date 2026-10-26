@@ -27,10 +27,11 @@ const BASE = process.argv[2];
 const arg = (name, dflt) => { const i = process.argv.indexOf(name); return i > 0 ? +process.argv[i + 1] : dflt; };
 const DESIGNS = arg('--designs', 20), SEED = arg('--seed', 1), STEPS = arg('--steps', 30);
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PORT = 9398;
+// Chrome picks a free debug port and writes it to DevToolsActivePort: harnesses run side by side
+const devPort = () => { try { return Number(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]); } catch (e) { return 0; } };
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-roundtrip-'));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cct-roundtrip-'));
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`,
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0',
   `--user-data-dir=${profile}`, '--no-first-run', '--window-size=1500,1000', 'about:blank']);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -154,7 +155,7 @@ function diffVisible(a, b) {
 async function main() {
   let target;
   for (let i = 0; i < 50 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); }
+    try { target = (await (await fetch(`http://127.0.0.1:${devPort()}/json/list`)).json()).find(t => t.type === 'page'); }
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -204,7 +205,9 @@ async function main() {
       const res = await fetch(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
       const what = `${f.path}${f.params.pulley === '2' ? ' (pulley 2)' : ''}${f.params.with_supports ? ' (supports)' : ''}`
                    + `${f.params.part ? ' ' + f.params.part : ''}${f.params.flange_which ? ' flange' : ''}`;
-      if (res.status !== 200) { rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
+      // a refusal's body read too: Node 24.20's fetch crashes when the server closes a connection
+      // whose body was never read (msi, 2026-10-25)
+      if (res.status !== 200) { await res.arrayBuffer(); rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
       const buf = Buffer.from(await res.arrayBuffer());
       const meta = embedded(buf);
       if (!meta) rec.problems.push(`file: ${what} embeds no design`);
@@ -220,7 +223,7 @@ async function main() {
     for (const f of await js(FILES_2D)) {
       const res = await fetch(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
       const what = `2D view ${f.path}${f.params.pulley === '2' ? ' (pulley 2)' : ''}${f.params.part ? ' ' + f.params.part : ''}`;
-      if (res.status !== 200) { rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
+      if (res.status !== 200) { await res.arrayBuffer(); rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
       const buf = Buffer.from(await res.arrayBuffer());
       const meta = embedded(buf);
       if (!meta) rec.problems.push(`file: ${what} embeds no design`);

@@ -40,6 +40,16 @@ def test_nightly_runs_the_suite_and_the_release():
     assert cfg["release"][1:] == ["{worktree}/tools/release.py"]
 
 
+def test_the_night_runs_every_browser_harness():
+    """The owner, 2026-10-25: every harness, every night (dims_ui's regression sat live
+    10-08 to 10-23 with none run); a new harness file joins tools/harnesses.py's list."""
+    import harnesses
+    files = {p.stem for p in (ROOT / "tests" / "browser").glob("*.js")}
+    assert files == set(harnesses.HARNESSES) - {"tokens_off"}
+    assert "tokens_off" in harnesses.HARNESSES                  # tokens_ui.js with tokens off too
+    assert "'tools' / 'harnesses.py'" in (ROOT / "tools" / "nightly_test.py").read_text(encoding="utf-8")
+
+
 def test_the_release_version(monkeypatch):
     import release
     monkeypatch.delenv("CCT_RELEASE_VERSION", raising=False)

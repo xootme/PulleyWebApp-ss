@@ -91,6 +91,8 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "tests: the caches cleared exist": ("pytest.ini", "exporters.step_worker_ss:_versions", "exporters.step_worker_ss:_nothing"),
     "tests: the page's template reaches its tests": ("tools/affected.py", 'TEST_RULES = [("templates/*",',
                                                      'TEST_RULES = [("nothing/*",'),
+    "night: every browser harness runs": ("tools/nightly_test.py", "str(ROOT / 'tools' / 'harnesses.py')",
+                                          "str(ROOT / 'tools' / 'nothing.py')"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }
 
