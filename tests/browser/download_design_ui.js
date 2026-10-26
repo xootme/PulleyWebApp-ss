@@ -62,7 +62,10 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
@@ -75,16 +78,27 @@ async function main() {
     if (r.result.exceptionDetails) throw new Error(expr.slice(0, 80) + ' -> ' + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
     return r.result.result.value;
   };
+  // Every page load waits for the page's own idle hook (index.html's pageIdle: the start-up,
+  // its fetches and debounced redraws, the drawing overlay), or fails saying the page never
+  // settled. A fixed sleep let Sprocket's harnesses go on mid-start-up (night of 2026-10-22).
+  const settled = async (what, ms = 60000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
+      await sleep(150);
+    }
+    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+  };
   await send('Runtime.enable');
 
   // Links: a feature key turns it on only when it says so (spokes_enabled=0 used
   // to switch spokes on), and spokes from a link show Gen. Rim Layer.
   await send('Page.navigate', { url: `${BASE}/?family=HTD&pitch=5M&teeth=40&bore=8&spokes_enabled=0&flange_enabled=0` });
-  await sleep(3000);
+  await settled('link without spokes');
   check('link spokes_enabled=0 / flange_enabled=0: both stay off',
         !(await js("document.getElementById('spokes1_enabled').checked")) && !(await js("document.getElementById('flange1_enabled').checked")));
   await send('Page.navigate', { url: `${BASE}/?family=HTD&pitch=8M&teeth=48&bore=12&${SPOKES}` });
-  await sleep(3000);
+  await settled('link with spokes');
   check('link with spokes: Gen. Rim Layer is offered',
         (await js("document.getElementById('spokes1_enabled').checked")) && (await js("document.getElementById('rim-layer1-wrap').style.display")) === 'flex');
 
@@ -93,7 +107,7 @@ async function main() {
     for (const mode of modes) {
       await js('(() => { try { localStorage.clear(); } catch (e) {} })()');
       await send('Page.navigate', { url: `${BASE}/?${query}` });
-      await sleep(3500);
+      await settled(query);
       if (mode === '3d') { await js("document.getElementById('feature_build').checked || document.getElementById('feature_build').click()"); await sleep(2500); }
       if (extra === 'rim' && mode === '2d') {
         await js(`(() => { for (const n of [1, 2]) { const w = document.getElementById('rim-layer' + n + '-wrap');

@@ -50,7 +50,10 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
@@ -64,6 +67,17 @@ async function main() {
     const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
     if (r.result.exceptionDetails) throw new Error(expr.slice(0, 80) + ' -> ' + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
     return r.result.result.value;
+  };
+  // Every page load waits for the page's own idle hook (index.html's pageIdle: the start-up,
+  // its fetches and debounced redraws, the drawing overlay), or fails saying the page never
+  // settled. A fixed sleep let Sprocket's harnesses go on mid-start-up (night of 2026-10-22).
+  const settled = async (what, ms = 60000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
+      await sleep(150);
+    }
+    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
   };
   const fire = expr => js(`setTimeout(() => { ${expr}; }, 0); true`);
   const waitFor = async (expr, ms = 20000) => {
@@ -99,6 +113,7 @@ async function main() {
 
   await send('Runtime.enable'); await send('Page.enable');
   await load(BASE + '/');
+  await settled(BASE + '/');
   await js(`(() => { const on = id => { const e = document.getElementById(id); if (e && !e.checked) e.click(); };
     on('feature_build'); on('dual_enable'); on('spokes1_enabled'); on('flange1_enabled');
     on('flange1_3dprint'); on('flange1_top_separate'); })()`);  // separate top flange: a part of its own
@@ -143,7 +158,7 @@ async function main() {
   check('sign-in link logged (dev, no Resend key)', !!link);
   await load(link[1]);
   await js("document.querySelector('button[type=submit]').click()");
-  await sleep(1500); await waitFor("document.readyState === 'complete'"); await js('window.cctTokens.ready'); await sleep(1000);
+  await sleep(1500); await settled('signed in'); await js('window.cctTokens.ready');
   check('signed in: header shows email and 20 tokens',
         await js("document.querySelector('.cct-account-email')?.textContent === 'ui-test@example.com' && document.getElementById('cct-balance')?.textContent === '20 tokens'"));
   // Clicking the balance opens the token dialog: count, expiry dates, the

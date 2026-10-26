@@ -47,7 +47,9 @@ Never `git push` unless the user explicitly says "deploy".
 - `tests/browser/*.js` — Chrome/CDP harnesses run by hand against a running app
   (`node tests/browser/help_ui.js http://127.0.0.1:<port>`); see each file's header.
   `tools/harnesses.py` runs them all side by side, each lane on its own server; the nightly
-  run includes it, and a failed harness fails the night (owner, 2026-10-25)
+  run includes it, and a failed harness fails the night (owner, 2026-10-25). Every page load
+  waits on the page's `pageIdle()` (`settled()` in each harness; start-up, fetches, debounced
+  redraws and the drawing overlay count) — don't wait with a fixed sleep
 - `web_provisioning.md` — deploy checklist and local release build procedure
 - `db_offsite_backup.py` + `RESTORE.md` — the encrypted daily copy of the Postgres database in Cloud Storage, and how to restore it (Neon point-in-time restore first)
 - `DECISIONS.md` — architectural decision log

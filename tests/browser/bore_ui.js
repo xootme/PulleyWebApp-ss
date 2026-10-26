@@ -33,7 +33,10 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
@@ -48,6 +51,17 @@ async function main() {
     if (r.result.exceptionDetails) throw new Error(expr.slice(0, 80) + ' -> ' + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
     return r.result.result.value;
   };
+  // Every page load waits for the page's own idle hook (index.html's pageIdle: the start-up,
+  // its fetches and debounced redraws, the drawing overlay), or fails saying the page never
+  // settled. A fixed sleep let Sprocket's harnesses go on mid-start-up (night of 2026-10-22).
+  const settled = async (what, ms = 60000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
+      await sleep(150);
+    }
+    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+  };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
     while (Date.now() - t < ms) { try { if (await js(expr)) return true; } catch (e) {} await sleep(150); }
@@ -55,8 +69,7 @@ async function main() {
   };
   const load = async url => {
     await send('Page.navigate', { url });
-    await waitFor("document.readyState === 'complete' && typeof buildParams === 'function' && SPLINES !== null");
-    await sleep(1500);
+    await settled(url);
   };
   const setSel = (sel, v) => js(`(() => { const e = document.querySelector('${sel}'); e.value = ${JSON.stringify(v)};
     e.dispatchEvent(new Event('change', {bubbles:true})); e.dispatchEvent(new Event('input', {bubbles:true})); })()`);

@@ -114,7 +114,7 @@ def run(label, cmd, env, results):
     timer.cancel()
     lines = out.splitlines()
     bad = [ln for ln in lines if ln.startswith('FAIL')]
-    tail = next((ln.strip() for ln in reversed(lines) if ln.strip()), '(no output)')
+    tail = next((ln.strip() for ln in reversed(lines) if ln.strip()), f'(no output, exit {proc.returncode})')
     passed = proc.returncode == 0 and bool(lines) and not bad and not timed_out
     secs = time.time() - t0
     with _print:

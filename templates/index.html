@@ -1096,6 +1096,34 @@
 </div>
 
 
+<script>
+// pageIdle(): the page has nothing left to load or draw, for the browser harnesses
+// (tests/browser) to wait on. The start-up counts as one piece of work until its undo
+// history starts (window.onload's last step), each fetch while it is out, each debounced
+// redraw until it runs (later()), and the drawing overlay while it is up. Sprocket's
+// page once said idle while its start-up tables loaded (night of 2026-10-22).
+let pageBusy = 1;
+let _lastWork = 0;
+const _owed = new Set();
+{
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (...a) => {
+    pageBusy++;
+    return _fetch(...a).finally(() => { pageBusy--; _lastWork = performance.now(); });
+  };
+}
+function later(f, ms) {
+  const id = setTimeout(() => { _owed.delete(id); _lastWork = performance.now(); f(); }, ms);
+  _owed.add(id);
+  return id;
+}
+function cancelLater(id) { clearTimeout(id); _owed.delete(id); }
+// (250 ms quiet: an answer's body is still read, and its next step scheduled, after it lands)
+function pageIdle() {
+  return pageBusy === 0 && _owed.size === 0 && !CCTBusy.shown(previewBox())
+      && performance.now() - _lastWork > 250;
+}
+</script>
 <script src="/static/tokens.js?v=8"></script>
 <script src="/static/cct_units.js?v=1"></script>
 <script src="/static/cct_download.js?v=1"></script>
@@ -1909,7 +1937,8 @@ window.onload = async () => {
   [1, 2].forEach(n => checkSpokeFit(n));
   // Undo history starts from the page as it opened, once its own follow-up
   // saves (the debounced redraw, an automatic clearance) have landed.
-  setTimeout(() => { currentStep = collectSettings(); historyReady = true; refreshUndoUI(); }, 1500);
+  // ...and that ends the start-up's work (pageBusy starts at 1).
+  setTimeout(() => { currentStep = collectSettings(); historyReady = true; refreshUndoUI(); pageBusy--; }, 1500);
 };
 
 // ── Dual toggle ───────────────────────────────────────────────────────────────
@@ -2601,8 +2630,8 @@ function schedulePreview() {
   _syncNubHeightMax();
   checkSpokeFit(1);
   checkSpokeFit(2);
-  clearTimeout(previewTimer);
-  previewTimer = setTimeout(updatePreview, 300);
+  cancelLater(previewTimer);
+  previewTimer = later(updatePreview, 300);
   refreshStatusLine();
   scheduleDims();
   saveSettings();
@@ -3781,8 +3810,8 @@ let three3dTimer  = null;
 let _loadGen      = 0;   // increments on every load3DModel call; callbacks check this to discard stale meshes
 
 function schedulePreview3D() {
-  clearTimeout(three3dTimer);
-  three3dTimer = setTimeout(update3DPreview, 400);
+  cancelLater(three3dTimer);
+  three3dTimer = later(update3DPreview, 400);
   scheduleDims();
 }
 
@@ -3853,8 +3882,8 @@ let dimsTimer = null, dimsSeq = 0, dimsFix = null;
 const refusals = CCTBusy.refusalGate();
 
 function scheduleDims() {
-  clearTimeout(dimsTimer);
-  dimsTimer = setTimeout(refreshDims, 350);
+  cancelLater(dimsTimer);
+  dimsTimer = later(refreshDims, 350);
 }
 
 async function refreshDims() {
@@ -5123,8 +5152,8 @@ function _spokeFitQuery(n) {
 }
 
 function checkSpokeFit(n) {
-  clearTimeout(_spokeFitTimer[n]);
-  _spokeFitTimer[n] = setTimeout(() => _runSpokeFit(n), 250);
+  cancelLater(_spokeFitTimer[n]);
+  _spokeFitTimer[n] = later(() => _runSpokeFit(n), 250);
 }
 
 async function _runSpokeFit(n) {

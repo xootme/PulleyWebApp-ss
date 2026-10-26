@@ -159,7 +159,10 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
@@ -172,12 +175,22 @@ async function main() {
     if (r.result.exceptionDetails) throw new Error(expr.slice(0, 80) + ' -> ' + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
     return r.result.result.value;
   };
+  // Every page load waits for the page's own idle hook (index.html's pageIdle: the start-up,
+  // its fetches and debounced redraws, the drawing overlay), or fails saying the page never
+  // settled. A fixed sleep let Sprocket's harnesses go on mid-start-up (night of 2026-10-22).
+  const settled = async (what, ms = 60000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
+      await sleep(150);
+    }
+    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+  };
   await send('Runtime.enable'); await send('DOM.enable');
   const blank = async (query = '') => {
     await send('Storage.clearDataForOrigin', { origin: new URL(BASE).origin, storageTypes: 'local_storage,session_storage' });
     await send('Page.navigate', { url: `${BASE}/${query ? '?' + query : ''}` });
-    for (let i = 0; i < 60; i++) { await sleep(250); if (await js(`typeof buildParams === 'function' && document.readyState === 'complete'`).catch(() => false)) break; }
-    await sleep(2000);
+    await settled(query || '/');
   };
 
   const report = []; let exported = 0, refused = 0;

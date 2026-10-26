@@ -98,6 +98,11 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "stl: one screw on a keyed hub, before its lobes": ("exporters/step_exporter.py",
         "return screws.set_screw_angles(1 if keyed else min(screw_count, 2)",
         "return screws.set_screw_angles(min(screw_count, 2)"),
+    "idle: the start-up is work until the page has opened": ("templates/index.html", "let pageBusy = 1;",
+                                                              "let pageBusy = 0;"),
+    "idle: a fetch out keeps the page busy": ("templates/index.html",
+        "    pageBusy++;\n    return _fetch(...a).finally(() => { pageBusy--; _lastWork",
+        "    return _fetch(...a).finally(() => { _lastWork"),
     "night: a skip fails the night": ("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

@@ -59,7 +59,10 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);

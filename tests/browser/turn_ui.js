@@ -44,7 +44,10 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
@@ -58,6 +61,17 @@ async function main() {
     const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
     if (r.result.exceptionDetails) throw new Error(expr.slice(0, 80) + ' -> ' + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
     return r.result.result.value;
+  };
+  // Every page load waits for the page's own idle hook (index.html's pageIdle: the start-up,
+  // its fetches and debounced redraws, the drawing overlay), or fails saying the page never
+  // settled. A fixed sleep let Sprocket's harnesses go on mid-start-up (night of 2026-10-22).
+  const settled = async (what, ms = 60000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
+      await sleep(150);
+    }
+    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
   };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
@@ -77,9 +91,7 @@ async function main() {
   // A drive in 3D, its pulleys and belt loaded.
   const open = async q => {
     await send('Page.navigate', { url: `${BASE}/?${q}` });
-    await waitFor("document.readyState === 'complete' && typeof buildParams === 'function'");
-    await waitFor('historyReady', 8000);
-    await sleep(500);
+    await settled(q);
     await js("(() => { const fb = document.getElementById('feature_build'); if (!fb.checked) fb.click(); })()");
     return waitFor(`(() => { const s = window.pulleyTurn && window.pulleyTurn();
       return s && s.belt && s.pieces && s.angles[0] !== null && s.angles[1] !== null; })()`, 60000);
@@ -94,7 +106,7 @@ async function main() {
 
   await send('Runtime.enable'); await send('Page.enable');
   await send('Page.navigate', { url: BASE + '/' });
-  await waitFor("document.readyState === 'complete'");
+  await settled(BASE + '/');
   await js('localStorage.clear()');
 
   for (const [di, d] of DRIVES.entries()) {
@@ -161,8 +173,7 @@ async function main() {
 
   // one pulley: no drive, no Turn
   await send('Page.navigate', { url: `${BASE}/?family=GT&pitch=2M&teeth=20&bore=5` });
-  await waitFor("document.readyState === 'complete' && typeof buildParams === 'function'");
-  await sleep(2500);
+  await settled('one pulley');
   check('one pulley: Turn is not offered', !(await shown('#spin_btn')));
 
   finish(errors);

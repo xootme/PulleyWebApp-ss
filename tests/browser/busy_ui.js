@@ -7,7 +7,9 @@
 // - a value invalid only part-way through typing shows no warning; one left
 //   invalid shows it 2 s after the last keystroke; leaving the field shows it at once;
 // - the spoke card's Auto-fit closes its panel at once too;
-// - a refusal of a value typed over before its answer came back never shows (0.25.8).
+// - a refusal of a value typed over before its answer came back never shows (0.25.8);
+// - the page says it is idle (pageIdle, what every harness's load waits on) only once it
+//   has opened, never while a start-up load or a check is still out.
 // The preview's requests are held back (CDP Fetch) to look at the overlay, and the
 // Dimensions check's answers to time them against the typing.
 //
@@ -37,17 +39,24 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   const held = []; let holding = false;
   const dimsHeld = []; let holdingDims = false;   // the Dimensions check's answers, held once answered
+  const startHeld = []; let holdingStart = false; // the start-up's bore-shape tables
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
     if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
     if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
     if (m.method === 'Fetch.requestPaused') {
       const dims = m.params.request.url.includes('/api/dimensions');
-      if (dims ? holdingDims : holding) (dims ? dimsHeld : held).push(m.params.requestId);
+      if (m.params.request.url.includes('/api/splines')) {
+        if (holdingStart) startHeld.push(m.params.requestId);
+        else send('Fetch.continueRequest', { requestId: m.params.requestId });
+      } else if (dims ? holdingDims : holding) (dims ? dimsHeld : held).push(m.params.requestId);
       else send('Fetch.continueRequest', { requestId: m.params.requestId });
     }
   });
@@ -57,6 +66,17 @@ async function main() {
     if (r.result.exceptionDetails) throw new Error(expr.slice(0, 80) + ' -> ' + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
     return r.result.result.value;
   };
+  // Every page load waits for the page's own idle hook (index.html's pageIdle: the start-up,
+  // its fetches and debounced redraws, the drawing overlay), or fails saying the page never
+  // settled. A fixed sleep let Sprocket's harnesses go on mid-start-up (night of 2026-10-22).
+  const settled = async (what, ms = 60000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
+      await sleep(150);
+    }
+    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+  };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
     while (Date.now() - t < ms) { try { if (await js(expr)) return true; } catch (e) {} await sleep(100); }
@@ -64,8 +84,7 @@ async function main() {
   };
   const load = async url => {
     await send('Page.navigate', { url });
-    await waitFor("document.readyState === 'complete' && typeof buildParams === 'function'");
-    await sleep(1500);
+    await settled(url);
   };
   const shot = async name => {
     if (!SHOTS) return;
@@ -82,7 +101,8 @@ async function main() {
 
   // Hold the preview's requests (2D picture, 3D model) until released.
   await send('Fetch.enable', { patterns: [{ urlPattern: '*api/preview?*' }, { urlPattern: '*api/preview-stl*' },
-                                          { urlPattern: '*api/dimensions?*', requestStage: 'Response' }] });
+                                          { urlPattern: '*api/dimensions?*', requestStage: 'Response' },
+                                          { urlPattern: '*api/splines*' }] });
   const release = async () => {
     holding = false;
     for (const rid of held.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
@@ -236,6 +256,45 @@ async function main() {
   for (const rid of dimsHeld.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
   await sleep(1500);
   check('…and 10, valid, no warning', !(await js('window.__warnSeen')) && !(await warned()), await val('clearance_height'));
+
+  // ── the idle hook every harness's load waits on (Sprocket's start-up hole, 2026-10-22) ──
+  // Opened: the first moment the page says idle, its undo history has started (the
+  // start-up's last step) and its picture and dimensions are in.
+  await send('Page.navigate', { url: BASE + '/?family=HTD&pitch=5M&teeth=24&bore=8' });
+  let opened = null;
+  for (const t = Date.now(); !opened && Date.now() - t < 60000; await sleep(50))
+    opened = await js(`document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()
+      && { history: historyReady, picture: document.getElementById('preview-img').complete,
+           dims: document.querySelectorAll('#dims-table tr').length }`).catch(() => null);
+  check('idle: only once the page has opened (undo history started, picture and dimensions in)',
+        opened && opened.history && opened.picture && opened.dims > 0, opened);
+  // A start-up load held back: the page is not idle, and a harness's wait says it never settled.
+  holdingStart = true;
+  await send('Page.navigate', { url: BASE + '/?family=HTD&pitch=5M&teeth=24&bore=8' });
+  for (let i = 0; i < 100 && !startHeld.length; i++) await sleep(50);
+  check("idle: the start-up's tables asked for (held)", startHeld.length === 1, startHeld.length);
+  await sleep(2000);
+  check('…not idle while they load', !(await js("typeof pageIdle === 'function' && pageIdle()")));
+  let threw = false;
+  try { await settled('held', 2000); } catch (e) { threw = /never settled/.test(e.message); }
+  check('…a load waiting on it says the page never settled', threw);
+  holdingStart = false;
+  for (const rid of startHeld.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
+  let settledOk = true;
+  try { await settled('released', 30000); } catch (e) { settledOk = false; }
+  check('…and idle once they are in', settledOk);
+  // After the start-up: a check's answer still out keeps it busy.
+  holdingDims = true;
+  await js("(() => { const e = document.getElementById('bore'); e.value = '9'; e.dispatchEvent(new Event('input', {bubbles:true})); e.dispatchEvent(new Event('change', {bubbles:true})); })()");
+  for (let i = 0; i < 60 && !dimsHeld.length; i++) await sleep(50);
+  check("idle: a change's dimensions asked for (held)", dimsHeld.length === 1, dimsHeld.length);
+  await sleep(1500);
+  check('…not idle while the answer is out', !(await js('pageIdle()')));
+  holdingDims = false;
+  for (const rid of dimsHeld.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
+  settledOk = true;
+  try { await settled('dimensions released', 30000); } catch (e) { settledOk = false; }
+  check('…and idle once it is in', settledOk);
 
   check('no page errors', errors.length === 0, errors);
 }

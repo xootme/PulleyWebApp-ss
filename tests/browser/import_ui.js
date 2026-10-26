@@ -47,7 +47,10 @@ async function main() {
     catch (e) { await sleep(200); }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise(r => ws.addEventListener('open', r));
+  await new Promise((r, j) => {   // a socket that never opens would end node silently, with no output
+    ws.addEventListener('open', r);
+    ws.addEventListener('error', () => j(new Error(`the CDP socket failed (${ws.url})`)));
+  });
   let id = 0; const pending = new Map(); const errors = [];
   ws.addEventListener('message', ev => {
     const m = JSON.parse(ev.data);
@@ -60,14 +63,25 @@ async function main() {
     if (r.result.exceptionDetails) throw new Error(expr.slice(0, 80) + ' -> ' + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
     return r.result.result.value;
   };
+  // Every page load waits for the page's own idle hook (index.html's pageIdle: the start-up,
+  // its fetches and debounced redraws, the drawing overlay), or fails saying the page never
+  // settled. A fixed sleep let Sprocket's harnesses go on mid-start-up (night of 2026-10-22).
+  const settled = async (what, ms = 60000) => {
+    const t = Date.now();
+    while (Date.now() - t < ms) {
+      if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
+      await sleep(150);
+    }
+    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+  };
   await send('Runtime.enable');
   await send('DOM.enable');
   const blank = async () => {
     await send('Page.navigate', { url: `${BASE}/` });
-    await sleep(2500);
+    await settled('a blank page');
     await js('(() => { try { localStorage.clear(); } catch (e) {} })()');
     await send('Page.navigate', { url: `${BASE}/` });
-    await sleep(3000);
+    await settled('a blank page, storage cleared');
   };
   const to3d = async () => { await js("document.getElementById('feature_build').checked || document.getElementById('feature_build').click()"); await sleep(1500); };
   const shown = elId => js(`(() => { const e = document.getElementById('${elId}'); return !!e && e.style.display !== 'none'; })()`);
@@ -110,7 +124,7 @@ async function main() {
     // and through a link (the same path)
     await blank();
     await send('Page.navigate', { url: `${BASE}/?${query}` });
-    await sleep(3000);
+    await settled(query);
     await to3d();
     await panels(`link · ${name}`, want);
   }
@@ -141,7 +155,7 @@ async function main() {
   fs.writeFileSync(roundFile, Buffer.from(exp[1], 'base64'));
   // the page: a splined drive, Retention locked at None on both pulleys
   await send('Page.navigate', { url: `${BASE}/?${SPLINED}` });
-  await sleep(3500);
+  await settled(SPLINED);
   await to3d();
   check('lock: a splined bore holds Retention at None on both pulleys',
         (await ret(1)) === 'none' && (await ret(2)) === 'none'
@@ -157,7 +171,7 @@ async function main() {
   // undo / redo across the lock: round + insert -> spline (locked) -> undo -> redo -> undo
   await blank();
   await send('Page.navigate', { url: `${BASE}/?${DRIVE}&hub_od=20&hub_height=8&hub_screw_size=M3&hub_screw_count=1&hub_screw_hold=insert` });
-  await sleep(3500);
+  await settled('a drive with heat-set inserts');
   await to3d();
   const idle = async () => { for (let i = 0; i < 40 && await js('typeof restoringHistory !== "undefined" && restoringHistory'); i++) await sleep(150); await sleep(800); };
   const before = await ret(1);
