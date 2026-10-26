@@ -93,6 +93,7 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                                      'TEST_RULES = [("nothing/*",'),
     "night: every browser harness runs": ("tools/nightly_test.py", "str(ROOT / 'tools' / 'harnesses.py')",
                                           "str(ROOT / 'tools' / 'nothing.py')"),
+    "night: a skip fails the night": ("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }
 

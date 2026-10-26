@@ -24,6 +24,32 @@ def pytest_xdist_auto_num_workers(config):
     """`-n auto` is the machine's share, never every CPU."""
     return test_cpus()
 
+
+# The night runs all it can: under PULLEY_NIGHTLY (tools/nightly_test.py sets it, so a test
+# host has it too) a skip fails, unless its reason is one the night can't help yet, each with
+# what would end it. Bevel's 56 STEP checks skipped every night from 10-21 unseen (Controller,
+# 2026-10-25).
+NIGHT_SKIPS = {
+    'the session queue is compiled out (app.SESSION_QUEUE)': 'never: the queue is not in the app',
+    'needs CCT_TEST_POSTGRES': 'a test Postgres on the night host, CCT_TEST_POSTGRES set there',
+    'CCT_TEST_POSTGRES not set': 'a test Postgres on the night host, CCT_TEST_POSTGRES set there',
+}
+# (test_cct_theme's checks run at night too: msi's clone, CCT_COMMON_CHECKOUT in remote.json; it
+# needs refreshing when the vendored commit moves, which Controller does on being told of a sync)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    rep = (yield).get_result()
+    if os.environ.get('PULLEY_NIGHTLY') != '1' or not rep.skipped or hasattr(rep, 'wasxfail'):
+        return
+    reason = rep.longrepr[2] if isinstance(rep.longrepr, tuple) else str(rep.longrepr)
+    reason = reason.removeprefix('Skipped: ')
+    if reason not in NIGHT_SKIPS:
+        rep.outcome = 'failed'
+        rep.longrepr = (f'skipped at night ({reason}): the night must run it, or conftest.NIGHT_SKIPS '
+                        'must say why it can\'t')
+
 from geometry.pulley_geometry import (
     PULLEY_SPECS, PROFILE_KEY_PREFIX, BELT_FAMILIES,
     H_BELT_SPECS, S_BELT_SPECS, G_BELT_SPECS, R_BELT_SPECS,

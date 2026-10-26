@@ -2,6 +2,7 @@
 Gear Designer load it: a copy in static/, from the same cct_common commit
 as the vendored package, linked before style.css so this app's own rules
 still win where they differ."""
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -9,7 +10,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-UPSTREAM = Path(r"C:\Users\cmyer\Documents\cct_common")
+# a test host names its clone (CCT_COMMON_CHECKOUT); it needs the vendored commit
+UPSTREAM = Path(os.environ.get("CCT_COMMON_CHECKOUT") or r"C:\Users\cmyer\Documents\cct_common")
 
 
 @pytest.fixture
