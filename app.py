@@ -20,6 +20,7 @@ from cct_common import (
 # their old local names so call sites don't need to change.
 from cct_common.text_utils import safe_float as _safe_float, safe_dl_name as _safe_dl_name
 from cct_common.jsonl_log import append_jsonl as _append_jsonl, trim_jsonl as _trim_jsonl
+from cct_common import forksafe
 from cct_common.github_api import request as _github_api
 from cct_common.resend_email import send as _cc_send_email
 from cct_common.addin_mirror import mirror_to_addins as _cc_mirror_to_addins
@@ -302,6 +303,7 @@ _METRICS_RETENTION_DAYS  = 30
 _CPU_CONSTRAINT_THRESHOLD = 80.0
 _MEM_CONSTRAINT_THRESHOLD = 85.0
 _download_lock       = threading.Lock()   # in-process guard (dev / single-worker)
+forksafe.renew_after_fork(globals(), '_download_lock')
 
 # ── Error log (circular buffer, max 512 KB on disk) ───────────────────────────
 import logging as _logging
@@ -333,6 +335,7 @@ except Exception:
 # Per-worker request rate counter (resets each metrics sample)
 _request_count      = 0
 _request_count_lock = threading.Lock()
+forksafe.renew_after_fork(globals(), '_request_count_lock')   # the master's sampler takes it
 
 
 def _increment_request_count():
@@ -406,8 +409,16 @@ def _metrics_sampler():
         time.sleep(60)
 
 
-_metrics_thread = threading.Thread(target=_metrics_sampler, daemon=True)
-_metrics_thread.start()
+def _start_metrics_sampler():
+    threading.Thread(target=_metrics_sampler, name='pulley-metrics', daemon=True).start()
+
+
+_start_metrics_sampler()
+# gunicorn's preload_app imports this in the master and forks the workers from it. A fork
+# keeps only the forking thread, so each worker starts its own sampler (no worker's requests
+# were sampled), and its locks arrive unlocked (a worker forked while the master's sampler
+# held _request_count_lock would hang on every request). No-ops without fork (Windows).
+forksafe.after_fork_in_child(_start_metrics_sampler)
 
 
 def _increment_download_count(fmt=None, ip=None):
@@ -4048,6 +4059,7 @@ _SUBSCRIBERS_FILE   = os.path.join(_LOG_DIR, 'subscribers.json')
 _PURCHASES_FILE     = os.path.join(_LOG_DIR, 'purchases.json')
 _subscribers_lock   = threading.Lock()
 _purchases_lock     = threading.Lock()
+forksafe.renew_after_fork(globals(), '_subscribers_lock', '_purchases_lock')
 
 
 def _load_subscribers():

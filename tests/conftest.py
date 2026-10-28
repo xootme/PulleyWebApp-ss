@@ -33,6 +33,7 @@ NIGHT_SKIPS = {
     'the session queue is compiled out (app.SESSION_QUEUE)': 'never: the queue is not in the app',
     'needs CCT_TEST_POSTGRES': 'a test Postgres on the night host, CCT_TEST_POSTGRES set there',
     'CCT_TEST_POSTGRES not set': 'a test Postgres on the night host, CCT_TEST_POSTGRES set there',
+    'needs os.fork (Linux; run in WSL)': 'a Linux night host: test_fork_safe.py and tools/fork_probe.py run in WSL by hand',
 }
 # (test_cct_theme's checks run at night too: msi's clone, CCT_COMMON_CHECKOUT in remote.json; it
 # needs refreshing when the vendored commit moves, which Controller does on being told of a sync)
