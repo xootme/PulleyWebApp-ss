@@ -103,6 +103,8 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "idle: a fetch out keeps the page busy": ("templates/index.html",
         "    pageBusy++;\n    return _fetch(...a).finally(() => { pageBusy--; _lastWork",
         "    return _fetch(...a).finally(() => { _lastWork"),
+    "a blank belt height is its default": (AP, "belt_height   = max(1.0, _safe_float(args.get('belt_height'), 10.0))",
+                                           "belt_height   = max(1.0, float(args.get('belt_height', 10.0)))"),
     "night: a skip fails the night": ("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

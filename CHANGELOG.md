@@ -6,6 +6,10 @@ an entry sits under "Unreleased".
 
 ## Unreleased
 
+- **A field left empty takes its default.** Clearing a number field, such as
+  the belt height, the teeth or the print extra, made the 3D preview and the
+  Dimensions check fail with an error. An empty field now
+  counts as its default, as if it hadn't been sent.
 - **Keyed and D-flat bores in STEP files.** A pulley with a keyway or D-flat
   but no hub got a STEP file with a plain round bore; it now has the key or
   flat, as its STL always did. And a hub with two captured-nut set screws on a

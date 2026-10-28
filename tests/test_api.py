@@ -215,6 +215,18 @@ def test_api_preview_stl_single(client, family, pitch):
     assert len(r.data) > 84, 'STL response too short'
 
 
+@pytest.mark.parametrize('route', ['/api/preview-stl', '/api/dimensions'])
+def test_a_field_left_empty_takes_its_default(client, route):
+    """The page sends a cleared field blank: it reads as its default, as when it's missing
+    (a 400, with an ERROR line, on every preview and dimensions check before; 2026-10-28)."""
+    base = '?family=HTD&pitch=5M&bore=8&clearance_preset=STANDARD&backlash_preset=STANDARD'
+    blank = client.get(route + base + '&teeth=&belt_height=&clearance_height=&print_extra=')
+    teeth = get_spec('HTD', '5M')['min_teeth']                        # a missing count's default
+    default = client.get(route + base + f'&teeth={teeth}&belt_height=10&clearance_height=0&print_extra=0')
+    assert blank.status_code == 200, blank.get_data(as_text=True)[:200]
+    assert blank.data == default.data
+
+
 @pytest.mark.parametrize('part', ['all', 'pulleys', 'belt'])
 def test_api_preview_stl_dual_parts(client, part):
     r = client.get(

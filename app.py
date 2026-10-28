@@ -2250,9 +2250,9 @@ def _parse_stl_params(args, pulley='1'):
     spec = PULLEY_SPECS[key]
 
     if pulley == '2':
-        num_teeth = max(spec['min_teeth'], int(args.get('p2_teeth', spec['min_teeth'])))
+        num_teeth = max(spec['min_teeth'], int(_safe_float(args.get('p2_teeth'), spec['min_teeth'])))
         bore_mm   = _get_bore(args, 'p2_bore')
-        pr_ex     = float(args.get('p2_print_extra', 0.0))
+        pr_ex     = _safe_float(args.get('p2_print_extra'), 0.0)
         cl_mm = _get_preset_value(spec, 'clearances',
                                   args.get('p2_clearance_preset', 'STANDARD'),
                                   args.get('p2_clearance_custom', 0.0))
@@ -2260,9 +2260,9 @@ def _parse_stl_params(args, pulley='1'):
                                   args.get('p2_backlash_preset', 'STANDARD'),
                                   args.get('p2_backlash_custom', 0.0))
     else:
-        num_teeth = max(spec['min_teeth'], int(args.get('teeth', spec['min_teeth'])))
+        num_teeth = max(spec['min_teeth'], int(_safe_float(args.get('teeth'), spec['min_teeth'])))
         bore_mm   = _get_bore(args, 'bore')
-        pr_ex     = float(args.get('print_extra', 0.0))
+        pr_ex     = _safe_float(args.get('print_extra'), 0.0)
         cl_mm = _get_preset_value(spec, 'clearances',
                                   args.get('clearance_preset', 'STANDARD'),
                                   args.get('clearance_custom', 0.0))
@@ -2270,8 +2270,10 @@ def _parse_stl_params(args, pulley='1'):
                                   args.get('backlash_preset', 'STANDARD'),
                                   args.get('backlash_custom', 0.0))
 
-    belt_height   = max(1.0, float(args.get('belt_height', 10.0)))
-    clearance_h   = max(0.0, float(args.get('clearance_height', 0.0)))
+    # a field left empty arrives blank: its default, as when it's missing (a 400 and an
+    # ERROR line on every preview and dimensions check before, 2026-10-28)
+    belt_height   = max(1.0, _safe_float(args.get('belt_height'), 10.0))
+    clearance_h   = max(0.0, _safe_float(args.get('clearance_height'), 0.0))
     belt_height   = belt_height + clearance_h
     return family, pitch, num_teeth, bore_mm, belt_height, cl_mm, bl_mm, pr_ex
 
