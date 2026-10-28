@@ -73,3 +73,13 @@ def test_a_binary_without_the_flags_is_not_sent_them():
     assert not {'--screw-hole', '--nut', '--hub-skirt', '--screw-z'} & set(cmd)
     cmd = _cmd(dict(CAPTURED, **PRINTED), flags=('--screw-z',))       # no skirt: the screw rides lower
     assert _arg(cmd, '--screw-z')[0] == pytest.approx(22.5 - NUT[0] / math.sqrt(3))
+
+
+def test_a_hubless_bores_flat_or_key_is_sent():
+    """No hub: the flat or key still goes through the belt section, as the STL cuts it (sent
+    only with a hub before: a hubless keyed pulley's STEP had a round bore, night of
+    2026-10-23). The keyed STEP itself is measured in test_step_small_step.py."""
+    bare = dict(P, hub_od_mm=0.0, hub_height_mm=0.0, screw_count=0)
+    assert _arg(_cmd(dict(bare, flat_depth_mm=0.8)), '--flat')[0] == 0.8
+    assert _arg(_cmd(dict(bare, keyway_w_mm=3.0, keyway_h_mm=1.4)), '--keyway', 2) == [3.0, 1.4]
+    assert not {'--flat', '--keyway'} & set(_cmd(bare))
