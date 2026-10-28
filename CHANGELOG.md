@@ -10,8 +10,8 @@ an entry sits under "Unreleased".
   (not 3D-printed) flange failed with an error every time; it now gives the
   file.
 - **A field left empty takes its default.** Clearing a number field, such as
-  the belt height, the teeth or the print extra, made the 3D preview and the
-  Dimensions check fail with an error. An empty field now
+  the belt height, the teeth or the print extra, made the 3D preview, the
+  Dimensions check and every download fail with an error. An empty field now
   counts as its default, as if it hadn't been sent.
 - **Keyed and D-flat bores in STEP files.** A pulley with a keyway or D-flat
   but no hub got a STEP file with a plain round bore; it now has the key or

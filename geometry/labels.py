@@ -215,6 +215,16 @@ def check(args) -> None:
                     choice(raw, key, options, p.default)
 
 
+def blank_number(key: str, raw) -> bool:
+    """Whether `raw` is a number setting left empty: app.py drops it before the routes
+    read it, so each takes its default as for a missing one, as check() does (a blank
+    belt height made the downloads fail, 2026-10-28)."""
+    base, n = split(key)
+    p = limits().get(base)
+    return (p is not None and p.type in ("number", "integer") and (n == 1 or p.per_part)
+            and str(raw).strip() == "")
+
+
 def agent_message(text: str) -> str:
     """The agent API's refusal ("p2_teeth must be at most 500") with the page's label
     in front of the key ("Pulley 2 Num. Teeth (p2_teeth) must be at most 500")."""

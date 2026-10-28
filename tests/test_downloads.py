@@ -8,12 +8,15 @@ Covers:
   /download/all-dxf     (combined layout DXF)
   /download/all-step    (multipart STEP — single and dual)
   /download/flange-step (3D-print and metal flange STEP)
+  a field left empty on any of them (its default)
 
 Also verifies that CCT metadata is embedded in every response:
   STEP / STL  → b'/* CCT:'
   DXF         → b'CCT:'
   SVG         → b'CCT:'  (checked in test_api.py for belt-svg; included here for all-dxf)
 """
+
+import re
 
 import pytest
 
@@ -250,6 +253,35 @@ def test_flange_step_3dp_top_cct_metadata(client):
     r = client.get(f'/download/flange-step?{_FLANGE_3DP}&flange_which=top')
     assert r.status_code == 200
     assert b'/* CCT:' in r.data, 'CCT metadata missing from flange STEP'
+
+
+# ---------------------------------------------------------------------------
+# A field left empty: its default, as when it's missing
+# ---------------------------------------------------------------------------
+_BLANKS = '&'.join(f'{k}=' for k in (
+    'teeth', 'p2_teeth', 'belt_height', 'clearance_height', 'print_extra', 'p2_print_extra',
+    'center_distance', 'hub_flat_depth', 'hub_keyway_w', 'hub_keyway_h', 'clearance_custom',
+    'backlash_custom', 'flange_angle', 'flange_height', 'spokes_rim_depth', 'spokes_height'))
+_ONE_DESIGN = ('family=HTD&pitch=5M&bore=8&clearance_preset=STANDARD&backlash_preset=STANDARD&dual=true'
+               '&p2_bore=8&p2_clearance_preset=STANDARD&p2_backlash_preset=STANDARD&flange_enabled=1'
+               '&flange_3dprint=1&spokes_enabled=1&spokes_hub_od=20&spokes_width=4&spokes_count=4')
+
+
+def _same_file(data):
+    """A download without what differs each time: a STEP header's time, a DXF's handles and time."""
+    return re.sub(rb'FILE_NAME\([^;]*;|\{[0-9A-F-]{36}\}|\d{4}-\d\d-\d\dT[0-9:.+-]+', b'', data)
+
+
+@pytest.mark.parametrize('route', ['svg', 'dxf', 'all-dxf', 'belt-svg', 'stl', 'belt-stl', 'flange-stl',
+                                   'step', 'all-step', 'belt-step', 'flange-step', 'flange-assembly'])
+def test_a_field_left_empty_downloads_as_its_default(client, route):
+    """The page sends a cleared field blank: a download reads it as its default, as when it's
+    missing (a 400 or 500 on every download route before, 2026-10-28)."""
+    blank = client.get(f'/download/{route}?{_ONE_DESIGN}&{_BLANKS}')
+    missing = client.get(f'/download/{route}?{_ONE_DESIGN}')
+    assert missing.status_code == 200
+    assert blank.status_code == 200, blank.get_data(as_text=True)[:300]
+    assert _same_file(blank.data) == _same_file(missing.data)
 
 
 @pytest.mark.parametrize('which', ['top', 'bottom'])

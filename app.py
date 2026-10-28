@@ -38,6 +38,7 @@ except ImportError:
     _HAVE_PSUTIL = False
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, Response, jsonify, send_from_directory, send_file, redirect
+from werkzeug.datastructures import CombinedMultiDict, ImmutableMultiDict
 from cct_common.job_queue import (
     create_job, get_job, start_job, update_progress, finish_job, get_queue_status,
     create_session, get_session_status, heartbeat, release_session, get_queue_info,
@@ -665,6 +666,11 @@ def _refuse_bad_settings():
             _labels.check(request.values)
         except _labels.SettingError as e:
             return jsonify(error=str(e), field=e.field, fix=e.fix), 400
+        # a number left empty takes its default, as a missing one does: gone before any
+        # route's float() reads it (a blank belt height failed the downloads, 2026-10-28)
+        request.args = ImmutableMultiDict([(k, v) for k, v in request.args.items(multi=True)
+                                           if not _labels.blank_number(k, v)])
+        request.values = CombinedMultiDict([request.args, request.form])
     return None
 
 

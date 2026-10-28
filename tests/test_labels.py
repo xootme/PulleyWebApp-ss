@@ -101,6 +101,17 @@ def test_a_blank_or_unused_setting_is_left_to_the_app(client):
     assert client.get("/api/dimensions", query_string=dict(BASE, p2_teeth="abc")).status_code == 200
 
 
+def test_a_blank_number_reaches_the_downloads_as_missing():
+    """A number left empty is gone before a download's route reads it, so it takes its
+    default (each route's float() failed on it, 2026-10-28); blank text is left as sent."""
+    from flask import request
+    with app_module.app.test_request_context(
+            "/download/svg?family=HTD&teeth=&p2_print_extra=&belt_height=%20&bore_shape=&dual=true"):
+        assert app_module.app.preprocess_request() is None
+        assert not {"teeth", "p2_print_extra", "belt_height"} & (set(request.args) | set(request.values))
+        assert request.args["family"] == "HTD" and request.args["bore_shape"] == ""
+
+
 def test_the_agent_api_names_the_label(client):
     r = client.post("/api/v1/check", json={"params": dict(BASE, teeth=99999)})
     assert r.status_code == 400
