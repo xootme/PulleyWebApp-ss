@@ -7,7 +7,7 @@ Covers:
   /download/belt-dxf    (single and dual modes)
   /download/all-dxf     (combined layout DXF)
   /download/all-step    (multipart STEP — single and dual)
-  /download/flange-step (3D-print flange STEP)
+  /download/flange-step (3D-print and metal flange STEP)
 
 Also verifies that CCT metadata is embedded in every response:
   STEP / STL  → b'/* CCT:'
@@ -250,6 +250,16 @@ def test_flange_step_3dp_top_cct_metadata(client):
     r = client.get(f'/download/flange-step?{_FLANGE_3DP}&flange_which=top')
     assert r.status_code == 200
     assert b'/* CCT:' in r.data, 'CCT metadata missing from flange STEP'
+
+
+@pytest.mark.parametrize('which', ['top', 'bottom'])
+def test_flange_step_metal(client, which):
+    """A metal flange's STEP: the worker read the groove radius only the printed one set
+    (an UnboundLocalError and a 400 on every one, until 2026-10-28)."""
+    r = client.get(f'/download/flange-step?{_SINGLE}&flange_3dprint=0&flange_angle=15&flange_rim_radius=3'
+                   f'&flange_plate_height=1.0&flange_bend_radius=1.5&flange_which={which}')
+    assert r.status_code == 200, r.get_data(as_text=True)[-300:]
+    assert b'ISO-10303' in r.data and len(r.data) > 1000
 
 
 def test_flange_step_bad_family_returns_400(client):

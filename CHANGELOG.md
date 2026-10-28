@@ -6,6 +6,9 @@ an entry sits under "Unreleased".
 
 ## Unreleased
 
+- **Metal flange STEP files download again.** The STEP download of a metal
+  (not 3D-printed) flange failed with an error every time; it now gives the
+  file.
 - **A field left empty takes its default.** Clearing a number field, such as
   the belt height, the teeth or the print extra, made the 3D preview and the
   Dimensions check fail with an error. An empty field now

@@ -666,9 +666,9 @@ def _export_flange(params, ss_bin):
 
     R_OD, tooth_ht = _compute_rod(family, pitch, num_teeth, print_extra_mm, clearance_mm)
     side_str = 'bottom' if which == 'bottom' else 'top'
+    _R_tr = R_OD - tooth_ht        # both kinds (the metal one's was unset: every metal flange STEP failed)
 
     if flange_3dprint:
-        _R_tr = R_OD - tooth_ht
         prof_r_tooth = _R_tr if spokes_enabled else R_OD
         if which == 'bottom':
             r_inner = flange_inner_r_3dprint_bottom(

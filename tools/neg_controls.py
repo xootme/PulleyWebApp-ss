@@ -105,6 +105,9 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    return _fetch(...a).finally(() => { _lastWork"),
     "a blank belt height is its default": (AP, "belt_height   = max(1.0, _safe_float(args.get('belt_height'), 10.0))",
                                            "belt_height   = max(1.0, float(args.get('belt_height', 10.0)))"),
+    "step: a metal flange's groove radius": ("exporters/step_worker_ss.py",
+        "    _R_tr = R_OD - tooth_ht        # both kinds (the metal one's was unset: every metal flange STEP failed)\n\n    if flange_3dprint:\n",
+        "\n    if flange_3dprint:\n        _R_tr = R_OD - tooth_ht\n"),
     "night: a skip fails the night": ("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }
