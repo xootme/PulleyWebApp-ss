@@ -35,6 +35,8 @@ import threading
 from contextlib import contextmanager
 from typing import Iterator
 
+from . import forksafe
+
 POSTGRES_PREFIXES = ("postgresql://", "postgres://")
 _PG_WRITE_LOCK = 0x4343545F4442   # arbitrary constant key: "CCT_DB"
 
@@ -117,6 +119,7 @@ class _PgConnection:
 # it didn't open itself.
 _POOLS: dict = {}
 _POOLS_LOCK = threading.Lock()
+forksafe.renew_after_fork(globals(), "_POOLS_LOCK")
 
 
 def _pool(url: str):

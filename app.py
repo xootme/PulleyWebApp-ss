@@ -4891,11 +4891,20 @@ except Exception:
     app.logger.exception('download failures will not be kept: the store would not open')
 register_download_failure_log(app, _failure_store, app_name='pulleys', app_version=APP_VERSION)
 
+@app.route('/api/health')
+def api_health():
+    """The app's version and its cct_common's (version, hash, whether it's the released
+    copy): the admin page's Status tab asks every service for it (cct_common 0.26.0)."""
+    from cct_common.release import health_fields
+    return jsonify(status='ok', version=APP_VERSION, **health_fields())
+
+
 if _accounts_state.accounts is not None:
     from cct_common.admin import register_admin
+    # the admin page is at the site's /admin, not the app's: "Open this design" needs the app's address
     register_admin(app, _accounts_state.accounts, app_name='Timing Pulleys',
                    app_version=APP_VERSION, bug_reports=_bug_store, default_app='pulleys',
-                   download_failures=_failure_store)
+                   download_failures=_failure_store, app_url='https://cheapcadtools.com/tools/pulleys')
 
 
 def _finish_job(job_id, **kw):

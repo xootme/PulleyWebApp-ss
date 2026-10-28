@@ -17,7 +17,10 @@ import json
 import threading
 import time
 
+from . import forksafe
+
 _lock = threading.Lock()
+forksafe.renew_after_fork(globals(), "_lock")
 
 
 def append_jsonl(path, obj: dict) -> None:

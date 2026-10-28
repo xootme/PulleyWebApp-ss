@@ -110,6 +110,13 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "step: a metal flange's groove radius": ("exporters/step_worker_ss.py",
         "    _R_tr = R_OD - tooth_ht        # both kinds (the metal one's was unset: every metal flange STEP failed)\n\n    if flange_3dprint:\n",
         "\n    if flange_3dprint:\n        _R_tr = R_OD - tooth_ht\n"),
+    # cct_common 0.26.0: the copy is a release, /api/health says which, the admin opens designs in the app
+    "health: names its cct_common": (AP, "    return jsonify(status='ok', version=APP_VERSION, **health_fields())",
+                                      "    return jsonify(status='ok', version=APP_VERSION)"),
+    "admin: a design opens in the app": (AP, "download_failures=_failure_store, app_url='https://cheapcadtools.com/tools/pulleys')",
+                                         "download_failures=_failure_store)"),
+    "vendored: a copy edited in place fails": ("cct_common/forksafe.py", '    if hasattr(os, "register_at_fork"):',
+                                               '    if hasattr(os, "register_at_fork") and True:'),
     "night: a skip fails the night": ("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

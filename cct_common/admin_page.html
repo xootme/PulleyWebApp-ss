@@ -63,6 +63,10 @@
   .status { background: #fff; border: 1px solid var(--line); padding: 14px 18px; max-width: 640px; }
   .status .row { display: flex; gap: 16px; padding: 4px 0; }
   .status .row b { width: 170px; flex: none; color: #334155; }
+  #tab-status h2 { font-size: 15px; margin: 22px 0 8px; }
+  .pill.drift { background: #fee2e2; color: var(--red); }
+  .pill.same { background: #dcfce7; color: var(--green); }
+  code.hash { font-size: 12px; }
   pre.state { max-height: 160px; overflow: auto; font-size: 11px; background: #f8fafc; margin: 4px 0 0;
               padding: 6px; white-space: pre-wrap; }
 </style>
@@ -99,7 +103,10 @@
     <div class="sub" id="fails-summary" style="margin:0 0 8px"></div>
     <div id="fails"></div>
   </section>
-  <section class="tab" id="tab-status"><div class="status" id="status"></div></section>
+  <section class="tab" id="tab-status"><div class="status" id="status"></div>
+    <h2>Services: cct_common</h2>
+    <div class="bar"><span class="count" id="services-summary"></span></div>
+    <div id="services"></div></section>
 </main>
 
 <dialog id="dlg-grant">
@@ -361,7 +368,10 @@ const secs = ms => ms == null ? '' : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + '
 const designOf = r => { const p = r.params || {};
   const d = Array.isArray(p.files) && p.files[0] && p.files[0].params ? p.files[0].params : p;
   return d && (d.family || d.teeth || d.module) ? d : null; };
-const appBase = () => location.pathname.replace(/\/admin\/?$/, '/');
+// The app's public address, as register_admin(app_url=) gives it; without one
+// (local), the app is where this page is, less /admin.
+let appUrl = '';
+const appBase = () => appUrl ? appUrl.replace(/\/?$/, '/') : location.pathname.replace(/\/admin\/?$/, '/');
 const failsCols = [
   { key: 'created_at', label: 'When', date: true, cell: r => date(r.created_at) },
   { key: 'source', label: 'Seen by', cell: r => el('span', 'pill ' + r.source, r.source) },
@@ -401,7 +411,7 @@ function drawFails() {
         failsCols, failsSort, $('#fails-count'), 'failure');
 }
 loaders.fails = async () => {
-  try { const d = await api('/admin/api/download-failures'); fails = d.failures;
+  try { const d = await api('/admin/api/download-failures'); fails = d.failures; appUrl = d.app_url || '';
         if (!d.enabled) { $('#fails').replaceChildren(el('div', 'empty', 'This app keeps no download failures.'));
                           $('#fails-summary').textContent = ''; return; }
         drawFails(); }
@@ -430,12 +440,44 @@ loaders.status = async () => {
     row('Orders', String(s.counts.payments ?? '—'));
     row('Payments', s.payments.length ? s.payments.join(', ') : 'none configured');
     row('Admins', s.admins.join(', '));
+    const cc = s.cct_common || {};
+    row('cct_common', `${cc.version} · ${String(cc.hash || '').slice(0, 12)} · ${cc.released ? 'released copy' : 'NOT a released copy'}`);
     const links = el('span'); links.append(link('https://console.cloud.google.com/run', 'Cloud Run console'),
       ' · ', link('https://console.neon.tech', 'Neon'), ' · ', link('https://dash.cloudflare.com', 'Cloudflare'));
     row('Consoles', links);
     $('#title').textContent = `${s.app} — Admin`;
   } catch (e) { host.textContent = 'Could not load: ' + e.message; }
+  loadServices();
 };
+
+// Every service's cct_common, from its /api/health. A copy is "released" when
+// its files are its version's release (cct_common.release); an app from
+// before 0.26.0 reports a version but no hash.
+const servicesState = { key: 'name', dir: 1 };
+async function loadServices() {
+  const host = $('#services'); host.textContent = 'Asking each service…';
+  try {
+    const d = await api('/admin/api/services');
+    const versions = d.services.filter(r => r.cct_common).map(r => r.cct_common);
+    const newest = versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))[0];
+    const drifted = d.services.filter(r => !r.ok || r.cct_common !== newest || r.cct_common_released !== true);
+    $('#services-summary').textContent = `${d.services.length} services · newest cct_common ${newest || '—'}` +
+      ` · ${drifted.length ? drifted.length + ' not on it as a released copy' : 'all on it, released'}`;
+    table(host, d.services, [
+      { key: 'name', label: 'Service', cell: r => { const a = el('a', '', r.name); a.href = r.url;
+                                                     a.target = '_blank'; a.rel = 'noopener'; return a; } },
+      { key: 'version', label: 'App version', cell: r => r.ok ? (r.version || '—') : el('span', 'pill drift', 'no answer') },
+      { key: 'cct_common', label: 'cct_common', cell: r => r.cct_common
+          ? el('span', 'pill ' + (r.cct_common === newest ? 'same' : 'drift'), r.cct_common) : '—' },
+      { key: 'cct_common_hash', label: 'Hash', cell: r => r.cct_common_hash
+          ? el('code', 'hash', r.cct_common_hash.slice(0, 12)) : (r.ok ? 'not reported' : '') },
+      { key: 'cct_common_released', label: 'Released copy', sort: r => String(r.cct_common_released),
+        cell: r => r.cct_common_released == null ? '—'
+          : el('span', 'pill ' + (r.cct_common_released ? 'same' : 'drift'), r.cct_common_released ? 'yes' : 'NO') },
+      { key: 'error', label: 'Problem', nosort: true, cell: r => r.error || '' },
+    ], servicesState);
+  } catch (e) { host.textContent = 'Could not load: ' + e.message; }
+}
 
 loaders.subs();
 api('/admin/api/status').then(s => { $('#title').textContent = `${s.app} — Admin`;

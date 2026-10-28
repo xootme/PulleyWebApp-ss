@@ -23,6 +23,13 @@ side effect — call start_background_threads() explicitly once at app
 startup. Everything else (file locking, session/queue semantics, rate
 limit bookkeeping) is behavior-identical.
 
+Under gunicorn's preload_app (0.26.0) that call runs in the master, whose
+threads don't survive the fork: each worker gets fresh locks (forksafe) and
+starts its own processor and cleanup. Jobs live in each process's memory, so
+a worker's processor only ever sees its own jobs; the shared sessions file is
+read, changed and written under a lock file, so the workers' cleanups and
+requests don't overwrite each other.
+
 For an admin/debug dashboard, use the public getters instead of reaching
 into module internals: get_all_jobs(), get_full_queue_snapshot(),
 session_timeout_sec()/idle_timeout_sec()/trial_downloads_per_week()/
@@ -38,7 +45,10 @@ import secrets
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta
+
+from . import forksafe
 
 # ── configuration (call configure() once at app startup; defaults match
 #    PulleyWebApp-ss's original values) ─────────────────────────────────
@@ -123,6 +133,8 @@ _SESSION_SEQ = 0  # monotonic counter for queue ordering (avoids same-timestamp 
 
 _TRIAL_LOCK = threading.Lock()
 _WEB_DL_LOCK = threading.Lock()
+forksafe.renew_after_fork(globals(), "_LOCK", "_TRIAL_LOCK", "_WEB_DL_LOCK")
+_THREADS_PID = None  # the process start_background_threads() started threads in
 
 
 # ── file-backed shared state ────────────────────────────────────────────
@@ -149,6 +161,25 @@ def _file_unlock(fh):
             msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
         except Exception:
             pass
+
+
+@contextmanager
+def _sessions_locked():
+    """Hold the sessions file's lock (a sidecar lock file, as _save_state
+    replaces the file itself) across a read-modify-write, between processes."""
+    os.makedirs(_log_dir, exist_ok=True)
+    with open(_SESSION_FILE + ".lock", "a+") as fh:
+        try:
+            import fcntl
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        except ImportError:
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        try:
+            yield
+        finally:
+            _file_unlock(fh)
 
 
 def _load_state():
@@ -344,7 +375,7 @@ def create_session():
     session_id = str(uuid.uuid4())
     now = time.time()
 
-    with _LOCK:
+    with _LOCK, _sessions_locked():
         fh, active, sessions = _load_and_lock()
         try:
             active, sessions = _expire_active(active, sessions, now)
@@ -380,7 +411,7 @@ def create_session():
 def heartbeat(session_id):
     """Update last_heartbeat for active or queued session."""
     now = time.time()
-    with _LOCK:
+    with _LOCK, _sessions_locked():
         active, sessions = _load_state()
         changed = False
         if active and active["session_id"] == session_id:
@@ -397,7 +428,7 @@ def heartbeat(session_id):
 def get_session_status(session_id):
     """Return status dict for a session."""
     now = time.time()
-    with _LOCK:
+    with _LOCK, _sessions_locked():
         active, sessions = _load_state()
         active, sessions = _expire_active(active, sessions, now)
 
@@ -423,7 +454,7 @@ def get_session_status(session_id):
 def release_session(session_id):
     """Release active or queued session and promote next."""
     now = time.time()
-    with _LOCK:
+    with _LOCK, _sessions_locked():
         active, sessions = _load_state()
         if active and active["session_id"] == session_id:
             active = None
@@ -490,7 +521,7 @@ def register_machine_id(session_id, machine_id) -> bool:
     Returns False if the session isn't found (active or queued) — the
     caller should map that to a 403 SESSION_NOT_FOUND response.
     """
-    with _LOCK:
+    with _LOCK, _sessions_locked():
         active, sessions = _load_state()
         if active and active["session_id"] == session_id:
             active["machine_id"] = machine_id
@@ -543,15 +574,17 @@ def _expire_active(active, sessions, now):
 
 
 def _cleanup_stale_queued_sessions():
-    """Drop waiting sessions whose browser has been gone for >30 seconds."""
-    now = time.time()
-    active, sessions = _load_state()
-    stale = [sid for sid, s in sessions.items()
-             if (now - s.get("last_heartbeat", s["created_at"])) > 30]
-    if stale:
-        for sid in stale:
-            del sessions[sid]
-        _save_state(active, sessions)
+    """Drop waiting sessions whose browser has been gone for >30 seconds.
+    Every worker runs this, so the read and the write share one lock."""
+    with _sessions_locked():
+        now = time.time()
+        active, sessions = _load_state()
+        stale = [sid for sid, s in sessions.items()
+                 if (now - s.get("last_heartbeat", s["created_at"])) > 30]
+        if stale:
+            for sid in stale:
+                del sessions[sid]
+            _save_state(active, sessions)
 
 
 def clear_stale_on_startup():
@@ -564,7 +597,7 @@ def clear_stale_on_startup():
     """
     if not os.path.exists(_SESSION_FILE):
         return
-    with _LOCK:
+    with _LOCK, _sessions_locked():
         fh, active, sessions = _load_and_lock()
         try:
             if active is not None or sessions:
@@ -696,7 +729,7 @@ def start_queue_processor():
         while True:
             time.sleep(1)
             process_next()
-    threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=worker, name="cct-job-queue", daemon=True).start()
 
 
 def start_cleanup_thread():
@@ -725,14 +758,29 @@ def start_cleanup_thread():
                     trial_cleanup_counter = 0
                     cleanup_old_trial_downloads()
 
-    threading.Thread(target=cleanup, daemon=True).start()
+    threading.Thread(target=cleanup, name="cct-job-cleanup", daemon=True).start()
 
 
 def start_background_threads():
     """Start the queue-processor and cleanup daemon threads. Call once at
-    app startup — NOT automatic on import (unlike the original module)."""
+    app startup — NOT automatic on import (unlike the original module).
+    Once per process: a second call (a gunicorn post_fork hook as well) does
+    nothing, and a process forked after it (gunicorn's preload_app) starts
+    its own."""
+    global _THREADS_PID
+    if _THREADS_PID == os.getpid():
+        return
+    _THREADS_PID = os.getpid()
     start_queue_processor()
     start_cleanup_thread()
+
+
+def _restart_threads_in_child():
+    if _THREADS_PID is not None:
+        start_background_threads()
+
+
+forksafe.after_fork_in_child(_restart_threads_in_child)
 
 
 def clear_all_state():

@@ -61,6 +61,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Sequence, Tuple, Union
 
+from . import forksafe
+
 CHECK_FLOOR = (0, 9, 0)
 TIMEOUT_S = 60.0
 CACHE_SIZE = 256
@@ -147,6 +149,7 @@ class Choice:
 
 _versions: dict = {}
 _lock = threading.Lock()
+forksafe.renew_after_fork(globals(), "_lock")
 
 
 def _stat_key(binary: Path) -> Optional[tuple]:

@@ -5,7 +5,8 @@ every tool's accounts).
 
     from cct_common.admin import register_admin
     register_admin(app, accounts, app_name="Timing Pulleys", app_version=APP_VERSION,
-                   bug_reports=bug_store, default_app="pulleys")
+                   bug_reports=bug_store, default_app="pulleys",
+                   app_url="https://cheapcadtools.com/tools/pulleys")
 
 Sign-in is the normal account sign-in (/account/sign-in); only accounts
 whose email is in ADMIN_EMAILS (comma-separated; default DEFAULT_ADMINS)
@@ -18,7 +19,8 @@ Pages (one page, admin_page.html, tabs):
                 purchased), lifetime tokens, last 5 uses; grant / adjust
   Sales         token-pack orders; refund by the terms
   Bug reports   the app's bug-report store (if given); delete
-  Status        version, Cloud Run revision, database, counts
+  Status        version, Cloud Run revision, database, counts; every
+                service's cct_common version and hash (0.26.0)
 
 Routes (JSON under /admin/api/, not /api/admin/ — that prefix carries the old
 dashboard's cross-origin headers):
@@ -31,6 +33,10 @@ dashboard's cross-origin headers):
   GET    /admin/api/bugs
   DELETE /admin/api/bugs/<id>
   GET    /admin/api/status
+  GET    /admin/api/services                     each service's /api/health
+
+Services are CCT_SERVICES (name=url, comma-separated), else DEFAULT_SERVICES;
+each is asked for <url>/api/health, with a short timeout, all at once.
 
 Refunds follow the terms (§4): the account's unused *purchased* tokens from
 that order, valued at the price paid, less the payment processor's fee —
@@ -48,6 +54,14 @@ from typing import Optional
 
 DEFAULT_ADMINS = ("xootme@gmail.com",)
 LAST_USES = 5
+SITE = "https://cheapcadtools.com"
+DEFAULT_SERVICES = (
+    ("pulleys", f"{SITE}/tools/pulleys"), ("sprockets", f"{SITE}/tools/sprocket"),
+    ("gears", f"{SITE}/tools/gears"), ("worm-gears", f"{SITE}/tools/worm-gears"),
+    ("bevel-gears", f"{SITE}/tools/bevel-gears"), ("planetary-gears", f"{SITE}/tools/planetary-gears"),
+    ("gear-belt-chain", f"{SITE}/tools/gear-belt-chain"), ("mcp-gateway", f"{SITE}/mcp"),
+)
+HEALTH_TIMEOUT = 4.0
 
 
 def admin_emails() -> frozenset:
@@ -56,19 +70,61 @@ def admin_emails() -> frozenset:
     return frozenset(emails)
 
 
+def services() -> list:
+    """[(name, base url)] the Status tab asks: CCT_SERVICES, else DEFAULT_SERVICES."""
+    raw = os.environ.get("CCT_SERVICES", "")
+    pairs = [tuple(x.strip() for x in item.split("=", 1)) for item in raw.split(",") if "=" in item]
+    return [(n, u.rstrip("/")) for n, u in pairs if n and u] or list(DEFAULT_SERVICES)
+
+
+def fetch_health(url: str, timeout: float = HEALTH_TIMEOUT) -> dict:
+    """GET <url>/api/health as JSON (raises on any failure)."""
+    import json
+    import urllib.request
+    req = urllib.request.Request(f"{url}/api/health", headers={"Accept": "application/json",
+                                                               "User-Agent": "cct-admin"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def service_row(name: str, url: str, fetch=fetch_health) -> dict:
+    """One service's line on the Status tab. An app from before 0.26.0
+    reports its cct_common version but no hash."""
+    row = {"name": name, "url": url, "ok": False, "version": None, "cct_common": None,
+           "cct_common_hash": None, "cct_common_released": None, "error": None}
+    try:
+        h = fetch(url)
+    except Exception as e:
+        row["error"] = f"{type(e).__name__}: {e}"[:200]
+        return row
+    cc = h.get("cct_common")
+    if isinstance(cc, dict):          # a {version, hash, released} object
+        cc, h = cc.get("version"), {**h, "cct_common_hash": cc.get("hash"),
+                                   "cct_common_released": cc.get("released")}
+    row.update(ok=True, version=h.get("version"), cct_common=cc,
+               cct_common_hash=h.get("cct_common_hash"), cct_common_released=h.get("cct_common_released"))
+    return row
+
+
 def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_version: str = "",
                    bug_reports=None, default_app: str = "", download_failures=None,
-                   clock=time.time) -> None:
+                   clock=time.time, fetch=fetch_health, app_url: str = "") -> None:
     """Mount the admin dashboard. `accounts` is the AccountStore (its
     TokenStore is the ledger); payments come from register_payment_routes
     (app.extensions["cct_payments"]) when it has run. `bug_reports` is an
     optional store with list(limit) and delete(id); `download_failures` a
     cct_common.download_failures store (the Download failures tab). `default_app` names the
-    tool for ledger rows written before the ledger recorded one."""
+    tool for ledger rows written before the ledger recorded one. `fetch`
+    reads a service's /api/health (the Services list; tests pass their own).
+    `app_url` is the app's public address: the Download failures tab opens a
+    design there. The admin page may be served elsewhere (the pulley app's is
+    at the site's /admin), so without it the page guesses from its own path,
+    which is right only where the app and its /admin share a base (local)."""
     from flask import Response, abort, jsonify, redirect, request, send_file
 
     from .account_routes import current_session
     from .payments import PaymentError
+    from .release import version_info
 
     tokens = accounts.tokens
     page = Path(__file__).with_name("admin_page.html")
@@ -265,8 +321,8 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
     def failures_list():
         _need_admin()
         if download_failures is None:
-            return jsonify({"failures": [], "enabled": False})
-        return jsonify({"failures": download_failures.list(1000), "enabled": True})
+            return jsonify({"failures": [], "enabled": False, "app_url": app_url})
+        return jsonify({"failures": download_failures.list(1000), "enabled": True, "app_url": app_url})
 
     def failure_delete(failure_id):
         admin = _need_admin()
@@ -299,12 +355,20 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
         except Exception:
             db_ok = False
         return jsonify({
-            "app": app_name, "version": app_version,
+            "app": app_name, "version": app_version, "app_url": app_url,
             "service": os.environ.get("K_SERVICE", ""), "revision": os.environ.get("K_REVISION", ""),
             "database": "postgres" if tokens.is_postgres else "sqlite", "database_ok": db_ok,
             "counts": counts, "payments": sorted(k for k in ("paypal", "stripe")
                                                  if _payments().get(k)),
-            "admins": sorted(admin_emails()), "now": clock()})
+            "admins": sorted(admin_emails()), "cct_common": version_info(), "now": clock()})
+
+    def services_list():
+        _need_admin()
+        from concurrent.futures import ThreadPoolExecutor
+        todo = services()
+        with ThreadPoolExecutor(max_workers=len(todo)) as pool:
+            rows = list(pool.map(lambda s: service_row(*s, fetch=fetch), todo))
+        return jsonify({"services": rows, "this": version_info(), "now": clock()})
 
     app.add_url_rule("/admin", view_func=admin_page, methods=["GET"])
     app.add_url_rule("/admin/", endpoint="admin_page_slash", view_func=admin_page, methods=["GET"])
@@ -323,3 +387,4 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
     app.add_url_rule("/admin/api/download-failures/<failure_id>", view_func=failure_delete,
                      methods=["DELETE"])
     app.add_url_rule("/admin/api/status", view_func=status, methods=["GET"])
+    app.add_url_rule("/admin/api/services", view_func=services_list, methods=["GET"])

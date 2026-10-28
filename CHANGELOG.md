@@ -6,6 +6,9 @@ an entry sits under "Unreleased".
 
 ## Unreleased
 
+- **Downloads no longer hang.** Some downloads waited about a minute and then
+  failed with an error: a server worker could start unable to take one. Each
+  worker now starts ready (cct_common 0.26.0).
 - **Metal flange STEP files download again.** The STEP download of a metal
   (not 3D-printed) flange failed with an error every time; it now gives the
   file.

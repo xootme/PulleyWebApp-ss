@@ -403,7 +403,17 @@ def build_hosted_app(apps: dict, database_url: str, site_url: str, http=None):
     # see CCTOAuthProvider.revoke for why the SDK's can't revoke our tokens.
     from starlette.routing import Route
     app.router.routes.insert(0, Route("/revoke", provider.revoke, methods=["POST"]))
+    app.router.routes.insert(0, Route("/mcp/api/health", _health, methods=["GET"]))
     return app
+
+
+async def _health(request):
+    """/mcp/api/health: the gateway's cct_common, as the apps' /api/health
+    reports theirs (the admin Status tab's Services list)."""
+    from starlette.responses import JSONResponse
+    from . import __version__
+    from .release import health_fields
+    return JSONResponse({"status": "ok", "version": __version__, **health_fields()})
 
 
 def main(argv=None):
