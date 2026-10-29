@@ -18,8 +18,12 @@ const fs = require('fs');
 
 const [BASE] = process.argv.slice(2);
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+// WebGL in software (SwiftShader), not the GPU: msi's GPU, run over ssh at night, lost contexts
+// until Chrome blocked WebGL for the page, failing whichever harness needed the 3D view next
+// (undo_ui 10-28, bore_ui 10-29); the same runs here passed.
+const SOFTWARE_GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-parity-'));
-const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0',
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', ...SOFTWARE_GL,
   `--user-data-dir=${profile}`, '--no-first-run', '--window-size=1500,1000',
   '--use-angle=swiftshader', '--enable-unsafe-swiftshader', 'about:blank']);
 const sleep = ms => new Promise(r => setTimeout(r, ms));

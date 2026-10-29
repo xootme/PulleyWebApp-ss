@@ -24,10 +24,14 @@ const [BASE, LOGDIR, PY, MODE] = process.argv.slice(2);
 const ERRLOG = path.join(LOGDIR, 'server_errors.log');
 const APPDIR = path.resolve(__dirname, '..', '..');
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+// WebGL in software (SwiftShader), not the GPU: msi's GPU, run over ssh at night, lost contexts
+// until Chrome blocked WebGL for the page, failing whichever harness needed the 3D view next
+// (undo_ui 10-28, bore_ui 10-29); the same runs here passed.
+const SOFTWARE_GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 // Chrome picks a free debug port and writes it to DevToolsActivePort: harnesses run side by side
 const devPort = () => { try { return Number(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]); } catch (e) { return 0; } };
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-tok-'));
-const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0',
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', ...SOFTWARE_GL,
   `--user-data-dir=${profile}`, '--no-first-run', '--window-size=1400,1000', 'about:blank']);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
