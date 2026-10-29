@@ -22,6 +22,19 @@ const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+
+// The app's answers through node's http, a connection each: Node 24.20's fetch (undici) still
+// crashed on `assert(!this.paused)` when a download's connection closed mid-read, with every
+// body read (nights of 2026-10-26 and 10-28, both near design 1007).
+const get = url => new Promise((resolve, reject) => {
+  http.get(url, { agent: false }, res => {
+    const chunks = [];
+    res.on('data', c => chunks.push(c));
+    res.on('end', () => resolve({ status: res.statusCode, buf: Buffer.concat(chunks) }));
+    res.on('error', reject);
+  }).on('error', reject);
+});
 
 const BASE = process.argv[2];
 const arg = (name, dflt) => { const i = process.argv.indexOf(name); return i > 0 ? +process.argv[i + 1] : dflt; };
@@ -137,7 +150,7 @@ const TIDIED = (k, p) => k === 'center_distance'
 async function diffParams(a, b) {
   const keys = diffKeys(a, b);
   if (keys.length && keys.every(k => TIDIED(k, a))) {
-    const dims = async p => (await fetch(`${BASE}/api/dimensions?` + new URLSearchParams(p))).text();
+    const dims = async p => (await get(`${BASE}/api/dimensions?` + new URLSearchParams(p))).buf.toString();
     if (await dims(a) === await dims(b)) return [];
   }
   return keys.map(k => `${k}: ${a[k] ?? '∅'} -> ${b[k] ?? '∅'}`);
@@ -215,13 +228,11 @@ async function main() {
     const rec = { seed, steps, A, problems: [] };
     const got = {};
     for (const f of await js(FILES)) {
-      const res = await fetch(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
+      const res = await get(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
       const what = `${f.path}${f.params.pulley === '2' ? ' (pulley 2)' : ''}${f.params.with_supports ? ' (supports)' : ''}`
                    + `${f.params.part ? ' ' + f.params.part : ''}${f.params.flange_which ? ' flange' : ''}`;
-      // a refusal's body read too: Node 24.20's fetch crashes when the server closes a connection
-      // whose body was never read (msi, 2026-10-25)
-      if (res.status !== 200) { await res.arrayBuffer(); rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
-      const buf = Buffer.from(await res.arrayBuffer());
+      if (res.status !== 200) { rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
+      const buf = res.buf;
       const meta = embedded(buf);
       if (!meta) rec.problems.push(`file: ${what} embeds no design`);
       else for (const k of diffKeys(A, meta)) rec.problems.push(`file: ${what} ${k}: ${A[k] ?? '∅'} -> ${meta[k] ?? '∅'}`);
@@ -234,10 +245,10 @@ async function main() {
     if (await js(MODE)) rec.problems.push('could not switch to the 2D view');
     for (const x of diffKeys(A, await js(PARAMS))) rec.problems.push(`2D view designParams: ${x}`);
     for (const f of await js(FILES_2D)) {
-      const res = await fetch(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
+      const res = await get(`${BASE}${f.path}?${new URLSearchParams(f.params)}`);
       const what = `2D view ${f.path}${f.params.pulley === '2' ? ' (pulley 2)' : ''}${f.params.part ? ' ' + f.params.part : ''}`;
-      if (res.status !== 200) { await res.arrayBuffer(); rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
-      const buf = Buffer.from(await res.arrayBuffer());
+      if (res.status !== 200) { rec.problems.push(`export refused (${res.status}): ${what}`); continue; }
+      const buf = res.buf;
       const meta = embedded(buf);
       if (!meta) rec.problems.push(`file: ${what} embeds no design`);
       else for (const k of diffKeys(A, meta)) rec.problems.push(`file: ${what} ${k}: ${A[k] ?? '∅'} -> ${meta[k] ?? '∅'}`);

@@ -268,8 +268,11 @@ _ONE_DESIGN = ('family=HTD&pitch=5M&bore=8&clearance_preset=STANDARD&backlash_pr
 
 
 def _same_file(data):
-    """A download without what differs each time: a STEP header's time, a DXF's handles and time."""
-    return re.sub(rb'FILE_NAME\([^;]*;|\{[0-9A-F-]{36}\}|\d{4}-\d\d-\d\dT[0-9:.+-]+', b'', data)
+    """A download without what differs each time: a STEP header's time, a DXF's handles and
+    times (its $TDCREATE/$TDUPDATE Julian dates too: the night's two downloads straddled a
+    tick, 2026-10-28)."""
+    return re.sub(rb'FILE_NAME\([^;]*;|\{[0-9A-F-]{36}\}|\d{4}-\d\d-\d\dT[0-9:.+-]+'
+                  rb'|\$TDU?(?:CREATE|UPDATE)\r?\n *40\r?\n[0-9.]+', b'', data)
 
 
 @pytest.mark.parametrize('route', ['svg', 'dxf', 'all-dxf', 'belt-svg', 'stl', 'belt-stl', 'flange-stl',
