@@ -82,6 +82,15 @@ def test_real_app_has_no_admin_page_with_accounts_off(client):
     assert not os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'admin_dashboard.html'))
 
 
+def test_the_offer_answers(tmp_path):
+    # /api/offer (cct_common 0.28.0): the business settings' grant, packs and prices, public,
+    # read by the pages and the site's build
+    app, _, _ = _fresh_app(tmp_path)
+    r = app.test_client().get('/api/offer')
+    assert r.status_code == 200
+    assert isinstance(r.get_json()['signup_grant'], int)
+
+
 def test_signup_grant_is_configurable(tmp_path):
     app, _, sent = _fresh_app(tmp_path, grant=25)
     c = app.test_client()

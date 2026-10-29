@@ -107,7 +107,11 @@ class Gateway:
         return self._base(app) + "/" + path.lstrip("/")
 
     def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        from .server_use import CLIENT_HEADER, current_client
+        h = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        if current_client.get():                 # the AI client this call is for (server_use)
+            h[CLIENT_HEADER] = current_client.get()
+        return h
 
     def _call(self, app: str, method: str, path: str, body: dict | None = None) -> dict:
         status, _h, data = self.http(method, self._url(app, path), body, self._headers())
@@ -285,7 +289,11 @@ def build_server(gateway: Gateway, *, hosted: bool = False, provider=None, auth=
     from mcp.types import Icon, ToolAnnotations
     from . import __version__
     kw = {"auth_server_provider": provider, "auth": auth} if hosted else {}
-    server = MCPServer(name="cct", title="CheapCADTools", version=__version__,
+    # subscriptions=False: our tool list never changes, so nothing to listen
+    # for. Served, a 2026-07-28 client (Claude) opens subscriptions/listen
+    # and the stateless gateway holds that POST open, pinging, until Cloud
+    # Run's timeout: 301 s billed per reconnect (2026-10-29 spend cap).
+    server = MCPServer(name="cct", title="CheapCADTools", version=__version__, subscriptions=False,
                        website_url="https://cheapcadtools.com/ai/",
                        icons=[Icon(src="https://cheapcadtools.com/assets/img/brand/icon-512.png",
                                    mime_type="image/png", sizes=["512x512"])],
@@ -399,12 +407,36 @@ def build_hosted_app(apps: dict, database_url: str, site_url: str, http=None):
     security = TransportSecuritySettings(allowed_hosts=hosts,
                                          allowed_origins=[site] + [f"https://{h}" for h in extra])
     app = server.streamable_http_app(stateless_http=True, json_response=True, transport_security=security)
+    _post_only(app)
     # Ours ahead of the SDK's /revoke (still the one the metadata advertises):
     # see CCTOAuthProvider.revoke for why the SDK's can't revoke our tokens.
     from starlette.routing import Route
     app.router.routes.insert(0, Route("/revoke", provider.revoke, methods=["POST"]))
     app.router.routes.insert(0, Route("/mcp/api/health", _health, methods=["GET"]))
-    return app
+    # What the gateway spends its billed time on (the admin page's Server use tab).
+    from .server_use import ServerUseStore, Tracker, _Who, server_use_asgi, service_name, tool_name
+    if os.environ.get("CCT_SERVER_USE", "1") == "0":
+        return app
+    tracker = Tracker(ServerUseStore(database_url), service_name("mcp"), tool_name("mcp"))
+    return server_use_asgi(app, tracker, _Who(accounts.tokens), tools=list(apps),
+                           methods=[t.name for t in server._tool_manager.list_tools()])
+
+
+def _post_only(app):
+    """/mcp answers only POST: anything else 405, after the token check (an
+    unsigned request still gets the 401 that points to sign-in). Stateless,
+    a 2025-era GET stream has nothing to carry and would stay open to Cloud
+    Run's timeout, billed; the spec lets a server refuse it with 405."""
+    from starlette.responses import Response
+    auth = next(r for r in app.router.routes if getattr(r, "path", None) == "/mcp").app
+    inner = auth.app                                  # RequireAuthMiddleware → the MCP transport
+
+    async def post_only(scope, receive, send):
+        if scope["type"] == "http" and scope["method"] != "POST":
+            await Response(status_code=405, headers={"Allow": "POST"})(scope, receive, send)
+            return
+        await inner(scope, receive, send)
+    auth.app = post_only
 
 
 async def _health(request):

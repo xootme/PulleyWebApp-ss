@@ -115,7 +115,8 @@ def stamp(package_dir=None) -> dict:
     """Write RELEASE.json for the package as it stands; returns what it wrote."""
     root = Path(package_dir or PACKAGE_DIR)
     record = {"version": package_version(root), "hash": content_hash(root)}
-    (root / MANIFEST).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    (root / MANIFEST).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8",
+                                 newline="\n")   # LF, as committed, on Windows too
     return record
 
 

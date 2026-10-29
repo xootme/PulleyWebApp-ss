@@ -67,6 +67,31 @@
   .pill.drift { background: #fee2e2; color: var(--red); }
   .pill.same { background: #dcfce7; color: var(--green); }
   code.hash { font-size: 12px; }
+  #tab-use h2 { font-size: 15px; margin: 22px 0 8px; }
+  #tab-use select { font: inherit; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 10px; }
+  .tile { background: #fff; border: 1px solid var(--line); padding: 10px 14px; min-width: 150px; }
+  .tile .big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .use-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 0 18px; }
+  #tab-use td, #tab-use th { white-space: nowrap; }
+  #tab-use td:first-child { white-space: normal; }
+  .barcell { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .barcell .track { width: 90px; height: 8px; flex: none; display: flex; }
+  .barcell i { height: 8px; border-radius: 0 4px 4px 0; background: var(--blue); }
+  #use-chart { background: #fff; border: 1px solid var(--line); padding: 8px 10px; overflow-x: auto; }
+  #use-chart svg text { font-size: 11px; fill: var(--grey); }
+  #tab-biz h2 { font-size: 15px; margin: 22px 0 8px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
+  .card { background: #fff; border: 1px solid var(--line); padding: 12px 14px; }
+  .card h3 { margin: 0 0 4px; font-size: 14px; }
+  .card .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  .card input[type=number] { width: 90px; } .card input.url { width: 100%; }
+  .card input, .card button { font: inherit; padding: 4px 7px; border: 1px solid #cbd5e1; border-radius: 4px; }
+  .card button.primary { background: var(--blue); color: #fff; border-color: var(--blue); cursor: pointer; }
+  .card button.small { padding: 1px 7px; background: #fff; cursor: pointer; }
+  .card table { margin: 4px 0; } .card td, .card th { padding: 3px 6px; }
+  .notice { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 7px 11px; font-size: 13px;
+            margin: 10px 0 0; max-width: 900px; }
   pre.state { max-height: 160px; overflow: auto; font-size: 11px; background: #f8fafc; margin: 4px 0 0;
               padding: 6px; white-space: pre-wrap; }
 </style>
@@ -80,6 +105,8 @@
     <button data-tab="bugs">Bug reports</button>
     <button data-tab="fails">Download failures</button>
     <button data-tab="status">Status</button>
+    <button data-tab="use">Server use</button>
+    <button data-tab="biz">Business settings</button>
   </nav>
   <span id="who"></span>
 </header>
@@ -107,6 +134,38 @@
     <h2>Services: cct_common</h2>
     <div class="bar"><span class="count" id="services-summary"></span></div>
     <div id="services"></div></section>
+  <section class="tab" id="tab-use">
+    <div class="bar">
+      <select id="use-days" aria-label="Period">
+        <option value="1">Last day</option><option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option>
+        <option value="365">Last year</option><option value="3660">Everything</option></select>
+      <select id="use-service" aria-label="Service"><option value="">All services</option></select>
+      <span class="count" id="use-note"></span></div>
+    <div class="tiles" id="use-tiles"></div>
+    <div class="notice" id="use-google" hidden></div>
+    <h2>Billed hours by day</h2>
+    <div id="use-chart"></div>
+    <div class="sub" style="margin-top:4px">Bars: the hours our servers counted. Dark ticks: Google's billable
+      instance hours for the same day. A gap between them is startup and anything not counted.</div>
+    <div class="use-grid">
+      <div><h2>By who it was for</h2><div id="use-cat"></div></div>
+      <div><h2>By tool</h2><div id="use-tool"></div></div>
+      <div><h2>By action</h2><div id="use-action"></div></div>
+      <div><h2>AI connector by client</h2><div id="use-client"></div></div>
+    </div>
+    <h2>By service: ours beside Google's</h2>
+    <div id="use-svc"></div>
+  </section>
+  <section class="tab" id="tab-biz">
+    <div class="notice" style="margin:0 0 12px">These are the one source of the business numbers. Until every
+      app, the checkout and the site read them (rollout phases 2&ndash;4), a change here reaches only part of the
+      system, and pages may show a different number from what is charged. Change nothing until Controller says
+      the rollout is done; the grant goes to 10 as its last step.</div>
+    <div class="cards" id="biz-cards"></div>
+    <h2>Changes</h2>
+    <div id="biz-history"></div>
+  </section>
 </main>
 
 <dialog id="dlg-grant">
@@ -478,6 +537,242 @@ async function loadServices() {
     ], servicesState);
   } catch (e) { host.textContent = 'Could not load: ' + e.message; }
 }
+
+// ── server use (cct_common.server_use) ────────────────────────────────────
+// Each request's share of its instance's billed time (overlapping requests
+// split it), its CPU, by who it was for, tool and action; beside Google's own
+// billable instance time per service (Cloud Monitoring), when readable.
+let use = null;
+const hours = s => { const h = s / 3600;
+  return h >= 100 ? h.toFixed(0) + ' h' : h >= 1 ? h.toFixed(1) + ' h' : (s / 60).toFixed(1) + ' min'; };
+const pct = (a, b) => b ? (100 * a / b).toFixed(0) + '%' : '—';
+function sumBy(rows, key) {
+  const m = new Map();
+  for (const r of rows) {
+    const k = typeof key === 'function' ? key(r) : r[key];
+    const v = m.get(k) || { name: k, billed_s: 0, cpu_s: 0, count: 0 };
+    v.billed_s += r.billed_s; v.cpu_s += r.cpu_s; v.count += r.count; m.set(k, v);
+  }
+  return [...m.values()];
+}
+function barCell(value, max, text) {
+  const d = el('div', 'barcell'), track = el('span', 'track'), i = el('i');
+  i.style.width = (max && value > 0 ? Math.max(2, 100 * value / max) : 0) + '%';
+  track.append(i); d.append(el('span', '', text), track); return d;
+}
+const niceTop = v => { const p = 10 ** Math.floor(Math.log10(v)), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; };
+function useTable(host, rows, label, names) {
+  const total = rows.reduce((a, r) => a + r.billed_s, 0);
+  const max = Math.max(0, ...rows.map(r => r.billed_s));
+  table(host, rows, [
+    { key: 'name', label, cell: r => (names && names[r.name]) || r.name || '—' },
+    { key: 'billed_s', label: 'Billed', num: true, cell: r => barCell(r.billed_s, max, hours(r.billed_s)) },
+    { key: 'share', label: 'Share', num: true, sort: r => r.billed_s, cell: r => pct(r.billed_s, total) },
+    { key: 'cpu_s', label: 'CPU', num: true, cell: r => hours(r.cpu_s) },
+    { key: 'count', label: 'Requests', num: true, cell: r => r.count.toLocaleString() },
+  ], host._state || (host._state = { key: 'billed_s', dir: -1 }), null, 'row');
+}
+function googleFor(service) {
+  const g = (use.google || {}).services || {};
+  const days = {};
+  for (const [svc, byDay] of Object.entries(g)) {
+    if (service && svc !== service) continue;
+    for (const [d, v] of Object.entries(byDay)) days[d] = (days[d] || 0) + v;
+  }
+  return days;
+}
+function drawUseChart(rows, google) {
+  const host = $('#use-chart'); host.replaceChildren();
+  const byDay = new Map(sumBy(rows, 'day').map(r => [r.name, r.billed_s]));
+  for (const d of Object.keys(google)) if (!byDay.has(+d)) byDay.set(+d, 0);
+  const days = [...byDay.keys()].sort((a, b) => a - b);
+  if (!days.length) { host.append(el('div', 'empty', 'Nothing counted in this period yet.')); return; }
+  const W = Math.max(host.clientWidth - 22, days.length * 6, 320), H = 200, L = 46, B = 22, T = 8;
+  const top = niceTop(Math.max(...days.map(d => Math.max(byDay.get(d), google[d] || 0))) / 3600 || 1);
+  const y = h => T + (H - T - B) * (1 - h / top), step = (W - L - 6) / days.length, bw = Math.max(3, step - 2);
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  const mk = (tag, a) => { const e = document.createElementNS(ns, tag); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Billed hours by day');
+  for (const f of [0, 0.5, 1]) {
+    svg.append(mk('line', { x1: L, x2: W, y1: y(top * f), y2: y(top * f), stroke: '#e2e8f0' }));
+    const t = mk('text', { x: L - 6, y: y(top * f) + 4, 'text-anchor': 'end' });
+    t.textContent = +(top * f).toPrecision(3) + ' h';
+    svg.append(t);
+  }
+  days.forEach((d, i) => {
+    const x = L + i * step + 1, ours = byDay.get(d) / 3600, g = google[d];
+    const g1 = mk('g', {}), tip = mk('title', {});
+    const day = new Date(d * 1000).toISOString().slice(0, 10);
+    tip.textContent = `${day}: ours ${hours(byDay.get(d))}` + (g != null ? ` · Google ${hours(g)} · gap ${hours(Math.max(0, g - byDay.get(d)))}` : '');
+    g1.append(tip, mk('rect', { x: x - 1, y: T, width: step, height: H - T - B, fill: 'transparent' }));
+    if (ours > 0) g1.append(mk('path', { fill: 'var(--blue)', d: `M${x},${y(0)} V${y(ours) + 3} q0,-3 3,-3 H${x + bw - 3} q3,0 3,3 V${y(0)} Z` }));
+    if (g != null) g1.append(mk('line', { x1: x - 1, x2: x + bw + 1, y1: y(g / 3600), y2: y(g / 3600), stroke: '#1e293b', 'stroke-width': 2 }));
+    svg.append(g1);
+    if (days.length <= 31 ? i % Math.ceil(days.length / 8) === 0 : new Date(d * 1000).getUTCDate() === 1) {
+      const t = mk('text', { x: x + bw / 2, y: H - 6, 'text-anchor': 'middle' }); t.textContent = day.slice(5); svg.append(t);
+    }
+  });
+  svg.append(mk('line', { x1: L, x2: W, y1: y(0), y2: y(0), stroke: '#94a3b8' }));
+  host.append(svg);
+}
+function drawUse() {
+  const svc = $('#use-service').value;
+  const rows = use.rows.filter(r => !svc || r.service === svc);
+  const google = googleFor(svc);
+  const ours = rows.reduce((a, r) => a + r.billed_s, 0), cpu = rows.reduce((a, r) => a + r.cpu_s, 0);
+  const gTotal = Object.values(google).reduce((a, v) => a + v, 0);
+  const tiles = $('#use-tiles'); tiles.replaceChildren();
+  const tile = (label, value, note) => { const t = el('div', 'tile'); t.append(el('div', 'sub', label), el('div', 'big', value));
+    if (note) t.append(el('div', 'sub', note)); tiles.append(t); };
+  tile('Billed, as we counted it', hours(ours), `${rows.reduce((a, r) => a + r.count, 0).toLocaleString()} requests`);
+  if (use.google && use.google.services) {
+    tile("Google's billable time", hours(gTotal), 'Cloud Monitoring');
+    tile('Startup / not counted', hours(Math.max(0, gTotal - ours)), `${pct(Math.max(0, gTotal - ours), gTotal)} of Google's`);
+  }
+  tile('CPU', hours(cpu), ours ? `${pct(cpu, ours)} of billed time busy` : '');
+  const note = $('#use-google');
+  note.hidden = !(use.google && use.google.error);
+  if (use.google && use.google.error) note.textContent = "Google's own totals aren't shown: " + use.google.error;
+  drawUseChart(rows, google);
+  useTable($('#use-cat'), sumBy(rows, 'category'), 'Who', use.categories);
+  useTable($('#use-tool'), sumBy(rows, 'tool'), 'Tool');
+  useTable($('#use-action'), sumBy(rows, r => `${r.tool} · ${r.action}`), 'Tool · action');
+  useTable($('#use-client'), sumBy(rows.filter(r => r.client), r => `${r.client} · ${use.categories[r.category] || r.category}`),
+           'Client');
+  const svcRows = sumBy(use.rows, 'service');
+  for (const name of Object.keys((use.google || {}).services || {}))
+    if (!svcRows.find(r => r.name === name)) svcRows.push({ name, billed_s: 0, cpu_s: 0, count: 0 });
+  const gs = (use.google || {}).services || {};
+  for (const r of svcRows) r.google_s = gs[r.name] ? Object.values(gs[r.name]).reduce((a, v) => a + v, 0) : null;
+  const max = Math.max(0, ...svcRows.map(r => Math.max(r.billed_s, r.google_s || 0)));
+  table($('#use-svc'), svcRows, [
+    { key: 'name', label: 'Service' },
+    { key: 'billed_s', label: 'Ours', num: true, cell: r => barCell(r.billed_s, max, hours(r.billed_s)) },
+    { key: 'google_s', label: 'Google', num: true, cell: r => r.google_s == null ? '—' : hours(r.google_s) },
+    { key: 'gap', label: 'Not counted', num: true, sort: r => (r.google_s || 0) - r.billed_s,
+      cell: r => r.google_s == null ? '—' : `${hours(Math.max(0, r.google_s - r.billed_s))} (${pct(Math.max(0, r.google_s - r.billed_s), r.google_s)})` },
+    { key: 'cpu_s', label: 'CPU', num: true, cell: r => hours(r.cpu_s) },
+    { key: 'count', label: 'Requests', num: true, cell: r => r.count.toLocaleString() },
+  ], $('#use-svc')._state || ($('#use-svc')._state = { key: 'google_s', dir: -1 }), null, 'service');
+}
+loaders.use = async () => {
+  $('#use-note').textContent = 'Loading…';
+  try {
+    use = await api('/admin/api/server-use?days=' + $('#use-days').value);
+    const sel = $('#use-service'), keep = sel.value;
+    const names = new Set([...use.rows.map(r => r.service), ...Object.keys((use.google || {}).services || {})]);
+    sel.replaceChildren(el('option', '', 'All services')); sel.firstChild.value = '';
+    for (const n of [...names].sort()) { const o = el('option', '', n); o.value = n; sel.append(o); }
+    sel.value = names.has(keep) ? keep : '';
+    $('#use-note').textContent = `since ${new Date(use.since * 1000).toISOString().slice(0, 10)} (UTC days)` +
+      " · each request's share of its instance's billed time";
+    drawUse();
+  } catch (e) { $('#use-tiles').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); $('#use-note').textContent = ''; }
+};
+$('#use-days').onchange = loaders.use;
+$('#use-service').onchange = () => use && drawUse();
+
+// ── business settings (cct_common.settings) ───────────────────────────────
+// One card per setting; each save goes to /admin/api/settings/<key> with a
+// note, and the server keeps who, when, old and new.
+const TIER_NAMES = { '2d': '2D (SVG, DXF)', stl: 'STL', step: 'STEP' };
+const BIZ_TITLES = { signup_grant: 'Signup grant', tier_prices: 'Prices by tier', packs: 'Token packs',
+  device_daily_budget: 'Add-in / AI daily limit', signups_per_ip_per_day: 'Signups per IP per day', buy_url: 'Buy link' };
+const dollars = c => '$' + (c / 100).toFixed(c % 100 ? 2 : 0);
+const PROVIDER_NAMES = { paypal: 'PayPal', stripe: 'Stripe' };
+function showValue(key, v) {
+  if (v == null) return 'no limit';
+  if (key === 'tier_prices') return ['2d', 'stl', 'step'].map(t => `${TIER_NAMES[t]} ${v[t]}`).join(' · ');
+  if (key === 'packs') return ['paypal', 'stripe'].filter(p => v[p] && v[p].length).map(p =>
+    `${PROVIDER_NAMES[p]}: ${v[p].map(x => `${dollars(x.cents)}=${x.tokens}`).join(', ')}`).join(' · ');
+  return String(v);
+}
+function numberInput(value, min, max) {
+  const i = el('input'); i.type = 'number'; i.min = min; i.max = max; i.step = 1; i.value = value ?? ''; return i;
+}
+function bizEditor(row) {
+  // Returns [element, read()] for the setting's own kind of value.
+  const key = row.key, v = row.value ?? row.default;
+  const box = el('div');
+  if (key === 'signup_grant') { const i = numberInput(v, 0, 1000); box.append(i, ' tokens'); return [box, () => i.value]; }
+  if (key === 'device_daily_budget' || key === 'signups_per_ip_per_day') {
+    const i = numberInput(v, 1, key === 'device_daily_budget' ? 100000 : 100), c = el('input'), l = el('label');
+    c.type = 'checkbox'; c.checked = v == null; i.disabled = c.checked; c.onchange = () => { i.disabled = c.checked; };
+    l.append(c, ' no limit'); box.append(i, ' ', l);
+    return [box, () => c.checked ? null : i.value];
+  }
+  if (key === 'tier_prices') {
+    const inputs = {};
+    for (const t of ['2d', 'stl', 'step']) { inputs[t] = numberInput(v[t], 1, 100);
+      const r = el('div', 'row'); r.append(el('span', '', TIER_NAMES[t]), inputs[t], ' tokens'); box.append(r); }
+    return [box, () => Object.fromEntries(Object.entries(inputs).map(([t, i]) => [t, i.value]))];
+  }
+  if (key === 'packs') {
+    const lists = {};
+    for (const provider of ['paypal', 'stripe']) {
+      const t = el('table'), tb = el('tbody'), h = el('tr');
+      h.append(el('th', 'nosort', provider === 'paypal' ? 'PayPal' : 'Stripe'), el('th', 'nosort', 'Price ($)'),
+               el('th', 'nosort', 'Tokens'), el('th', 'nosort', ''));
+      t.append(el('thead'), tb); t.tHead.append(h);
+      lists[provider] = [];
+      const add = p => {
+        const tr = el('tr'), price = numberInput(p ? p.cents / 100 : '', 1, 1000), tok = numberInput(p ? p.tokens : '', 1, 100000);
+        price.step = 0.01;
+        const item = { price, tok, tr }; lists[provider].push(item);
+        tr.append(el('td'), el('td'), el('td'), el('td'));
+        tr.children[1].append(price); tr.children[2].append(tok);
+        tr.children[3].append(button('Remove', () => { tr.remove(); lists[provider] = lists[provider].filter(x => x !== item); }, 'small'));
+        tb.append(tr);
+      };
+      for (const p of (v[provider] || [])) add(p);
+      box.append(t, button('Add a ' + (provider === 'paypal' ? 'PayPal' : 'Stripe') + ' pack', () => add(null), 'small'));
+    }
+    return [box, () => Object.fromEntries(Object.entries(lists).map(([provider, items]) => [provider,
+      items.map(x => ({ cents: Math.round(parseFloat(x.price.value) * 100), tokens: x.tok.value }))]))];
+  }
+  const i = el('input', 'url'); i.value = v; box.append(i); return [box, () => i.value];
+}
+function bizCard(row) {
+  const card = el('div', 'card');
+  card.append(el('h3', '', BIZ_TITLES[row.key] || row.key), el('div', 'sub', row.description));
+  const now = el('div', 'row');
+  now.append(el('span', 'sub', 'Now:'), el('b', '', row.missing ? 'not set (using the built-in)' : showValue(row.key, row.value)));
+  card.append(now);
+  const [editor, read] = bizEditor(row);
+  const note = el('input'); note.placeholder = 'Why (kept with the change)'; note.style.width = '100%';
+  const msg = el('div', 'msg'), save = el('button', 'primary', 'Save');
+  save.onclick = async () => {
+    msg.className = 'msg'; msg.textContent = 'Saving…';
+    try {
+      await api('/admin/api/settings/' + row.key, { method: 'POST', body: JSON.stringify({ value: read(), note: note.value }) });
+      msg.className = 'msg ok'; msg.textContent = 'Saved.'; setTimeout(loaders.biz, 600);
+    } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; }
+  };
+  const foot = el('div', 'row'); foot.append(save);
+  card.append(editor, note, foot, msg,
+    el('div', 'sub', `Built-in: ${showValue(row.key, row.default)}` +
+      (row.updated_by ? ` · last changed by ${row.updated_by}, ${date(row.updated_at)}` : '')));
+  return card;
+}
+const bizHistoryState = { key: 'changed_at', dir: -1 };
+loaders.biz = async () => {
+  try {
+    const d = await api('/admin/api/settings');
+    const cards = $('#biz-cards'); cards.replaceChildren(...d.settings.map(bizCard));
+    if (d.off_rate_packs.length) cards.prepend(el('div', 'notice',
+      `Not at ${d.tokens_per_dollar} tokens per dollar (the fixed token price): ${d.off_rate_packs.join('; ')}.`));
+    table($('#biz-history'), d.history, [
+      { key: 'changed_at', label: 'When', date: true, cell: r => date(r.changed_at) },
+      { key: 'key', label: 'Setting', cell: r => BIZ_TITLES[r.key] || r.key },
+      { key: 'old', label: 'From', nosort: true, cell: r => r.old == null ? '—' : showValue(r.key, r.old) },
+      { key: 'new', label: 'To', nosort: true, cell: r => showValue(r.key, r.new) },
+      { key: 'changed_by', label: 'Who' },
+      { key: 'note', label: 'Why', nosort: true },
+    ], bizHistoryState, null, 'change');
+  } catch (e) { $('#biz-cards').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
+};
 
 loaders.subs();
 api('/admin/api/status').then(s => { $('#title').textContent = `${s.app} — Admin`;

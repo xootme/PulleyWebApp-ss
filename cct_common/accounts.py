@@ -76,7 +76,8 @@ SESSION_TTL_S = {"web": 30 * 24 * 60 * 60, "device": 365 * 24 * 60 * 60}
 _YEAR_S = int(365.25 * 24 * 60 * 60)
 DEAD_ACCOUNT_IDLE_S = 5 * _YEAR_S     # any account is closed after this, its tokens expiring
 REMINDER_LEAD_S = 30 * 24 * 60 * 60   # reminder email this long before either
-DEFAULT_DEVICE_DAILY_BUDGET = 100   # tokens per rolling 24 h per add-in/agent token
+DEFAULT_DEVICE_DAILY_BUDGET = 100   # tokens per rolling 24 h per add-in/agent token (the built-in)
+SETTING = object()                  # "not given": read the business setting (settings.py)
 DEVICE_CODE_TTL_S = 10 * 60
 DEVICE_POLL_INTERVAL_S = 5
 DEVICE_STARTS_PER_IP_PER_HOUR = 20
@@ -193,19 +194,22 @@ def normalize_email(email: str) -> str:
 
 
 class AccountStore(SqliteDB):
-    def __init__(self, tokens: TokenStore, *, signup_grant: int = 0,
+    def __init__(self, tokens: TokenStore, *, signup_grant=SETTING,
                  clock: Optional[Callable[[], float]] = None,
-                 device_daily_budget: Optional[int] = DEFAULT_DEVICE_DAILY_BUDGET,
-                 signups_per_ip_per_day: Optional[int] = None):
-        """device_daily_budget: the daily token limit a new add-in/agent
+                 device_daily_budget=SETTING, signups_per_ip_per_day=SETTING):
+        """signup_grant: free tokens a new account gets.
+        device_daily_budget: the daily token limit a new add-in/agent
         token gets unless the person picks another (None: no limit).
         signups_per_ip_per_day: new accounts per IP (IPv6: per /64) per 24
         hours that get the signup grant; later ones start with none (None:
-        every one does). Needs the IP passed to sign_in/redeem_login_link."""
+        every one does). Needs the IP passed to sign_in/redeem_login_link.
+
+        Each not given is the business setting of that name (settings.py,
+        0.28.0), read when used; one given is fixed for this store."""
         self.tokens = tokens
-        self.signup_grant = signup_grant
-        self.device_daily_budget = device_daily_budget
-        self.signups_per_ip_per_day = signups_per_ip_per_day
+        self._given = {k: v for k, v in (("signup_grant", signup_grant),
+                                         ("device_daily_budget", device_daily_budget),
+                                         ("signups_per_ip_per_day", signups_per_ip_per_day)) if v is not SETTING}
         self._clock = clock or tokens._clock
         super().__init__(tokens.path, _SCHEMA)
         # Daily limits on add-in/agent tokens. Older databases lack these.
@@ -215,6 +219,36 @@ class AccountStore(SqliteDB):
                                               "budget_chosen": "INTEGER NOT NULL DEFAULT 0"})
 
     # ── identities ────────────────────────────────────────────────────────
+
+    def _setting(self, key: str):
+        if key in self._given:
+            return self._given[key]
+        from .settings import setting
+        return setting(self.tokens.path, key)
+
+    @property
+    def signup_grant(self) -> int:
+        return self._setting("signup_grant")
+
+    @signup_grant.setter
+    def signup_grant(self, value) -> None:
+        self._given["signup_grant"] = value
+
+    @property
+    def device_daily_budget(self) -> Optional[int]:
+        return self._setting("device_daily_budget")
+
+    @device_daily_budget.setter
+    def device_daily_budget(self, value) -> None:
+        self._given["device_daily_budget"] = value
+
+    @property
+    def signups_per_ip_per_day(self) -> Optional[int]:
+        return self._setting("signups_per_ip_per_day")
+
+    @signups_per_ip_per_day.setter
+    def signups_per_ip_per_day(self, value) -> None:
+        self._given["signups_per_ip_per_day"] = value
 
     def sign_in(self, provider: str, subject: str, email: Optional[str], *,
                 email_verified: bool, ip: Optional[str] = None) -> str:
@@ -498,6 +532,12 @@ class AccountStore(SqliteDB):
                     self.delete_account(a["id"])
                     done["accounts_deleted"] += 1
         self.purge_expired()
+        # The same database keeps the servers' use (server_use): roll old rows up.
+        from .server_use import ServerUseStore
+        try:
+            ServerUseStore(self.tokens.path, clock=self._clock).compact()
+        except Exception:
+            pass                        # tomorrow's run rolls them up instead
         return done
 
     def _remind(self, a, kind, deadline, tokens, notify, now) -> bool:

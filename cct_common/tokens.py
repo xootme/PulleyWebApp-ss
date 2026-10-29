@@ -45,6 +45,8 @@ TOKEN_PRICE_CENTS = 5   # every pack in payments.DEFAULT_PACKS sells at this rat
 UNLOCK_WINDOW_S = 24 * 60 * 60
 
 # 1 token = 5 cents. 2D 10c, STL 15c, STEP 20c: each tier adds one token.
+# The built-in prices; the live ones are the tier_prices setting (settings.py,
+# 0.28.0), which TokenStore.tier_prices() reads.
 TIER_PRICE = {"2d": 2, "stl": 3, "step": 4}
 FORMAT_TIER = {"svg": "2d", "dxf": "2d", "stl": "stl", "step": "step"}
 
@@ -161,8 +163,12 @@ class TokenStore(SqliteDB):
     own; they end only when the account is closed (expire_all)."""
 
     def __init__(self, path: str, *, clock: Callable[[], float] = time.time,
-                 unlock_window_s: int = UNLOCK_WINDOW_S, app: Optional[str] = None):
+                 unlock_window_s: int = UNLOCK_WINDOW_S, app: Optional[str] = None,
+                 tier_prices: Optional[dict] = None):
+        """tier_prices: fixed prices for this store; by default they're the
+        tier_prices business setting (cct_common.settings), read when used."""
         self._clock = clock
+        self._tier_prices = dict(tier_prices) if tier_prices else None
         self.unlock_window_s = unlock_window_s
         # Which CCT tool this store charges for ("pulleys", "ebox", ...): the
         # accounts and ledger are shared across tools, so every spend,
@@ -173,6 +179,22 @@ class TokenStore(SqliteDB):
         # per-token spending and daily limits — and which tool. Older
         # databases lack them; rows from before have NULL.
         self._ensure_columns("ledger", {"session_id": "INTEGER", "app": "TEXT"})
+        # The business settings live in the same database: open them now,
+        # outside any transaction (settings.py says why). Prices, the grant
+        # and the rest are then read where used, without writing.
+        from .settings import settings_for
+        try:
+            settings_for(path)
+        except Exception as e:   # the built-ins apply; settings.setting logs each read
+            import logging
+            logging.getLogger("cct_common.settings").error("can't open the settings store: %s", e)
+
+    def tier_prices(self) -> dict:
+        """Tokens per tier: the store's own if given, else the business setting."""
+        if self._tier_prices is not None:
+            return dict(self._tier_prices)
+        from .settings import setting
+        return setting(self.path, "tier_prices")
 
     @staticmethod
     def _balance(db, account_id: str) -> int:
@@ -180,9 +202,10 @@ class TokenStore(SqliteDB):
                          (account_id,)).fetchone()
         return int(row[0])
 
-    def _held(self, db, account_id: str, key: str, now: float):
+    def _held(self, db, account_id: str, key: str, now: float, prices: Optional[dict] = None):
         """Highest tier this account has paid for on this design inside the
         unlock window, ignoring refunded spends. Returns (tier, expires)."""
+        prices = prices or self.tier_prices()
         rows = db.execute(
             """SELECT s.tier, s.ts FROM ledger s
                WHERE s.account_id = ? AND s.design_key = ? AND s.kind = 'spend'
@@ -192,7 +215,7 @@ class TokenStore(SqliteDB):
             (account_id, key, now - self.unlock_window_s)).fetchall()
         best, until = None, None
         for r in rows:
-            if best is None or TIER_PRICE[r["tier"]] > TIER_PRICE[best]:
+            if best is None or prices[r["tier"]] > prices[best]:
                 best, until = r["tier"], r["ts"] + self.unlock_window_s
             elif r["tier"] == best:
                 until = max(until, r["ts"] + self.unlock_window_s)
@@ -200,9 +223,10 @@ class TokenStore(SqliteDB):
 
     def _quote(self, db, account_id: str, key: str, fmt: str, now: float) -> Quote:
         tier = format_tier(fmt)
-        held, until = self._held(db, account_id, key, now)
-        paid = TIER_PRICE[held] if held else 0
-        cost = max(0, TIER_PRICE[tier] - paid)
+        prices = self.tier_prices()
+        held, until = self._held(db, account_id, key, now, prices)
+        paid = prices[held] if held else 0
+        cost = max(0, prices[tier] - paid)
         return Quote(fmt=fmt.lower(), tier=tier, cost=cost,
                      held_tier=held, unlocked_until=until)
 

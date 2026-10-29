@@ -72,6 +72,7 @@ import secrets
 import time
 from contextlib import nullcontext
 from functools import wraps
+from typing import Optional
 
 from .sqlite_db import SqliteDB
 from .tokens import (
@@ -265,7 +266,7 @@ class Charges:
         self.route_only = ROUTE_ONLY_KEYS | frozenset(route_only_keys)
         self.state = None
         self.designs = None
-        self.buy_url = ""
+        self._buy_url = None
         self.limit_notify = None   # limit_notify(email, label, budget, settings_url)
         # endpoint name -> export format, filled in by charged() and
         # begin_async() users, so a price check can find a route's format
@@ -285,9 +286,23 @@ class Charges:
     def enabled(self) -> bool:
         return bool(self.state and self.state.enabled)
 
-    def attach(self, app, state, *, buy_url: str = "", limit_notify=None) -> None:
+    @property
+    def buy_url(self) -> str:
+        """The buy page: as attached, else the buy_url business setting (0.28.0)."""
+        if self._buy_url is not None:
+            return self._buy_url
+        from .settings import setting
+        return setting(self.state.tokens.path if self.state and getattr(self.state, "tokens", None) else None,
+                       "buy_url")
+
+    @buy_url.setter
+    def buy_url(self, value) -> None:
+        self._buy_url = value
+
+    def attach(self, app, state, *, buy_url: Optional[str] = None, limit_notify=None) -> None:
+        """buy_url: the "Buy tokens" link; None (not given) is the business setting."""
         self.state = state
-        self.buy_url = buy_url
+        self._buy_url = buy_url
         self.limit_notify = limit_notify
         if "cct_accounts" in app.extensions:        # /api/account offers it too (balance dialog)
             app.extensions["cct_accounts"]["buy_url"] = buy_url

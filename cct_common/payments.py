@@ -62,7 +62,8 @@ class Pack:
 
 
 # PayPal (micropayments rate) for the small packs, Stripe from $5 up; the $5
-# pack is offered by both. Flat 5¢ a token. Override with packs=... .
+# pack is offered by both. Flat 5¢ a token. The built-in list: what's on sale
+# is the packs business setting (settings.py, 0.28.0), or packs=... .
 DEFAULT_PACKS = (
     Pack("paypal", 200, 40), Pack("paypal", 500, 100),
     Pack("stripe", 500, 100), Pack("stripe", 1000, 200), Pack("stripe", 2500, 500),
@@ -409,13 +410,20 @@ class Stripe:
 
 # ── routes ────────────────────────────────────────────────────────────────
 
-def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
+def packs_from_setting(value: dict) -> tuple:
+    """The packs business setting ({provider: [{cents, tokens}]}) as Packs."""
+    return tuple(Pack(provider, int(p["cents"]), int(p["tokens"]))
+                 for provider, items in (value or {}).items() for p in items)
+
+
+def register_payment_routes(app, accounts, *, packs=None,
                             paypal: Optional[PayPalConfig] = None,
                             stripe: Optional[StripeConfig] = None,
                             app_name: str = "CheapCADTools", http=None,
                             clock: Callable[[], float] = time.time) -> list[str]:
     """Registers the buy page and each provider whose keys are given.
-    Returns the providers enabled."""
+    Returns the providers enabled. packs: fixed packs for this app; None
+    (the default) is the packs business setting, read per request (0.28.0)."""
     from flask import Response, current_app, jsonify, request
 
     from .account_routes import current_account_id
@@ -426,15 +434,23 @@ def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
     pp = PayPal(paypal, http) if paypal and paypal.client_id and paypal.secret else None
     st = Stripe(stripe, http) if stripe and stripe.secret_key else None
     enabled = [n for n, p in (("paypal", pp), ("stripe", st)) if p]
-    packs = tuple(p for p in packs if p.provider in enabled)
-    by_id = {p.id: p for p in packs}
+    fixed = None if packs is None else tuple(packs)
+
+    def _packs() -> tuple:
+        """What's on sale now: the fixed packs, else the packs setting; only enabled providers."""
+        if fixed is not None:
+            source = fixed
+        else:
+            from .settings import setting
+            source = packs_from_setting(setting(accounts.tokens.path, "packs"))
+        return tuple(p for p in source if p.provider in enabled)
     store = Payments(accounts.tokens, clock=clock)
     tokens = accounts.tokens
     # For the admin dashboard (admin.py): the orders and the provider clients.
     app.extensions["cct_payments"] = {"store": store, "paypal": pp, "stripe": st}
 
     def _pack(data) -> Pack:
-        pack = by_id.get(str((data or {}).get("pack", "")))
+        pack = {p.id: p for p in _packs()}.get(str((data or {}).get("pack", "")))
         if pack is None:
             raise PaymentError("That pack isn't on sale.")
         return pack
@@ -466,10 +482,12 @@ def register_payment_routes(app, accounts, *, packs=DEFAULT_PACKS,
                             "<p>Sign in first, then come back to this page.</p>"
                             "<p><a href='/'>Go to sign in</a></p></body></html>", mimetype="text/html")
         email = tokens.account_email(acct) or ""
+        packs, prices = _packs(), tokens.tier_prices()
         body = [f"<h1>Buy {html.escape(app_name)} tokens</h1>",
                 f"<p>Signed in as <b>{html.escape(email)}</b> · balance "
                 f"<b id='bal'>{tokens.balance(acct)}</b> tokens</p>",
-                "<p class='note'>2D drawing 2 tokens · 3D-print (STL) 3 · CAD (STEP) 4. "
+                f"<p class='note'>2D drawing {prices['2d']} tokens · 3D-print (STL) {prices['stl']} · "
+                f"CAD (STEP) {prices['step']}. "
                 "Tokens last as long as you sign in at least once every 5 years."
                 "</p><p id='msg' role='status'></p>"]
         if pp:

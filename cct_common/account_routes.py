@@ -149,6 +149,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
 
     app.extensions[_EXT_KEY] = {"accounts": accounts}
     tokens = accounts.tokens
+    # Server-use counting (cct_common.server_use), knowing who's signed in.
+    from .server_use import register_server_use
+    register_server_use(app, accounts, tool=app_name)
     subject = email_subject or f"Sign in to {app_name}"
     body_fn = email_body or (lambda link: _default_email_body(app_name, link))
 
@@ -388,6 +391,27 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         r.delete_cookie(COOKIE_NAME, path="/")
         return r
 
+    def _buy_url() -> str:
+        """The buy page: as the app attached it (Charges.attach), else the buy_url setting."""
+        given = app.extensions[_EXT_KEY].get("buy_url")
+        if given is not None:
+            return given
+        from .settings import setting
+        return setting(tokens.path, "buy_url")
+
+    # ── the offer: what a new account gets and what things cost (0.28.0) ──
+    def offer():
+        """Public: the signup grant, tier prices, packs per provider and
+        tokens per dollar, from the business settings (cct_common.settings).
+        The apps' pages and the site's build read it."""
+        from .settings import offer as current_offer
+        from .tokens import FORMAT_TIER, TOKEN_PRICE_CENTS
+        body = current_offer(tokens.path, cents_per_token=TOKEN_PRICE_CENTS, format_tier=FORMAT_TIER)
+        body["buy_url"] = _buy_url()
+        r = jsonify(body)
+        r.headers["Cache-Control"] = "public, max-age=60"
+        return r
+
     def account_info():
         acct, err = _require_account()
         if err:
@@ -411,7 +435,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "purchased": tokens.purchased_remaining(acct),
             "last_sign_in": last,
             "account_expires": last + DEAD_ACCOUNT_IDLE_S,
-            "buy_url": current_app.extensions[_EXT_KEY].get("buy_url", ""),
+            "buy_url": _buy_url(),
             "identities": accounts.identities(acct),
             "sessions": sessions,
         })
@@ -680,6 +704,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                      view_func=login_submit, methods=["POST"])
     app.add_url_rule("/api/account/logout", view_func=logout, methods=["POST"])
     app.add_url_rule("/api/account", view_func=account_info, methods=["GET"])
+    app.add_url_rule("/api/offer", view_func=offer, methods=["GET"])
     app.add_url_rule("/api/account/history", view_func=account_history, methods=["GET"])
     app.add_url_rule("/api/account/sessions/<int:session_id>", view_func=revoke, methods=["DELETE"])
     app.add_url_rule("/api/account/delete", view_func=delete_account, methods=["POST"])

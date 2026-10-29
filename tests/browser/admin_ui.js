@@ -198,6 +198,18 @@ async function main() {
   check('status: accounts', st.Accounts === '5', st.Accounts);
   check('status: admins', st.Admins === 'admin@example.com', st.Admins);
 
+  // ── server use and business settings (cct_common 0.27/0.28): each tab loads its numbers ──
+  await js("document.querySelector('nav [data-tab=use]').click()");
+  await waitFor("document.querySelector('#use-tiles').children.length > 0");
+  const useTiles = await js("document.querySelector('#use-tiles').textContent");
+  check('server use: its tab loads', !/Could not load/.test(useTiles), useTiles);
+  await js("document.querySelector('nav [data-tab=biz]').click()");
+  await waitFor("document.querySelector('#biz-cards').children.length > 0");
+  const biz = await js("document.querySelector('#biz-cards').textContent");
+  check('business settings: its tab loads', !/Could not load/.test(biz), biz);
+  const offer = await js("fetch('/api/offer').then(r => r.json())");
+  check('offer: answers with a grant', Number.isInteger(offer.signup_grant), offer);
+
   finish(errors);
   ws.close(); chrome.kill();
 }

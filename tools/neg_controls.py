@@ -117,7 +117,10 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                          "download_failures=_failure_store)"),
     "vendored: a copy edited in place fails": ("cct_common/forksafe.py", '    if hasattr(os, "register_at_fork"):',
                                                '    if hasattr(os, "register_at_fork") and True:'),
-    "night: a skip fails the night": ("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
+    "backup: its run is counted": ("db_offsite_backup.py",
+                                   '        with job_use(_env("DATABASE_URL"), "cct-db-backup", "backup"):',
+                                   '        with __import__("contextlib").nullcontext():'),
+    "night: a skip fails the night":("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }
 

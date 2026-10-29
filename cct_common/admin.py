@@ -21,6 +21,11 @@ Pages (one page, admin_page.html, tabs):
   Bug reports   the app's bug-report store (if given); delete
   Status        version, Cloud Run revision, database, counts; every
                 service's cct_common version and hash (0.26.0)
+  Server use    billed hours and CPU by category, tool, action and day, beside
+                Google's own billable time per service (0.27.0, server_use)
+  Business      the business settings (cct_common.settings, 0.28.0): signup
+  settings      grant, tier prices, packs per provider, limits, buy link;
+                edit with a note; every change kept (who, when, old, new)
 
 Routes (JSON under /admin/api/, not /api/admin/ — that prefix carries the old
 dashboard's cross-origin headers):
@@ -34,6 +39,9 @@ dashboard's cross-origin headers):
   DELETE /admin/api/bugs/<id>
   GET    /admin/api/status
   GET    /admin/api/services                     each service's /api/health
+  GET    /admin/api/server-use[?days=N]          server_use rows by day + Google's totals
+  GET    /admin/api/settings                     the business settings and their history
+  POST   /admin/api/settings/<key>               {value, note}
 
 Services are CCT_SERVICES (name=url, comma-separated), else DEFAULT_SERVICES;
 each is asked for <url>/api/health, with a short timeout, all at once.
@@ -108,7 +116,8 @@ def service_row(name: str, url: str, fetch=fetch_health) -> dict:
 
 def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_version: str = "",
                    bug_reports=None, default_app: str = "", download_failures=None,
-                   clock=time.time, fetch=fetch_health, app_url: str = "") -> None:
+                   clock=time.time, fetch=fetch_health, app_url: str = "",
+                   server_use: bool = True, google=None) -> None:
     """Mount the admin dashboard. `accounts` is the AccountStore (its
     TokenStore is the ledger); payments come from register_payment_routes
     (app.extensions["cct_payments"]) when it has run. `bug_reports` is an
@@ -117,7 +126,9 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
     tool for ledger rows written before the ledger recorded one. `fetch`
     reads a service's /api/health (the Services list; tests pass their own).
     `app_url` is the app's public address: the Download failures tab opens a
-    design there. The admin page may be served elsewhere (the pulley app's is
+    design there. `server_use` counts this app's requests (cct_common.server_use,
+    tool = default_app) for the Server use tab; `google` replaces the Cloud
+    Monitoring read (tests). The admin page may be served elsewhere (the pulley app's is
     at the site's /admin), so without it the page guesses from its own path,
     which is right only where the app and its /admin share a base (local)."""
     from flask import Response, abort, jsonify, redirect, request, send_file
@@ -128,6 +139,9 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
 
     tokens = accounts.tokens
     page = Path(__file__).with_name("admin_page.html")
+    if server_use:
+        from .server_use import register_server_use
+        register_server_use(app, accounts, tool=default_app)
 
     def _admin() -> Optional[str]:
         """The signed-in admin's email, or None."""
@@ -370,6 +384,44 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
             rows = list(pool.map(lambda s: service_row(*s, fetch=fetch), todo))
         return jsonify({"services": rows, "this": version_info(), "now": clock()})
 
+    # ── business settings (0.28.0) ──
+    def settings_list():
+        _need_admin()
+        from .settings import settings_for, off_rate_packs
+        from .tokens import TOKEN_PRICE_CENTS
+        store = settings_for(tokens.path)
+        rows = store.rows()
+        packs = next((r["value"] for r in rows if r["key"] == "packs"), None)
+        return jsonify({"settings": rows, "history": store.history(),
+                        "tokens_per_dollar": 100 // TOKEN_PRICE_CENTS,
+                        "off_rate_packs": off_rate_packs(packs or {}, TOKEN_PRICE_CENTS)})
+
+    def settings_save(key):
+        admin = _need_admin()
+        _need_same_origin()
+        from .settings import DEFAULTS, SettingsError, settings_for
+        if key not in DEFAULTS:
+            return jsonify({"error": "No such setting."}), 404
+        body = request.get_json(silent=True) or {}
+        if "value" not in body:
+            return jsonify({"error": "Send the new value."}), 400
+        try:
+            value = settings_for(tokens.path).set(key, body["value"], by=admin,
+                                                  note=str(body.get("note", "")).strip())
+        except SettingsError as e:
+            return jsonify({"error": str(e)}), 400
+        app.logger.info("admin %s set %s to %r", admin, key, value)
+        return jsonify({"key": key, "value": value})
+
+    # ── server use ──
+    def server_use_report():
+        _need_admin()
+        from .server_use import ServerUseStore, google_billable, report
+        days = max(1, min(int(request.args.get("days", 30) or 30), 3660))
+        out = report(ServerUseStore(tokens.path), days, clock())
+        out["google"] = (google or google_billable)(days, clock())
+        return jsonify(out)
+
     app.add_url_rule("/admin", view_func=admin_page, methods=["GET"])
     app.add_url_rule("/admin/", endpoint="admin_page_slash", view_func=admin_page, methods=["GET"])
     app.add_url_rule("/admin/api/accounts", view_func=accounts_list, methods=["GET"])
@@ -388,3 +440,6 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
                      methods=["DELETE"])
     app.add_url_rule("/admin/api/status", view_func=status, methods=["GET"])
     app.add_url_rule("/admin/api/services", view_func=services_list, methods=["GET"])
+    app.add_url_rule("/admin/api/server-use", view_func=server_use_report, methods=["GET"])
+    app.add_url_rule("/admin/api/settings", view_func=settings_list, methods=["GET"])
+    app.add_url_rule("/admin/api/settings/<key>", view_func=settings_save, methods=["POST"])

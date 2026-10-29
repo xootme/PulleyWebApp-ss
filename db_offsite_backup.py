@@ -232,8 +232,11 @@ def main(argv: list[str]) -> int:
         print(new_key())
         return 0
     if cmd == "backup":
+        from cct_common.server_use import job_use
         from results import GcsResults
-        name, counts = backup(_env("DATABASE_URL"), GcsResults(_env("BACKUP_BUCKET")), _env("BACKUP_KEY"))
+        # the job's run counted in the admin's Server use tab (cct_common 0.27.0)
+        with job_use(_env("DATABASE_URL"), "cct-db-backup", "backup"):
+            name, counts = backup(_env("DATABASE_URL"), GcsResults(_env("BACKUP_BUCKET")), _env("BACKUP_KEY"))
         print(f"backed up {sum(counts.values())} rows in {len(counts)} tables to "
               f"gs://{os.environ['BACKUP_BUCKET']}/{name}")
         return 0

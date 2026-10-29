@@ -200,8 +200,14 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
     design_id(query, files) -> str | None      registers the design — every file's
                                                parameters — for the caller (tokens on,
                                                signed in), so one payment covers them all
+
+    Every app calls this, so it also turns on server-use counting
+    (cct_common.server_use) for the app.
     """
     from flask import jsonify, request
+
+    from .server_use import register_server_use
+    register_server_use(app, tool=desc.app)
 
     def _error(e: Exception, status: int = 400):
         code = getattr(e, "code", "BAD_PARAMS")
