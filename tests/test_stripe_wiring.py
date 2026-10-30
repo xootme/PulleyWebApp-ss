@@ -116,6 +116,16 @@ def test_pulley_reads_the_stripe_env_names(settings):
     assert settings['stripe'].secret_key == SK and settings['stripe'].webhook_secret == WHSEC
 
 
+def test_the_buy_panel_gets_the_publishable_key(monkeypatch):
+    """The in-page buy panel (cct_common 0.35.0, off): Stripe's public key from
+    STRIPE_PUBLISHABLE_KEY; none set, the panel offers PayPal only."""
+    import app as appmod
+    monkeypatch.setenv('STRIPE_PUBLISHABLE_KEY', 'pk_test_panel')
+    assert appmod._payment_settings()['stripe'].publishable_key == 'pk_test_panel'
+    monkeypatch.delenv('STRIPE_PUBLISHABLE_KEY')
+    assert appmod._payment_settings()['stripe'].publishable_key == ''
+
+
 def test_no_stripe_key_no_card_payments(monkeypatch):
     import app as appmod
     monkeypatch.delenv('STRIPE_SECRET_KEY', raising=False)

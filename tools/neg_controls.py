@@ -150,6 +150,13 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "nubs: in the top flange's hole, the panel warns": (AP, "    if r_nubs > r_hole + 1e-4:", "    if True:"),
     "3D: Oblique stands back as it always did": ("templates/index.html", "oblique: VIEW_DIR, snapLength: 'asGiven',",
                                                  "oblique: VIEW_DIR,"),
+    # My designs and the buy panel (cct_common 0.34.0, 0.35.0; off until the owner turns them on)
+    "designs: a saved design is the whole design": ("templates/index.html",
+        "  const d = Object.assign({}, designParams());", "  const d = Object.assign({}, buildParams());"),
+    "designs: Open applies the design as Import does": ("templates/index.html",
+        "  _applyUrlParams(p);\n  await onPitchChange();\n};", "  await onPitchChange();\n};"),
+    "checkout: the buy panel gets Stripe's public key": (AP, "publishable_key=env('STRIPE_PUBLISHABLE_KEY')),",
+                                                         "publishable_key=''),"),
     # cct_common 0.32's one hub-hole check (the owner's wording, 2026-10-30)
     "screws: a hole too big for the bore, the panel warns": (AP, "    if too_big is None:\n        return [], {}, []",
                                                              "    if True:\n        return [], {}, []"),

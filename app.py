@@ -4900,7 +4900,10 @@ def _payment_settings():
     return {
         'paypal': PayPalConfig(env('PAYPAL_CLIENT_ID'), env('PAYPAL_CLIENT_SECRET'),
                                env('PAYPAL_WEBHOOK_ID'), live=env('PAYPAL_LIVE') == '1'),
-        'stripe': StripeConfig(env('STRIPE_SECRET_KEY'), env('STRIPE_WEBHOOK_SECRET')),
+        # the publishable key is the in-page buy panel's (cct_common 0.35.0, inline_checkout,
+        # off); without it the panel offers PayPal only
+        'stripe': StripeConfig(env('STRIPE_SECRET_KEY'), env('STRIPE_WEBHOOK_SECRET'),
+                               publishable_key=env('STRIPE_PUBLISHABLE_KEY')),
     }
 
 

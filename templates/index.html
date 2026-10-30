@@ -2892,8 +2892,10 @@ async function _cctTokensOn() {
 // Every raw input on screen, under the names the download routes use, so
 // every format of this design is priced as one purchase. The server only
 // honours the design_id if a download's own parameters belong to it.
+// It starts from designParams(), the whole design as a link or a file carries it (the
+// hubs in the 2D view too), so a saved design reopens whole (cct_common 0.34.0).
 function cctFullDesign() {
-  const d = Object.assign({}, buildParams());
+  const d = Object.assign({}, designParams());
   d.belt_height = document.getElementById('belt_height').value;
   d.n_belt      = document.getElementById('belt_teeth').value || 0;
   d.dual        = document.getElementById('dual_enable').checked ? 'true' : '';
@@ -2917,6 +2919,42 @@ function cctFullDesign() {
   return d;
 }
 window.cctFullDesign = cctFullDesign;
+
+// My designs (cct_common 0.34.0, off until the owner turns saved_designs on): a saved
+// design's name, its picture and how it reopens here.
+window.cctDesignName = () => {
+  const v = id => document.getElementById(id).value;
+  return `${v('family')} ${v('pitch')} ${v('teeth')}T`
+       + (document.getElementById('dual_enable').checked ? ` + ${v('p2_teeth')}T` : '');
+};
+// The 3D view as it is now (drawn this frame: the core keeps the drawing buffer), or the
+// 2D drawing on white.
+window.cctDesignThumbnail = async () => {
+  const canvas = document.getElementById('three-canvas');
+  if (threeViewer && canvas.style.display !== 'none') {
+    threeRenderer.render(threeScene, threeCamera);
+    return canvas;
+  }
+  const img = document.getElementById('preview-img');
+  if (!img.getAttribute('src') || img.style.display === 'none') return null;
+  await img.decode().catch(() => {});
+  const c = document.createElement('canvas');
+  c.width = 640; c.height = 480;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, c.width, c.height);
+  const w = img.naturalWidth || c.width, h = img.naturalHeight || c.height;
+  const s = Math.min(c.width / w, c.height / h);
+  g.drawImage(img, (c.width - w * s) / 2, (c.height - h * s) / 2, w * s, h * s);
+  return c;
+};
+// Open from My designs: as Import applies a file's design.
+window.cctApplyDesign = async params => {
+  const p = new URLSearchParams(params);
+  migrateParams(p);
+  _applyUrlParams(p);
+  await onPitchChange();
+};
 
 // The formats a purchase includes, offered as "also download" checkboxes.
 function _cctExtras(path, params) {

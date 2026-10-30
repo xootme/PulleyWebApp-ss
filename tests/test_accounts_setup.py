@@ -384,6 +384,43 @@ def test_designs_register_in_postgres(pg_url):
     assert designs.get(did) is not None                         # fresh: kept
 
 
+def test_saved_designs_in_postgres(tmp_path, pg_url):
+    """My designs (cct_common 0.34.0) on the live database's engine: CCTCommon's
+    own tests run the table on SQLite only (Controller, 2026-10-30)."""
+    import base64
+    from cct_common.saved_designs import SavedDesigns
+    app = flask.Flask(__name__)
+    state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
+                          email_sender=lambda *a: (True, ''), database_url=pg_url,
+                          backup_dir=str(tmp_path / 'backups'), backup_first_delay_s=0)
+    assert state.tokens.is_postgres
+    acct_id = state.accounts.redeem_login_link(state.accounts.create_login_link('saved@example.com'))
+    store = SavedDesigns(pg_url)
+    png = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'\0' * 32).decode()
+    design = {'family': 'HTD', 'pitch': '5M', 'teeth': '20', 'dual': 'true', 'p2_teeth': '40',
+              'design': '{"whole": 1}', '_ts': '123'}
+    sid = store.keep(acct_id, 'pulleys', 'key1', design, name='HTD 5M 20T + 40T', thumb=png)
+    assert store.keep(acct_id, 'pulleys', 'key1', dict(design, teeth='21')) == sid    # one row a design
+    [row] = store.list(acct_id)
+    assert row['id'] == sid and row['name'] == 'HTD 5M 20T + 40T' and row['has_thumb']
+    got = store.get(acct_id, sid)
+    assert got['params']['teeth'] == '21' and got['params']['p2_teeth'] == '40'
+    assert 'design' not in got['params'] and '_ts' not in got['params']
+    assert store.thumb(acct_id, sid)[0] == 'image/png'
+    assert store.rename(acct_id, sid, 'my drive') and store.list(acct_id)[0]['name'] == 'my drive'
+    store.keep(acct_id, 'pulleys', 'key1', design, name='HTD 5M 20T + 40T')
+    assert store.list(acct_id)[0]['name'] == 'my drive'                               # a rename sticks
+    store.seen('pulleys', '/', 'Timing Pulleys')
+    store.seen('pulleys', '/tools/pulleys/', 'Timing Pulleys')                       # the upsert
+    assert store.apps() == {'pulleys': {'page': '/tools/pulleys/', 'title': 'Timing Pulleys'}}
+    assert store.get('someone-else', sid) is None and not store.delete('someone-else', sid)
+    sid2 = store.keep(acct_id, 'gears', 'key2', {'teeth': '30'}, source='save')
+    assert len(store.list(acct_id)) == 2
+    assert store.delete(acct_id, sid2) and len(store.list(acct_id)) == 1
+    state.accounts.delete_account(acct_id)                     # closing the account deletes its designs
+    assert store.list(acct_id) == []
+
+
 # ── new accounts per IP per day ───────────────────────────────────────────
 
 def test_signups_are_limited_per_ip(tmp_path):

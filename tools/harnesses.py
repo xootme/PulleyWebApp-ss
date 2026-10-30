@@ -38,7 +38,8 @@ import nightly_test  # noqa: E402
 
 # Longest first, so the lanes finish together. 'tokens_off' is tokens_ui.js with tokens off.
 HARNESSES = ['roundtrip_ui', 'download_design_ui', 'turn_ui', 'help_ui', 'busy_ui', 'import_ui',
-             'tokens_ui', 'tokens_off', 'admin_ui', 'bore_ui', 'dims_ui', 'screw_ui', 'undo_ui', 'parity_ui']
+             'tokens_ui', 'designs_ui', 'tokens_off', 'admin_ui', 'bore_ui', 'dims_ui', 'screw_ui', 'undo_ui',
+             'parity_ui']
 TIMEOUT_S = 30 * 60
 # Nothing a harness starts may reach a real service or account: whatever the shell has is dropped.
 SCRUB = ('RESEND', 'STRIPE', 'PAYPAL', 'SENDGRID', 'DATABASE_URL', 'GOOGLE_CLIENT', 'BACKUP_', 'ADMIN_EMAILS',
@@ -124,14 +125,14 @@ def run(label, cmd, env, results):
 
 
 def harness(name, base, folder: Path, env, results):
-    """One harness; tokens_ui and admin_ui on a server of their own in a fresh folder."""
+    """One harness; tokens_ui, designs_ui and admin_ui on a server of their own in a fresh folder."""
     if name == 'tokens_off':
         return run(name, ['node', 'tests/browser/tokens_ui.js', base, str(folder), PY, 'off'], env, results)
-    if name not in ('tokens_ui', 'admin_ui'):
+    if name not in ('tokens_ui', 'designs_ui', 'admin_ui'):
         return run(name, ['node', f'tests/browser/{name}.js', base], env, results)
     own = Path(tempfile.mkdtemp(prefix=f'{name}-', dir=folder))
     extra = {'TOKENS_ENABLED': '1'}
-    if name == 'tokens_ui':
+    if name in ('tokens_ui', 'designs_ui'):
         extra.update(GOOGLE_CLIENT_ID='test', GOOGLE_CLIENT_SECRET='test')
         args = [str(own), PY]
     else:
