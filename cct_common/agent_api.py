@@ -207,7 +207,9 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
     from flask import jsonify, request
 
     from .server_use import register_server_use
+    from .shared_static import register_shared_static
     register_server_use(app, tool=desc.app)
+    register_shared_static(app)            # static/cct/: the shared page files (0.29.0)
 
     def _error(e: Exception, status: int = 400):
         code = getattr(e, "code", "BAD_PARAMS")

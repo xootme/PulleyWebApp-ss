@@ -6,8 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Timing Pulley Generator — CheapCADTools</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap">
-  <link rel="stylesheet" href="/static/cct_theme.css?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=46">
+  <!-- The shared look and layout are cct_common's (static/cct/, 0.29.0): the theme,
+       then the layout every CCT app shares, then this page's own. -->
+  <link rel="stylesheet" href="/static/cct/cct_theme.css">
+  <link rel="stylesheet" href="/static/cct/cct_layout.css">
+  <link rel="stylesheet" href="/static/style.css?v=47">
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
@@ -1124,10 +1127,13 @@ function pageIdle() {
       && performance.now() - _lastWork > 250;
 }
 </script>
-<script src="/static/tokens.js?v=8"></script>
-<script src="/static/cct_units.js?v=1"></script>
-<script src="/static/cct_download.js?v=1"></script>
-<script src="/static/cct_busy.js?v=3"></script>
+<!-- cct_common's shared scripts (static/cct/, 0.29.0). This app's routes are at the
+     site's root, so tokens.js asks there (data-api-base "/"); the Download window's
+     defaults (/api/download/bundle, /api/download-failure) are this app's own. -->
+<script src="/static/cct/tokens.js" data-api-base="/"></script>
+<script src="/static/cct/cct_units.js"></script>
+<script src="/static/cct/cct_download.js"></script>
+<script src="/static/cct/cct_busy.js"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -2955,14 +2961,16 @@ async function _cctTokenDownload(url, start, alsoAfter) {
 
 // ── Download window (ADR-008) ─────────────────────────────────────────────
 // One window, one zip: every part shown, in the formats ticked. In the 3D
-// view the tiers are STEP (4 tokens), STL (3) and 2D drawings (2); in the 2D
-// view only the drawings. The zip is one purchase of the whole design at the
-// highest tier ticked, so the button shows what the ticks cost as they change.
+// view the tiers are STEP, STL and 2D drawings; in the 2D view only the
+// drawings. The zip is one purchase of the whole design at the highest tier
+// ticked, so the button shows what the ticks cost as they change. The tiers'
+// token prices are the business settings' (cctTokens.price, from /api/offer;
+// cct_common 0.29.0), shown only with tokens on: never a copy here.
 
 const _DL_TIERS_3D = [
-  { tokens: 4, label: 'CAD shape',         fmts: [['step', 'STEP']] },     // 1 token = 5 cents
-  { tokens: 3, label: '3D printing shape', fmts: [['stl', 'STL']] },
-  { tokens: 2, label: '2D drawings',       fmts: [['svg', 'SVG'], ['dxf', 'DXF']] },
+  { label: 'CAD shape',         fmts: [['step', 'STEP']] },
+  { label: '3D printing shape', fmts: [['stl', 'STL']] },
+  { label: '2D drawings',       fmts: [['svg', 'SVG'], ['dxf', 'DXF']] },
 ];
 const _DL_TIERS_2D = [_DL_TIERS_3D[2]];
 const _DL_RANK = { step: 3, stl: 2, svg: 1, dxf: 1 };
@@ -3104,6 +3112,7 @@ async function openDownloadWindow() {
   closeDlMenus();
   const threeD   = document.getElementById('feature_build').checked;
   const tokensOn = await _cctTokensOn();
+  if (tokensOn) await cctTokens.loadOffer();       // the prices (read once; no number without it)
   const charging = tokensOn ? {
     on: true,
     get unavailable() { return cctTokens.unavailable; },
@@ -3117,7 +3126,8 @@ async function openDownloadWindow() {
     note: threeD ? 'Every part ticked goes into one zip.'
                  : '2D view: drawings only. Every part ticked goes into one zip.',
     parts: _dlParts(threeD),
-    tiers: threeD ? _DL_TIERS_3D : _DL_TIERS_2D,
+    tiers: (threeD ? _DL_TIERS_3D : _DL_TIERS_2D)
+             .map(t => ({ ...t, tokens: tokensOn ? cctTokens.price(t.fmts[0][0]) : null })),
     rank: _DL_RANK,
     filesFor: (pt, fmt) => _dlFiles(pt.id, fmt),
     zipName: _dlZipName(),

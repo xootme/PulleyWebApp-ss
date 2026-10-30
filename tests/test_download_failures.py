@@ -69,5 +69,5 @@ def test_the_page_reports_failures_and_stops_polling_a_lost_job():
     assert page.count('_reportDlFailure(') >= 5
     assert "if (r.status === 404) return { status: 'failed'" in page
     assert 'if (++_pollErrors < 60)' in page
-    js = (Path(__file__).resolve().parent.parent / 'static' / 'cct_download.js').read_text(encoding='utf-8')
+    js = (Path(__file__).resolve().parent.parent / 'cct_common' / 'static' / 'cct_download.js').read_text(encoding='utf-8')
     assert 'root.cctReportDownloadFailure = reportFailure' in js

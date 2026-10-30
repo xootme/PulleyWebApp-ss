@@ -1,17 +1,14 @@
-"""The shared CCT theme (cct_common's static/cct_theme.css), as Sprocket and
-Gear Designer load it: a copy in static/, from the same cct_common commit
-as the vendored package, linked before style.css so this app's own rules
-still win where they differ."""
-import os
-import re
-import subprocess
+"""The shared CCT look and page scripts (cct_common 0.29.0): one copy, in the
+vendored cct_common/static/, served at /static/cct/<name> (shared_static), so
+the vendored commit's files are what the page gets and nobody copies them by
+hand. The theme, then the shared layout, then style.css, so this app's own
+rules still win where they differ."""
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-# a test host names its clone (CCT_COMMON_CHECKOUT); it needs the vendored commit
-UPSTREAM = Path(os.environ.get("CCT_COMMON_CHECKOUT") or r"C:\Users\cmyer\Documents\cct_common")
+SHARED = ('cct_theme.css', 'cct_layout.css', 'tokens.js', 'cct_units.js', 'cct_download.js', 'cct_busy.js')
 
 
 @pytest.fixture
@@ -21,36 +18,22 @@ def page(client, monkeypatch):
     return client.get('/').get_data(as_text=True)
 
 
-def test_page_links_the_theme_before_style_css(page):
+def test_page_links_the_theme_then_the_layout_then_style_css(page):
     html = page
-    assert 'cct_theme.css' in html
-    assert html.index('cct_theme.css') < html.index('style.css')
+    assert (html.index('/static/cct/cct_theme.css') < html.index('/static/cct/cct_layout.css')
+            < html.index('/static/style.css'))
 
 
-def test_theme_is_served(client):
-    r = client.get('/static/cct_theme.css')
-    assert r.status_code == 200
-    assert b'--cct-accent' in r.data
-
-
-@pytest.mark.skipif(not UPSTREAM.is_dir(), reason="cct_common checkout not on this machine")
-def test_theme_matches_the_vendored_commit():
-    text = (ROOT / 'cct_common' / '_VENDORED_FROM.txt').read_text(encoding='utf-8')
-    commit = re.search(r'source commit: ([0-9a-f]{40})', text).group(1)
-    upstream = subprocess.run(['git', 'show', f'{commit}:static/cct_theme.css'],
-                              cwd=UPSTREAM, capture_output=True, check=True).stdout
-    assert (ROOT / 'static' / 'cct_theme.css').read_bytes().replace(b'\r\n', b'\n') \
-        == upstream.replace(b'\r\n', b'\n')
-
-
-@pytest.mark.skipif(not UPSTREAM.is_dir(), reason="cct_common checkout not on this machine")
-def test_busy_overlay_matches_the_vendored_commit():
-    text = (ROOT / 'cct_common' / '_VENDORED_FROM.txt').read_text(encoding='utf-8')
-    commit = re.search(r'source commit: ([0-9a-f]{40})', text).group(1)
-    upstream = subprocess.run(['git', 'show', f'{commit}:static/cct_busy.js'],
-                              cwd=UPSTREAM, capture_output=True, check=True).stdout
-    assert (ROOT / 'static' / 'cct_busy.js').read_bytes().replace(b'\r\n', b'\n') \
-        == upstream.replace(b'\r\n', b'\n')
+def test_page_loads_the_shared_files_from_cct_common(page, client):
+    for name in SHARED:
+        assert f'/static/cct/{name}' in page, name
+        r = client.get(f'/static/cct/{name}')
+        assert r.status_code == 200, name
+        assert r.data == (ROOT / 'cct_common' / 'static' / name).read_bytes(), name
+        assert not (ROOT / 'static' / name).exists(), f'a copy of {name} in static/'
+    assert b'--cct-accent' in client.get('/static/cct/cct_theme.css').data
+    # this app's routes are at the site's root
+    assert '<script src="/static/cct/tokens.js" data-api-base="/"></script>' in page
 
 
 def test_page_draws_and_fixes_through_the_busy_overlay(page, client):
@@ -58,8 +41,8 @@ def test_page_draws_and_fixes_through_the_busy_overlay(page, client):
     preview while it is redrawn; Auto-fix and Auto-fit close their warnings at
     once; the warnings wait while a value is part-way typed. 0.25.8: each check
     takes a ticket as it asks, so a refusal of a value changed since never shows."""
-    assert client.get('/static/cct_busy.js').status_code == 200
-    assert '.cct-busy-card' in client.get('/static/cct_theme.css').get_data(as_text=True)
+    assert client.get('/static/cct/cct_busy.js').status_code == 200
+    assert '.cct-busy-card' in client.get('/static/cct/cct_theme.css').get_data(as_text=True)
     assert 'cct_busy.js' in page
     assert page.index('cct_busy.js') < page.index('function updatePreview')
     assert "Loading 3D…'" not in page

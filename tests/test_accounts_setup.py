@@ -13,6 +13,7 @@ import pytest
 import uuid
 
 from accounts_setup import _redact, describe_db, init_accounts, make_backup_alert, make_email_sender
+from cct_common.settings import settings_for
 
 
 def _fresh_app(tmp_path, *, enabled=True, live=False, sender=None, grant=10):
@@ -25,7 +26,9 @@ def _fresh_app(tmp_path, *, enabled=True, live=False, sender=None, grant=10):
         return True, ''
 
     state = init_accounts(app, log_dir=str(tmp_path), enabled=enabled, live=live,
-                          email_sender=sender or default_sender, signup_grant=grant)
+                          email_sender=sender or default_sender)
+    if state.healthy:   # the grant is the business setting (cct_common.settings), not an argument
+        settings_for(state.tokens.path).set('signup_grant', grant, by='test')
     return app, state, sent
 
 
@@ -356,9 +359,10 @@ def test_database_url_keeps_the_ledger_in_postgres(tmp_path, pg_url):
     sent = []
     state = init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
                           email_sender=lambda *a: sent.append(a) or (True, ''),
-                          signup_grant=7, database_url=pg_url,
+                          database_url=pg_url,
                           backup_dir=str(tmp_path / 'backups'), backup_first_delay_s=0)
     assert state.healthy and state.tokens.is_postgres
+    settings_for(pg_url).set('signup_grant', 7, by='test')   # the setting, in Postgres too
     assert not (tmp_path / 'accounts.sqlite3').exists()      # nothing on local disk
     assert state.backup_stop is None and not (tmp_path / 'backups').exists()
     c = app.test_client()
@@ -387,8 +391,7 @@ def test_signups_are_limited_per_ip(tmp_path):
     app.config['TESTING'] = True
     sent = []
     init_accounts(app, log_dir=str(tmp_path), enabled=True, live=False,
-                  email_sender=lambda *a: sent.append(a) or (True, ''),
-                  signups_per_ip_per_day=2)
+                  email_sender=lambda *a: sent.append(a) or (True, ''))   # the setting: 2 a day
     c = app.test_client()
     env = {'REMOTE_ADDR': '203.0.113.7'}
 
@@ -426,8 +429,6 @@ def test_real_app_limits_two_signups_and_trusts_one_proxy_hop():
     assert isinstance(app_module.app.wsgi_app, EdgeAwareProxyFix)
     assert app_module.app.wsgi_app.direct.x_for == int(os.environ.get('PROXY_HOPS', '1'))
     assert app_module.app.wsgi_app.direct.x_host == 0          # see tests/test_edge_proxy.py
-    src = open(app_module.__file__, encoding='utf-8').read()
-    assert "os.environ.get('TOKENS_SIGNUPS_PER_IP_PER_DAY', '2')" in src
 
 
 # ── buying tokens ─────────────────────────────────────────────────────────
@@ -447,15 +448,13 @@ def test_buy_page_offers_only_providers_with_keys(tmp_path):
     assert c.post('/api/payments/stripe/checkout', json={}).status_code == 404
 
 
-def test_real_app_buy_url_waits_for_a_provider():
-    # Without payment keys (the test environment) there's no buy page to
-    # send people to; with them, the buy dialog points at /account/buy.
-    import app as app_module
+def test_real_app_buy_url_is_the_setting():
+    # The buy dialog's link is the buy_url business setting (cct_common.settings),
+    # the site's shared buy page (this app's own /account/buy on cheapcadtools.com);
+    # the app attaches none of its own.
     from charging import charges
-    if not app_module._accounts_state.payment_providers and not os.environ.get('TOKENS_BUY_URL'):
-        assert charges.buy_url == ''
-    src = open(app_module.__file__, encoding='utf-8').read()
-    assert "or ('/account/buy' if _accounts_state.payment_providers else '')" in src
+    import app  # noqa: F401 (attaches charges)
+    assert charges._buy_url is None
 
 
 def test_account_info_offers_the_buy_page_once_a_provider_is_set(tmp_path):

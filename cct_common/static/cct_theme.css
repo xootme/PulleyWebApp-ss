@@ -204,6 +204,20 @@
 .cct-account .cct-btn-primary { background: #fff; color: #0078d4; border-color: #fff; }
 .cct-account .cct-btn-link    { color: #fff; }
 
+/* ── The token account box in the header (static/cct/tokens.js; 0.29.0, from
+   every app's style.css, where it was the same; Timing Pulley Generator's,
+   ADR-040). An app whose box sits at the header's far end sets
+   .cct-account { margin-left: auto; } in its own CSS, as the pulley app does. ── */
+.cct-account          { margin-left: 12px; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.cct-account[hidden]  { display: none; }
+.cct-account-email    { opacity: 0.88; }
+.cct-account-balance  { background: rgba(255,255,255,0.18); border-radius: 12px; padding: 3px 10px;
+                        border: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.cct-account-balance:hover,
+.cct-account-balance:focus-visible { background: rgba(255,255,255,0.32); outline: none; }
+.cct-token-count      { margin: 0 0 6px; font-size: 34px; font-weight: 700; color: #0078d4; line-height: 1.1; }
+.cct-token-count span { font-size: 16px; font-weight: 600; color: #333; }
+
 .cct-btn              { font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 4px; border: 1px solid #c8c8c8;
                         background: #fff; color: #333; cursor: pointer; }
 .cct-btn:hover        { filter: brightness(0.96); }

@@ -120,6 +120,18 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "backup: its run is counted": ("db_offsite_backup.py",
                                    '        with job_use(_env("DATABASE_URL"), "cct-db-backup", "backup"):',
                                    '        with __import__("contextlib").nullcontext():'),
+    # the business settings win (cct_common 0.29.0; campaigns/2026-10-27-signup-grant-10.md, phase 3)
+    "settings: the signup grant is the setting's": ("accounts_setup.py", "    accounts = AccountStore(tokens)\n",
+                                                    "    accounts = AccountStore(tokens, signup_grant=20)\n"),
+    "settings: the buy page is the setting's": (AP, "charges.attach(app, _accounts_state,  # per-export token charging",
+                                                "charges.attach(app, _accounts_state, buy_url='/account/buy',  # per-export token charging"),
+    "settings: the packs are the setting's": (AP, "        'paypal': PayPalConfig(env('PAYPAL_CLIENT_ID')",
+        "        'packs': __import__('cct_common.payments').payments.DEFAULT_PACKS,\n        'paypal': PayPalConfig(env('PAYPAL_CLIENT_ID')"),
+    "page: the Download window's prices are the offer's": ("templates/index.html",
+        "tokens: tokensOn ? cctTokens.price(t.fmts[0][0]) : null", "tokens: tokensOn ? 2 : null"),
+    "page: tokens.js asks at the site's root": ("templates/index.html", '<script src="/static/cct/tokens.js" data-api-base="/">',
+                                                '<script src="/static/cct/tokens.js">'),
+    "page: the shared layout loads": ("templates/index.html", '  <link rel="stylesheet" href="/static/cct/cct_layout.css">\n', ""),
     "night: a skip fails the night":("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

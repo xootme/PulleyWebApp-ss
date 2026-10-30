@@ -1,4 +1,27 @@
-// tokens.js — the page side of the token model (ADR-008, charging.py).
+// tokens.js — the page side of the token model, one copy for every CCT app
+// (cct_common/static, 0.29.0; served as static/cct/tokens.js). It began as
+// Timing Pulley Generator's static/tokens.js (its ADR-008) and went from app to
+// app (Sprocket ADR-050, Gear ADR-040, Worm ADR-021, Bevel ADR-030, Planetary
+// ADR-027); the per-app differences are now options.
+//
+// Options, on the script tag:
+//   data-api-base   where this app's own routes are: "" (the default: relative,
+//                   for a page under /tools/<app>/) or "/" (an app whose routes
+//                   sit at the site's root, as the pulley app's do).
+//
+// Where it asks:
+//   api/account, api/design, api/tokens/quote, api/offer   this app's balance,
+//       designs, prices and offer (the shared ledger and business settings,
+//       read through this app), at data-api-base;
+//   /api/account/providers, /api/account/login-link, /api/account/logout
+//       absolute on purpose: one login for every app. On cheapcadtools.com the
+//       site sends these root paths to the pulley app, whose sign-in sets the
+//       site-wide cct_session cookie; on this app's own run.app address they
+//       are this app's (the same routes, the same database).
+//
+// The offer (the signup grant, prices, packs) comes from api/offer, the
+// business settings (cct_common.settings): "Get 20 free tokens when you sign
+// up." says whatever the grant is; without an answer it names no number.
 //
 // Does nothing unless the server has tokens on: /api/account answers 404
 // when TOKENS_ENABLED is off, and then every download keeps its old path.
@@ -20,6 +43,11 @@
 (function () {
   'use strict';
 
+  // data-api-base on this script's tag: "" (relative) or "/" (the site's root).
+  const script = document.currentScript;
+  const BASE = (script && script.dataset && script.dataset.apiBase) || '';
+  const api = path => BASE + path;
+
   const T = {
     enabled: false,
     unavailable: false,
@@ -28,6 +56,7 @@
     balance: 0,
     designId: null,
     buyUrl: '',
+    offer: null,                      // api/offer: the grant, prices, packs (null until read)
     _designJson: null,
   };
 
@@ -36,7 +65,7 @@
   async function refresh() {
     let r;
     try {
-      r = await fetch('/api/account', { credentials: 'same-origin' });
+      r = await fetch(api('api/account'), { credentials: 'same-origin' });
     } catch (e) {
       return;                         // offline: leave the page as it is
     }
@@ -63,7 +92,36 @@
   // account after 5 years without a sign-in, and each sign-in resets that.
   const EXPIRY_NOTE = 'Unused tokens expire after 5 years without a sign-in — ' +
                       'each time you sign in, the clock resets.';
-  const SIGNUP_OFFER = 'Get 20 free tokens when you sign up.';
+
+  // The offer, from the business settings. Read once; null if it can't be.
+  let _offer = null;
+  function loadOffer() {
+    if (!_offer) {
+      _offer = fetch(api('api/offer'), { credentials: 'same-origin' })
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null)
+        .then(d => { T.offer = d; return d; });
+    }
+    return _offer;
+  }
+
+  // "Get 20 free tokens when you sign up." with the grant as set; no number
+  // when the offer couldn't be read, and no line for a grant of 0.
+  function signupOffer() {
+    const o = T.offer;
+    if (!o || typeof o.signup_grant !== 'number') return 'Get free tokens when you sign up.';
+    if (o.signup_grant <= 0) return '';
+    return `Get ${o.signup_grant} free token${o.signup_grant === 1 ? '' : 's'} when you sign up.`;
+  }
+
+  // Tokens a format costs at the offer's prices (svg/dxf/png → 2D), or null.
+  function price(fmt) {
+    const o = T.offer;
+    if (!o || !o.tier_prices) return null;
+    const f = String(fmt || '').toLowerCase();
+    const tier = (o.format_tier && o.format_tier[f]) || (f === 'png' ? '2d' : f);
+    return typeof o.tier_prices[tier] === 'number' ? o.tier_prices[tier] : null;
+  }
 
   function render() {
     const box = document.getElementById('cct-account');
@@ -156,7 +214,7 @@
 
   async function signIn() {
     const body = el('div');
-    const list = await providers();
+    const [list] = await Promise.all([providers(), loadOffer()]);
     if (list.length) {
       const next = encodeURIComponent(location.pathname + location.search);
       const col = el('div', 'cct-oauth');
@@ -177,8 +235,10 @@
     input.placeholder = 'you@example.com';
     input.autocomplete = 'email';
     const status = el('p', 'cct-dialog-status');
-    body.append(input, status, el('p', 'cct-dialog-offer', SIGNUP_OFFER),
-                el('p', 'cct-dialog-note', EXPIRY_NOTE));
+    body.append(input, status);
+    const offerText = signupOffer();
+    if (offerText) body.append(el('p', 'cct-dialog-offer', offerText));
+    body.append(el('p', 'cct-dialog-note', EXPIRY_NOTE));
     const send = async (close, box) => {
       const email = input.value.trim();
       if (!email) { status.textContent = 'Enter your email address.'; return; }
@@ -274,7 +334,7 @@
     const design = window.cctFullDesign();
     const json = JSON.stringify(design);
     if (json === T._designJson && T.designId) return T.designId;
-    const r = await fetch('/api/design', {
+    const r = await fetch(api('api/design'), {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ design }),
@@ -293,7 +353,7 @@
     if (!did) return null;
     let r;
     try {
-      r = await fetch('/api/tokens/quote', {
+      r = await fetch(api('api/tokens/quote'), {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ design_id: did, fmt }),
@@ -335,7 +395,7 @@
     if (did) params.design_id = did;
     let r;
     try {
-      r = await fetch('/api/tokens/quote', {
+      r = await fetch(api('api/tokens/quote'), {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path, params }),
@@ -421,9 +481,10 @@
     return true;
   }
 
+  const start = () => refresh().then(() => (T.enabled ? loadOffer() : null));   // no offer without tokens
   const ready = (document.readyState === 'loading')
-    ? new Promise(res => document.addEventListener('DOMContentLoaded', () => refresh().then(res)))
-    : refresh();
+    ? new Promise(res => document.addEventListener('DOMContentLoaded', () => start().then(res)))
+    : start();
 
   window.cctTokens = {
     ready,
@@ -433,7 +494,8 @@
     get unavailable() { return T.unavailable; },
     get balance() { return T.balance; },
     get buyUrl() { return T.buyUrl; },
+    get offer() { return T.offer; },
     refresh, signIn, tokenDialog, prepare, withDesign, signal, watch, runExtras, handleRefusal,
-    ensureDesign, quoteDesign, buyDialog, message,
+    ensureDesign, quoteDesign, buyDialog, message, loadOffer, signupOffer, price,
   };
 })();

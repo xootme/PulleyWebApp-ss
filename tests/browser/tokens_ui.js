@@ -1,4 +1,4 @@
-// Drives the download window and token UI (static/tokens.js, index.html
+// Drives the download window and token UI (cct_common's static/cct/tokens.js, index.html
 // openDownloadWindow) end to end in headless Chrome over CDP — no Playwright
 // needed; Node's built-in WebSocket speaks CDP directly.
 //
@@ -166,7 +166,8 @@ async function main() {
   check('signed in: header shows email and 20 tokens',
         await js("document.querySelector('.cct-account-email')?.textContent === 'ui-test@example.com' && document.getElementById('cct-balance')?.textContent === '20 tokens'"));
   // Clicking the balance opens the token dialog: count, expiry dates, the
-  // sign-in note. No payment provider in this run, so no Buy button.
+  // sign-in note, and Buy tokens: the buy_url business setting (cct_common.settings),
+  // the site's buy page, whether or not this run has a payment provider.
   await js("document.getElementById('cct-balance').click()");
   await waitFor("document.querySelector('.cct-dialog-title')?.textContent === 'Your tokens'");
   check('balance click: token dialog shows the count',
@@ -177,8 +178,9 @@ async function main() {
         await js("[...document.querySelectorAll('.cct-dialog .cct-dialog-note')].some(n => n.textContent.includes('moves out every time you sign in') && n.textContent.includes('5 years'))"));
   check('balance click: free tokens are marked non-refundable',
         await js("[...document.querySelectorAll('.cct-dialog .cct-dialog-note')].some(n => n.textContent.includes('20 of your tokens are free ones') && n.textContent.includes(\"can't be refunded\"))"));
-  check('balance click: no Buy button without a payment provider',
-        await js("![...document.querySelectorAll('.cct-dialog .cct-btn')].some(b => b.textContent === 'Buy tokens')"));
+  check('balance click: Buy tokens goes to the buy_url setting',
+        await js("[...document.querySelectorAll('.cct-dialog .cct-btn')].some(b => b.textContent === 'Buy tokens') && cctTokens.buyUrl === 'https://cheapcadtools.com/account/buy'"),
+        await js('cctTokens.buyUrl'));
   await js("[...document.querySelectorAll('.cct-dialog .cct-btn')].find(b => b.textContent === 'Close').click()");
   await sleep(300);
   await js(`(() => { const on = id => { const e = document.getElementById(id); if (e && !e.checked) e.click(); };

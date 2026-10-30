@@ -4814,10 +4814,9 @@ _accounts_email = make_email_sender(
     has_key=bool(os.environ.get('RESEND_API_KEY', '').strip()),
     logger=app.logger)
 def _payment_settings():
-    from cct_common.payments import DEFAULT_PACKS, PayPalConfig, StripeConfig, parse_packs
+    from cct_common.payments import PayPalConfig, StripeConfig
     env = lambda k: os.environ.get(k, '').strip()
     return {
-        'packs': parse_packs(env('TOKEN_PACKS')) if env('TOKEN_PACKS') else DEFAULT_PACKS,
         'paypal': PayPalConfig(env('PAYPAL_CLIENT_ID'), env('PAYPAL_CLIENT_SECRET'),
                                env('PAYPAL_WEBHOOK_ID'), live=env('PAYPAL_LIVE') == '1'),
         'stripe': StripeConfig(env('STRIPE_SECRET_KEY'), env('STRIPE_WEBHOOK_SECRET')),
@@ -4829,7 +4828,6 @@ _accounts_state = init_accounts(
     enabled=os.environ.get('TOKENS_ENABLED') == '1',
     live=_ACCOUNTS_LIVE,
     email_sender=_accounts_email,
-    signup_grant=int(os.environ.get('TOKENS_SIGNUP_GRANT', '20')),   # 20 x 5 cents = $1
     # Hourly verified backups (cct_common.db_backup); none under the test
     # harness. The off-server copy (Cloud Storage) plugs in as backup_upload.
     backup_dir=None if os.environ.get('PULLEY_TESTING') else os.path.join(_LOG_DIR, 'backups'),
@@ -4842,31 +4840,24 @@ _accounts_state = init_accounts(
     inactivity_notify=None if os.environ.get('PULLEY_TESTING') else make_inactivity_notify(
         _accounts_email, app_name='CheapCADTools',
         site_url=os.environ.get('SITE_URL', 'https://cheapcadtools.com/tools/pulleys')),
-    # Daily token limit on each add-in/agent token (blank: no limit by default).
-    device_daily_budget=(int(os.environ['TOKENS_DEVICE_DAILY_BUDGET'])
-                         if os.environ.get('TOKENS_DEVICE_DAILY_BUDGET', '').strip()
-                         else 100),
     # Postgres on Cloud Run (a Secret Manager secret); unset = the SQLite file.
     database_url=os.environ.get('DATABASE_URL', '').strip() or None,
-    # New accounts per network per day that get the free signup tokens —
-    # later ones are still made, without them. Blank or 0: no limit.
-    signups_per_ip_per_day=int(os.environ.get('TOKENS_SIGNUPS_PER_IP_PER_DAY', '2') or 0) or None,
     # "Continue with Google / Microsoft / GitHub" — each appears once its
     # client id and secret are set (secrets from Secret Manager on Cloud Run).
     # Redirect URI to register: <site>/account/oauth/<provider>/callback
     oauth_clients={p: (os.environ.get(f'{p.upper()}_CLIENT_ID', '').strip(),
                        os.environ.get(f'{p.upper()}_CLIENT_SECRET', '').strip())
                    for p in ('google', 'microsoft', 'github')},
-    # Token packs at /account/buy (cct_common.payments): PayPal for $2/$5,
-    # Stripe from $5 — each provider once its keys are set (secrets from
-    # Secret Manager). PAYPAL_LIVE=1 leaves the PayPal sandbox. TOKEN_PACKS
-    # overrides the packs, e.g. "paypal:2=20,5=50;stripe:5=50,10=100,25=250".
+    # The /account/buy page (cct_common.payments): each provider once its keys
+    # are set (secrets from Secret Manager). PAYPAL_LIVE=1 leaves the PayPal
+    # sandbox.
     payments=_payment_settings(),
 )
+# The signup grant, the add-in daily limit, signups per IP, the prices, the
+# packs and the buy page are the business settings in the shared database,
+# edited on the admin page (cct_common.settings; Controller's
+# campaigns/2026-10-27-signup-grant-10.md, phase 3): this app passes none of its own.
 charges.attach(app, _accounts_state,  # per-export token charging — see charging.py
-               # The buy page, once a payment provider is set up.
-               buy_url=(os.environ.get('TOKENS_BUY_URL', '').strip()
-                        or ('/account/buy' if _accounts_state.payment_providers else '')),
                limit_notify=make_limit_notify(_accounts_email, app_name='CheapCADTools'))
 
 # Finished background downloads live at unguessable, expiring links —

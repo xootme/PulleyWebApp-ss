@@ -155,17 +155,14 @@ def start_housekeeping(accounts, notify, logger, *, interval_s: float = 24 * 360
 
 
 def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
-                  email_sender: Callable, signup_grant: int = 20,
-                  app_name: str = "CheapCADTools",
+                  email_sender: Callable, app_name: str = "CheapCADTools",
                   backup_dir: str | None = None,
                   backup_alert: Callable[[str], None] | None = None,
                   backup_upload: Callable[[str], None] | None = None,
                   backup_interval_s: float = 3600,
                   backup_first_delay_s: float = 30,
                   inactivity_notify: Callable | None = None,
-                  device_daily_budget: int | None = 100,
                   database_url: str | None = None,
-                  signups_per_ip_per_day: int | None = None,
                   oauth_clients: dict | None = None,
                   payments: dict | None = None) -> AccountsState:
     """backup_dir=None means no scheduled backups (tests). backup_upload
@@ -174,13 +171,13 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
     (free tokens after 2 idle years, empty dead accounts after 5); None
     (tests) leaves it off. database_url: a postgresql:// URL to keep the
     store in Postgres instead of the SQLite file (no scheduled backups
-    then — see the module docstring). signups_per_ip_per_day: new
-    accounts per network per day that get the free signup tokens (None: no
-    limit). oauth_clients: {"google"|"microsoft"|"github": (client_id,
+    then — see the module docstring). oauth_clients: {"google"|"microsoft"|"github": (client_id,
     client_secret)} — "Continue with …" sign-in; blank entries are skipped.
     payments: keyword arguments for cct_common.payments.register_payment_routes
-    (packs, paypal=PayPalConfig, stripe=StripeConfig) — the /account/buy page
-    and each provider whose keys are set; None: no buy page."""
+    (paypal=PayPalConfig, stripe=StripeConfig) — the /account/buy page and each
+    provider whose keys are set; None: no buy page. The signup grant, the
+    add-in daily limit, signups per IP and the packs are the business settings
+    in that database (cct_common.settings), the same for every app."""
     state = AccountsState(enabled=enabled)
     app.extensions["pulley_accounts"] = state
     if not enabled:
@@ -213,9 +210,7 @@ def init_accounts(app, *, log_dir: str, enabled: bool, live: bool,
                                 "code": "ACCOUNTS_UNAVAILABLE"}), 503
         return state
 
-    accounts = AccountStore(tokens, signup_grant=signup_grant,
-                            device_daily_budget=device_daily_budget,
-                            signups_per_ip_per_day=signups_per_ip_per_day)
+    accounts = AccountStore(tokens)
     register_account_routes(app, accounts, email_sender=email_sender,
                             app_name=app_name, secure_cookies=live,
                             oauth_clients=oauth_clients)

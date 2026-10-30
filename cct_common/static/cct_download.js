@@ -8,8 +8,12 @@
  * the button shows what the ticks cost as they change; signed-out and
  * short-of-tokens are handled here the same way for every app.
  *
- * Copy into the app's static/ (as cct_theme.css) and load before the page's
- * script. The app supplies only what is its own:
+ * Served by cct_common as static/cct/cct_download.js (0.29.0); load it before
+ * the page's script. Options on the script tag:
+ *   data-bundle-url    where the default submit POSTs (default /api/download/bundle);
+ *   data-failure-url   where failures are reported (default /api/download-failure:
+ *                      the site's root, the pulley app's shared log).
+ * The app supplies only what is its own:
  *
  *   CCTDownload.open({
  *     note:     "Every part ticked goes into one zip.",
@@ -40,11 +44,17 @@
   const onlyList = (only) => (only ? (Array.isArray(only) ? only : [only]) : null);
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+  // Options from this script's tag (see the header); read once, as it loads.
+  const tag = typeof document !== "undefined" && document.currentScript;
+  const opt = (name, fallback) => (tag && tag.dataset && tag.dataset[name]) || fallback;
+  const BUNDLE_URL = opt("bundleUrl", "/api/download/bundle");
+  const FAILURE_URL = opt("failureUrl", "/api/download-failure");
+
   // The default: build the zip in one request and save it (the apps without a
   // job queue). The response is the zip itself.
   async function submitSync(body, ui) {
     ui.status("Building your files…");
-    const r = await fetch("/api/download/bundle", {
+    const r = await fetch(BUNDLE_URL, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     if (!r.ok) {
@@ -248,7 +258,7 @@
     try {
       const body = JSON.stringify(Object.assign({}, info, {
         error: String((info && info.error) || "").slice(0, 2000) }));
-      fetch("/api/download-failure", { method: "POST", keepalive: body.length < 60000,
+      fetch(FAILURE_URL, { method: "POST", keepalive: body.length < 60000,
         credentials: "same-origin", headers: { "Content-Type": "application/json" }, body })
         .catch(() => {});
     } catch (e) { /* reporting must never break the page */ }

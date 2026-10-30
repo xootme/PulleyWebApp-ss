@@ -151,7 +151,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     tokens = accounts.tokens
     # Server-use counting (cct_common.server_use), knowing who's signed in.
     from .server_use import register_server_use
+    from .shared_static import register_shared_static
     register_server_use(app, accounts, tool=app_name)
+    register_shared_static(app)            # static/cct/: tokens.js and the other shared page files
     subject = email_subject or f"Sign in to {app_name}"
     body_fn = email_body or (lambda link: _default_email_body(app_name, link))
 

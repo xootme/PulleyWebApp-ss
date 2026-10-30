@@ -30,7 +30,13 @@ Never `git push` unless the user explicitly says "deploy".
 - `exporters/step_exporter.py` — STL generation (trimesh pipeline); cadquery STEP functions remain but are not called at runtime
 - `exporters/step_worker_ss.py` — STEP generation via small_step Rust binary (active path)
 - `templates/index.html` — all UI, JS, and Three.js viewer
-- `static/style.css` — all styles; bump `?v=N` on the CSS link in index.html when changing
+- `static/style.css` — this app's own styles; bump `?v=N` on the CSS link in index.html when changing.
+  The look, layout and page scripts every CCT app shares (cct_theme.css, cct_layout.css, tokens.js,
+  cct_download.js, cct_units.js, cct_busy.js) are cct_common's, served at `/static/cct/<name>` from
+  the vendored `cct_common/static/` — never copy them into `static/` or their rules into style.css
+- Business settings (signup grant, tier prices, packs, add-in daily limit, signups per IP, buy
+  page) are cct_common.settings, edited on /admin's Business settings tab; the app passes none of
+  its own (Controller campaigns/2026-10-27-signup-grant-10.md, phase 3)
 - `geometry/pulley_geometry.py` — 2D profile math shared by SVG, DXF, STL, and STEP
 - `static/*_help.html` — split help files: one 2D and one 3D per panel
 - `static/help/*.svg` — help pictures, built by `tools/help_illustrations/build_*.py` from the
