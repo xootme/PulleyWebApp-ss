@@ -132,6 +132,22 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "page: tokens.js asks at the site's root": ("templates/index.html", '<script src="/static/cct/tokens.js" data-api-base="/">',
                                                 '<script src="/static/cct/tokens.js">'),
     "page: the shared layout loads": ("templates/index.html", '  <link rel="stylesheet" href="/static/cct/cct_layout.css">\n', ""),
+    # the 3D view on createViewer, one failure one row (cct_common 0.31.1), the screw and nub checks
+    "3D: dragging orbits the part's z": ("templates/index.html",
+        "    THREE, OrbitControls, canvas, maxPixelRatio: 2,",
+        "    THREE, OrbitControls: class extends OrbitControls { constructor(c, d) { const u = c.up.clone();"
+        " c.up.set(0, 1, 0); super(c, d); c.up.copy(u); } }, canvas, maxPixelRatio: 2,"),
+    "3D: Top keeps +y up": ("templates/index.html", "    snaps: { top: [[0, 0, 1], [0, 1, 0]],", "    snaps: { top: [0, 0, 1],"),
+    "downloads: a failed job is reported with its id": ("templates/index.html",   # 0.31.1's order, undone
+        "        _reportDlFailure({ status: job._lost ? 404 : null, error: (job._lost ? 'poll: ' : '') + (job.error || '') });\n"
+        "        hideProgressModal();",
+        "        hideProgressModal();\n"
+        "        _reportDlFailure({ status: job._lost ? 404 : null, error: (job._lost ? 'poll: ' : '') + (job.error || '') });"),
+    "downloads: a start the server kept isn't reported again": ("templates/index.html",
+        "  e.kept = r.headers.get('X-CCT-Download-Failure') === 'kept';", "  e.kept = false;"),
+    "screws: a new size starts the insert hole over": ("templates/index.html",
+        "  document.getElementById(`hub${n}_screw_hole_dia`).value = '';\n  onHubChange(n);", "  onHubChange(n);"),
+    "nubs: in the top flange's hole, the panel warns": (AP, "    if r_nubs > r_hole + 1e-4:", "    if True:"),
     "night: a skip fails the night":("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

@@ -106,6 +106,31 @@ async function main() {
   await js(`(() => { const s = document.getElementById('view3d_which'); s.value = '1'; s.dispatchEvent(new Event('change')); })()`);
   check('Pulley 1: just pulley 1', (await shown()) === '1', await shown());
   await js(`(() => { const s = document.getElementById('view3d_which'); s.value = 'drive'; s.dispatchEvent(new Event('change')); })()`);
+
+  // The 3D view is cct_common's createViewer: a sideways drag orbits the part's axis, z,
+  // so the camera keeps its height (the owner, 2026-10-29: "fix the drag"; this page's
+  // own viewer orbited +y). Top looks straight down with +y up; the next view puts +z back.
+  const camRel = () => js(`(() => { const p = threeCamera.position, t = threeControls.target;
+    return [p.x - t.x, p.y - t.y, p.z - t.z, ...threeCamera.up.toArray()]; })()`);
+  await js(`snapView('oblique')`); await sleep(1200);
+  const box = await js(`(() => { const r = document.getElementById('three-canvas').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+  const before = await camRel();
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box[0], y: box[1] });
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box[0], y: box[1], button: 'left', clickCount: 1 });
+  for (let i = 1; i <= 10; i++) {
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box[0] + 15 * i, y: box[1], button: 'left', buttons: 1 });
+    await sleep(30);
+  }
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box[0] + 150, y: box[1], button: 'left', clickCount: 1 });
+  await sleep(1500);
+  const after = await camRel();
+  check('3D: a sideways drag orbits z (the camera keeps its height)',
+        Math.abs(after[2] - before[2]) < 1e-3 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1, { before, after });
+  await js(`snapView('top')`); await sleep(1200);
+  const top = await camRel();
+  check('3D: Top looks straight down, +y up', Math.hypot(top[0], top[1]) < 1e-3 && top[2] > 0 && top[4] === 1, top);
+  await js(`snapView('front')`); await sleep(1200);
+  check('3D: the next view puts +z back up', (await camRel()).slice(3).join() === '0,0,1', await camRel());
   await js(`(() => { const f = document.getElementById('feature_build'); f.checked = false; onFeatureBuildToggle(); })()`);
   await sleep(1200);
 

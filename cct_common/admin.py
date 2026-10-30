@@ -335,8 +335,9 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
     def failures_list():
         _need_admin()
         if download_failures is None:
-            return jsonify({"failures": [], "enabled": False, "app_url": app_url})
-        return jsonify({"failures": download_failures.list(1000), "enabled": True, "app_url": app_url})
+            return jsonify({"failures": [], "enabled": False, "app_url": app_url, "app": default_app})
+        return jsonify({"failures": download_failures.list(1000), "enabled": True, "app_url": app_url,
+                        "app": default_app})
 
     def failure_delete(failure_id):
         admin = _need_admin()

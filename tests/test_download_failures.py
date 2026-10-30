@@ -69,5 +69,9 @@ def test_the_page_reports_failures_and_stops_polling_a_lost_job():
     assert page.count('_reportDlFailure(') >= 5
     assert "if (r.status === 404) return { status: 'failed'" in page
     assert 'if (++_pollErrors < 60)' in page
+    # one failure, one row (cct_common 0.31.1): a start whose error the server kept isn't
+    # reported again; a failed job is reported with its id (tokens_ui.js drives both)
+    assert page.count('if (!err.kept) _reportDlFailure(') == 2
+    assert "e.kept = r.headers.get('X-CCT-Download-Failure') === 'kept'" in page
     js = (Path(__file__).resolve().parent.parent / 'cct_common' / 'static' / 'cct_download.js').read_text(encoding='utf-8')
     assert 'root.cctReportDownloadFailure = reportFailure' in js

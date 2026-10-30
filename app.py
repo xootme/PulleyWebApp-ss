@@ -1454,6 +1454,37 @@ def _flange_rim_fix(args, pfx, n, who, need):
     return fix, change
 
 
+def _nubs_in_flange_hole(args, pfx, n, who, fp):
+    """Gluing nubs that stand in the printed top flange's hole: STEP refuses
+    them (small_step's nubs_in_flange_bore) on the same numbers the worker
+    sends, so the page warns before a download (CCT_WebSite, 2026-10-30: a
+    20T XL with a Ø25.4 hub, nubs at r 12.6161 in a hole of r 12.7). Returns
+    ([warning], {element id: value}, [change text]); the fix turns the nubs
+    off (the owner, 2026-10-30) — a smaller hub or more teeth is a choice."""
+    from exporters import step_worker_ss as ssw
+    if not (fp.get('flange_3dprint') and fp.get('nubs_enabled')):
+        return [], {}, []
+    family, pitch = args.get('family', 'HTD'), args.get('pitch', '5M')
+    _, _, teeth, bore_mm, _, cl_mm, _, pr_ex = _parse_stl_params(args, '2' if pfx else '1')
+    hub_od = _parse_hub_params(args, pfx)[0]
+    sp_en, sp_hub, sp_rim, _w, _ft, _fb, sp_c, _h, _split = _parse_spoke_params(args, pfx)
+    # as the STEP route sends them
+    eff_hub_od = sp_hub if (sp_en and sp_hub > bore_mm and hub_od <= bore_mm) else hub_od
+    R_OD, tooth_ht = ssw._compute_rod(family, pitch, teeth, pr_ex, cl_mm)
+    r_nubs = ssw._nub_circle_r(R_OD, tooth_ht, fp.get('nub_dia_mm', 3.0))
+    r_hole = ssw.top_3d_flange_hole_r(bore_mm, eff_hub_od, sp_en and sp_c > 0, sp_hub, sp_rim,
+                                      R_OD, tooth_ht)
+    if r_nubs > r_hole + 1e-4:                  # small_step's ENDPOINT_EPS
+        return [], {}, []
+    by_hub = abs(r_hole - eff_hub_od / 2) < 1e-9
+    how = (f'use a Hub OD under Ø{math.floor(2 * r_nubs * 10) / 10:g} mm, more teeth, or turn the nubs off'
+           if by_hub else 'use more teeth, or turn the nubs off')
+    warning = (f'{who}the gluing nubs sit within r {r_nubs:.2f} mm, inside the top flange\'s '
+               f'Ø{2 * r_hole:.2f} mm hole' + (' (the hub)' if by_hub else '')
+               + f', so they\'d have no flange to hold — {how}.')
+    return [warning], {f'flange{n}_nubs_enabled': False}, [f'{who}gluing nubs off']
+
+
 @app.route('/api/dimensions')
 def api_dimensions():
     """The Dimensions panel under the 2D view (the Sprocket app's): each
@@ -1607,6 +1638,10 @@ def _dimensions(args):
                                     f'(≈ the larger of 3 mm and the flange height) — {how}.')
                     fix_set.update(rim_fix)
                     changes += rim_changes
+            nub_warn, nub_fix, nub_changes = _nubs_in_flange_hole(args, pfx, n, who, fp)
+            warnings += nub_warn
+            fix_set.update(nub_fix)
+            changes += nub_changes
 
         need_w = bs.min_face_width(key, belt_w, flanged)
         if need_w is not None:

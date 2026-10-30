@@ -29,7 +29,8 @@ Never `git push` unless the user explicitly says "deploy".
 - `app.py` — Flask routes; provision API routes (`/api/provision`, `/api/subscribers/*`) are at the bottom
 - `exporters/step_exporter.py` — STL generation (trimesh pipeline); cadquery STEP functions remain but are not called at runtime
 - `exporters/step_worker_ss.py` — STEP generation via small_step Rust binary (active path)
-- `templates/index.html` — all UI, JS, and Three.js viewer
+- `templates/index.html` — all UI and JS; the 3D view is cct_common's `createViewer`
+  (`static/cct/cct_viewer3d.js`, init3D) with this page's options, orbiting the part's z axis
 - `static/style.css` — this app's own styles; bump `?v=N` on the CSS link in index.html when changing.
   The look, layout and page scripts every CCT app shares (cct_theme.css, cct_layout.css, tokens.js,
   cct_download.js, cct_units.js, cct_busy.js) are cct_common's, served at `/static/cct/<name>` from

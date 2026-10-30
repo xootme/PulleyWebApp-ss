@@ -45,6 +45,9 @@ zs = sorted(glob.glob(os.path.join(r"${LOGDIR}", "results", "*", "*.zip")), key=
 print(json.dumps(sorted(zipfile.ZipFile(zs[-1]).namelist()) if zs else []))`]).toString();
   return JSON.parse(out);
 }
+const zipCount = () => Number(execFileSync(PY, ['-c', `
+import glob, os
+print(len(glob.glob(os.path.join(r"${LOGDIR}", "results", "*", "*.zip"))))`]).toString());
 const countExt = names => names.reduce((m, n) => { const e = n.split('.').pop(); m[e] = (m[e] || 0) + 1; return m; }, {});
 
 async function main() {
@@ -106,9 +109,17 @@ async function main() {
   const closeWindow = () => js("document.querySelector('.cct-dialog-overlay')?.remove()");
   const history = () => js("fetch('/api/account/history?limit=200').then(r => r.json())");
   const balance = () => js("fetch('/api/account').then(r => r.json()).then(d => d.balance)");
+  // A zip job is over when a new zip is in and the busy overlay and the progress box are
+  // gone. (Waiting for the progress box to show, then go, missed one that came and went
+  // between polls on a busy machine, and the downloads were read before the zip was in.)
   const waitJob = async () => {
-    await waitFor("document.getElementById('progress-modal-overlay').style.display === 'flex'", 10000);
-    await waitFor("document.getElementById('progress-modal-overlay').style.display !== 'flex'", 240000);
+    const zips = zipCount();
+    const t = Date.now();
+    while (Date.now() - t < 240000) {
+      if (zipCount() > zips && await js("document.getElementById('progress-modal-overlay').style.display !== 'flex'"
+                                        + " && document.getElementById('loading-overlay').style.display !== 'flex'")) break;
+      await sleep(300);
+    }
     await sleep(1000);
   };
   const setMode3D = on => js(`(() => { const e = document.getElementById('feature_build'); if (e.checked !== ${on}) e.click(); })()`);
@@ -274,6 +285,33 @@ s.credit(a, -(s.balance(a) - 1), kind="adjust", detail="browser test")`], { cwd:
   await js("document.querySelector('.cct-dl .cct-btn-primary').click()");
   await waitFor("document.querySelector('.cct-dialog-title')?.textContent === 'Not enough tokens'");
   check('low balance: buy dialog', (await dialogTitle()) === 'Not enough tokens');
+
+  // 7. one failure, one row (cct_common 0.31.1): a failed job is reported with its id
+  //    (before the progress box clears it), so the server folds it into its own row;
+  //    a start whose error answer the server kept isn't reported again
+  await js("document.querySelectorAll('.cct-dialog-overlay').forEach(o => o.remove()); true");
+  const sent = await js(`(async () => {
+    const sent = [], realFetch = window.fetch, realReport = window.cctReportDownloadFailure;
+    const answer = (body, status, headers = {}) => new Response(JSON.stringify(body),
+      { status, headers: { 'Content-Type': 'application/json', ...headers } });
+    window.cctReportDownloadFailure = r => sent.push({ job_id: r.job_id, error: r.error });
+    try {
+      window.fetch = async (url, o) => String(url).includes('/api/download-status/')
+        ? answer({ status: 'failed', error: 'Generation failed' }, 200) : realFetch(url, o);
+      _currentJobInfo = { route: '/api/download/step-async', params: {}, t0: Date.now() };
+      _currentJobId = 'job-ui-test';
+      pollJobStatus();
+      await new Promise(r => setTimeout(r, 1500));
+      window.fetch = async (url, o) => String(url).includes('/api/download/step-async')
+        ? answer({ error: 'refused' }, 400, { 'X-CCT-Download-Failure': 'kept' }) : realFetch(url, o);
+      _startAsyncJob('/api/download/step-async', {}, null);
+      await new Promise(r => setTimeout(r, 1500));
+    } finally { window.fetch = realFetch; window.cctReportDownloadFailure = realReport; closeErrorModal(); }
+    return sent;
+  })()`);
+  check('failed job: reported once, with its job id', sent.length >= 1 && sent[0].job_id === 'job-ui-test'
+        && sent[0].error === 'Generation failed', sent);
+  check('a start the server kept: not reported again', sent.length === 1, sent);
 
   finish(errors);
   ws.close(); chrome.kill();

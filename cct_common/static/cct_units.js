@@ -22,7 +22,8 @@
  *   .step mean mm to every script, while the person sees and types the chosen
  *   units. In mm the field behaves exactly as an unbound one.
  *
- * Outputs (readouts, dimensions) use fmt(mm).
+ * Outputs (readouts, dimensions) use fmt(mm); a server's message,
+ * inchMessage(text), which turns its "… mm" lengths into inches.
  */
 (function (root) {
   "use strict";
@@ -216,9 +217,20 @@
     return true;
   }
 
+  // A server message's lengths in the units the page shows (0.31.0; Planetary's
+  // and Gear's inchMessage): the servers word every message in mm, "0.5 to
+  // 100 mm" or "(4.00 mm)" (cct_common.labels); in inches each such length or
+  // range is turned over, and nothing else: mm², mm³, mm/… and N·mm stay.
+  const MM_LENGTH = /-?\d+(?:\.\d+)?(?:e[+-]?\d+)?(?:\s+to\s+-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)?\s?mm\b(?![²³/·])/g;
+  function inchMessage(text) {
+    if (!inch() || typeof text !== "string") return text;
+    return text.replace(MM_LENGTH, (m) => m.replace(/\s?mm$/, " in")
+      .replace(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g, (n) => tidy(Number(n) / INCH, IN_DIGITS)));
+  }
+
   const api = {
     INCH, IN_DIGITS, init, units, inch, toMm, fromMm, fmt, tidy, relabel, assume,
-    lenMm, setLen, forget, bind, bindMmLabels, convert,
+    lenMm, setLen, forget, bind, bindMmLabels, convert, inchMessage,
     get shown() { return shown; },
   };
   root.CCTUnits = api;

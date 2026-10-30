@@ -40,6 +40,7 @@ class Param:
     when: dict | None = None                 # only matters while these params have these values
     per_part: bool = False                   # repeats under Description.prefixes
     wire: tuple = ("1", "0")                 # boolean's (true, false) strings on the wire
+    label: str = ""                          # what the app's page calls it ("Disc Thickness"; 0.31.0)
 
     def __post_init__(self):
         if self.type not in TYPES:
@@ -47,7 +48,7 @@ class Param:
 
     def to_json(self) -> dict:
         out = {"name": self.name, "type": self.type, "help": self.help}
-        for key in ("unit", "group"):
+        for key in ("label", "unit", "group"):
             if getattr(self, key):
                 out[key] = getattr(self, key)
         for key in ("default", "min", "max", "when", "choices_by"):
@@ -113,6 +114,13 @@ class AgentError(ValueError):
         self.code = code
 
 
+def _named(name: str, p: Param) -> str:
+    """A parameter as a message names it: its name, which is what an agent
+    sends, and the page's label when it has one ("carrier_t (Disc
+    Thickness)", 0.31.0)."""
+    return f"{name} ({p.label})" if p.label else name
+
+
 def _num(value, name: str) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be a number, not {value!r}")
@@ -142,6 +150,8 @@ def coerce(desc: Description, params: dict) -> dict:
             continue
         if value is None:
             continue
+        sent = name
+        name = _named(str(name), p)
         try:
             if p.type == "boolean":
                 if isinstance(value, str):
@@ -152,7 +162,7 @@ def coerce(desc: Description, params: dict) -> dict:
                         value = False
                 if not isinstance(value, bool):
                     raise ValueError(f"{name} must be true or false, not {value!r}")
-                out[name] = p.wire[0] if value else p.wire[1]
+                out[sent] = p.wire[0] if value else p.wire[1]
                 continue
             if p.type in ("number", "integer"):
                 x = _num(value, name)
@@ -164,7 +174,7 @@ def coerce(desc: Description, params: dict) -> dict:
                     raise ValueError(f"{name} must be at least {p.min:g}{' ' + p.unit if p.unit else ''}")
                 if p.max is not None and x > p.max:
                     raise ValueError(f"{name} must be at most {p.max:g}{' ' + p.unit if p.unit else ''}")
-                out[name] = _wire_number(x)
+                out[sent] = _wire_number(x)
                 continue
             s = str(value)
             if p.type == "enum":
@@ -175,7 +185,7 @@ def coerce(desc: Description, params: dict) -> dict:
                     choices = list(table.get(str(key), []))
                 if s not in [str(c) for c in choices]:
                     raise ValueError(f"{name} must be one of {', '.join(str(c) for c in choices)}; not {s!r}")
-            out[name] = s
+            out[sent] = s
         except ValueError as e:
             problems.append(str(e))
     if problems:

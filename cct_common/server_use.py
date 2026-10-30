@@ -163,14 +163,19 @@ def tool_name(hint: str = "") -> str:
     return TOOL_ALIASES.get(name, name)
 
 
+def is_test_request(headers, ua: str = "", query: str = "") -> bool:
+    """Our own test traffic: the X-CCT-Test header (`headers`: lower-case
+    names, or Flask's), a test run's user agent, a live-sample check's query."""
+    return TEST_HEADER.lower() in headers or bool(_TEST_UA.search(ua or "")) or bool(_TEST_QUERY.search(query or ""))
+
+
 def categorize(r: dict) -> str:
     """r: method, path, query, ua, headers (lower-case names), status (None:
     no response), service, session ({kind, account_id} or None), admin, paid,
     ai (the request came to or through the MCP gateway), action."""
     h = r.get("headers") or {}
     ua = r.get("ua") or ""
-    if TEST_HEADER.lower() in h or _TEST_UA.search(ua) or _TEST_QUERY.search(r.get("query") or "") \
-            or (r.get("service") or "").endswith("-test"):
+    if is_test_request(h, ua, r.get("query") or "") or (r.get("service") or "").endswith("-test"):
         return "testing"
     status = r.get("status")
     if status is None or status >= 500:

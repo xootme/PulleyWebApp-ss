@@ -159,6 +159,20 @@ async function main() {
   p = await params();
   check('insert sends the hole, no thread settings', p.hub_screw_hold === 'insert' && p.hub_screw_hole_dia === 6.4 && !('thread_engagement' in p), p);
   check('insert: Cuts', (await cuts('6.40')) === 'Cuts: Ø6.40 mm insert hole', await text('#hub1_screw_cuts'));
+  // A new size or hold starts the hole over at the new screw's typical size, even a
+  // typed one (Worm's rule, the owner 2026-10-30: an M5 insert's 6.8 stayed through
+  // M4 and #8-32, and STEP refused it on a 6.35 mm bore).
+  const hole = () => js("document.getElementById('hub1_screw_hole_dia').value");
+  await setSel('#hub1_screw_size', 'M4');
+  check('insert: a new size starts the typed hole over (M4: 5.4)', (await hole()) === '5.4', await hole());
+  await setSel('#hub1_screw_size', '#8-32');
+  check('…#8-32: 5.6', (await hole()) === '5.6', await hole());
+  check('…and it is what is sent and cut', (await params()).hub_screw_hole_dia === 5.6
+    && (await cuts('5.60')) === 'Cuts: Ø5.60 mm insert hole', await text('#hub1_screw_cuts'));
+  await setSel('#hub1_screw_hole_dia', '7.1');
+  await setSel('#hub1_retention', 'set_screw_nut'); await setSel('#hub1_retention', 'set_screw_insert');
+  check('…a new hold starts it over too', (await hole()) === '5.6', await hole());
+  await setSel('#hub1_screw_size', 'M5');
 
   // ── Custom ──
   await setSel('#hub1_retention', 'set_screw_std'); await setSel('#hub1_screw_size', 'Custom');

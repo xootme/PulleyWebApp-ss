@@ -10,9 +10,11 @@
  *
  * Served by cct_common as static/cct/cct_download.js (0.29.0); load it before
  * the page's script. Options on the script tag:
- *   data-bundle-url    where the default submit POSTs (default /api/download/bundle);
- *   data-failure-url   where failures are reported (default /api/download-failure:
- *                      the site's root, the pulley app's shared log).
+ *   data-bundle-url    where the default submit POSTs (default api/download/bundle);
+ *   data-failure-url   where failures are reported (default api/download-failure).
+ * Both defaults are relative (0.30.0), so a page under /tools/<app>/ reaches its
+ * own app and the pulley app's at the root reaches its own: each app registers
+ * both routes (register_bundle_routes, register_download_failure_log).
  * The app supplies only what is its own:
  *
  *   CCTDownload.open({
@@ -25,7 +27,8 @@
  *     zipName:  "gear-m2-20T",
  *     charging: null | {                             // the app's account / token client
  *       on, unavailable, signedIn, quote(top), ensureDesign(), signIn(), buyDialog(cost, balance, url) },
- *     submit:   async (body, ui) => …,               // default: POST /api/download/bundle, save the zip
+ *     submit:   async (body, ui) => …,               // default: POST api/download/bundle, save the zip;
+ *                                                    // a failed job throws an Error with .job_id
  *   });
  *
  * The window's elements keep fixed ids for the apps' browser harnesses:
@@ -47,8 +50,8 @@
   // Options from this script's tag (see the header); read once, as it loads.
   const tag = typeof document !== "undefined" && document.currentScript;
   const opt = (name, fallback) => (tag && tag.dataset && tag.dataset[name]) || fallback;
-  const BUNDLE_URL = opt("bundleUrl", "/api/download/bundle");
-  const FAILURE_URL = opt("failureUrl", "/api/download-failure");
+  const BUNDLE_URL = opt("bundleUrl", "api/download/bundle");
+  const FAILURE_URL = opt("failureUrl", "api/download-failure");
 
   // The default: build the zip in one request and save it (the apps without a
   // job queue). The response is the zip itself.
@@ -59,7 +62,10 @@
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
-      throw new Error(d.error || `Server returned ${r.status}`);
+      const e = new Error(d.error || `Server returned ${r.status}`);
+      e.status = r.status;
+      e.kept = !!(r.headers && r.headers.get("X-CCT-Download-Failure"));   // the server kept its row (0.31.1)
+      throw e;
     }
     const blob = await r.blob();
     const m = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
@@ -232,11 +238,24 @@
       } catch (e) {
         status.textContent = e.message || String(e);
         go.disabled = false;
-        reportFailure({ route: "/api/download/bundle", fmt: "bundle", error: e.message || String(e),
-                        duration_ms: Date.now() - t0, params: body });
+        reportFailure(submitFailure(e, body, Date.now() - t0));
       }
     });
     return { close, selection };
+  }
+
+  // What a failed submit reports. An app's own submit (a job queue) names
+  // what failed on the error it throws: e.job_id, so the server's row for
+  // that job and this report are one row (0.30.0); e.route and e.status when
+  // it knows them. Nothing (null) when e.kept: the server's answer said it
+  // kept the failure (its X-CCT-Download-Failure header, 0.31.1).
+  function submitFailure(e, body, ms) {
+    if (e && e.kept) return null;
+    const info = { route: (e && e.route) || "/api/download/bundle", fmt: "bundle",
+                   error: (e && e.message) || String(e), duration_ms: ms, params: body };
+    if (e && e.job_id) info.job_id = String(e.job_id);
+    if (e && e.status) info.status = e.status;
+    return info;
   }
 
   // Every file the window would fetch with every box ticked (the harnesses).
@@ -254,7 +273,9 @@
   // (the server killed at its time limit, the instance gone), a network error,
   // a job that never finished. Never throws, never delays the page.
   //   cctReportDownloadFailure({ route, part, fmt, status, error, duration_ms, job_id, params })
+  // Nothing (null): nothing to report (submitFailure, a failure the server kept).
   function reportFailure(info) {
+    if (!info) return;
     try {
       const body = JSON.stringify(Object.assign({}, info, {
         error: String((info && info.error) || "").slice(0, 2000) }));
@@ -265,5 +286,5 @@
   }
   root.cctReportDownloadFailure = reportFailure;
 
-  root.CCTDownload = { open, allFiles, submitSync, reportFailure };
+  root.CCTDownload = { open, allFiles, submitSync, reportFailure, submitFailure };
 })(typeof window !== "undefined" ? window : globalThis);

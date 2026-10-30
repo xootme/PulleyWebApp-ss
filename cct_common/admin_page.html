@@ -424,13 +424,27 @@ let fails = [];
 const failsSort = { key: 'created_at', dir: -1 };
 const secs = ms => ms == null ? '' : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
 // The design a failure was for, to open it again in the app (a zip: its first file's).
-const designOf = r => { const p = r.params || {};
+// Not `design` (the whole design as JSON, for the file to embed) or `_ts`: the
+// app reads neither when the page loads, and with them the link outgrew the
+// server's request line (gunicorn's 4094 bytes, 0.31.1).
+function designOf(r) {
+  const p = r.params || {}, skip = ['design', '_ts'];
   const d = Array.isArray(p.files) && p.files[0] && p.files[0].params ? p.files[0].params : p;
-  return d && (d.family || d.teeth || d.module) ? d : null; };
+  if (!d || !(d.family || d.teeth || d.module)) return null;
+  return Object.fromEntries(Object.entries(d).filter(([k]) => !skip.includes(k)));
+}
 // The app's public address, as register_admin(app_url=) gives it; without one
-// (local), the app is where this page is, less /admin.
-let appUrl = '';
-const appBase = () => appUrl ? appUrl.replace(/\/?$/, '/') : location.pathname.replace(/\/admin\/?$/, '/');
+// (local), the app is where this page is, less /admin. The failures table is
+// every app's (one database), so a row from another app opens that app, at
+// /tools/<its name>/ on the same site (0.30.0).
+let appUrl = '', ownApp = '';
+function designBase(row, appUrl, ownApp, here) {
+  const own = appUrl ? appUrl.replace(/\/?$/, '/') : here.pathname.replace(/\/admin\/?$/, '/');
+  if (!row.app || !ownApp || row.app === ownApp) return own;
+  const site = appUrl ? new URL(appUrl).origin : here.origin;
+  return site + '/tools/' + encodeURIComponent(row.app) + '/';
+}
+const appBase = r => designBase(r, appUrl, ownApp, location);
 const failsCols = [
   { key: 'created_at', label: 'When', date: true, cell: r => date(r.created_at) },
   { key: 'source', label: 'Seen by', cell: r => el('span', 'pill ' + r.source, r.source) },
@@ -442,7 +456,7 @@ const failsCols = [
       d.append(el('div', '', (r.status ? r.status + ' — ' : '') + (r.error || '(no message)')));
       const des = designOf(r);
       if (des) { const a = el('a', '', 'Open this design'); a.target = '_blank'; a.rel = 'noopener';
-                 a.href = appBase() + '?' + new URLSearchParams(des); d.append(a); }
+                 a.href = appBase(r) + '?' + new URLSearchParams(des); d.append(a); }
       if (r.params && Object.keys(r.params).length) { const det = el('details');
         det.append(el('summary', 'sub', 'request'), el('pre', 'state', JSON.stringify(r.params, null, 1)));
         d.append(det); }
@@ -470,7 +484,7 @@ function drawFails() {
         failsCols, failsSort, $('#fails-count'), 'failure');
 }
 loaders.fails = async () => {
-  try { const d = await api('/admin/api/download-failures'); fails = d.failures; appUrl = d.app_url || '';
+  try { const d = await api('/admin/api/download-failures'); fails = d.failures; appUrl = d.app_url || ''; ownApp = d.app || '';
         if (!d.enabled) { $('#fails').replaceChildren(el('div', 'empty', 'This app keeps no download failures.'));
                           $('#fails-summary').textContent = ''; return; }
         drawFails(); }

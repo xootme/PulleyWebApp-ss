@@ -272,7 +272,9 @@ async function main() {
   check('…picks the largest ISO 14 size that fits, and the hub for it',
     (await val('#spline1_preset')) === '6,16,20,4' && (await val('#spline1_minor')) === '16' && (await val('#hub1_od')) === '30.5',
     [await val('#spline1_preset'), await val('#hub1_od')]);
-  check('…and the bore follows', (await val('#bore')).startsWith('16.0'), await val('#bore'));
+  // the bore is /api/spline's hole for the new size, after the settle on a busy machine
+  check('…and the bore follows', await waitFor("document.getElementById('bore').value.startsWith('16.0')", 8000),
+        await val('#bore'));
 
   // ── hex bar (ADR-018) ──
   await js("localStorage.clear()");

@@ -19,9 +19,23 @@ the download was for — so a failure can be reopened and tried again. No
 account, email or token: who it was isn't needed to reproduce it.
 
 Refusals are not failures and aren't kept: sign in (401), pay (402), not
-allowed (403), the trial limit (429), not enough tokens. A page report for a
-job the server already recorded is dropped (same job id), so a job failure
-is one row. Rows older than RETENTION_S are deleted as new ones arrive.
+allowed (403), the trial limit (429), not enough tokens. A page report or a
+job's row for a job already recorded is dropped (same job id), so a job
+failure is one row. A zip that fails on one of its files (the bundle calls
+each file's route in-process) is that file's row: its route, part and
+error, with the zip job's id; the job's own row, the page's report and, for
+a zip made at once, the bundle route's answer are dropped (0.30.0: Worm and
+Gear saw two rows a zip). Rows older than RETENTION_S are deleted as new
+ones arrive.
+
+A row the server kept says so on its answer (KEPT_HEADER), so the page
+doesn't report the same failure again (0.31.1: a zip made at once was the
+file's row and the page's). Our own test traffic leaves no row: the
+X-CCT-Test header, a test run's user agent (server_use.is_test_request),
+and the zips and jobs it starts (a release's smoke test asks for an expired
+file on purpose). The design's own copy that a file embeds (`design`, the
+whole design as JSON) isn't kept: the other params are the design, and it
+took a zip's row past MAX_PARAMS_CHARS.
 
     store = DownloadFailures(os.environ["DATABASE_URL"])
     register_download_failure_log(app, store, app_name="pulleys", app_version=V)
@@ -29,6 +43,7 @@ is one row. Rows older than RETENTION_S are deleted as new ones arrive.
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import secrets
@@ -36,6 +51,7 @@ import threading
 import time
 from typing import Optional
 
+from .server_use import is_test_request
 from .sqlite_db import SqliteDB
 
 RETENTION_S = 90 * 24 * 3600
@@ -49,8 +65,20 @@ REFUSAL_STATUSES = frozenset({401, 402, 403, 429})
 REFUSAL_ERRORS = ("Not enough tokens", "reached its daily limit", "Sign in to download")
 # Never kept: they say who, not what.
 PRIVATE_KEYS = frozenset({"_fpt", "session_id", "design_id", "token", "access_token", "email"})
+# Never kept: the whole design again, as JSON, for the file to embed (0.31.1).
+BULKY_KEYS = frozenset({"design"})
+# On a download route's error answer when its row was kept: the page needn't
+# report it (cct_download.js).
+KEPT_HEADER = "X-CCT-Download-Failure"
 # Page reports per server process per minute: enough for a bad hour, not a flood.
 PAGE_REPORTS_PER_MIN = 30
+# The WSGI environ key that marks a zip's own call to a file route
+# (download_bundle.build_zip): {"job_id": …}; the failure log records a failed
+# call as the zip's one row and sets "recorded" (0.30.0). Set in-process
+# only: a request from outside can't carry it.
+BUNDLE_ENVIRON = "cct.bundle"
+# Set while a test request's zip is built (download_bundle), in its thread too.
+_TESTING = contextvars.ContextVar("cct_download_testing", default=False)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS download_failures (
@@ -76,9 +104,27 @@ CREATE INDEX IF NOT EXISTS download_failures_job ON download_failures (job_id);
 
 
 def _clean_params(params) -> dict:
+    """The params less who it was and the design's embedded copy; a zip's
+    files' params too."""
     if not isinstance(params, dict):
         return {}
-    return {str(k): v for k, v in params.items() if str(k) not in PRIVATE_KEYS}
+    out = {str(k): v for k, v in params.items() if str(k) not in PRIVATE_KEYS | BULKY_KEYS}
+    if isinstance(out.get("files"), list):
+        out["files"] = [dict(f, params=_clean_params(f["params"]))
+                        if isinstance(f, dict) and isinstance(f.get("params"), dict) else f for f in out["files"]]
+    return out
+
+
+def is_testing() -> bool:
+    """This request, or the zip or job it started, is our own test traffic."""
+    if _TESTING.get():
+        return True
+    try:
+        from flask import has_request_context, request
+    except ImportError:
+        return False
+    return has_request_context() and is_test_request(request.headers, request.user_agent.string,
+                                                     request.query_string.decode("latin-1"))
 
 
 def is_refusal(status: Optional[int], error: Optional[str]) -> bool:
@@ -98,7 +144,7 @@ class DownloadFailures(SqliteDB):
             duration_ms: Optional[int] = None, job_id: str = "", params=None,
             revision: Optional[str] = None, instance: Optional[str] = None) -> Optional[str]:
         """Keep one failure; returns its id, or None when it isn't kept (a
-        refusal, or a page report of a job already recorded)."""
+        refusal, or a page report or job row of a job already recorded)."""
         if is_refusal(status, error):
             return None
         now = self.clock()
@@ -107,7 +153,7 @@ class DownloadFailures(SqliteDB):
         if len(p) > MAX_PARAMS_CHARS:
             p = json.dumps({"_truncated": p[:MAX_PARAMS_CHARS]})
         with self._write() as db:
-            if source == "page" and job_id and db.execute(
+            if source in ("page", "job") and job_id and db.execute(
                     "SELECT 1 FROM download_failures WHERE job_id = ?", (job_id,)).fetchone():
                 return None
             db.execute("DELETE FROM download_failures WHERE created_at < ?", (now - RETENTION_S,))
@@ -171,8 +217,10 @@ def _route_of(path: str) -> bool:
 
 def record_job_failure(store: Optional[DownloadFailures], job, error: str, *, app_name: str,
                        app_version: str = "") -> None:
-    """From the app's finish_job when a background download fails. Never raises."""
-    if store is None or job is None:
+    """From the app's finish_job when a background download fails. Never raises.
+    Not for a test request's job: one run in its request (Cloud Run), or a
+    zip (download_bundle) wherever it runs."""
+    if store is None or job is None or is_testing():
         return
     try:
         started = getattr(job, "started", None) or getattr(job, "created", None)
@@ -209,6 +257,14 @@ def register_download_failure_log(app, store: Optional[DownloadFailures], *, app
     def _cct_dl_failed(resp):
         if store is None or resp.status_code < 400 or not _route_of(request.path):
             return resp
+        if g.get("cct_download_failure_recorded"):                     # a zip's file said it already
+            resp.headers[KEPT_HEADER] = "kept"
+            return resp
+        bundle = request.environ.get(BUNDLE_ENVIRON)                  # a zip's own call to this file
+        if is_testing() or (isinstance(bundle, dict) and bundle.get("testing")):
+            if isinstance(bundle, dict):
+                bundle["recorded"] = True                             # nor the zip's own row
+            return resp
         try:
             t0 = getattr(g, "_cct_dl_t0", None)
             ms = int((time.monotonic() - t0) * 1000) if t0 is not None else None
@@ -223,16 +279,21 @@ def register_download_failure_log(app, store: Optional[DownloadFailures], *, app
                 body = request.get_json(silent=True)
                 if isinstance(body, dict):
                     params.update(body)
-            store.add(source="server", app=app_name, app_version=app_version, route=request.path,
+            fid = store.add(source="server", app=app_name, app_version=app_version, route=request.path,
                       part=str(params.get("part") or params.get("pulley") or ""),
                       fmt=_fmt_of(request.path),
-                      status=resp.status_code, error=err, duration_ms=ms, params=params)
+                      status=resp.status_code, error=err, duration_ms=ms, params=params,
+                      job_id=(bundle or {}).get("job_id", "") if isinstance(bundle, dict) else "")
+            if fid is not None:
+                resp.headers[KEPT_HEADER] = "kept"
+                if isinstance(bundle, dict):
+                    bundle["recorded"] = True
         except Exception:
             app.logger.exception("could not record a failed download")
         return resp
 
     def report():
-        if store is None:
+        if store is None or is_testing():
             return jsonify({"kept": False})
         origin = request.headers.get("Origin")
         if origin and origin.rstrip("/") != request.host_url.rstrip("/"):

@@ -35,6 +35,7 @@ import re
 import threading
 import zipfile
 
+from .download_failures import _TESTING, BUNDLE_ENVIRON, is_testing
 from .tokens import FORMAT_TIER, TIER_PRICE, BudgetReached, InsufficientTokens
 
 MAX_FILES = 40
@@ -52,14 +53,17 @@ def _filename(resp, fallback: str) -> str:
     return os.path.basename(m.group(1)) if m else fallback
 
 
-def build_zip(app, planned, *, headers=None, progress=None) -> bytes:
+def build_zip(app, planned, *, headers=None, progress=None, mark=None) -> bytes:
     """The zip of every (path, params): each file from its route, called
     in-process; a name that repeats gets -2, -3 … Raises RuntimeError naming
-    the first route that fails."""
+    the first route that fails. `mark` ({"job_id": …, "testing": …}) goes to
+    each call's environ as BUNDLE_ENVIRON; the failure log sets
+    mark["recorded"]."""
     buf, seen = io.BytesIO(), set()
+    mark = {"job_id": ""} if mark is None else mark
     with app.test_client() as c, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for i, (path, params) in enumerate(planned):
-            r = c.get(path, query_string=params, headers=headers or {})
+            r = c.get(path, query_string=params, headers=headers or {}, environ_overrides={BUNDLE_ENVIRON: mark})
             if r.status_code != 200:
                 err = (r.get_json(silent=True) or {}).get("error") if r.is_json else None
                 raise RuntimeError(f"{path} failed ({r.status_code}): "
@@ -142,18 +146,21 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
             else None
 
         if jobs is None:                                   # the zip is the answer
-            quote = None
+            quote, mark = None, {"job_id": "", "testing": is_testing()}
             try:
                 if charge:
                     with charge() as quote:
-                        data = build_zip(app, planned, headers=headers)
+                        data = build_zip(app, planned, headers=headers, mark=mark)
                 else:
-                    data = build_zip(app, planned, headers=headers)
+                    data = build_zip(app, planned, headers=headers, mark=mark)
             except InsufficientTokens as e:
                 return jsonify({"error": f"Not enough tokens: needs {e.needed}, you have {e.balance}."}), 402
             except BudgetReached as e:
                 return jsonify({"error": f"This add-in reached its daily limit of {e.budget} tokens."}), 429
             except RuntimeError as e:
+                if mark.get("recorded"):                   # the file's own row is the zip's (0.30.0)
+                    from flask import g
+                    g.cct_download_failure_recorded = True
                 return jsonify({"error": str(e)}), 400
             resp = Response(data, mimetype="application/zip",
                             headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
@@ -167,14 +174,16 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
 
         create_job, start_job, update_progress, finish_job = jobs
         job = create_job("bundle", {"files": len(planned), "name": name})
+        testing = is_testing()                             # a test's zip leaves no failure row
 
         def build():
             ctx = app.app_context()
             ctx.push()
+            tested = _TESTING.set(testing)                 # finish_job's record_job_failure, in this thread
             start_job(job.id)
             try:
                 with (charge() if charge else _null()) as quote:
-                    data = build_zip(app, planned, headers=headers,
+                    data = build_zip(app, planned, headers=headers, mark={"job_id": job.id, "testing": testing},
                                      progress=lambda pct: update_progress(job.id, pct))
                     url = save_result(data, name + ".zip")
                     if charges is not None:
@@ -189,6 +198,7 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
             except Exception as e:
                 finish_job(job.id, error=str(e))
             finally:
+                _TESTING.reset(tested)
                 ctx.pop()
 
         if run_inline():

@@ -163,6 +163,29 @@ def _nub_circle_r(r_tooth_od, tooth_ht, nub_dia_mm):
     return r_groove_bottom - margin
 
 
+def top_3d_flange_hole_r(bore_mm, hub_od_mm, spokes_on, spoke_hub_od_mm, rim_depth_mm, R_OD, tooth_ht):
+    """The printed top flange's hole radius, as --top-3d is sent it (and the
+    page's nubs check, app._nubs_in_flange_hole, asks it)."""
+    from geometry.flange_geometry import flange_inner_r_3dprint
+    # prof_r_tooth = the groove bottom with spokes, the OD without: only for
+    # the inner edge (flange_inner_r: groove bottom - rim depth). The flange
+    # itself flares from the tooth tips (R_OD) on every pulley.
+    prof_r_tooth = R_OD - tooth_ht if spokes_on else R_OD
+    r_inner = flange_inner_r_3dprint(
+        bore_mm, hub_od_mm, spokes_on, spoke_hub_od_mm,
+        r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
+    if r_inner >= R_OD:
+        # A hub wider than the pulley stands on the top flange: the flange
+        # is a full disc from the bore under it, as the STL builds it. Its
+        # hole at the hub's radius would reach past the tooth tips it flares
+        # from: small_step 0.12 made that an inside-out solid, later ones
+        # refuse it (the owner, 2026-10-12; GT2 30T with a 20 mm hub).
+        r_inner = flange_inner_r_3dprint(
+            bore_mm, 0.0, spokes_on, spoke_hub_od_mm,
+            r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
+    return r_inner
+
+
 def _run_cmd(cmd) -> bytes:
     """Run cmd, return stdout bytes.  On failure write stderr and exit(1)."""
     result = subprocess.run(cmd, capture_output=True, check=False)
@@ -375,22 +398,9 @@ def _build_pulley_cmd(params, ss_bin, dxf_tmp):
         spokes_on = spoke_count > 0
 
         if flange_3dprint:
-            # prof_r_tooth = the groove bottom with spokes, the OD without: only for
-            # the inner edge (flange_inner_r: groove bottom - rim depth). The flange
-            # itself flares from the tooth tips (R_OD) on every pulley.
             prof_r_tooth = _R_tr if spokes_on else R_OD
-            r_inner_top = flange_inner_r_3dprint(
-                bore_mm, hub_od_mm, spokes_on, spoke_hub_od_mm,
-                r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
-            if r_inner_top >= R_OD:
-                # A hub wider than the pulley stands on the top flange: the flange
-                # is a full disc from the bore under it, as the STL builds it. Its
-                # hole at the hub's radius would reach past the tooth tips it flares
-                # from: small_step 0.12 made that an inside-out solid, later ones
-                # refuse it (the owner, 2026-10-12; GT2 30T with a 20 mm hub).
-                r_inner_top = flange_inner_r_3dprint(
-                    bore_mm, 0.0, spokes_on, spoke_hub_od_mm,
-                    r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)
+            r_inner_top = top_3d_flange_hole_r(bore_mm, hub_od_mm, spokes_on, spoke_hub_od_mm,
+                                               rim_depth_mm, R_OD, tooth_ht)
             r_inner_bot = flange_inner_r_3dprint_bottom(
                 bore_mm, spokes_on, spoke_hub_od_mm,
                 r_tooth_OD=prof_r_tooth, rim_depth_mm=rim_depth_mm)

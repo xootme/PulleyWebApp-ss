@@ -379,7 +379,7 @@
         <input type="number" id="hub1_od" value="20" min="6" max="200" step="0.5" oninput="onHubChange(1)" style="width:100%">
 
         <label for="hub1_retention">Retention Method</label>
-        <select id="hub1_retention" onchange="onHubChange(1)">
+        <select id="hub1_retention" onchange="onScrewKindChange(1)">
           <option value="set_screw_nut">Set Screw (captured nut)</option>
           <option value="set_screw_std">Set Screw (threaded)</option>
           <option value="set_screw_insert">Set Screw (heat-set insert)</option>
@@ -389,7 +389,7 @@
 
         <div id="hub1_setscrew_opts">
           <label for="hub1_screw_size">Set Screw Size</label>
-          <select id="hub1_screw_size" onchange="onHubChange(1)">
+          <select id="hub1_screw_size" onchange="onScrewKindChange(1)">
             {{ screw_size_options() }}
           </select>
           <label for="hub1_screw_count">Number of Screws</label>
@@ -746,7 +746,7 @@
         <input type="number" id="hub2_od" value="20" min="1" max="200" step="0.5" oninput="onHubChange(2)" style="width:100%">
 
         <label for="hub2_retention">Retention Method</label>
-        <select id="hub2_retention" onchange="onHubChange(2)">
+        <select id="hub2_retention" onchange="onScrewKindChange(2)">
           <option value="set_screw_nut">Set Screw (captured nut)</option>
           <option value="set_screw_std">Set Screw (threaded)</option>
           <option value="set_screw_insert">Set Screw (heat-set insert)</option>
@@ -756,7 +756,7 @@
 
         <div id="hub2_setscrew_opts">
           <label for="hub2_screw_size">Set Screw Size</label>
-          <select id="hub2_screw_size" onchange="onHubChange(2)">
+          <select id="hub2_screw_size" onchange="onScrewKindChange(2)">
             {{ screw_size_options() }}
           </select>
           <label for="hub2_screw_count">Number of Screws</label>
@@ -3158,7 +3158,7 @@ async function openDownloadWindow() {
         if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
         if (!r.ok) {
           const d = await r.json().catch(() => ({}));
-          const e = new Error(d.error || `Server returned ${r.status}`); e.status = r.status; throw e;
+          throw _startError(r, d.error || `Server returned ${r.status}`);
         }
         return r.json();
       })
@@ -3171,7 +3171,7 @@ async function openDownloadWindow() {
         pollJobStatus();
       })
       .catch(err => { done();
-                      _reportDlFailure({ status: err.status || null, error: 'start: ' + err.message });
+                      if (!err.kept) _reportDlFailure({ status: err.status || null, error: 'start: ' + err.message });
                       showErrorModalWithRetry(`Couldn't start the download: ${err.message}`,
                                               () => openDownloadWindow()); });
     },
@@ -3808,10 +3808,14 @@ async function downloadSTL(n) {
 }
 
 // ── Three.js 3D preview ───────────────────────────────────────────────────────
+// The 3D view: cct_common's createViewer (init3D) and its parts, by the names the
+// harnesses and shoot3d.js read.
+let threeViewer   = null;
 let threeRenderer = null;
 let threeScene    = null;
 let threeCamera   = null;
 let threeControls = null;
+const VIEW_DIR    = [0.55, -0.9, 0.65];   // the default and Oblique view's direction
 let threeModel    = null;
 let threeModel2   = null;
 let threeBelt     = null;
@@ -4084,6 +4088,8 @@ async function init3D() {
   const { STLLoader }     = await import('/static/jsm/loaders/STLLoader.js');
   const { OrbitControls } = await import('/static/jsm/controls/OrbitControls.js');
 
+  const { createViewer }  = await import('/static/cct/cct_viewer3d.js');
+
   window._THREE         = THREE;
   window._STLLoader     = STLLoader;
   window._OrbitControls = OrbitControls;
@@ -4092,58 +4098,31 @@ async function init3D() {
   await new Promise(r => requestAnimationFrame(r));
   await new Promise(r => requestAnimationFrame(r));
 
+  // cct_common's viewer core (0.30.0) with this page's canvas, colour, lens, lights,
+  // controls and views. Dragging orbits the part's axis, z (the owner, 2026-10-29:
+  // "fix the drag"; this page's own viewer orbited +y).
   const canvas = document.getElementById('three-canvas');
-  const box    = canvas.getBoundingClientRect();
-  const W      = Math.max(box.width,  400);
-  const H      = Math.max(box.height, 300);
-  console.log('Three.js canvas size:', W, 'x', H, box);
-
-  threeRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  threeRenderer.setSize(W, H, false);
-  threeRenderer.setClearColor(0xfafbfc, 1);
-
-  threeScene = new THREE.Scene();
-
-  threeCamera = new THREE.PerspectiveCamera(40, W / H, 0.1, 10000);
-
-  // Lights
-  threeScene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-  dir.position.set(1, -1.5, 2).normalize();
-  threeScene.add(dir);
-  const fill = new THREE.DirectionalLight(0xddeeff, 0.4);
-  fill.position.set(-1, 1, 0.5).normalize();
-  threeScene.add(fill);
-
-  threeControls = new OrbitControls(threeCamera, canvas);
-  threeControls.enableDamping     = true;
-  threeControls.dampingFactor     = 0.08;
-  threeControls.screenSpacePanning = true;
-  threeControls.minDistance       = 1;
-  threeControls.maxDistance       = 2000;
-
-  // Keep renderer sized to canvas element
-  const resizeObs = new ResizeObserver(() => {
-    const b = canvas.getBoundingClientRect();
-    const W2 = Math.max(b.width, 1);
-    const H2 = Math.max(b.height, 1);
-    threeRenderer.setSize(W2, H2, false);
-    threeCamera.aspect = W2 / H2;
-    threeCamera.updateProjectionMatrix();
+  threeViewer = createViewer(canvas.parentElement, {
+    THREE, OrbitControls, canvas, maxPixelRatio: 2, clearColor: 0xfafbfc, fov: 40,
+    lights: (scene, camera, T) => {
+      scene.add(new T.AmbientLight(0xffffff, 0.7));
+      const dir = new T.DirectionalLight(0xffffff, 1.0);
+      dir.position.set(1, -1.5, 2).normalize();
+      scene.add(dir);
+      const fill = new T.DirectionalLight(0xddeeff, 0.4);
+      fill.position.set(-1, 1, 0.5).normalize();
+      scene.add(fill);
+    },
+    controls: { dampingFactor: 0.08, screenSpacePanning: true, minDistance: 1, maxDistance: 2000 },
+    // Top and Bottom keep this page's up; every other view puts +z back
+    snaps: { top: [[0, 0, 1], [0, 1, 0]], bottom: [[0, 0, -1], [0, -1, 0]] },
+    oblique: VIEW_DIR,
+    // every load refits, from VIEW_DIR at 3.2 × the model's radius
+    refit: 'always', frameDir: VIEW_DIR, fitMargin: 3.2 * Math.sin(THREE.MathUtils.degToRad(20)),
+    visibleOnly: true,                      // the views fit what the picker shows
+    onTick: dt => { if (turnOn && turnMotion && _turnShown()) setTurnAngle(turnU + dt * _turnRate()); },
   });
-  resizeObs.observe(canvas);
-
-  let lastFrame = 0;
-  function animate(t) {
-    requestAnimationFrame(animate);
-    const dt = lastFrame ? Math.min(0.1, (t - lastFrame) / 1000) : 0;
-    lastFrame = t;
-    if (turnOn && turnMotion && _turnShown()) setTurnAngle(turnU + dt * _turnRate());
-    threeControls.update();
-    threeRenderer.render(threeScene, threeCamera);
-  }
-  animate();
+  ({ renderer: threeRenderer, scene: threeScene, camera: threeCamera, controls: threeControls } = threeViewer);
 }
 
 // A splined bore's sample shaft (grey), rings (dark) and washers (blue), for
@@ -4190,88 +4169,45 @@ function _loadSTL(url, material, onLoaded, onError) {
   }, null, onError || ((e) => console.error('STL error', e)));
 }
 
-function _fitCamera(geometry) {
-  const THREE = window._THREE;
-  geometry.computeBoundingBox();
-  const box    = geometry.boundingBox;
-  const centre = new THREE.Vector3();
-  box.getCenter(centre);
-  const size   = new THREE.Vector3();
-  box.getSize(size);
-  const radius = size.length() * 0.5;
-  const dist   = radius * 3.2;
-  threeCamera.position.set(
-    centre.x + dist * 0.55,
-    centre.y - dist * 0.9,
-    centre.z + dist * 0.65,
-  );
+// The model framed from VIEW_DIR (threeViewer.frame). A Top or Bottom view's own
+// up isn't kept by the next load.
+function _frame(box) {
+  const THREE  = window._THREE;
+  const centre = box.getCenter(new THREE.Vector3());
+  const size   = box.getSize(new THREE.Vector3());
   threeCamera.up.set(0, 0, 1);
-  threeCamera.lookAt(centre);
-  threeControls.target.copy(centre);
+  threeViewer.frame(centre, size.length() * 0.5);
   threeControls.update();
   return size;
+}
+
+function _fitCamera(geometry) {
+  geometry.computeBoundingBox();
+  return _frame(geometry.boundingBox);
 }
 
 function _fitCameraToScene() {
-  const THREE = window._THREE;
-  const box3  = new THREE.Box3();
+  const box3 = new window._THREE.Box3();
   threeScene.traverse(obj => { if (obj.isMesh && obj.visible) box3.expandByObject(obj); });
   if (box3.isEmpty()) return;
-  const centre = new THREE.Vector3();
-  box3.getCenter(centre);
-  const size = new THREE.Vector3();
-  box3.getSize(size);
-  const radius = size.length() * 0.5;
-  const dist   = radius * 3.2;
-  threeCamera.position.set(
-    centre.x + dist * 0.55,
-    centre.y - dist * 0.9,
-    centre.z + dist * 0.65,
-  );
-  threeCamera.up.set(0, 0, 1);
-  threeCamera.lookAt(centre);
-  threeControls.target.copy(centre);
-  threeControls.update();
-  return size;
+  return _frame(box3);
 }
 
+// A view button: the visible model from that side, filling the view
+// (threeViewer.snap); an unknown view is the oblique one.
 function snapView(view) {
-  if (!threeCamera || !threeControls) return;
-  const THREE  = window._THREE;
-  const target = threeControls.target.clone();
-  const box3   = new THREE.Box3();
-  threeScene.traverse(obj => { if (obj.isMesh && obj.visible) box3.expandByObject(obj); });
-  const size   = new THREE.Vector3();
-  box3.getSize(size);
-  // Compute distance so the bounding sphere fills the view at the camera FOV.
-  // FOV = 40°, half-angle = 20°.  dist = radius / tan(20°), + 15% margin.
-  const radius = size.length() * 0.5;
-  const dist   = (radius / Math.tan(20 * Math.PI / 180)) * 1.15;
-
-  const positions = {
-    top:     [0,  0,  dist],
-    bottom:  [0,  0, -dist],
-    front:   [0, -dist, 0],
-    back:    [0,  dist, 0],
-    left:    [-dist, 0, 0],
-    right:   [ dist, 0, 0],
-    oblique: [dist * 0.55, -dist * 0.9, dist * 0.65],
-  };
-  const ups = {
-    top:     [0,  1, 0],
-    bottom:  [0, -1, 0],
-    front:   [0,  0, 1],
-    back:    [0,  0, 1],
-    left:    [0,  0, 1],
-    right:   [0,  0, 1],
-    oblique: [0,  0, 1],
-  };
-  const [px, py, pz] = positions[view] || positions.oblique;
-  const [ux, uy, uz] = ups[view]       || ups.oblique;
-  threeCamera.position.set(target.x + px, target.y + py, target.z + pz);
-  threeCamera.up.set(ux, uy, uz);
-  threeCamera.lookAt(target);
-  threeControls.update();
+  if (!threeViewer) return;
+  if (!threeViewer.snap(view, threeScene)) {
+    view = 'oblique';
+    if (!threeViewer.snap(view, threeScene)) return;
+  }
+  // Oblique stands back as far as this page's always did: the core puts every
+  // view at one distance, and this one's direction (VIEW_DIR) is 1.23 long.
+  if (view === 'oblique') {
+    const t = threeControls.target;
+    threeCamera.position.sub(t).multiplyScalar(Math.hypot(...VIEW_DIR)).add(t);
+    threeControls.update();
+  }
 }
 
 // The 3D view's picker: the whole drive, or one pulley with its own spline
@@ -5519,6 +5455,15 @@ function _syncScrewHole(n) {
   updateScrewCuts(n);
 }
 
+// A new screw size or way of holding it starts the hole over at its typical
+// size, even one typed (Worm's rule, the owner 2026-10-30: an M5 insert's 6.8 mm
+// hole stayed through M4 and #8-32, and STEP refused it on a 6.35 mm bore). A
+// design loaded from a file or a link keeps its own hole.
+function onScrewKindChange(n) {
+  document.getElementById(`hub${n}_screw_hole_dia`).value = '';
+  onHubChange(n);
+}
+
 // Dim the Hub card's fields while the hub is off, so the state is visually clear
 // (as Gear and Sprocket Designer grey theirs). Also on load and after a restore:
 // only a click used to dim them, so a fresh page showed live fields for no hub.
@@ -5635,6 +5580,14 @@ let _retryDownload = null;   // set by whoever starts a job; used by pollJobStat
 // (cct_download.js cctReportDownloadFailure; the admin page's Download failures tab).
 let _currentJobInfo = null;
 let _pollErrors = 0;
+// A download start's error answer as an Error: its status, and whether the
+// server kept its own row (X-CCT-Download-Failure: kept, cct_common 0.31.1).
+function _startError(r, message) {
+  const e = new Error(message);
+  e.status = r.status;
+  e.kept = r.headers.get('X-CCT-Download-Failure') === 'kept';
+  return e;
+}
 function _reportDlFailure(extra) {
   const info = _currentJobInfo || {};
   const started = info.t0 || _jobStartTime;
@@ -5662,7 +5615,7 @@ function _startAsyncJob(endpoint, params, retryFn) {
   .then(async r => {
     done();
     if (!r.ok && window.cctTokens && await cctTokens.handleRefusal(r)) return null;
-    if (!r.ok) { const e = new Error(`Server returned ${r.status}`); e.status = r.status; throw e; }
+    if (!r.ok) { throw _startError(r, `Server returned ${r.status}`); }
     return r.json();
   })
   .then(data => {
@@ -5675,8 +5628,9 @@ function _startAsyncJob(endpoint, params, retryFn) {
   })
   .catch(err => {
     done();
-    // a cut-off request (the server's time limit, the instance gone) lands here
-    _reportDlFailure({ status: err.status || null, error: 'start: ' + err.message });
+    // a cut-off request (the server's time limit, the instance gone) lands here;
+    // an error answer the server already kept isn't reported again
+    if (!err.kept) _reportDlFailure({ status: err.status || null, error: 'start: ' + err.message });
     showErrorModalWithRetry(`Failed to start download: ${err.message}`,
                             retryFn || (() => {}));
   });
@@ -5867,10 +5821,11 @@ function pollJobStatus() {
           document.body.removeChild(a);
         }
       } else if (job.status === 'failed') {
-        hideProgressModal();
-        // the server keeps its own row for a failed job (the page's is dropped as a
-        // duplicate); a lost job only the page can report
+        // the server keeps its own row for a failed job (the page's, with the job's
+        // id, is dropped as a duplicate); a lost job only the page can report.
+        // Reported before hideProgressModal() clears the job's id (cct_common 0.31.1).
         _reportDlFailure({ status: job._lost ? 404 : null, error: (job._lost ? 'poll: ' : '') + (job.error || '') });
+        hideProgressModal();
         _cctJobExtras = [];                // failed jobs are refunded; nothing rides along
         if (window.cctTokens) cctTokens.refresh();
         showErrorModalWithRetry(
@@ -5886,8 +5841,8 @@ function pollJobStatus() {
       console.error('Poll error:', err);
       // a short network blip is retried; a minute of failures is a failed download
       if (++_pollErrors < 60) { _jobPollTimer = setTimeout(pollJobStatus, 1000); return; }
-      hideProgressModal();
       _reportDlFailure({ error: 'poll: ' + err.message });
+      hideProgressModal();
       showErrorModalWithRetry(`Lost touch with the download: ${err.message}`, _retryDownload || (() => {}));
     });
 }
