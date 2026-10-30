@@ -223,7 +223,10 @@ async function main() {
     steps.push(...await js('__walk.features()'));
     await sleep(1500);
     for (let s = 0; s < STEPS; s++) { const st = await js('__walk.step()'); if (st) steps.push(st); await sleep(200); }
-    await sleep(2500);
+    // The design is read once the page is idle: after a fixed 2.5 s, on a busy machine, a
+    // step's follow-ups (a debounced redraw, the centre from the belt) came after it was
+    // read, and the 2D view's later values (teeth, centre) looked like a loss.
+    await sleep(500); await settled('the walk');
     const A = await js(PARAMS), visA = await js(VISIBLE), modeA = await js(MODE);
     const qs = new URLSearchParams(A).toString();
 
@@ -245,7 +248,7 @@ async function main() {
     }
     // The 2D view's drawings: its own requests leave the hubs out, but each file must
     // still embed the whole design (Sprocket's find: a 2D DXF imported as a plain plate).
-    if (await js(MODE)) { await js(`document.getElementById('feature_build').click()`); await sleep(2500); }
+    if (await js(MODE)) { await js(`document.getElementById('feature_build').click()`); await sleep(500); await settled('the 2D view'); }
     if (await js(MODE)) rec.problems.push('could not switch to the 2D view');
     for (const x of diffKeys(A, await js(PARAMS))) rec.problems.push(`2D view designParams: ${x}`);
     for (const f of await js(FILES_2D)) {
