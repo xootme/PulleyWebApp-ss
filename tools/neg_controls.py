@@ -148,6 +148,13 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "screws: a new size starts the insert hole over": ("templates/index.html",
         "  document.getElementById(`hub${n}_screw_hole_dia`).value = '';\n  onHubChange(n);", "  onHubChange(n);"),
     "nubs: in the top flange's hole, the panel warns": (AP, "    if r_nubs > r_hole + 1e-4:", "    if True:"),
+    "3D: Oblique stands back as it always did": ("templates/index.html", "oblique: VIEW_DIR, snapLength: 'asGiven',",
+                                                 "oblique: VIEW_DIR,"),
+    # cct_common 0.32's one hub-hole check (the owner's wording, 2026-10-30)
+    "screws: a hole too big for the bore, the panel warns": (AP, "    if too_big is None:\n        return [], {}, []",
+                                                             "    if True:\n        return [], {}, []"),
+    "screws: the hole's bore is the pulley's own": (AP, "    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]\n    too_big",
+                                                    "    bore_mm = 50.0\n    too_big"),
     "night: a skip fails the night":("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

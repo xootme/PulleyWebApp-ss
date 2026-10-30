@@ -693,11 +693,14 @@ $('#use-service').onchange = () => use && drawUse();
 // note, and the server keeps who, when, old and new.
 const TIER_NAMES = { '2d': '2D (SVG, DXF)', stl: 'STL', step: 'STEP' };
 const BIZ_TITLES = { signup_grant: 'Signup grant', tier_prices: 'Prices by tier', packs: 'Token packs',
-  device_daily_budget: 'Add-in / AI daily limit', signups_per_ip_per_day: 'Signups per IP per day', buy_url: 'Buy link' };
+  device_daily_budget: 'Add-in / AI daily limit', signups_per_ip_per_day: 'Signups per IP per day', buy_url: 'Buy link',
+  saved_designs: 'Saved designs', redownload_window: 'Re-download window', inline_checkout: 'Buy panel',
+  price_in_money: 'Money beside tokens' };
 const dollars = c => '$' + (c / 100).toFixed(c % 100 ? 2 : 0);
 const PROVIDER_NAMES = { paypal: 'PayPal', stripe: 'Stripe' };
 function showValue(key, v) {
   if (v == null) return 'no limit';
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
   if (key === 'tier_prices') return ['2d', 'stl', 'step'].map(t => `${TIER_NAMES[t]} ${v[t]}`).join(' · ');
   if (key === 'packs') return ['paypal', 'stripe'].filter(p => v[p] && v[p].length).map(p =>
     `${PROVIDER_NAMES[p]}: ${v[p].map(x => `${dollars(x.cents)}=${x.tokens}`).join(', ')}`).join(' · ');
@@ -745,6 +748,16 @@ function bizEditor(row) {
     }
     return [box, () => Object.fromEntries(Object.entries(lists).map(([provider, items]) => [provider,
       items.map(x => ({ cents: Math.round(parseFloat(x.price.value) * 100), tokens: x.tok.value }))]))];
+  }
+  if (typeof row.default === 'boolean') {
+    const c = el('input'), l = el('label'); c.type = 'checkbox'; c.checked = !!v;
+    l.append(c, ' on'); box.append(l); return [box, () => c.checked];
+  }
+  if (key === 'redownload_window') {
+    const s = el('select');
+    for (const [val, text] of [['24h', '24 hours'], ['forever', 'forever']]) {
+      const o = el('option', '', text); o.value = val; o.selected = v === val; s.append(o); }
+    box.append(s); return [box, () => s.value];
   }
   const i = el('input', 'url'); i.value = v; box.append(i); return [box, () => i.value];
 }

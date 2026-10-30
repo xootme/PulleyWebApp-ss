@@ -168,8 +168,10 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
                 # Paid only if the zip is sent in full (cct_common.charging).
                 from .charging import on_delivery
                 spend = quote.spend_id
-                return on_delivery(resp, lambda: None,
+                return on_delivery(resp, lambda: charges.keep_delivered(quote),
                                    lambda: charges.state.tokens.refund(spend, detail="download not completed"))
+            if quote is not None:
+                charges.keep_delivered(quote)              # free: kept as it's sent (saved designs)
             return resp
 
         create_job, start_job, update_progress, finish_job = jobs

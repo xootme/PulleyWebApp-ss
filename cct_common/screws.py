@@ -13,6 +13,9 @@ Timing Pulleys' hub set screws).
 
     screws.hex_hole_outline(3.28)                         # a hex hole's corners, corner-up
     screws.set_screw_angles(2, hex_bar=True)              # [0, 2π/3]: both on flats
+    screws.hub_hole_too_big(part="Pulley 1", size="M8", hold="thread", bore_mm=6.35,
+                            hub_od_mm=16, round_bore=True, engagement_percent=50)
+                                     # HoleTooBig(message, hole_mm, limit_mm, fix_size="M6")
 
 Sizes and diameters live here, and two rules every hub with set screws
 shares: which way a hex hole stands (`hex_hole_outline`, corner along the
@@ -212,3 +215,86 @@ def set_screw_angles(count: int, *, nut: bool = False, hex_bar: bool = False) ->
     if count > 2:
         raise ValueError(f"at most two set screws, not {count}")
     return [0.0, math.pi if nut else (2 * math.pi / 3 if hex_bar else math.pi / 2)]
+
+
+# ── a hub's screw hole too big to drill (owner, 2026-10-30) ───────────────
+
+# small_step drills a hub's screw only while the hole's reach (a round hole's
+# radius, a hex hole's corner) is under DRILL_SHARE of the smaller of the
+# bore's radius and the hub's, and refuses the STEP past it (ss-pulley
+# rules::screw_too_big, gap 57). Measured on small_step 0.18.1, a Ø6.35 bore
+# in a Ø16 hub: round Ø6.032 builds, Ø6.033 is refused; hex 5.223 across
+# flats builds, 5.225 is refused.
+DRILL_SHARE = 0.95
+WELD_TOL = 1e-4                   # small_step's: the hole it suggests is this much under
+HOLDS = ("thread", "nut", "insert")
+
+
+@dataclass(frozen=True)
+class HoleTooBig:
+    message: str                  # the warning, the owner's words (2026-10-30)
+    hole_mm: float                # the hole as small_step measures it (a hex hole across its corners)
+    limit_mm: float               # the hole must stay under this
+    fix_size: Optional[str]       # the Auto-fix: a smaller screw of the same kind that fits, else None
+
+
+def hub_screw_hole(size: Size, hold: str, *, hole_mm: float = 0.0, shape: str = "round",
+                   engagement_percent: float = 0.0, hex_flat_percent: float = 0.0) -> dict:
+    """The hole a hub's screw needs, by how it holds (Timing Pulleys' ADR-013):
+    thread, the self-tapping hole (`hole`); nut, the clearance hole; insert,
+    the hole entered (`hole_mm`), as for any CUSTOM screw."""
+    if hold not in HOLDS:
+        raise ValueError(f"unknown screw hold {hold!r}; one of {HOLDS}")
+    if size == CUSTOM or hold == "insert":
+        return {"shape": "circle", "diameter": hole_mm}
+    if hold == "nut":
+        return {"shape": "circle", "diameter": clearance_diameter(size)}
+    return hole(size, shape=shape, engagement_percent=engagement_percent, hex_flat_percent=hex_flat_percent)
+
+
+def hole_reach(h: dict) -> float:
+    """A hole's radius as small_step measures it: a round hole's, a hex hole's corner."""
+    if h.get("shape") == "hex":
+        return float(h["flats"]) / math.sqrt(3)
+    return float(h["diameter"]) / 2.0
+
+
+def hub_hole_too_big(*, part: str, size: Size, hold: str, bore_mm: float, hub_od_mm: float,
+                     round_bore: bool, hole_mm: float = 0.0, shape: str = "round",
+                     engagement_percent: float = 0.0, hex_flat_percent: float = 0.0,
+                     sizes=None) -> Optional[HoleTooBig]:
+    """Why a hub's screw or insert hole can't be drilled, or None: the hole
+    reaches DRILL_SHARE of the smaller of the bore's radius and the hub's (the
+    bore's, on any hub wider than its bore). For /check and the page's
+    warnings, on every app with hub screws. A round bore only (`round_bore`;
+    a flat, key or hex bar has rules of its own); None without a hub.
+
+    `part` names the part ("Pulley 1"); `size` a screw size or CUSTOM; the
+    hole as hub_screw_hole cuts it. The Auto-fix (fix_size) is the largest
+    smaller size of the same kind (metric or inch, out of `sizes`, the
+    app's; all of them by default) whose hole fits, held the same way. None
+    for an insert (another insert is a hardware choice) or a CUSTOM screw."""
+    if not round_bore or bore_mm <= 0 or hub_od_mm <= bore_mm:
+        return None
+    h = hub_screw_hole(size, hold, hole_mm=hole_mm, shape=shape, engagement_percent=engagement_percent,
+                       hex_flat_percent=hex_flat_percent)
+    reach, limit = hole_reach(h), DRILL_SHARE * min(bore_mm, hub_od_mm) / 2.0
+    if reach <= 0 or reach < limit:
+        return None
+    named = size != CUSTOM
+    what = (f"the {size} heat-set insert" if named else "the heat-set insert") if hold == "insert" \
+        else (f"the {size} set screw" if named else "the set screw")
+    end = "use a smaller insert, or hold the screw by its thread or a captured nut" if hold == "insert" \
+        else "use a smaller screw"
+    message = (f"{part + ': ' if part else ''}the Ø{2 * reach:.2f} mm hole for {what} is wider than 95 % of "
+               f"the Ø{bore_mm:.2f} mm bore (it must stay under Ø{2 * limit:.2f} mm), so it can't be drilled "
+               f"— {end}.")
+    fix = None
+    if named and hold != "insert":
+        kind = METRIC_COARSE if get(size).name in METRIC_COARSE else UNC
+        fits = [s for s in (kind.values() if sizes is None else (get(n) for n in sizes if get(n).name in kind))
+                if s.major_diameter < get(size).major_diameter
+                and hole_reach(hub_screw_hole(s, hold, shape=shape, engagement_percent=engagement_percent,
+                                              hex_flat_percent=hex_flat_percent)) < limit - WELD_TOL]
+        fix = max(fits, key=lambda s: s.major_diameter).name if fits else None
+    return HoleTooBig(message=message, hole_mm=2 * reach, limit_mm=2 * limit, fix_size=fix)

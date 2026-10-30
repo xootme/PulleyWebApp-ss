@@ -39,6 +39,8 @@ def test_top_and_bottom_keep_the_pages_up():
     call = _call(PAGE, PAGE.index('threeViewer = createViewer('))
     assert "snaps: { top: [[0, 0, 1], [0, 1, 0]], bottom: [[0, 0, -1], [0, -1, 0]] }" in call
     assert "refit: 'always'" in call and 'visibleOnly: true' in call
+    # Oblique stands back as far as it always did: its direction is 1.23 long (0.35.2)
+    assert "oblique: VIEW_DIR, snapLength: 'asGiven'" in call
 
 
 def test_a_failed_job_is_reported_before_its_id_is_cleared():

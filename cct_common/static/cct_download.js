@@ -46,6 +46,10 @@
   };
   const onlyList = (only) => (only ? (Array.isArray(only) ? only : [only]) : null);
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  // Tokens, with money beside them while the server's price_in_money setting
+  // is on (tokens.js tokensText, 0.35.0): "4 tokens = 20¢".
+  const tokensText = (n) => (root.cctTokens && root.cctTokens.tokensText ? root.cctTokens.tokensText(n)
+                                                                       : plural(n, "token"));
 
   // Options from this script's tag (see the header); read once, as it loads.
   const tag = typeof document !== "undefined" && document.currentScript;
@@ -124,7 +128,7 @@
     }
     for (const t of tiers) {
       const head = el("div", "cct-tier");
-      head.append(el("span", null, charging && t.tokens ? `${plural(t.tokens, "token")} · ${t.label}` : t.label));
+      head.append(el("span", null, charging && t.tokens ? `${tokensText(t.tokens)} · ${t.label}` : t.label));
       const row = el("div", "cct-formats");
       for (const [fmt, label, o] of t.fmts) row.append(box(`cct-fmt-${fmt}`, label, o && o.note, !(o && o.off)));
       dlg.append(head, row);
@@ -137,6 +141,21 @@
     go.type = "button";
     go.id = "dl-go";
     const buttons = el("div", "cct-dialog-buttons");
+    // Saved designs (0.34.0): keep this design in My designs without a
+    // download, while the server has them on (tokens.js savedDesigns).
+    const tokens = root.cctTokens;
+    if (charging && charging.signedIn && tokens && tokens.savedDesigns && tokens.saveDesign) {
+      const save = el("button", "cct-btn", "Save to My designs");
+      save.type = "button";
+      save.id = "dl-save";
+      save.addEventListener("click", async () => {
+        save.disabled = true;
+        const r = await tokens.saveDesign();
+        status.textContent = r.ok ? "Saved to My designs." : r.error;
+        save.disabled = false;
+      });
+      buttons.append(save);
+    }
     buttons.append(cancel, go);
     dlg.append(status, buttons);
     overlay.append(dlg);
@@ -205,7 +224,7 @@
         go.textContent = "Download zip (already paid)";
         status.textContent = "Already unlocked for this design — no tokens used.";
       } else {
-        go.textContent = `Download zip (${plural(q.cost, "token")})`;
+        go.textContent = `Download zip (${tokensText(q.cost)})`;
         status.textContent = q.cost > q.balance
           ? `You have ${plural(q.balance, "token")}.`
           : `Balance: ${q.balance} → ${q.balance - q.cost}.`;
@@ -228,7 +247,18 @@
         if (!charging.signedIn) { close(); charging.signIn(); return; }
         await update();
         if (!quote) return;
-        if (quote.cost > quote.balance) { close(); charging.buyDialog(quote.cost, quote.balance, quote.buy_url); return; }
+        if (quote.cost > quote.balance) {
+          // The buy panel (tokens.js, 0.35.0) resolves 'paid' once the tokens
+          // are in: the zip goes on. Without it, today's: close, then buy.
+          const offer = root.cctTokens && root.cctTokens.offer;
+          if (!(offer && offer.inline_checkout)) {
+            close(); charging.buyDialog(quote.cost, quote.balance, quote.buy_url); return;
+          }
+          const bought = await charging.buyDialog(quote.cost, quote.balance, quote.buy_url);
+          if (bought !== "paid") { close(); return; }
+          await update();
+          if (!quote || quote.cost > quote.balance) return;
+        }
         body.design_id = await charging.ensureDesign();
       }
       go.disabled = true;

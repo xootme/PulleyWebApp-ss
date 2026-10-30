@@ -15,6 +15,18 @@ Routes:
     GET  /account/buy/stripe-return?session_id=...  back from Stripe
     POST /api/payments/stripe/webhook          Stripe's signed event notifications
 
+The buy panel (0.35.0, the inline_checkout business setting; tokens.js), on
+the page the person is on, with no redirect:
+    GET  /api/payments/config                  {inline, packs, last_pack, stripe, paypal}
+    POST /api/payments/stripe/intent           {pack} -> {id, client_secret}  (a PaymentIntent:
+                                               Stripe.js's Express Checkout and Payment Elements)
+    POST /api/payments/stripe/intent/<id>/confirm   -> {status: paid, credited, balance}, or
+                                               {status: processing | requires_action}, or 402
+PayPal's buttons use the PayPal routes above. A PaymentIntent is recorded
+under its own id, so the browser's confirm and the payment_intent.succeeded
+webhook credit it exactly once, and refunds and disputes find it by its
+payment_ref as a Checkout Session's are.
+
 How a payment becomes tokens — the rules every path follows:
 - Our server creates each order at our price for a pack we sell, and
   records it (the `payments` table) against the signed-in account. The
@@ -100,6 +112,7 @@ class PayPalConfig:
 class StripeConfig:
     secret_key: str             # sk_test_... or sk_live_...
     webhook_secret: str = ""    # whsec_... ; needed to verify events
+    publishable_key: str = ""   # pk_test_... or pk_live_...; the buy panel needs it (0.35.0)
 
 
 class PaymentError(Exception):
@@ -144,6 +157,13 @@ class Payments(SqliteDB):
             row = db.execute("SELECT * FROM payments WHERE provider = ? AND order_id = ?",
                              (provider, order_id)).fetchone()
         return dict(row) if row else None
+
+    def last_pack(self, account_id: str) -> Optional[str]:
+        """The pack this account last paid for (the buy panel starts on it)."""
+        with self._read() as db:
+            row = db.execute("SELECT pack_id FROM payments WHERE account_id = ? AND completed_at IS NOT NULL "
+                             "ORDER BY completed_at DESC LIMIT 1", (account_id,)).fetchone()
+        return row["pack_id"] if row else None
 
     def by_payment_ref(self, provider: str, ref: str) -> Optional[dict]:
         with self._read() as db:
@@ -382,6 +402,24 @@ class Stripe:
             "cancel_url": f"{base_url}account/buy",
         })
 
+    def create_intent(self, pack: Pack, account_id: str, email: str, app_name: str) -> dict:
+        """A PaymentIntent for the buy panel: every method the Stripe account
+        has turned on (cards, Apple Pay, Google Pay, Link)."""
+        data = {
+            "amount": str(pack.cents), "currency": "usd",
+            "automatic_payment_methods[enabled]": "true",
+            "description": f"{pack.tokens} {app_name} tokens",
+            "metadata[pack]": pack.id, "metadata[account]": account_id,
+        }
+        if email:
+            data["receipt_email"] = email
+        return self._post("/payment_intents", data)
+
+    def get_intent(self, intent_id: str) -> dict:
+        r = self.http.get(f"{STRIPE_API}/payment_intents/{intent_id}", auth=(self.cfg.secret_key, ""), timeout=20)
+        r.raise_for_status()
+        return r.json()
+
     def get_session(self, session_id: str) -> dict:
         r = self.http.get(f"{STRIPE_API}/checkout/sessions/{session_id}",
                           auth=(self.cfg.secret_key, ""), timeout=20)
@@ -612,6 +650,80 @@ function paypalButtons() {
             current_app.logger.error("PayPal webhook %s refused: %s", kind, e)
         return "", 200
 
+    # ── the buy panel (0.35.0) ──
+    def _inline() -> bool:
+        from .settings import setting
+        return setting(tokens.path, "inline_checkout") is True
+
+    def checkout_config():
+        """What the buy panel offers this account: the packs on sale, the one
+        it last bought, and each provider's public key."""
+        acct, err = _signed_in()
+        if err:
+            return err
+        if not _inline():
+            return jsonify({"inline": False})
+        packs = _packs()
+        return jsonify({
+            "inline": True,
+            "packs": [{"id": p.id, "provider": p.provider, "cents": p.cents, "tokens": p.tokens, "price": p.price}
+                      for p in packs],
+            "last_pack": store.last_pack(acct),
+            "balance": tokens.balance(acct),
+            "stripe": {"publishable_key": st.cfg.publishable_key} if st and st.cfg.publishable_key else None,
+            "paypal": {"client_id": pp.cfg.client_id} if pp else None,
+        })
+
+    def stripe_intent():
+        acct, err = _signed_in()
+        if err:
+            return err
+        if not _inline():
+            return _json_error("not found", 404)
+        try:
+            pack = _pack(request.get_json(silent=True))
+            if pack.provider != "stripe":
+                raise PaymentError("That pack isn't sold by card.")
+            intent = st.create_intent(pack, acct, tokens.account_email(acct) or "", app_name)
+        except PaymentError as e:
+            return _json_error(e)
+        except Exception:
+            current_app.logger.exception("Stripe payment intent failed")
+            return _json_error("Couldn't reach the card payment service. Please try again.", 502)
+        store.record("stripe", intent["id"], acct, pack)
+        return jsonify({"id": intent["id"], "client_secret": intent["client_secret"]})
+
+    def _intent_complete(intent: dict) -> bool:
+        """Credit a PaymentIntent that succeeded; False if it was already."""
+        return store.complete("stripe", intent["id"], paid_cents=int(intent.get("amount_received") or 0),
+                              currency=intent.get("currency") or "", payment_ref=intent["id"])
+
+    def stripe_intent_confirm(intent_id):
+        # Don't wait for the webhook: ask Stripe now, so the tokens are there
+        # when the panel closes. The webhook credits it otherwise (exactly once).
+        acct, err = _signed_in()
+        if err:
+            return err
+        order = store.get("stripe", intent_id)
+        if order is None or order["account_id"] != acct:
+            return _json_error("Unknown order.", 404)
+        try:
+            intent = st.get_intent(intent_id)
+            if intent.get("status") == "succeeded":
+                _intent_complete(intent)
+                return jsonify({"status": "paid", "credited": order["tokens"], "balance": tokens.balance(acct)})
+        except PaymentError as e:
+            current_app.logger.warning("Stripe intent %s: %s", intent_id, e)
+            return _json_error(e)
+        except Exception:
+            current_app.logger.exception("Stripe intent check failed")
+            return _json_error("Couldn't confirm the payment with Stripe. If you were charged, "
+                               "your tokens will appear shortly.", 502)
+        status = intent.get("status", "")
+        if status in ("processing", "requires_action", "requires_confirmation"):
+            return jsonify({"status": status}), 202
+        return _json_error("The payment didn't go through. You haven't been charged.", 402)
+
     # ── Stripe ──
     def _stripe_complete(session: dict) -> None:
         if session.get("payment_status") != "paid" or session.get("mode") != "payment":
@@ -662,6 +774,9 @@ function paypalButtons() {
             if kind in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
                 if store.get("stripe", obj.get("id", "")):
                     _stripe_complete(obj)
+            elif kind == "payment_intent.succeeded":
+                if store.get("stripe", obj.get("id", "")):          # the buy panel's (a session's isn't)
+                    _intent_complete(obj)
             elif kind == "charge.refunded":
                 order = store.by_payment_ref("stripe", obj.get("payment_intent") or "")
                 if order:
@@ -690,4 +805,8 @@ function paypalButtons() {
         app.add_url_rule("/api/payments/stripe/checkout", view_func=stripe_checkout, methods=["POST"])
         app.add_url_rule("/account/buy/stripe-return", view_func=stripe_return, methods=["GET"])
         app.add_url_rule("/api/payments/stripe/webhook", view_func=stripe_webhook, methods=["POST"])
+        app.add_url_rule("/api/payments/stripe/intent", view_func=stripe_intent, methods=["POST"])
+        app.add_url_rule("/api/payments/stripe/intent/<intent_id>/confirm", view_func=stripe_intent_confirm,
+                         methods=["POST"])
+    app.add_url_rule("/api/payments/config", view_func=checkout_config, methods=["GET"])
     return enabled

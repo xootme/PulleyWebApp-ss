@@ -36,7 +36,10 @@
  * and the harnesses keep `const { openPage, checker, sleep } = require("./cdp")`.
  * forApp's options (the defaults are Gear's):
  *   name           the temp profile's prefix ("<name>-cdp-")
- *   idle           window.<idle>() is true once the page has applied every change
+ *   idle           window.<idle>() is true once the page has applied every change;
+ *                  window.<idle>Why(), if the page has one, says what it still
+ *                  waits on (a string, or anything JSON), and a settle that
+ *                  fails prints it with the requests still open (0.32.1)
  *   waitIdleMs     waitIdle()'s default timeout (20 s)
  *   idleThrows     waitIdle() throws when it runs out, rather than returning false
  *   settleMs       how long opening or reloading the page may take to settle (60 s)
@@ -142,6 +145,8 @@ function forApp({
     const pending = new Map();          // id -> { resolve, reject }
     const errors = [];
     const serverErrors = [];            // 5xx answers, once watchServer() is on
+    let watching = false;
+    const open = new Map();             // requestId -> { method, url, t0 }: sent, not yet finished
     const listeners = new Map();        // CDP event -> handlers (on())
     // Open, then lost without close() asking: every waiting call fails, then the run.
     const lost = (why) => {
@@ -161,8 +166,13 @@ function forApp({
         const d = msg.params.exceptionDetails;
         errors.push(d.exception && d.exception.description ? `${d.text} ${d.exception.description}` : d.text);
       }
-      if (msg.method === "Network.responseReceived" && msg.params.response.status >= 500)
+      if (watching && msg.method === "Network.responseReceived" && msg.params.response.status >= 500)
         serverErrors.push(`${msg.params.response.status} ${msg.params.response.url}`);
+      if (msg.method === "Network.requestWillBeSent")       // a redirect keeps its id and its start
+        open.set(msg.params.requestId, { method: msg.params.request.method, url: msg.params.request.url,
+                                         t0: (open.get(msg.params.requestId) || {}).t0 || Date.now() });
+      if (msg.method === "Network.loadingFinished" || msg.method === "Network.loadingFailed")
+        open.delete(msg.params.requestId);
       if (msg.method === "Runtime.consoleAPICalled" && msg.params.type === "error")
         errors.push(msg.params.args.map((a) => a.value ?? a.description).join(" "));   // an object: its description
     });
@@ -201,13 +211,36 @@ function forApp({
       if (idleThrows) throw new Error(`the page was still drawing after ${timeout / 1000} s`);
       return false;
     };
+    // What the page still waits on, for a settle that failed: the requests
+    // sent and not finished, the longest open first, and window.<idle>Why()'s
+    // answer. Gear reproduced a bare "never settled" 72 times to learn it was
+    // load (2026-10-30, its ADR-053). A page that no longer answers says so.
+    const waitingOn = async () => {
+      const now = Date.now();
+      const reqs = [...open.values()].sort((a, b) => a.t0 - b.t0);
+      const lines = reqs.slice(0, 10).map((r) =>
+        `  still open: ${r.method} ${r.url.slice(0, 200)} (${((now - r.t0) / 1000).toFixed(1)} s)`);
+      if (reqs.length > 10) lines.push(`  ... and ${reqs.length - 10} more`);
+      if (!reqs.length) lines.push("  no request still open");
+      const why = `${idle}Why`;
+      const asked = evaluate(`(async () => { try {
+          if (typeof window.${why} !== "function") return null;
+          const v = await window.${why}();
+          return typeof v === "string" ? v : JSON.stringify(v);
+        } catch (e) { return "threw " + e; } })()`);
+      const answer = await Promise.race([asked.catch((e) => `no answer (${firstLine(e)})`),
+                                         sleep(5000).then(() => "no answer in 5 s")]);
+      lines.push(answer === null ? `  no window.${why}()` : `  window.${why}(): ${answer}`);
+      return lines.join("\n");
+    };
     // A page that opens must settle (Sprocket Designer's 2026-10-22 night: on a
     // loaded machine its harnesses went on before the page had its tables and
-    // handlers). Not settled in time is a failure, never a page to test.
+    // handlers). Not settled in time is a failure, never a page to test. The
+    // first line says so; the next ones what it still waits on.
     const settled = async (what, ms) => {
       let idleNow = false;
       try { idleNow = await waitIdle(ms); } catch { /* idleThrows: said below */ }
-      if (!idleNow) throw new Error(`${what}: the page never settled in ${ms / 1000} s`);
+      if (!idleNow) throw new Error(`${what}: the page never settled in ${ms / 1000} s\n${await waitingOn()}`);
     };
     // Reload and wait for the new document's first drawing. The old document is
     // marked, so its idle answer can't be taken for the new one's. The settle
@@ -267,6 +300,7 @@ function forApp({
 
     await send("Runtime.enable");
     await send("Page.enable");
+    await send("Network.enable");        // the requests still open, for a settle that fails
     await send("Page.navigate", { url });
     await sleep(1500);
 
@@ -278,7 +312,7 @@ function forApp({
     };
     await settled(`open ${url}`, settle);
     // Record every server answer of 500 or more in serverErrors.
-    const watchServer = () => send("Network.enable");
+    const watchServer = () => { watching = true; return send("Network.enable"); };
     // Handle a CDP event (e.g. Fetch.requestPaused, to hold a request back).
     const on = (method, f) => listeners.set(method, [...(listeners.get(method) || []), f]);
     return { send, evaluate, setValue, waitIdle, reload, visible, screenshot, errors, close,

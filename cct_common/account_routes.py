@@ -430,7 +430,10 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         last = accounts.last_sign_in(acct)
         free = tokens.free_remaining(acct)
         from flask import current_app
+        from .settings import setting
+        extra = {"saved_designs": True} if setting(tokens.path, "saved_designs") is True else {}
         return jsonify({
+            **extra,                          # 0.34.0: My designs, Save, the thumbnail (tokens.js)
             "email": tokens.account_email(acct),
             "balance": tokens.balance(acct),
             "free": free,

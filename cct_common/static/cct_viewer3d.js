@@ -14,7 +14,7 @@
 // Three.js comes in as an option, so this file doesn't care where an app keeps
 // its copy. The model's axis is z (camera.up), as in every app. Since 0.30.0
 // an app whose view differs passes options (canvas, lights, controls, snaps,
-// refit, frameDir, fitMargin, fit, visibleOnly; see createViewer) instead of
+// refit, frameDir, fitMargin, fit, visibleOnly, snapLength; see createViewer) instead of
 // keeping its own frame() and snap().
 
 // Preset directions round the model's bounding sphere. A value is a direction,
@@ -54,6 +54,8 @@ export function createViewer(container, {
   fit = "sphere",            // what snap() fits: the bounding sphere's radius, or "halfExtent":
                              // the box's largest half side (Planetary's)
   visibleOnly = false,       // snap() fits only the visible meshes (Bevel's showOnly, Pulley's drive)
+  snapLength = "unit",       // snap()'s direction: "unit", normalised; "asGiven", its length scales
+                             // the distance as frameDir's does (Pulley's oblique, 0.35.2)
 } = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true,
                                              ...(canvas ? { canvas } : {}) });
@@ -131,9 +133,12 @@ export function createViewer(container, {
     isCurrent(token) { return token === latest; },
 
     // Keep the person's view while they tweak; refit when the size jumps (> 20 %).
-    // With refit "always", every call refits.
+    // With refit "always", every call refits. A refit is frameDir's view with
+    // +z up, so a snap with its own up (Pulley's top) doesn't leave it rolled
+    // (0.35.2; Pulley set it back itself).
     frame(center, radius) {
       if (refit === "always" || !lastRadius || Math.abs(radius - lastRadius) / lastRadius > 0.2) {
+        camera.up.set(0, 0, 1);
         controls.target.copy(center);
         const dist = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * fitMargin;
         camera.position.set(center.x + dist * frameDir[0], center.y + dist * frameDir[1],
@@ -156,7 +161,8 @@ export function createViewer(container, {
       const sphere = extent(obj);
       if (!sphere) return false;
       const dist = sphere.radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.15;
-      const dir = new THREE.Vector3(...dirArr).normalize();
+      const dir = new THREE.Vector3(...dirArr);
+      if (snapLength !== "asGiven") dir.normalize();
       camera.up.set(...(up || [0, 0, 1]));
       controls.target.copy(sphere.center);
       camera.position.copy(sphere.center).addScaledVector(dir, dist);

@@ -63,6 +63,14 @@ been sent in full:
 "Sent in full" is as far as the server can see: the last byte handed to the
 connection. A browser that then fails to save the file isn't charged again
 when it retries — one payment unlocks the design for 24 h.
+
+SAVED DESIGNS (0.34.0, the saved_designs business setting). With it on,
+every download the charge stands for is kept on the account
+(cct_common.saved_designs): a paid one once delivered as above, a free one
+as it's sent, a job's once its result is fetched (a free job's as it's
+stored). A download's own parameters are registered as a design when the
+page didn't send one, so any download can be kept and reopened. The page
+sends its thumbnail, a name and its own path with api/design.
 """
 from __future__ import annotations
 
@@ -155,6 +163,7 @@ class DesignStore(SqliteDB):
     def __init__(self, path: str, route_only=ROUTE_ONLY_KEYS):
         super().__init__(path, _DESIGN_SCHEMA)
         self.route_only = frozenset(route_only)
+        self._ensure_columns("designs", {"thumb": "TEXT", "name": "TEXT"})     # 0.34.0
 
     def register(self, account_id: str, design: dict) -> str:
         canon = canonical_design(design, self.route_only)
@@ -169,6 +178,20 @@ class DesignStore(SqliteDB):
         with self._read() as db:
             row = db.execute("SELECT design FROM designs WHERE design_id = ?", (design_id,)).fetchone()
         return json.loads(row["design"]) if row else None
+
+    def set_meta(self, design_id: str, *, thumb=None, name=None) -> None:
+        """The page's thumbnail and name for a registered design (saved designs)."""
+        if thumb is None and name is None:
+            return
+        with self._write() as db:
+            db.execute("UPDATE designs SET thumb = COALESCE(?, thumb), name = COALESCE(?, name) "
+                       "WHERE design_id = ?", (thumb, name, design_id))
+
+    def meta(self, design_id: str) -> tuple:
+        """(thumb, name) the page sent for it, each None when it sent none."""
+        with self._read() as db:
+            row = db.execute("SELECT thumb, name FROM designs WHERE design_id = ?", (design_id,)).fetchone()
+        return (row["thumb"], row["name"]) if row else (None, None)
 
     def purge(self) -> None:
         with self._write() as db:
@@ -266,6 +289,7 @@ class Charges:
         self.route_only = ROUTE_ONLY_KEYS | frozenset(route_only_keys)
         self.state = None
         self.designs = None
+        self.saved = None          # saved_designs.SavedDesigns, once attached
         self._buy_url = None
         self.limit_notify = None   # limit_notify(email, label, budget, settings_url)
         # endpoint name -> export format, filled in by charged() and
@@ -310,6 +334,8 @@ class Charges:
             return
         self.designs = DesignStore(state.tokens.path, self.route_only)
         self.designs.purge()
+        from .saved_designs import register_saved_designs
+        self.saved = register_saved_designs(app, self)
 
         # Job charges whose file was never fetched go back — checked at most
         # once a minute, from whatever request comes along.
@@ -336,7 +362,23 @@ class Charges:
             design = data.get("design")
             if not isinstance(design, dict) or not design or len(json.dumps(design)) > 32_000:
                 return jsonify({"error": "design must be a non-empty object"}), 400
-            return jsonify({"design_id": self.designs.register(acct, design)})
+            did = self.designs.register(acct, design)
+            if self.saving():
+                # what My designs shows of it, and where this app's page is
+                from .saved_designs import clean_name, clean_thumb
+                try:
+                    self.designs.set_meta(did, thumb=clean_thumb(data.get("thumb")),
+                                          name=clean_name(data.get("name")))
+                    self.saved.seen(self.state.tokens.app or "app", data.get("page"), data.get("title"))
+                except Exception:
+                    app.logger.exception("could not keep a design's thumbnail")
+            return jsonify({"design_id": did})
+
+        def forever() -> dict:
+            """{"redownload": "forever"} when a purchase never runs out (the
+            redownload_window setting): the page then doesn't say "for 24 hours"."""
+            from .settings import setting
+            return {"redownload": "forever"} if setting(self.state.tokens.path, "redownload_window") == "forever" else {}
 
         def quote():
             """What a download would cost right now — priced exactly as the
@@ -357,7 +399,7 @@ class Charges:
                 return jsonify({"fmt": q.fmt, "tier": q.tier, "cost": q.cost,
                                 "held_tier": q.held_tier, "unlocked_until": q.unlocked_until,
                                 "balance": self.state.tokens.balance(acct),
-                                "buy_url": self.buy_url})
+                                "buy_url": self.buy_url, **forever()})
             params = data.get("params") if isinstance(data.get("params"), dict) else {}
             try:
                 endpoint, _ = app.url_map.bind("localhost").match(
@@ -375,10 +417,46 @@ class Charges:
             return jsonify({"fmt": q.fmt, "tier": q.tier, "cost": q.cost,
                             "held_tier": q.held_tier, "unlocked_until": q.unlocked_until,
                             "balance": self.state.tokens.balance(acct),
-                            "buy_url": self.buy_url})
+                            "buy_url": self.buy_url, **forever()})
 
         app.add_url_rule("/api/design", view_func=register_design, methods=["POST"])
         app.add_url_rule("/api/tokens/quote", view_func=quote, methods=["POST"])
+
+    # ── saved designs (0.34.0) ─────────────────────────────────────────────
+
+    def saving(self) -> bool:
+        """The saved_designs setting is on (and this app keeps them)."""
+        if self.saved is None:
+            return False
+        from .settings import setting
+        return setting(self.state.tokens.path, "saved_designs") is True
+
+    def _remember(self, account_id: str, key: str, params: dict) -> None:
+        """A download's own parameters as a design, when the page sent none,
+        so its delivery can keep it (register gives the same key)."""
+        if self.saving() and params and self.designs.get(key) is None:
+            try:
+                self.designs.register(account_id, params)
+            except Exception:
+                pass                 # never let saving break a download
+
+    def keep_delivered(self, quote) -> None:
+        """Keep the design a charge was for (its delivery stood). Never raises."""
+        if quote is None or not getattr(quote, "key", None) or not getattr(quote, "account_id", None):
+            return
+        self._keep(quote.account_id, quote.key)
+
+    def _keep(self, account_id: str, key: str) -> None:
+        if not self.saving():
+            return
+        try:
+            design = self.designs.get(key)
+            if design is not None:
+                thumb, name = self.designs.meta(key)
+                self.saved.keep(account_id, self.state.tokens.app or "app", key, design, name=name, thumb=thumb)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("could not keep a downloaded design")
 
     # ── the parts every charge needs ──────────────────────────────────────
 
@@ -494,6 +572,7 @@ class Charges:
                 if params_from and raw.get("design_id"):
                     params = dict(params, design_id=raw["design_id"])
                 key = self.design_key_for(params)
+                self._remember(acct, key, params)
                 tokens = self.state.tokens
                 sid, budget = self._session()
                 try:
@@ -514,8 +593,10 @@ class Charges:
                     # Paid only if the file is sent in full (module docstring).
                     spend = quote.spend_id
                     return on_delivery(
-                        resp, lambda: None,
+                        resp, lambda: self.keep_delivered(quote),
                         lambda: tokens.refund(spend, detail="download not completed"))
+                if self.saving():
+                    return on_delivery(resp, lambda: self.keep_delivered(quote), lambda: None)
                 return resp
             return wrapped
         return deco
@@ -529,7 +610,11 @@ class Charges:
         front so an unaffordable job never starts)."""
         if not self.enabled:
             return None, None
-        return self._begin(self.design_key_for(params), fmt)
+        key = self.design_key_for(params)
+        context, refusal = self._begin(key, fmt)
+        if context:
+            self._remember(context[0], key, params)
+        return context, refusal
 
     def charge_in_job(self, context, detail: str):
         """Context manager around the job's generation: charges when it
@@ -548,7 +633,10 @@ class Charges:
         """Call in the job, inside charge_in_job, once the file is stored at
         url (the result link): the charge waits for the file to be fetched
         in full (serve_delivery) and is refunded if it never is."""
-        if quote is None or getattr(quote, "spend_id", None) is None or not self.designs:
+        if quote is None or not self.designs:
+            return
+        if getattr(quote, "spend_id", None) is None:
+            self.keep_delivered(quote)          # free: nothing waits on its fetch
             return
         acct = self.state.tokens.account_of_spend(quote.spend_id)
         self.designs.add_pending(delivery_key(url), quote.spend_id, acct or "")
@@ -573,7 +661,14 @@ class Charges:
             return response
         from flask import request
         key = request.path if key is None else key
-        return on_delivery(response, lambda: self.designs.claim_pending(key), lambda: None)
+
+        def done():
+            spend = self.designs.claim_pending(key)
+            if spend is not None and self.saving():
+                found = self.state.tokens.design_of_spend(spend)
+                if found:
+                    self._keep(*found)
+        return on_delivery(response, done, lambda: None)
 
     def sweep_undelivered(self, ttl_s: float = DELIVERY_TTL_S, now: float | None = None) -> int:
         """Refund every job charge whose file wasn't fetched within ttl_s.

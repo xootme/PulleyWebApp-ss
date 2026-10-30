@@ -66,6 +66,7 @@ import ipaddress
 import secrets
 from typing import Callable, Optional
 
+from .saved_designs import SCHEMA as _SAVED_DESIGNS_SCHEMA
 from .sqlite_db import SqliteDB
 from .tokens import TokenStore
 
@@ -211,7 +212,7 @@ class AccountStore(SqliteDB):
                                          ("device_daily_budget", device_daily_budget),
                                          ("signups_per_ip_per_day", signups_per_ip_per_day)) if v is not SETTING}
         self._clock = clock or tokens._clock
-        super().__init__(tokens.path, _SCHEMA)
+        super().__init__(tokens.path, _SCHEMA + _SAVED_DESIGNS_SCHEMA)   # closing one deletes its designs
         # Daily limits on add-in/agent tokens. Older databases lack these.
         self._ensure_columns("sessions", {"daily_budget": "INTEGER",
                                           "budget_notified_at": "REAL"})
@@ -670,9 +671,9 @@ class AccountStore(SqliteDB):
     # ── deletion and housekeeping ─────────────────────────────────────────
 
     def delete_account(self, account_id: str) -> None:
-        """Remove the personal data: email, identities, sessions and pending
-        sign-in links. Ledger rows stay (financial records) but point at an
-        account with no email left on it."""
+        """Remove the personal data: email, identities, sessions, pending
+        sign-in links and saved designs (0.34.0). Ledger rows stay (financial
+        records) but point at an account with no email left on it."""
         now = self._clock()
         with self._write() as db:
             row = db.execute("SELECT email FROM accounts WHERE id = ?", (account_id,)).fetchone()
@@ -680,6 +681,7 @@ class AccountStore(SqliteDB):
                 raise KeyError(account_id)
             db.execute("DELETE FROM login_links WHERE email = ?", (row["email"],))
             db.execute("DELETE FROM identities WHERE account_id = ?", (account_id,))
+            db.execute("DELETE FROM saved_designs WHERE account_id = ?", (account_id,))
             db.execute("UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL",
                        (now, account_id))
             db.execute("UPDATE accounts SET email = ? WHERE id = ?",

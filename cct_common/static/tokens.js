@@ -40,6 +40,25 @@
 //              the server and get them billed too.
 //
 // The page supplies window.cctFullDesign() (every raw input on screen).
+//
+// Saved designs (0.34.0, while the server's saved_designs setting is on:
+// api/account says saved_designs): the page may also supply
+//   window.cctDesignThumbnail()   a picture of the design (a data URL or a
+//                                 canvas), sent with api/design at 320x240;
+//   window.cctDesignName()        its name for My designs ("HTD 5M 20T");
+//   window.cctApplyDesign(params) set the page to a saved design's params.
+// The token dialog links My designs (account/designs); a page opened with
+// ?saved=<id> asks api/designs/<id> and applies it, by the hook or, without
+// one, by reloading with the params as the query; saveDesign() keeps the
+// design on screen (the Download window's "Save to My designs").
+//
+// Buying (0.35.0), while the server's settings say so (api/offer):
+//   inline_checkout  "Buy tokens" is a panel on this page: the packs on sale
+//                    (the account's last one first), then Stripe's Apple Pay,
+//                    Google Pay and Link buttons and card fields, or PayPal's
+//                    buttons. Paid, the download that was short goes on. Its
+//                    routes are the site's (/api/payments/...), as sign-in's are.
+//   price_in_money   money beside tokens: "4 tokens = 20¢" (money(n)).
 (function () {
   'use strict';
 
@@ -57,6 +76,7 @@
     designId: null,
     buyUrl: '',
     offer: null,                      // api/offer: the grant, prices, packs (null until read)
+    savedDesigns: false,              // api/account: the saved_designs setting is on
     _designJson: null,
   };
 
@@ -75,6 +95,7 @@
       T.enabled = true; T.unavailable = true; T.signedIn = false;
     } else if (r.status === 401) {
       T.enabled = true; T.unavailable = false; T.signedIn = false; T.email = ''; T.balance = 0;
+      T.savedDesigns = false;
     } else if (r.ok) {
       const d = await r.json();
       T.enabled = true; T.unavailable = false; T.signedIn = true;
@@ -84,6 +105,7 @@
       T.free = d.free || 0; T.purchased = d.purchased || 0;
       T.accountExpires = d.account_expires || null;
       if (d.buy_url !== undefined) T.buyUrl = d.buy_url || '';
+      T.savedDesigns = !!d.saved_designs;
     }
     render();
   }
@@ -164,7 +186,9 @@
 
   // Resolves with the clicked button's value (null for Cancel / Escape /
   // clicking outside). `body` is a node; buttons are {label, value, primary}.
-  function dialog(title, body, buttons) {
+  // onOpen(close), if given, runs once it's shown: a dialog that closes itself
+  // (the buy panel, once paid).
+  function dialog(title, body, buttons, onOpen) {
     return new Promise(resolve => {
       const overlay = el('div', 'cct-dialog-overlay');
       const box = el('div', 'cct-dialog');
@@ -191,6 +215,7 @@
       document.body.append(overlay);
       const first = box.querySelector('input, .cct-btn-primary');
       if (first) first.focus();
+      if (onOpen) onOpen(close);
     });
   }
 
@@ -278,6 +303,16 @@
     ]);
   }
 
+  // ── money beside tokens (0.35.0: the price_in_money setting) ─────────────
+  // "20¢", "$1.20", "$5"; '' while the setting is off (or the offer unread).
+  function money(n) {
+    const o = T.offer || {};
+    if (!o.price_in_money || !o.cents_per_token) return '';
+    const c = n * o.cents_per_token;
+    return c < 100 ? `${c}\u00a2` : `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
+  }
+  const tokensText = n => `${n} token${n === 1 ? '' : 's'}` + (money(n) ? ` = ${money(n)}` : '');
+
   const _fmtDate = secs => new Date(secs * 1000).toLocaleDateString(undefined,
     { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -287,7 +322,7 @@
     await refresh();                                  // fresh balance and dates
     const body = el('div');
     const big = el('p', 'cct-token-count', `${T.balance}`);
-    big.append(el('span', null, ` token${T.balance === 1 ? '' : 's'}`));
+    big.append(el('span', null, ` token${T.balance === 1 ? '' : 's'}` + (money(T.balance) ? ` = ${money(T.balance)}` : '')));
     body.append(big);
     if (T.accountExpires) {
       body.append(el('p', 'cct-token-expiry', `Unused tokens expire ${_fmtDate(T.accountExpires)}`));
@@ -300,6 +335,12 @@
         'and free tokens can\'t be refunded.'));
     }
     if (!T.buyUrl) body.append(el('p', 'cct-dialog-note', 'Buying tokens isn\'t open yet.'));
+    if (T.savedDesigns) {
+      const p = el('p', 'cct-dialog-note'), a = el('a', null, 'My designs');
+      a.href = api('account/designs'); a.target = '_blank'; a.rel = 'noopener';
+      p.append(a, document.createTextNode(': everything you\'ve downloaded or saved.'));
+      body.append(p);
+    }
     const buttons = [{ label: 'Close', value: null }];
     if (T.buyUrl) {
       buttons.push({ label: 'Buy tokens', primary: true,
@@ -313,7 +354,187 @@
     await refresh();
   }
 
-  function buyDialog(needed, balance, buyUrl) {
+  // ── the buy panel (0.35.0: the inline_checkout setting) ───────────────────
+
+  let _checkout = null;                 // /api/payments/config, read once a purchase
+  function checkoutConfig() {
+    if (!_checkout) {
+      _checkout = fetch('/api/payments/config', { credentials: 'same-origin' })
+        .then(r => (r.ok ? r.json() : null)).catch(() => null);
+    }
+    return _checkout;
+  }
+
+  function loadScript(src) {
+    return new Promise((ok, fail) => {
+      const tag = document.createElement('script');
+      tag.src = src; tag.onload = ok; tag.onerror = () => fail(new Error('Couldn\'t load the payment buttons.'));
+      document.head.append(tag);
+    });
+  }
+
+  async function postJson(url, data) {
+    const r = await fetch(url, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(d.error || `Something went wrong (${r.status}).`); e.status = r.status; throw e; }
+    return d;
+  }
+
+  const SETTLE_POLL_MS = 2000, SETTLE_WAIT_MS = 60000;
+  const PROVIDER_HEADS = { stripe: 'Card, Apple Pay, Google Pay', paypal: 'PayPal' };
+
+  // Resolves 'paid' once the tokens are in (the panel closes itself), null if
+  // closed first.
+  function buyPanel(needed, balance, cfg) {
+    const packs = (cfg.packs || []).filter(p => cfg[p.provider]);
+    const body = el('div');
+    body.append(el('p', 'cct-dialog-text', needed == null
+      ? `You don't have enough tokens for this download (balance: ${balance}).`
+      : `This download needs ${tokensText(needed)}; you have ${balance}.`));
+    const buttons = new Map();
+    for (const provider of ['stripe', 'paypal']) {
+      const mine = packs.filter(p => p.provider === provider);
+      if (!mine.length) continue;
+      const row = el('div', 'cct-packs');
+      for (const p of mine) {
+        const b = el('button', 'cct-pack', `${p.price} · ${p.tokens} tokens`);
+        b.type = 'button';
+        b.setAttribute('aria-pressed', 'false');
+        b.addEventListener('click', () => choose(p));
+        buttons.set(p.id, b);
+        row.append(b);
+      }
+      body.append(el('p', 'cct-dialog-note', PROVIDER_HEADS[provider]), row);
+    }
+    const pay = el('div', 'cct-pay');
+    const status = el('p', 'cct-dialog-status');
+    body.append(pay, status, el('p', 'cct-dialog-note', EXPIRY_NOTE));
+    const say = text => { status.textContent = text; };
+    let current = null, closePanel = null;
+
+    const paid = async d => {
+      _checkout = null;                 // the last pack and balance have moved on
+      await refresh();
+      say(`Thank you — ${d.credited} tokens added.`);
+      if (closePanel) closePanel('paid');
+    };
+
+    // Ask our server until Stripe says the payment went through (the webhook
+    // credits it too, exactly once, if the page goes away).
+    async function settle(id) {
+      const t0 = Date.now();
+      for (;;) {
+        let r = null, d = {};
+        try {
+          r = await fetch('/api/payments/stripe/intent/' + encodeURIComponent(id) + '/confirm', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          d = await r.json().catch(() => ({}));
+        } catch (e) { /* a blip: ask again */ }
+        if (r && r.ok && d.status === 'paid') return paid(d);
+        if (r && !r.ok && r.status < 500) { say(d.error || 'The payment didn\'t go through. You haven\'t been charged.'); return; }
+        if (Date.now() - t0 >= SETTLE_WAIT_MS) {
+          say('Payment received — your tokens will appear in a moment. Start the download again then.');
+          return;
+        }
+        say('Payment received — your tokens arrive in a moment…');
+        await new Promise(res => setTimeout(res, SETTLE_POLL_MS));
+      }
+    }
+
+    async function stripeFor(p) {
+      if (!window.Stripe) await loadScript('https://js.stripe.com/v3/');
+      const intent = await postJson('/api/payments/stripe/intent', { pack: p.id });
+      if (current !== p) return;
+      const stripe = window.Stripe(cfg.stripe.publishable_key);
+      const elements = stripe.elements({ clientSecret: intent.client_secret });
+      const express = el('div', 'cct-pay-express'), card = el('div', 'cct-pay-card');
+      const go = el('button', 'cct-btn cct-btn-primary', `Pay ${p.price}`);
+      go.type = 'button';
+      pay.append(express, card, go);
+      const confirm = async () => {
+        say('Paying…');
+        const { error } = await stripe.confirmPayment({ elements, clientSecret: intent.client_secret,
+          redirect: 'if_required', confirmParams: { return_url: location.href } });
+        if (error) { say(error.message || 'The payment didn\'t go through. You haven\'t been charged.'); return; }
+        await settle(intent.id);
+      };
+      const wallets = elements.create('expressCheckout');
+      wallets.on('confirm', confirm);
+      wallets.mount(express);
+      elements.create('payment').mount(card);
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        const { error } = await elements.submit();
+        if (error) say(error.message); else await confirm();
+        go.disabled = false;
+      });
+    }
+
+    async function paypalFor(p) {
+      if (!window.paypal) {
+        await loadScript('https://www.paypal.com/sdk/js?client-id=' + encodeURIComponent(cfg.paypal.client_id)
+                         + '&currency=USD&intent=capture&components=buttons');
+      }
+      if (current !== p) return;
+      const box = el('div', 'cct-pay-paypal');
+      pay.append(box);
+      window.paypal.Buttons({
+        createOrder: async () => (await postJson('/api/payments/paypal/orders', { pack: p.id })).id,
+        onApprove: async data => {
+          try {
+            await paid(await postJson('/api/payments/paypal/orders/' + encodeURIComponent(data.orderID) + '/capture'));
+          } catch (e) { say(e.message); }
+        },
+        onCancel: () => say('Payment cancelled. You haven\'t been charged.'),
+        onError: () => say('PayPal ran into a problem. You haven\'t been charged.'),
+      }).render(box);
+    }
+
+    async function choose(p) {
+      current = p;
+      for (const [id, b] of buttons) b.setAttribute('aria-pressed', String(id === p.id));
+      pay.replaceChildren();
+      say('');
+      try {
+        await (p.provider === 'stripe' ? stripeFor(p) : paypalFor(p));
+      } catch (e) {
+        if (current === p) say(e.message || 'Couldn\'t start the payment. You haven\'t been charged.');
+      }
+    }
+
+    // The pack this account bought last; else the smallest that covers it.
+    const short = needed == null ? 1 : needed - balance;
+    const first = packs.find(p => p.id === cfg.last_pack) || packs.find(p => p.tokens >= short) || packs[packs.length - 1];
+    return dialog('Buy tokens', body, [{ label: 'Cancel', value: null }], close => {
+      closePanel = close;
+      if (first) choose(first);
+    });
+  }
+
+  // Back from a payment Stripe had to finish on its own page (a bank's
+  // check): ?payment_intent=... — confirm it here and say so.
+  async function finishRedirect() {
+    const q = new URLSearchParams(location.search);
+    const id = q.get('payment_intent');
+    if (!id || !T.signedIn) return;
+    for (const k of ['payment_intent', 'payment_intent_client_secret', 'redirect_status']) q.delete(k);
+    history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+    try {
+      const d = await postJson('/api/payments/stripe/intent/' + encodeURIComponent(id) + '/confirm');
+      await refresh();
+      if (d.status === 'paid') await message('Thank you', `${d.credited} tokens added. Start the download again.`);
+      else await message('Payment received', 'Your tokens will appear in a moment.');
+    } catch (e) { await message('Payment', e.message); }
+  }
+
+  // Not enough tokens: the buy panel while it's on (resolves 'paid' once
+  // they're in), else the dialog that opens the buy page.
+  async function buyDialog(needed, balance, buyUrl) {
+    if (T.offer && T.offer.inline_checkout) {
+      const cfg = await checkoutConfig();
+      if (cfg && cfg.inline && (cfg.stripe || cfg.paypal)) return buyPanel(needed, balance, cfg);
+    }
     const text = needed == null
       ? `You don't have enough tokens for this download (balance: ${balance}).`
       : `This download needs ${needed} token${needed === 1 ? '' : 's'}; you have ${balance}.`;
@@ -329,15 +550,50 @@
 
   // ── the design this page shows ────────────────────────────────────────────
 
+  // The page's picture of its design at 320x240, at most 40 KB (the server's
+  // limit): WebP, else JPEG. null without the hook or when it can't be drawn.
+  const THUMB_W = 320, THUMB_H = 240, THUMB_MAX = 40000;
+  async function thumbnail() {
+    if (typeof window.cctDesignThumbnail !== 'function') return null;
+    try {
+      let src = await window.cctDesignThumbnail();
+      if (!src) return null;
+      if (typeof src === 'string') {
+        const img = new Image();
+        await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; img.src = src; });
+        src = img;
+      }
+      const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
+      if (!w || !h) return null;
+      const c = document.createElement('canvas');
+      c.width = THUMB_W; c.height = THUMB_H;
+      const k = Math.min(THUMB_W / w, THUMB_H / h);
+      c.getContext('2d').drawImage(src, (THUMB_W - w * k) / 2, (THUMB_H - h * k) / 2, w * k, h * k);
+      for (const [type, q] of [['image/webp', 0.8], ['image/jpeg', 0.8], ['image/jpeg', 0.5]]) {
+        const url = c.toDataURL(type, q);
+        if (url.startsWith('data:' + type) && (url.length - url.indexOf(',') - 1) * 3 / 4 <= THUMB_MAX) return url;
+      }
+    } catch (e) { /* no picture: the design is still kept */ }
+    return null;
+  }
+
   async function ensureDesign() {
     if (typeof window.cctFullDesign !== 'function') return null;
     const design = window.cctFullDesign();
     const json = JSON.stringify(design);
     if (json === T._designJson && T.designId) return T.designId;
+    const body = { design };
+    if (T.savedDesigns) {                             // what My designs shows, and where this page is
+      body.thumb = await thumbnail();
+      try { body.name = typeof window.cctDesignName === 'function' ? window.cctDesignName() : null; }
+      catch (e) { body.name = null; }
+      body.page = location.pathname;
+      body.title = document.title;
+    }
     const r = await fetch(api('api/design'), {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ design }),
+      body: JSON.stringify(body),
     });
     if (!r.ok) return null;
     T.designId = (await r.json()).design_id;
@@ -366,6 +622,48 @@
     return q;
   }
 
+  // Keep the design on screen in My designs without downloading it.
+  // {ok: true} or {ok: false, error}.
+  async function saveDesign() {
+    if (!T.savedDesigns) return { ok: false, error: 'Saved designs aren\'t on.' };
+    const did = await ensureDesign();
+    if (!did) return { ok: false, error: 'Couldn\'t save this design — please try again.' };
+    try {
+      const r = await fetch(api('api/designs'), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ design_id: did }),
+      });
+      const d = await r.json().catch(() => ({}));
+      return r.ok ? { ok: true } : { ok: false, error: d.error || `Couldn't save it (${r.status}).` };
+    } catch (e) {
+      return { ok: false, error: 'Couldn\'t reach the server — please try again.' };
+    }
+  }
+
+  // ?saved=<id>: open a saved design here (My designs' Open). Another tool's
+  // goes to that tool; a page without window.cctApplyDesign is reloaded with
+  // the params as its query, as the admin's "Open this design" link is.
+  async function openSaved() {
+    const q = new URLSearchParams(location.search);
+    const id = q.get('saved');
+    if (!id || !T.enabled) return;
+    if (!T.signedIn) { await signIn(); return; }
+    let r;
+    try { r = await fetch(api('api/designs/' + encodeURIComponent(id)), { credentials: 'same-origin' }); }
+    catch (e) { return; }
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 409 && d.open) { location.replace(d.open); return; }
+    if (!r.ok) { await message('Saved design', 'That saved design isn\'t here any more.'); return; }
+    q.delete('saved');
+    if (typeof window.cctApplyDesign === 'function') {
+      await window.cctApplyDesign(d.params);
+      history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+    } else {
+      location.replace(location.pathname + '?' + new URLSearchParams(d.params) + location.hash);
+    }
+  }
+
   function withDesign(url) {
     if (!T.enabled || !T.designId || /[?&]design_id=/.test(url)) return url;
     return url + (url.includes('?') ? '&' : '?') + 'design_id=' + encodeURIComponent(T.designId);
@@ -380,7 +678,9 @@
   // download is through), or null to stop. `extras` offered here are
   // {label, run}; items with `always: true` run after every successful
   // download of this kind without being offered (e.g. a rim layer).
-  async function prepare({ path, params, label, extras = [] }) {
+  // bought: the tokens for this very download were just bought in the buy
+  // panel, so it goes on without asking again.
+  async function prepare({ path, params, label, extras = [], bought = false }) {
     const always = extras.filter(x => x.always);
     const offered = extras.filter(x => !x.always);
     if (!T.enabled) return { extras: always };
@@ -409,13 +709,17 @@
     const q = await r.json();
     T.balance = q.balance; T.buyUrl = q.buy_url || ''; render();
 
-    if (q.cost > q.balance) { await buyDialog(q.cost, q.balance, q.buy_url); return null; }
+    if (q.cost > q.balance) {
+      if (await buyDialog(q.cost, q.balance, q.buy_url) !== 'paid') return null;
+      return prepare({ path, params, label, extras, bought: true });
+    }
     if (q.cost === 0) return { extras: always };      // already unlocked: no questions
+    if (bought) return { extras: always.concat(offered) };
 
     const body = el('div');
     const what = label || LABEL[q.tier] || 'this file';
     body.append(el('p', 'cct-dialog-text',
-      `Downloading ${what} for this design costs ${q.cost} token${q.cost === 1 ? '' : 's'}. ` +
+      `Downloading ${what} for this design costs ${tokensText(q.cost)}. ` +
       `Balance: ${q.balance} → ${q.balance - q.cost}.`));
     if (q.held_tier) {
       body.append(el('p', 'cct-dialog-note',
@@ -423,7 +727,8 @@
     }
     const boxes = [];
     if (offered.length) {
-      body.append(el('p', 'cct-dialog-text', 'Also download, included for 24 hours:'));
+      body.append(el('p', 'cct-dialog-text', q.redownload === 'forever'
+        ? 'Also download, included:' : 'Also download, included for 24 hours:'));
       for (const x of offered) {
         const lab = el('label', 'cct-check');
         const cb = el('input');
@@ -436,7 +741,7 @@
     }
     const go = await dialog(`Download ${what}`, body, [
       { label: 'Cancel', value: null },
-      { label: `Download (${q.cost} token${q.cost === 1 ? '' : 's'})`, value: true, primary: true },
+      { label: `Download (${tokensText(q.cost)})`, value: true, primary: true },
     ]);
     if (!go) return null;
     return { extras: always.concat(boxes.filter(([cb]) => cb.checked).map(([, x]) => x)) };
@@ -485,6 +790,13 @@
   const ready = (document.readyState === 'loading')
     ? new Promise(res => document.addEventListener('DOMContentLoaded', () => start().then(res)))
     : start();
+  // A saved design opens once the page's own scripts (its hooks) have run.
+  if (/[?&]payment_intent=/.test(location.search)) ready.then(finishRedirect).catch(() => {});
+  if (/[?&]saved=/.test(location.search)) {
+    const whenLoaded = document.readyState === 'complete' ? Promise.resolve()
+      : new Promise(res => window.addEventListener('load', res, { once: true }));
+    Promise.all([ready, whenLoaded]).then(openSaved).catch(() => {});
+  }
 
   window.cctTokens = {
     ready,
@@ -495,7 +807,9 @@
     get balance() { return T.balance; },
     get buyUrl() { return T.buyUrl; },
     get offer() { return T.offer; },
+    get savedDesigns() { return T.savedDesigns; },
     refresh, signIn, tokenDialog, prepare, withDesign, signal, watch, runExtras, handleRefusal,
-    ensureDesign, quoteDesign, buyDialog, message, loadOffer, signupOffer, price,
+    ensureDesign, quoteDesign, buyDialog, message, loadOffer, signupOffer, price, saveDesign, openSaved,
+    money, tokensText,
   };
 })();

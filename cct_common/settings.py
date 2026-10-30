@@ -54,7 +54,15 @@ DEFAULTS = {
     "device_daily_budget": 100,
     "signups_per_ip_per_day": 2,
     "buy_url": "https://cheapcadtools.com/account/buy",
+    # 0.34.0 (the owner, 2026-10-30): off until the owner turns it on, with
+    # the window set to "forever" then; today's 24 h until that edit.
+    "saved_designs": False,
+    "redownload_window": "24h",
+    # 0.35.0: the buy panel and money beside tokens, off until the owner turns them on.
+    "inline_checkout": False,
+    "price_in_money": False,
 }
+REDOWNLOAD_WINDOWS = ("24h", "forever")
 
 DESCRIPTIONS = {
     "signup_grant": "Free tokens a new account gets (0 to 1000).",
@@ -67,6 +75,14 @@ DESCRIPTIONS = {
     "signups_per_ip_per_day": "New accounts per IP address per day that get the signup grant "
                               "(1 to 100, or no limit). Later ones start with no free tokens.",
     "buy_url": "Where \"Buy tokens\" goes: a https://cheapcadtools.com/ address or a /path.",
+    "saved_designs": "Saved designs: every download kept on the account, \"Save to My designs\" in the "
+                     "Download window and the My designs page. Off: none of it shows and nothing is saved.",
+    "redownload_window": "How long files already bought can be downloaded again for free: "
+                         "24h, or forever (for that account).",
+    "inline_checkout": "The buy panel in every app: card, Apple Pay, Google Pay and Link (Stripe) and "
+                       "PayPal without leaving the page, and the download goes on once paid. "
+                       "Off: \"Buy tokens\" opens the buy page.",
+    "price_in_money": "Money beside tokens wherever tokens are shown: \"STEP: 4 tokens = 20¢\".",
 }
 
 _SCHEMA = """
@@ -150,6 +166,14 @@ def validate(key: str, value):
         if not any(out.values()):
             raise SettingsError("At least one pack must be on sale")
         return out
+    if key in ("saved_designs", "inline_checkout", "price_in_money"):
+        if not isinstance(value, bool):
+            raise SettingsError(f"{key.replace('_', ' ').capitalize()} is on or off")
+        return value
+    if key == "redownload_window":
+        if value not in REDOWNLOAD_WINDOWS:
+            raise SettingsError("The re-download window is 24h or forever")
+        return value
     if key == "buy_url":
         url = str(value or "").strip()
         if not (url.startswith("https://cheapcadtools.com/") or (url.startswith("/") and not url.startswith("//"))):
@@ -328,4 +352,8 @@ def offer(path: Optional[str], *, cents_per_token: int, format_tier: dict) -> di
                              for p in items] for provider, items in packs.items()},
         "tokens_per_dollar": 100 // cents_per_token,
         "buy_url": setting(path, "buy_url"),
+        # 0.35.0, only while on: the pages show money beside tokens, and buy in a panel
+        **({"price_in_money": True, "cents_per_token": cents_per_token}
+           if setting(path, "price_in_money") is True else {}),
+        **({"inline_checkout": True} if setting(path, "inline_checkout") is True else {}),
     }

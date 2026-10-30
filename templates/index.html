@@ -4116,7 +4116,7 @@ async function init3D() {
     controls: { dampingFactor: 0.08, screenSpacePanning: true, minDistance: 1, maxDistance: 2000 },
     // Top and Bottom keep this page's up; every other view puts +z back
     snaps: { top: [[0, 0, 1], [0, 1, 0]], bottom: [[0, 0, -1], [0, -1, 0]] },
-    oblique: VIEW_DIR,
+    oblique: VIEW_DIR, snapLength: 'asGiven',     // Oblique stands back 1.23 x, as it always did
     // every load refits, from VIEW_DIR at 3.2 × the model's radius
     refit: 'always', frameDir: VIEW_DIR, fitMargin: 3.2 * Math.sin(THREE.MathUtils.degToRad(20)),
     visibleOnly: true,                      // the views fit what the picker shows
@@ -4169,13 +4169,12 @@ function _loadSTL(url, material, onLoaded, onError) {
   }, null, onError || ((e) => console.error('STL error', e)));
 }
 
-// The model framed from VIEW_DIR (threeViewer.frame). A Top or Bottom view's own
-// up isn't kept by the next load.
+// The model framed from VIEW_DIR (threeViewer.frame, which puts +z back up after
+// a Top or Bottom view).
 function _frame(box) {
   const THREE  = window._THREE;
   const centre = box.getCenter(new THREE.Vector3());
   const size   = box.getSize(new THREE.Vector3());
-  threeCamera.up.set(0, 0, 1);
   threeViewer.frame(centre, size.length() * 0.5);
   threeControls.update();
   return size;
@@ -4197,17 +4196,7 @@ function _fitCameraToScene() {
 // (threeViewer.snap); an unknown view is the oblique one.
 function snapView(view) {
   if (!threeViewer) return;
-  if (!threeViewer.snap(view, threeScene)) {
-    view = 'oblique';
-    if (!threeViewer.snap(view, threeScene)) return;
-  }
-  // Oblique stands back as far as this page's always did: the core puts every
-  // view at one distance, and this one's direction (VIEW_DIR) is 1.23 long.
-  if (view === 'oblique') {
-    const t = threeControls.target;
-    threeCamera.position.sub(t).multiplyScalar(Math.hypot(...VIEW_DIR)).add(t);
-    threeControls.update();
-  }
+  if (!threeViewer.snap(view, threeScene)) threeViewer.snap('oblique', threeScene);
 }
 
 // The 3D view's picker: the whole drive, or one pulley with its own spline

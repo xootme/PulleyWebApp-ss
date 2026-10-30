@@ -1382,6 +1382,41 @@ def _set_screw_slot(args, pfx, n, who, root_d):
     return [warning], {}, []
 
 
+def _screw_hole_too_big(args, pfx, n, who):
+    """A hub's screw or insert hole too big to drill in a round bore: STEP
+    refuses it (small_step's screw_too_big). cct_common's one check for every
+    app with hub screws (screws.hub_hole_too_big, 0.32.0; the owner's wording,
+    2026-10-30). Returns ([warning], {element id: value}, [change text]); the
+    fix is the largest smaller screw of the same kind that fits, none for an
+    insert or a Custom size."""
+    from cct_common import screws
+    from geometry import set_screw as _ss
+    hub_od, hub_h, _sd, _sc, _cn, fd, kw_w, kw_h = _parse_hub_params(args, pfx)
+    if hub_h <= 0:
+        return [], {}, []
+    try:
+        screw = _set_screw(args, pfx)
+    except ValueError:
+        return [], {}, []
+    if screw is None:
+        return [], {}, []
+    round_bore = (args.get(f'{pfx}bore_shape') != 'spline' and fd <= 0
+                  and not (kw_w > 0 and kw_h > 0))       # a flat, key or hex bar has rules of its own
+    ts = _ss.thread_settings(args)
+    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
+    too_big = screws.hub_hole_too_big(
+        part=who.rstrip(': '), size=screw.size, hold=screw.hold, bore_mm=bore_mm, hub_od_mm=hub_od,
+        round_bore=round_bore, hole_mm=_safe_float(args.get(f'{pfx}hub_screw_hole_dia'), 0.0),
+        shape=ts['shape'], engagement_percent=ts['engagement_percent'],
+        hex_flat_percent=ts['hex_flat_percent'], sizes=_ss.METRIC + _ss.INCH)
+    if too_big is None:
+        return [], {}, []
+    if too_big.fix_size is None:
+        return [too_big.message], {}, []
+    return [too_big.message], {f'hub{n}_screw_size': too_big.fix_size}, [
+        f'{who}set screw {screw.size} → {too_big.fix_size} (the bore can\'t take a larger one)']
+
+
 def _captured_nut_hub(args, pfx, n, who, root_d):
     """A captured nut in a hub too narrow for it: no wall left round its screw
     behind a key slot — STEP can't make it (geometry/captured_nut_hub.py, the same check the STEP worker
@@ -1583,6 +1618,17 @@ def _dimensions(args):
             fix_set.update(ss_fix)
             fix_set.update(cn_fix)
             changes += ss_changes + cn_changes
+            big_warn, big_fix, big_changes = _screw_hole_too_big(args, pfx, n, who)
+            warnings += big_warn
+            size_key = f'hub{n}_screw_size'
+            if size_key in big_fix and size_key in fix_set:      # both want a smaller screw: the smaller
+                from cct_common import screws as _screws
+                if _screws.get(fix_set[size_key]).major_diameter <= _screws.get(big_fix[size_key]).major_diameter:
+                    big_fix, big_changes = {}, []
+                else:
+                    changes = [c for c in changes if not c.startswith(f'{who}set screw ')]
+            fix_set.update(big_fix)
+            changes += big_changes
 
         flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
         p['flanged'] = flanged

@@ -43,6 +43,9 @@ from .sqlite_db import INTEGRITY_ERRORS, SqliteDB
 
 TOKEN_PRICE_CENTS = 5   # every pack in payments.DEFAULT_PACKS sells at this rate
 UNLOCK_WINDOW_S = 24 * 60 * 60
+# The redownload_window business setting at "forever" (0.34.0): an unlock
+# that never ends while the account is open.
+FOREVER_S = 200 * 365 * 24 * 60 * 60
 
 # 1 token = 5 cents. 2D 10c, STL 15c, STEP 20c: each tier adds one token.
 # The built-in prices; the live ones are the tier_prices setting (settings.py,
@@ -103,6 +106,10 @@ class Quote:
     # quote). Lets the caller give it back if the file never reaches the
     # customer (refund(spend_id)); see cct_common.charging, "delivery".
     spend_id: Optional[int] = None
+    # Whose and which design a charge() was for (0.34.0: saved designs keep it
+    # once it's delivered); None on a quote.
+    account_id: Optional[str] = None
+    key: Optional[str] = None
 
 
 def format_tier(fmt: str) -> str:
@@ -163,13 +170,14 @@ class TokenStore(SqliteDB):
     own; they end only when the account is closed (expire_all)."""
 
     def __init__(self, path: str, *, clock: Callable[[], float] = time.time,
-                 unlock_window_s: int = UNLOCK_WINDOW_S, app: Optional[str] = None,
+                 unlock_window_s: Optional[int] = None, app: Optional[str] = None,
                  tier_prices: Optional[dict] = None):
         """tier_prices: fixed prices for this store; by default they're the
-        tier_prices business setting (cct_common.settings), read when used."""
+        tier_prices business setting (cct_common.settings), read when used.
+        unlock_window_s likewise: by default the redownload_window setting."""
         self._clock = clock
         self._tier_prices = dict(tier_prices) if tier_prices else None
-        self.unlock_window_s = unlock_window_s
+        self._unlock_window_s = unlock_window_s
         # Which CCT tool this store charges for ("pulleys", "ebox", ...): the
         # accounts and ledger are shared across tools, so every spend,
         # download and refund row records it (the admin dashboard shows it).
@@ -189,6 +197,16 @@ class TokenStore(SqliteDB):
             import logging
             logging.getLogger("cct_common.settings").error("can't open the settings store: %s", e)
 
+    @property
+    def unlock_window_s(self) -> int:
+        """How long a purchase unlocks its design: the store's own if given,
+        else the redownload_window setting, 24 h (UNLOCK_WINDOW_S) or
+        forever (FOREVER_S)."""
+        if self._unlock_window_s is not None:
+            return self._unlock_window_s
+        from .settings import setting
+        return FOREVER_S if setting(self.path, "redownload_window") == "forever" else UNLOCK_WINDOW_S
+
     def tier_prices(self) -> dict:
         """Tokens per tier: the store's own if given, else the business setting."""
         if self._tier_prices is not None:
@@ -206,19 +224,20 @@ class TokenStore(SqliteDB):
         """Highest tier this account has paid for on this design inside the
         unlock window, ignoring refunded spends. Returns (tier, expires)."""
         prices = prices or self.tier_prices()
+        window = self.unlock_window_s
         rows = db.execute(
             """SELECT s.tier, s.ts FROM ledger s
                WHERE s.account_id = ? AND s.design_key = ? AND s.kind = 'spend'
                  AND s.ts > ?
                  AND NOT EXISTS (SELECT 1 FROM ledger r
                                  WHERE r.kind = 'refund' AND r.ref = 'spend:' || s.id)""",
-            (account_id, key, now - self.unlock_window_s)).fetchall()
+            (account_id, key, now - window)).fetchall()
         best, until = None, None
         for r in rows:
             if best is None or prices[r["tier"]] > prices[best]:
-                best, until = r["tier"], r["ts"] + self.unlock_window_s
+                best, until = r["tier"], r["ts"] + window
             elif r["tier"] == best:
-                until = max(until, r["ts"] + self.unlock_window_s)
+                until = max(until, r["ts"] + window)
         return best, until
 
     def _quote(self, db, account_id: str, key: str, fmt: str, now: float) -> Quote:
@@ -398,7 +417,7 @@ class TokenStore(SqliteDB):
                     (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id,
                      self.app)).fetchone()[0]
         try:
-            yield replace(q, spend_id=spend_id)
+            yield replace(q, spend_id=spend_id, account_id=account_id, key=key)
         except BaseException:
             if spend_id is not None:
                 self.refund(spend_id, detail="export failed")
@@ -409,6 +428,31 @@ class TokenStore(SqliteDB):
                     """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app)
                        VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?, ?)""",
                     (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id, self.app))
+
+    def design_of_spend(self, spend_id: int) -> Optional[tuple]:
+        """(account_id, design_key) a spend was for (None if there's no such spend)."""
+        with self._read() as db:
+            row = db.execute("SELECT account_id, design_key FROM ledger WHERE id = ? AND kind = 'spend'",
+                             (spend_id,)).fetchone()
+        return (row["account_id"], row["design_key"]) if row else None
+
+    def bought(self, account_id: str, key: str) -> Optional[tuple]:
+        """The highest tier this account ever bought of this design, and when
+        (its latest spend at that tier), refunded spends left out; None if
+        never. For My designs (saved_designs.py), whatever the window."""
+        prices = self.tier_prices()
+        with self._read() as db:
+            rows = db.execute(
+                """SELECT s.tier, s.ts FROM ledger s
+                   WHERE s.account_id = ? AND s.design_key = ? AND s.kind = 'spend'
+                     AND NOT EXISTS (SELECT 1 FROM ledger r
+                                     WHERE r.kind = 'refund' AND r.ref = 'spend:' || s.id)""",
+                (account_id, key)).fetchall()
+        best = None
+        for r in rows:
+            if best is None or prices[r["tier"]] > prices[best[0]] or (r["tier"] == best[0] and r["ts"] > best[1]):
+                best = (r["tier"], r["ts"])
+        return best
 
     def account_of_spend(self, spend_id: int) -> Optional[str]:
         """The account a spend was taken from (None if there's no such spend)."""
