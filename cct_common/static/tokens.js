@@ -59,6 +59,51 @@
 //                    buttons. Paid, the download that was short goes on. Its
 //                    routes are the site's (/api/payments/...), as sign-in's are.
 //   price_in_money   money beside tokens: "4 tokens = 20¢" (money(n)).
+//
+// The account page (0.38.0), while api/account says account_page: the token
+// dialog links it, /account/ (absolute: one page for every app), in a new tab.
+//
+// Share links (0.42.0): a page opened with ?shared=<code> asks api/shared/<code>
+// (public, no sign-in) and opens that copy of the design, by cctApplyDesign or
+// by reloading with its params, with a line saying it's a shared design.
+// Another tool's link opens in that tool.
+//
+// Referrals (0.49.0), while api/shared says referral: the link's code is kept
+// in this page's memory only (no cookie, no storage) and goes with a sign-in
+// started here (the email link's request, the OAuth start's ?ref=), so a new
+// account made in this visit counts for the sharer. A page that applies the
+// design by reloading carries it once as ?cct_ref=, taken off at load.
+//
+// "My account" (0.47.0), while the offer says my_account_button: the header's
+// "Sign in" reads "My account". Signed out it opens sign-in, and after it the
+// account page (while the offer says account_page; else back here). Signed
+// in, with the account page on, "My account" opens it in a new tab beside
+// the balance and Sign out, and the email moves onto that page; with it off,
+// the signed-in header is today's. "Sign out" hides below 480 px then.
+//
+// Printer settings (0.41.0), while api/account says printer: {units,
+// print_compensation_mm} (each null for "the tool's default"). They're
+// window.cctPrinterSettings, and the page's hook
+//   window.cctApplyPrinterSettings(settings)
+// is called once, only on a fresh start: an address with no query (no
+// ?saved=, no shared link, no design in it), so an opened design keeps its
+// own values. The compensation is for the STL only (the owner, 0.48.0).
+// One range for every app (0.54.0): cctTokens.printCompensation is {min,
+// max, step} (0 to 1.00 mm in 0.01s, as cct_common.printer_settings), and
+// cctTokens.clampCompensation(value, cap) brings the account's value inside
+// it and under an app's own tooth-size cap, rounded down to the 0.01 grid
+// (null stays null), so the hook can use it rather than refuse it.
+//
+// Rewards (0.51.0, step 6), only while the rewards setting is on: api/account
+// says rewards: {lines} ("Bonus waiting: …", the progress toward the next
+// bonus) for the "Your tokens" dialog, whose free-tokens note then says
+// they're used after bought ones; /api/payments/config says rewards: {pct,
+// first}, and the buy panel shows the offer above the packs and the bonus on
+// each; a payment's answer carries bonus (and first_used) for the thank-you.
+//
+// The token dialog (0.36.0), while the newsletter_opt_in setting is on
+// (api/account says newsletter): the newsletter checkbox, as the person last
+// left it; a change saves at once (api/account/newsletter).
 (function () {
   'use strict';
 
@@ -77,6 +122,9 @@
     buyUrl: '',
     offer: null,                      // api/offer: the grant, prices, packs (null until read)
     savedDesigns: false,              // api/account: the saved_designs setting is on
+    newsletter: null,                 // api/account: {subscribed, since, label, label_version} while on
+    accountPage: false,               // api/account: the account_page setting is on
+    printer: null,                    // api/account: {units, print_compensation_mm} while on
     _designJson: null,
   };
 
@@ -95,7 +143,7 @@
       T.enabled = true; T.unavailable = true; T.signedIn = false;
     } else if (r.status === 401) {
       T.enabled = true; T.unavailable = false; T.signedIn = false; T.email = ''; T.balance = 0;
-      T.savedDesigns = false;
+      T.savedDesigns = false; T.newsletter = null; T.accountPage = false; T.printer = null; T.rewards = null;
     } else if (r.ok) {
       const d = await r.json();
       T.enabled = true; T.unavailable = false; T.signedIn = true;
@@ -106,8 +154,36 @@
       T.accountExpires = d.account_expires || null;
       if (d.buy_url !== undefined) T.buyUrl = d.buy_url || '';
       T.savedDesigns = !!d.saved_designs;
+      T.newsletter = d.newsletter || null;
+      T.accountPage = !!d.account_page;
+      T.rewards = d.rewards || null;
+      T.printer = d.printer ? Object.freeze({ ...d.printer }) : null;
+      applyPrinter();
     }
     render();
+  }
+
+  // 3D Printer Compensation's range: the same numbers as printer_settings.py
+  // (a test keeps them equal), and the clamp an app's hook can use (0.54.0).
+  const PRINT_COMPENSATION = Object.freeze({ min: 0, max: 1, step: 0.01 });
+  function clampCompensation(value, cap) {
+    if (value === null || value === undefined) return null;
+    const { min, max, step } = PRINT_COMPENSATION;
+    const hi = cap === null || cap === undefined ? max : Math.max(min, Math.min(max, +cap));
+    const v = Math.min(Math.max(+value, min), hi);
+    return Math.round(Math.floor(v / step + 1e-9) * step * 100) / 100;
+  }
+
+  // The account's printer settings, for the page (0.41.0): its hook, once, and
+  // only when nothing is being opened (an address with no query).
+  let _printerApplied = false;
+  function applyPrinter() {
+    window.cctPrinterSettings = T.printer;
+    if (!T.printer || _printerApplied || location.search) return;
+    _printerApplied = true;
+    if (typeof window.cctApplyPrinterSettings === 'function') {
+      try { window.cctApplyPrinterSettings(T.printer); } catch (e) { /* the page's own; nothing to undo */ }
+    }
   }
 
   // One expiry rule for every token (cct_common.accounts): they end with the
@@ -122,7 +198,7 @@
       _offer = fetch(api('api/offer'), { credentials: 'same-origin' })
         .then(r => (r.ok ? r.json() : null))
         .catch(() => null)
-        .then(d => { T.offer = d; return d; });
+        .then(d => { T.offer = d; render(); return d; });     // the header follows the offer (0.47.0)
     }
     return _offer;
   }
@@ -150,16 +226,24 @@
     if (!box) return;
     box.hidden = !T.enabled;
     if (!T.enabled) return;
-    box.textContent = '';
+    box.replaceChildren();                // drawn again when the offer arrives (0.47.0)
     if (T.unavailable) {
       box.append(el('span', 'cct-account-note', 'Accounts unavailable'));
     } else if (!T.signedIn) {
-      const b = el('button', 'cct-btn cct-btn-primary', 'Sign in');
+      const mine = myAccount();
+      const b = el('button', 'cct-btn cct-btn-primary', mine ? 'My account' : 'Sign in');
       b.type = 'button';
-      b.addEventListener('click', () => signIn());
+      b.addEventListener('click', () => signIn(mine && accountPageOn() ? '/account/' : null));
       box.append(b);
     } else {
-      box.append(el('span', 'cct-account-email', T.email));
+      const page = myAccount() && accountPageOn();
+      if (page) {
+        const a = el('a', 'cct-btn cct-btn-primary cct-account-mine', 'My account');
+        a.href = '/account/'; a.target = '_blank'; a.rel = 'noopener';
+        box.append(a);
+      } else {
+        box.append(el('span', 'cct-account-email', T.email));
+      }
       // The balance is a button: it opens the token dialog (balance, when
       // the tokens expire, buy more).
       const bal = el('button', 'cct-account-balance', `${T.balance} token${T.balance === 1 ? '' : 's'}`);
@@ -168,12 +252,16 @@
       bal.title = 'Your tokens — balance, expiry dates, buy more';
       bal.addEventListener('click', () => tokenDialog());
       box.append(bal);
-      const out = el('button', 'cct-btn cct-btn-link', 'Sign out');
+      const out = el('button', 'cct-btn cct-btn-link' + (page ? ' cct-hide-narrow' : ''), 'Sign out');
       out.type = 'button';
       out.addEventListener('click', signOut);
       box.append(out);
     }
   }
+
+  // The offer's switches for the header (0.47.0).
+  const myAccount = () => !!(T.offer && T.offer.my_account_button);
+  const accountPageOn = () => !!(T.offer && T.offer.account_page);
 
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -237,18 +325,31 @@
     return _providers;
   }
 
-  async function signIn() {
+  // Referrals (0.49.0): the share code this page was opened from, or null.
+  let shareRef = null;
+  {
+    const q = new URLSearchParams(location.search), c = q.get('cct_ref');
+    if (c !== null) {
+      if (/^[2-9a-hjkmnp-z]{10}$/.test(c)) shareRef = c;
+      q.delete('cct_ref');
+      history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+    }
+  }
+
+  // next (0.47.0): where to land after signing in; this page by default.
+  async function signIn(next) {
+    const back = next || location.pathname + location.search;
     const body = el('div');
     const [list] = await Promise.all([providers(), loadOffer()]);
     if (list.length) {
-      const next = encodeURIComponent(location.pathname + location.search);
+      const next = encodeURIComponent(back);
       const col = el('div', 'cct-oauth');
       for (const p of list) {
         const a = el('a', `cct-btn cct-oauth-btn cct-oauth-${p.id}`);
         // The provider's logo: an inline SVG from our own server (cct_common.oauth.ICONS).
         if (p.icon) a.insertAdjacentHTML('beforeend', p.icon);
         a.append(el('span', '', `Continue with ${p.label}`));
-        a.href = `${p.start}?next=${next}`;
+        a.href = `${p.start}?next=${next}` + (shareRef ? `&ref=${shareRef}` : '');
         col.append(a);
       }
       body.append(col, el('div', 'cct-oauth-or', 'or'));
@@ -273,7 +374,7 @@
         r = await fetch('/api/account/login-link', {
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, next: location.pathname + location.search }),
+          body: JSON.stringify(shareRef ? { email, next: back, ref: shareRef } : { email, next: back }),
         });
       } catch (e) {
         status.textContent = 'Network error — please try again.';
@@ -330,15 +431,25 @@
     body.append(el('p', 'cct-dialog-note',
       'That date moves out every time you sign in — to 5 years from your latest sign-in.'));
     if (T.free) {
-      body.append(el('p', 'cct-dialog-note',
-        `${T.free} of your tokens ${T.free === 1 ? 'is' : 'are'} free ones: they're used first, ` +
-        'and free tokens can\'t be refunded.'));
+      body.append(el('p', 'cct-dialog-note', T.rewards
+        ? `${T.free} of your tokens ${T.free === 1 ? 'is a free one' : 'are free ones'}, including bonus tokens: ` +
+          'they\'re used after the ones you buy, and can\'t be refunded.'
+        : `${T.free} of your tokens ${T.free === 1 ? 'is' : 'are'} free ones: they're used first, ` +
+          'and free tokens can\'t be refunded.'));
     }
+    for (const line of (T.rewards && T.rewards.lines) || []) body.append(el('p', 'cct-dialog-note cct-reward', line));
     if (!T.buyUrl) body.append(el('p', 'cct-dialog-note', 'Buying tokens isn\'t open yet.'));
     if (T.savedDesigns) {
       const p = el('p', 'cct-dialog-note'), a = el('a', null, 'My designs');
       a.href = api('account/designs'); a.target = '_blank'; a.rel = 'noopener';
       p.append(a, document.createTextNode(': everything you\'ve downloaded or saved.'));
+      body.append(p);
+    }
+    if (T.newsletter) body.append(newsletterBox());
+    if (T.accountPage) {
+      const p = el('p', 'cct-dialog-note'), a = el('a', null, 'Your account');
+      a.href = '/account/'; a.target = '_blank'; a.rel = 'noopener';
+      p.append(a, document.createTextNode(': your history, sign-ins and settings.'));
       body.append(p);
     }
     const buttons = [{ label: 'Close', value: null }];
@@ -347,6 +458,34 @@
         onClick: close => { window.open(T.buyUrl, '_blank', 'noopener'); close(true); } });
     }
     return dialog('Your tokens', body, buttons);
+  }
+
+  // The newsletter checkbox (the newsletter_opt_in setting): ticked as the
+  // person left it, and a change is kept at once.
+  function newsletterBox() {
+    const wrap = el('div', 'cct-newsletter');
+    const label = el('label', 'cct-check'), box = el('input'), status = el('p', 'cct-dialog-note');
+    box.type = 'checkbox';
+    box.checked = !!T.newsletter.subscribed;
+    box.addEventListener('change', async () => {
+      const want = box.checked;
+      box.disabled = true;
+      status.textContent = 'Saving…';
+      try {
+        const d = await postJson(api('api/account/newsletter'),
+                                 { subscribed: want, label_version: T.newsletter.label_version });
+        T.newsletter = { ...T.newsletter, subscribed: !!d.subscribed, since: d.since };
+        box.checked = !!d.subscribed;
+        status.textContent = 'Saved';
+      } catch (e) {
+        box.checked = !want;
+        status.textContent = 'Couldn\'t save that. Please try again.';
+      }
+      box.disabled = false;
+    });
+    label.append(box, el('span', null, ' ' + T.newsletter.label));
+    wrap.append(label, status);
+    return wrap;
   }
 
   async function signOut() {
@@ -381,6 +520,13 @@
     return d;
   }
 
+  // After paying: what was added, and the bonus while the rewards are on (step 6).
+  function thanks(d) {
+    if (d.bonus) return `Thank you — ${d.credited} tokens added, plus ${d.bonus} bonus tokens.`;
+    if (d.first_used) return `Thank you — ${d.credited} tokens added. This card or PayPal account has already had its first-purchase bonus.`;
+    return `Thank you — ${d.credited} tokens added.`;
+  }
+
   const SETTLE_POLL_MS = 2000, SETTLE_WAIT_MS = 60000;
   const PROVIDER_HEADS = { stripe: 'Card, Apple Pay, Google Pay', paypal: 'PayPal' };
 
@@ -393,12 +539,19 @@
       ? `You don't have enough tokens for this download (balance: ${balance}).`
       : `This download needs ${tokensText(needed)}; you have ${balance}.`));
     const buttons = new Map();
+    const pct = (cfg.rewards && cfg.rewards.pct) || 0;          // step 6: what the next pack comes with
+    const bonus = tokens => Math.floor(tokens * pct / 100);
+    if (pct) {
+      body.append(el('p', 'cct-dialog-text cct-reward', cfg.rewards.first
+        ? `Your first pack comes with ${pct}% extra tokens.` : `Your next pack comes with ${pct}% extra tokens.`));
+      if (cfg.rewards.first) body.append(el('p', 'cct-dialog-note', 'Once per account and once per card or PayPal account.'));
+    }
     for (const provider of ['stripe', 'paypal']) {
       const mine = packs.filter(p => p.provider === provider);
       if (!mine.length) continue;
       const row = el('div', 'cct-packs');
       for (const p of mine) {
-        const b = el('button', 'cct-pack', `${p.price} · ${p.tokens} tokens`);
+        const b = el('button', 'cct-pack', `${p.price} · ${p.tokens} tokens` + (bonus(p.tokens) ? ` + ${bonus(p.tokens)} bonus` : ''));
         b.type = 'button';
         b.setAttribute('aria-pressed', 'false');
         b.addEventListener('click', () => choose(p));
@@ -416,7 +569,7 @@
     const paid = async d => {
       _checkout = null;                 // the last pack and balance have moved on
       await refresh();
-      say(`Thank you — ${d.credited} tokens added.`);
+      say(thanks(d));
       if (closePanel) closePanel('paid');
     };
 
@@ -523,7 +676,7 @@
     try {
       const d = await postJson('/api/payments/stripe/intent/' + encodeURIComponent(id) + '/confirm');
       await refresh();
-      if (d.status === 'paid') await message('Thank you', `${d.credited} tokens added. Start the download again.`);
+      if (d.status === 'paid') await message('Thank you', `${thanks(d).replace(/^Thank you — /, '')} Start the download again.`);
       else await message('Payment received', 'Your tokens will appear in a moment.');
     } catch (e) { await message('Payment', e.message); }
   }
@@ -664,6 +817,45 @@
     }
   }
 
+  // ?shared=<code>: open a shared design here (0.42.0). The link is public: no
+  // sign-in. What the person changes is their own copy.
+  async function openShared() {
+    const q = new URLSearchParams(location.search);
+    const code = q.get('shared');
+    if (!code) return;
+    let r;
+    try { r = await fetch(api('api/shared/' + encodeURIComponent(code)), { credentials: 'same-origin' }); }
+    catch (e) { return; }
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 409 && d.open) { location.replace(d.open); return; }
+    if (!r.ok) { await message('Shared design', d.error || 'This design isn\'t shared any more.'); return; }
+    if (d.referral) shareRef = code;
+    q.delete('shared');
+    if (typeof window.cctApplyDesign === 'function') {
+      await window.cctApplyDesign(d.params);
+      history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+      sharedBanner(d.banner, d.note);
+    } else {
+      const p = new URLSearchParams(d.params);
+      if (d.referral) p.set('cct_ref', code);
+      location.replace(location.pathname + '?' + p + location.hash);
+    }
+  }
+
+  // note (0.43.0): the sharer's note, only when they ticked "Include my note".
+  function sharedBanner(text, note) {
+    if (!text) return;
+    const bar = el('div', 'cct-shared-banner'), x = el('button', 'cct-btn cct-btn-link', '×');
+    bar.setAttribute('role', 'status');
+    x.type = 'button';
+    x.setAttribute('aria-label', 'Close');
+    x.addEventListener('click', () => bar.remove());
+    const words = el('span', null, text);
+    if (note) words.append(el('span', 'cct-shared-note', 'Note from the person who shared it: ' + note));
+    bar.append(words, x);
+    document.body.append(bar);
+  }
+
   function withDesign(url) {
     if (!T.enabled || !T.designId || /[?&]design_id=/.test(url)) return url;
     return url + (url.includes('?') ? '&' : '?') + 'design_id=' + encodeURIComponent(T.designId);
@@ -792,6 +984,11 @@
     : start();
   // A saved design opens once the page's own scripts (its hooks) have run.
   if (/[?&]payment_intent=/.test(location.search)) ready.then(finishRedirect).catch(() => {});
+  if (/[?&]shared=/.test(location.search)) {
+    const whenLoaded = document.readyState === 'complete' ? Promise.resolve()
+      : new Promise(res => window.addEventListener('load', res, { once: true }));
+    Promise.all([ready, whenLoaded]).then(openShared).catch(() => {});
+  }
   if (/[?&]saved=/.test(location.search)) {
     const whenLoaded = document.readyState === 'complete' ? Promise.resolve()
       : new Promise(res => window.addEventListener('load', res, { once: true }));
@@ -808,8 +1005,12 @@
     get buyUrl() { return T.buyUrl; },
     get offer() { return T.offer; },
     get savedDesigns() { return T.savedDesigns; },
+    get newsletter() { return T.newsletter; },
+    get accountPage() { return T.accountPage; },
+    get printer() { return T.printer; },
+    printCompensation: PRINT_COMPENSATION, clampCompensation,
     refresh, signIn, tokenDialog, prepare, withDesign, signal, watch, runExtras, handleRefusal,
-    ensureDesign, quoteDesign, buyDialog, message, loadOffer, signupOffer, price, saveDesign, openSaved,
+    ensureDesign, quoteDesign, buyDialog, message, loadOffer, signupOffer, price, saveDesign, openSaved, openShared,
     money, tokensText,
   };
 })();

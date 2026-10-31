@@ -58,19 +58,23 @@ FORMAT_TIER = {"svg": "2d", "dxf": "2d", "stl": "stl", "step": "step"}
 TRANSIENT_KEYS = frozenset({
     "_ts", "_fpt", "session_id", "machine_id", "pulley", "include_data",
     "which", "format", "fmt", "account_token",
+    "cct_ref",      # referrals (0.49.0): a share code carried once through a reload
 })
 
-CREDIT_KINDS = frozenset({"signup", "purchase", "referral", "promo", "adjust"})
+CREDIT_KINDS = frozenset({"signup", "purchase", "referral", "promo", "adjust", "bonus"})
 
 # Tokens given away rather than bought. Only these can ever expire (see
 # free_remaining / expire_free); all tokens, free or bought, end together
 # when an idle account is closed (expire_all). The split still matters:
-# free tokens are never refunded (see purchased_remaining).
-FREE_KINDS = frozenset({"signup", "referral", "promo"})
-# Ledger rows that use tokens up. Free tokens are counted as used first.
+# free tokens are never refunded (see purchased_remaining). "bonus" is the
+# rewards' bonus tokens (0.37.0, cct_common.rewards), ref'd by the purchase.
+FREE_KINDS = frozenset({"signup", "referral", "promo", "bonus"})
+# Ledger rows that use tokens up. Free tokens are counted as used first,
+# except spends from the rewards' switch date: paid tokens first (_split).
 _CONSUMING_KINDS = ("spend", "refund", "expire")
 # Refs of the adjusts that take back a refunded payment's tokens:
-# "<provider>-refund:<refund id>" (payments.py).
+# "<provider>-refund:<refund id>" (payments.py). Taking back a refunded
+# purchase's bonus is "bonusback:<provider>:<refund id>": free tokens.
 PAYMENT_REFUND_REF = "-refund:"
 
 
@@ -282,6 +286,11 @@ class TokenStore(SqliteDB):
             row = db.execute("SELECT email FROM accounts WHERE id = ?", (account_id,)).fetchone()
         return row["email"] if row else None
 
+    def account_created_at(self, account_id: str) -> Optional[float]:
+        with self._read() as db:
+            row = db.execute("SELECT created_at FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        return row["created_at"] if row else None
+
     # ── balance and credits ───────────────────────────────────────────────
 
     def balance(self, account_id: str) -> int:
@@ -310,11 +319,20 @@ class TokenStore(SqliteDB):
 
     # ── free vs purchased ─────────────────────────────────────────────────
 
-    def _free_remaining(self, db, account_id: str) -> int:
+    def paid_first_since(self) -> Optional[float]:
+        """The rewards' switch date (0.37.0): spends from then use paid tokens
+        first. None until the rewards setting is first turned on."""
+        from .settings import setting_since
+        return setting_since(self.path, "rewards")
+
+    def _free_first(self, db, account_id: str, before: Optional[float] = None) -> int:
+        """Free tokens left with free tokens used first (the rule before the
+        switch date), over every row, or only the rows before `before`."""
+        when, args = ("", ()) if before is None else (" AND ts < ?", (before,))
         given = db.execute(
             f"SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE account_id = ? "
-            f"AND kind IN ({','.join('?' * len(FREE_KINDS))})",
-            (account_id, *sorted(FREE_KINDS))).fetchone()[0]
+            f"AND kind IN ({','.join('?' * len(FREE_KINDS))}){when}",
+            (account_id, *sorted(FREE_KINDS), *args)).fetchone()[0]
         # Everything that used tokens up, net of refunds; negative admin
         # adjustments count too (the customer-friendly side: less expires).
         # A payment refund or chargeback (an adjust ref'd "<provider>-refund:...")
@@ -322,9 +340,71 @@ class TokenStore(SqliteDB):
         used = -db.execute(
             f"SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE account_id = ? "
             f"AND (kind IN ({','.join('?' * len(_CONSUMING_KINDS))}) OR (kind = 'adjust' AND amount < 0 "
-            f"AND (ref IS NULL OR ref NOT LIKE ?)))",
-            (account_id, *_CONSUMING_KINDS, f"%{PAYMENT_REFUND_REF}%")).fetchone()[0]
-        return max(0, min(self._balance(db, account_id), int(given) - int(used)))
+            f"AND (ref IS NULL OR ref NOT LIKE ?))){when}",
+            (account_id, *_CONSUMING_KINDS, f"%{PAYMENT_REFUND_REF}%", *args)).fetchone()[0]
+        bal = db.execute(f"SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE account_id = ?{when}",
+                         (account_id, *args)).fetchone()[0]
+        return max(0, min(int(bal), int(given) - int(used)))
+
+    def _split(self, db, account_id: str, since: Optional[float]) -> dict:
+        """{"free", "paid", "paid_spent", "spends"} from the switch date on.
+
+        Up to `since` the split is today's (free first, _free_first), so at
+        the switch nobody's refundable tokens change. From then, row by row:
+        a spend takes paid tokens first; a failed download's refund puts its
+        tokens back where they came from; credits, a payment refund's
+        take-back, an admin removal and an expiry go where they always went
+        (removals and expiries free first). paid_spent: the paid tokens
+        spends took from then, refunded ones left out (the milestones);
+        spends: [(ledger id, ts, paid tokens)] of those, in order."""
+        free = self._free_first(db, account_id, since)
+        total = db.execute("SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE account_id = ? AND ts < ?",
+                           (account_id, since)).fetchone()[0]
+        paid = int(total) - free
+        rows = db.execute("SELECT id, ts, kind, amount, ref FROM ledger WHERE account_id = ? AND ts >= ? "
+                          "ORDER BY id", (account_id, since)).fetchall()
+        refunded = {int(r["ref"][6:]) for r in rows if r["kind"] == "refund" and (r["ref"] or "").startswith("spend:")}
+        took, spends = {}, []
+        for r in rows:
+            kind, amount, ref = r["kind"], int(r["amount"]), r["ref"] or ""
+            if kind == "spend":
+                from_paid = min(max(paid, 0), -amount)
+                paid -= from_paid
+                free += amount + from_paid
+                took[r["id"]] = from_paid
+                if r["id"] not in refunded and from_paid:
+                    spends.append((r["id"], r["ts"], from_paid))
+            elif kind == "refund":
+                spend = int(ref[6:]) if ref.startswith("spend:") else None
+                back = min(took.get(spend, 0), amount)
+                paid += back
+                free += amount - back
+            elif kind in FREE_KINDS:
+                free += amount
+            elif amount < 0 and not (kind == "adjust" and PAYMENT_REFUND_REF in ref):
+                from_free = min(max(free, 0), -amount)       # removals and expiries: free first
+                free -= from_free
+                paid += amount + from_free
+            else:                                             # purchases; a payment refund's take-back
+                paid += amount
+        bal = free + paid
+        free = max(0, min(bal, free))
+        return {"free": free, "paid": bal - free, "paid_spent": sum(n for _, _, n in spends), "spends": spends}
+
+    def _free_remaining(self, db, account_id: str) -> int:
+        since = self.paid_first_since()
+        if since is None:
+            return self._free_first(db, account_id)
+        return self._split(db, account_id, since)["free"]
+
+    def paid_spent(self, account_id: str) -> int:
+        """Paid tokens this account's downloads used from the switch date,
+        refunded ones left out (the rewards' milestones); 0 before it."""
+        since = self.paid_first_since()
+        if since is None:
+            return 0
+        with self._read() as db:
+            return self._split(db, account_id, since)["paid_spent"]
 
     def free_remaining(self, account_id: str) -> int:
         """Free (given, not bought) tokens still unspent."""

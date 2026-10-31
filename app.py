@@ -4057,7 +4057,7 @@ def api_report_bug():
             _bug_store.add(report_id, report_type=report_type, seeing=seeing,
                            should_see=should_see, error_msg=error_msg,
                            user_comment=user_comment, email=email, state=state,
-                           app_version=APP_VERSION)
+                           app_version=APP_VERSION, app='pulleys', account_id=_reporter())
 
         issue_url = _cc_create_issue(report_id, report_label, timestamp, label_seeing,
                                      label_should, seeing, should_see, report_type,
@@ -4959,10 +4959,20 @@ from shared_jobs import SharedJobs
 _shared_jobs = (SharedJobs(os.environ['DATABASE_URL'].strip())
                 if os.environ.get('DATABASE_URL', '').strip() else None)
 
-# Bug reports in the database too, when there is one — see bug_store.py.
-from bug_store import BugReports
+# Bug reports in the database too, when there is one: the table every app shares
+# (cct_common.reports, 0.44.0; this app's own bug_store.py moved there).
+from cct_common.reports import ReportStore as BugReports, my_reports_on
 _bug_store = (BugReports(os.environ['DATABASE_URL'].strip())
               if os.environ.get('DATABASE_URL', '').strip() else None)
+
+
+def _reporter():
+    """The signed-in reporter's account, kept with the report only while the
+    my_reports setting is on (their account page then lists it); else None."""
+    if _bug_store is None or _accounts_state.accounts is None or not my_reports_on(_accounts_state.tokens.path):
+        return None
+    from cct_common.account_routes import current_account_id
+    return current_account_id()
 
 # Every download that fails — a route's error answer, a failed job, or what the
 # page saw (a request cut off at the time limit, a lost instance) — for the admin

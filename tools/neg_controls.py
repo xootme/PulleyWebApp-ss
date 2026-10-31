@@ -162,6 +162,17 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                                              "    if True:\n        return [], {}, []"),
     "screws: the hole's bore is the pulley's own": (AP, "    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]\n    too_big",
                                                     "    bore_mm = 50.0\n    too_big"),
+    # cct_common 0.36-0.54 (all behind settings that are off): the report store, printer settings
+    "reports: kept as this app's": (AP, "app_version=APP_VERSION, app='pulleys', account_id=_reporter())",
+                                    "app_version=APP_VERSION, account_id=_reporter())"),
+    "reports: the account only with my_reports": (AP, "or not my_reports_on(_accounts_state.tokens.path):",
+                                                  "or False:"),
+    "printer: a value changed here stays": ("templates/index.html", "      if (Number(el.value) === 0) el.value = Number(mm);",
+                                            "      el.value = Number(mm);"),
+    "printer: after the start-up restore": ("templates/index.html",
+        "  _pageStarted = true;                            // the account's printer settings may land now",
+        "  _pageStarted = false;                           // the account's printer settings may land now"),
+    "printer: both pulleys": ("templates/index.html", "['print_extra', 'p2_print_extra'].forEach", "['print_extra'].forEach"),
     "night: a skip fails the night":("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
 }

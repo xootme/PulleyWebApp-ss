@@ -42,6 +42,11 @@ user-facing response):
     - GitHub issue:  FEEDBACK_GITHUB_PAT, FEEDBACK_GITHUB_REPO
     - Email:         SENDGRID_API_KEY (to BUG_REPORT_TO, from BUG_REPORT_FROM)
 
+Durable (0.44.0): with `database` (the accounts database), every report is
+also kept in its bug_reports table (cct_common.reports), as the pulley app's
+always was: the log on a Cloud Run server's disk goes with the server. While
+the my_reports setting is on, a signed-in reporter's account id goes with it.
+
 Flask (and, in live mode, the `sendgrid` package) are only imported
 inside register_bug_report_route()/the helpers that need them, so
 importing cct_common never requires either unless a caller wires this in.
@@ -195,7 +200,7 @@ def _is_live_mode(mode):
 
 def register_bug_report_route(app, tool_name: str, app_version: str,
                               log_dir=None, path: str = "/api/report-bug",
-                              mode: str | None = None):
+                              mode: str | None = None, database: str | None = None):
     """Register a POST route on `app` that saves a bug/feature report.
 
     Always appends to `<log_dir>/bug_reports.log` (log_dir defaults to a
@@ -208,6 +213,21 @@ def register_bug_report_route(app, tool_name: str, app_version: str,
 
     log_dir = log_dir or os.path.join(os.getcwd(), "logs")
     log_file = os.path.join(log_dir, "bug_reports.log")
+    store = None
+    if database:
+        from cct_common.reports import ReportStore
+        store = ReportStore(database)
+
+    def _reporter():
+        """The signed-in reporter's account, while my_reports is on (else None)."""
+        from cct_common.reports import my_reports_on
+        if store is None or not my_reports_on(store.path):
+            return None
+        try:
+            from cct_common.account_routes import current_account_id
+            return current_account_id()
+        except Exception:                 # no account routes in this app
+            return None
 
     def _report_bug():
         try:
@@ -242,6 +262,12 @@ def register_bug_report_route(app, tool_name: str, app_version: str,
             entry = ("Report id:\n  %s\n\n" % report_id) + entry
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(entry)
+            if store is not None:             # lasts beyond this server (Cloud Run)
+                store.add(report_id, report_type=report_type, seeing=seeing, should_see=should_see,
+                          error_msg=str(data.get("error_message", "")).strip(),
+                          user_comment=str(data.get("user_comment", "")).strip(),
+                          email=email, state=state, app_version=app_version, app=tool_name,
+                          account_id=_reporter())
 
             issue_url = None
             if _is_live_mode(mode):
@@ -253,6 +279,8 @@ def register_bug_report_route(app, tool_name: str, app_version: str,
                     report_id, report_label, timestamp, label_seeing,
                     label_should, seeing, should_see, email,
                     tool_name, app_version)
+                if store is not None and issue_url:
+                    store.set_issue_url(report_id, issue_url)
 
             return jsonify({"ok": True, "issue_url": issue_url,
                             "report_id": report_id})

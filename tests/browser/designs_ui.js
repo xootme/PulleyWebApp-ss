@@ -7,6 +7,9 @@
 //     (index.html's cctDesignName / cctDesignThumbnail)
 //   * Open (?saved=<id>) on a blank page gives back every setting of a two-pulley drive
 //     (cctApplyDesign; designParams is what a link carries)
+//   * printer settings (cct_common 0.41.0, printer_settings on here): the account's units and
+//     3D Print Compensation fill a fresh page; a design's address and a value changed in this
+//     browser keep their own (cctApplyPrinterSettings)
 //
 // Needs a running app with tokens on and a fresh log dir, as tokens_ui.js:
 //   TOKENS_ENABLED=1 PULLEY_LOG_DIR=<tmp> QUEUE_DISABLED=1 \
@@ -138,6 +141,37 @@ settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("saved_designs", T
     .map(k => `${k}: ${A[k]} -> ${B[k]}`);
   check('Open gives back every setting', diff.length === 0, diff);
   check('…in 3D Mode', await js("document.getElementById('feature_build').checked"));
+
+  // Printer settings (cct_common 0.41.0, behind printer_settings): the account's units and
+  // compensation fill a fresh page (index.html's cctApplyPrinterSettings), on both pulleys;
+  // an address with a design keeps its own; a value changed in this browser stays.
+  execFileSync(PY, ['-c', `
+from cct_common.settings import settings_for
+settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("printer_settings", True, by="designs_ui")`]);
+  const saved = await js(`fetch('/api/account/printer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ units: 'in', print_compensation_mm: 0.2 }) }).then(r => r.status)`);
+  check('printer settings saved on the account', saved === 200, saved);
+  const mmOf = id => js(`Number(document.getElementById('${id}').value)`);
+  const fresh = async what => {
+    await send('Storage.clearDataForOrigin', { origin: new URL(BASE).origin, storageTypes: 'local_storage,session_storage' });
+    await load(BASE + '/'); await settled(what);
+  };
+  await fresh('a fresh page');
+  await waitFor("document.getElementById('units').value === 'in'", 10000);
+  check('a fresh page takes the account\'s units', (await js("document.getElementById('units').value")) === 'in');
+  check('…and its compensation, on both pulleys',
+        Math.abs(await mmOf('print_extra') - 0.2) < 1e-9 && Math.abs(await mmOf('p2_print_extra') - 0.2) < 1e-9,
+        [await mmOf('print_extra'), await mmOf('p2_print_extra')]);
+  await send('Storage.clearDataForOrigin', { origin: new URL(BASE).origin, storageTypes: 'local_storage,session_storage' });
+  await load(`${BASE}/?${DESIGN}`); await settled('a design\'s address'); await sleep(1500);
+  check('an address with a design keeps its own values',
+        (await js("document.getElementById('units').value")) === 'mm' && (await mmOf('print_extra')) === 0,
+        [await js("document.getElementById('units').value"), await mmOf('print_extra')]);
+  await fresh('a fresh page again');
+  await waitFor("Number(document.getElementById('print_extra').value) > 0", 10000);
+  await js("(() => { const el = document.getElementById('print_extra'); el.value = 0.4; saveSettings(); return true; })()");
+  await load(BASE + '/'); await settled('a reload'); await sleep(1500);
+  check('a value changed in this browser stays', Math.abs(await mmOf('print_extra') - 0.4) < 1e-9, await mmOf('print_extra'));
 
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : '  -> ' + String(JSON.stringify(r.detail)).slice(0, 600)}`);
   console.log(`page errors: ${errors.length ? JSON.stringify(errors.slice(0, 5)) : 'none'}`);

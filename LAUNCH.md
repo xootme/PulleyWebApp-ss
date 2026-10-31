@@ -128,6 +128,17 @@ FEEDBACK_GITHUB_PAT=FEEDBACK_GITHUB_PAT:latest" \
   --allow-unauthenticated
 ```
 
+Secrets mounted later, on both `pulley` and `pulley-test` (a code-only deploy keeps them):
+- 2026-10-30, owner's "mount them": `BREVO_API_KEY` and `BREVO_WEBHOOK_SECRET` (`:latest`), after
+  granting `pulley-run@` Secret Accessor on each, as `RESEND_API_KEY` has —
+  `gcloud run services update <service> --region us-central1 --update-secrets
+  BREVO_API_KEY=BREVO_API_KEY:latest,BREVO_WEBHOOK_SECRET=BREVO_WEBHOOK_SECRET:latest`
+  (pulley-00037-llz, pulley-test-00054-cld). Then pulley-test got its own webhook secret (owner,
+  2026-10-30): `--update-secrets BREVO_WEBHOOK_SECRET=BREVO_WEBHOOK_SECRET_TEST:latest`, pulley-run@
+  granted Secret Accessor on it (pulley-test-00055-4j7); pulley keeps `BREVO_WEBHOOK_SECRET`. Brevo list ids on each admin page: pulley 3 (the real
+  list), pulley-test 4 (the test list) — never 3 on pulley-test, or its reconcile deletes real
+  subscribers.
+
 Then, before switching the Worker: sign in, buy the smallest pack with a real card,
 download, refund it, and check the ledger and the bug-report path end to end on the
 `pulley-…run.app` address.

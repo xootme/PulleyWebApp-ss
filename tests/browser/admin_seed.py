@@ -18,7 +18,7 @@ import time
 
 sys.path.insert(0, os.getcwd())
 
-from bug_store import BugReports
+from cct_common.reports import ReportStore as BugReports
 from cct_common.accounts import AccountStore
 from cct_common.payments import Pack, Payments
 from cct_common.tokens import TokenStore

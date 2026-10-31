@@ -66,6 +66,13 @@ import ipaddress
 import secrets
 from typing import Callable, Optional
 
+from .newsletter import SCHEMA as _NEWSLETTER_SCHEMA
+from .printer_settings import SCHEMA as _PRINTER_SCHEMA
+from .receipts import SCHEMA as _RECEIPTS_SCHEMA, forget_email as _receipts_forget_email
+from .reports import SCHEMA as _REPORTS_SCHEMA, ensure_columns as _reports_columns, forget_account as _reports_forget
+from .data_export import SCHEMA as _EXPORTS_SCHEMA
+from .projects import forget_account as _projects_forget
+from .referrals import forget_account as _referrals_forget
 from .saved_designs import SCHEMA as _SAVED_DESIGNS_SCHEMA
 from .sqlite_db import SqliteDB
 from .tokens import TokenStore
@@ -146,6 +153,10 @@ CREATE TABLE IF NOT EXISTS signup_notices (
     account_id  TEXT PRIMARY KEY,
     created_at  REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS welcomes (
+    account_id  TEXT PRIMARY KEY,
+    created_at  REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS reminders (
     account_id  TEXT NOT NULL,
     kind        TEXT NOT NULL,
@@ -212,12 +223,18 @@ class AccountStore(SqliteDB):
                                          ("device_daily_budget", device_daily_budget),
                                          ("signups_per_ip_per_day", signups_per_ip_per_day)) if v is not SETTING}
         self._clock = clock or tokens._clock
-        super().__init__(tokens.path, _SCHEMA + _SAVED_DESIGNS_SCHEMA)   # closing one deletes its designs
+        # Closing an account deletes its saved designs and newsletter choices.
+        # Receipts (0.40.0) lose the email with it.
+        super().__init__(tokens.path, _SCHEMA + _SAVED_DESIGNS_SCHEMA + _NEWSLETTER_SCHEMA + _RECEIPTS_SCHEMA
+                         + _PRINTER_SCHEMA + _REPORTS_SCHEMA + _EXPORTS_SCHEMA)
+        _reports_columns(self)               # 0.44.0: deleting an account forgets it on its reports
         # Daily limits on add-in/agent tokens. Older databases lack these.
         self._ensure_columns("sessions", {"daily_budget": "INTEGER",
                                           "budget_notified_at": "REAL"})
         self._ensure_columns("device_codes", {"daily_budget": "INTEGER",
                                               "budget_chosen": "INTEGER NOT NULL DEFAULT 0"})
+        # Referrals (0.49.0): the share code an emailed sign-in link carries.
+        self._ensure_columns("login_links", {"ref_code": "TEXT"})
 
     # ── identities ────────────────────────────────────────────────────────
 
@@ -252,14 +269,17 @@ class AccountStore(SqliteDB):
         self._given["signups_per_ip_per_day"] = value
 
     def sign_in(self, provider: str, subject: str, email: Optional[str], *,
-                email_verified: bool, ip: Optional[str] = None) -> str:
+                email_verified: bool, ip: Optional[str] = None, ref: Optional[str] = None) -> str:
         """Account id for this sign-in identity, linking or creating as
         needed. A never-seen identity joins the account that already owns
         its email only if the provider verified that email; with no
         verified email at all, sign-in is refused (ValueError), since the
         account's email is how it gets receipts and sign-in links.
         A new account from an IP past signups_per_ip_per_day starts without
-        the signup grant; take_signup_notice() then reports that once."""
+        the signup grant; take_signup_notice() then reports that once.
+        A new account gets its welcome page once (take_welcome).
+        ref: the share code this sign-up came from (0.49.0): a new account
+        is recorded as referred by its sharer, while referrals are on."""
         if provider not in PROVIDERS:
             raise ValueError(f"unknown provider: {provider!r}")
         subject = str(subject)
@@ -279,16 +299,25 @@ class AccountStore(SqliteDB):
                                 (_hash(email),)).fetchone()
         grant = 0 if closed else self.signup_grant
         withheld = False
-        if self.tokens.account_by_email(email) is None and grant:
+        new = self.tokens.account_by_email(email) is None
+        from .referrals import carried
+        ref = carried(self.tokens.path, ref) if new else None
+        if new and grant:
             # A new account, not a sign-in to one: count it against the IP.
             withheld = not self._claim_signup(ip)
             if withheld:
                 grant = 0
         account_id = self.tokens.get_or_create_account(email, signup_grant=grant)
-        if withheld:
+        if new:
             with self._write() as db:
-                db.execute("INSERT OR IGNORE INTO signup_notices (account_id, created_at) "
+                db.execute("INSERT OR IGNORE INTO welcomes (account_id, created_at) "
                            "VALUES (?, ?)", (account_id, now))
+                if withheld:
+                    db.execute("INSERT OR IGNORE INTO signup_notices (account_id, created_at) "
+                               "VALUES (?, ?)", (account_id, now))
+                if ref:
+                    from .referrals import record
+                    record(db, ref, account_id, now, returning=bool(closed))
         with self._write() as db:
             db.execute(
                 """INSERT OR IGNORE INTO identities
@@ -327,10 +356,14 @@ class AccountStore(SqliteDB):
 
     # ── email sign-in links ───────────────────────────────────────────────
 
-    def create_login_link(self, email: str, *, ip: Optional[str] = None) -> str:
+    def create_login_link(self, email: str, *, ip: Optional[str] = None, ref: Optional[str] = None) -> str:
         """A one-time sign-in secret for this email (put it in the emailed
-        link). Raises RateLimited past the per-email / per-IP limits."""
+        link). Raises RateLimited past the per-email / per-IP limits.
+        ref: the share code the sign-up came from, kept with the link while
+        referrals are on (0.49.0)."""
         email = normalize_email(email)
+        from .referrals import carried
+        ref = carried(self.tokens.path, ref)
         now = self._clock()
         with self._write() as db:
             since = now - 3600
@@ -342,8 +375,9 @@ class AccountStore(SqliteDB):
                 raise RateLimited()
             token = secrets.token_urlsafe(32)
             db.execute(
-                "INSERT INTO login_links (token_hash, email, ip, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-                (_hash(token), email, ip, now, now + LOGIN_LINK_TTL_S))
+                "INSERT INTO login_links (token_hash, email, ip, created_at, expires_at, ref_code) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (_hash(token), email, ip, now, now + LOGIN_LINK_TTL_S, ref))
         return token
 
     def _claim_signup(self, ip: Optional[str]) -> bool:
@@ -373,6 +407,15 @@ class AccountStore(SqliteDB):
                 db.execute("DELETE FROM signup_notices WHERE account_id = ?", (account_id,))
         return bool(row)
 
+    def take_welcome(self, account_id: str) -> bool:
+        """True once for an account this sign-in has just made: its welcome
+        page (the newsletter checkbox, 0.36.0). A day at most, like the notice."""
+        with self._write() as db:
+            row = db.execute("SELECT 1 FROM welcomes WHERE account_id = ?", (account_id,)).fetchone()
+            if row:
+                db.execute("DELETE FROM welcomes WHERE account_id = ?", (account_id,))
+        return bool(row)
+
     def redeem_login_link(self, token: str, *, ip: Optional[str] = None) -> Optional[str]:
         """Account id if the link is valid (unused, unexpired), else None.
         Uses the link up. Creates the account on first sign-in (without
@@ -387,8 +430,8 @@ class AccountStore(SqliteDB):
                 return None
             db.execute("UPDATE login_links SET used_at = ? WHERE token_hash = ?",
                        (now, row["token_hash"]))
-            email = row["email"]
-        return self.sign_in("email", email, email, email_verified=True, ip=ip)
+            email, ref = row["email"], row["ref_code"]
+        return self.sign_in("email", email, email, email_verified=True, ip=ip, ref=ref)
 
     # ── sessions (browser cookies and add-in device tokens) ───────────────
 
@@ -533,6 +576,15 @@ class AccountStore(SqliteDB):
                     self.delete_account(a["id"])
                     done["accounts_deleted"] += 1
         self.purge_expired()
+        # The newsletter list in Brevo against who's subscribed here (0.39.0),
+        # once it's set up (until then the counts are as they always were).
+        from .newsletter_sync import NewsletterSync
+        try:
+            synced = NewsletterSync(self.tokens.path, clock=self._clock).reconcile()
+            if synced is not None:
+                done["newsletter"] = synced
+        except Exception as e:
+            done["newsletter"] = f"failed: {e}"[:200]          # tomorrow's run tries again
         # The same database keeps the servers' use (server_use): roll old rows up.
         from .server_use import ServerUseStore
         try:
@@ -672,8 +724,10 @@ class AccountStore(SqliteDB):
 
     def delete_account(self, account_id: str) -> None:
         """Remove the personal data: email, identities, sessions, pending
-        sign-in links and saved designs (0.34.0). Ledger rows stay (financial
-        records) but point at an account with no email left on it."""
+        sign-in links, saved designs (0.34.0), newsletter choices (0.36.0) and
+        printer settings (0.41.0), referral records (0.49.1).
+        Ledger rows and receipts (0.40.0) stay (financial records) but point
+        at an account with no email left on it."""
         now = self._clock()
         with self._write() as db:
             row = db.execute("SELECT email FROM accounts WHERE id = ?", (account_id,)).fetchone()
@@ -682,12 +736,29 @@ class AccountStore(SqliteDB):
             db.execute("DELETE FROM login_links WHERE email = ?", (row["email"],))
             db.execute("DELETE FROM identities WHERE account_id = ?", (account_id,))
             db.execute("DELETE FROM saved_designs WHERE account_id = ?", (account_id,))
+            db.execute("DELETE FROM shared_designs WHERE account_id = ?", (account_id,))   # 0.42.0
+            # A subscribed account's contact is deleted from Brevo too (0.39.0).
+            last = db.execute("SELECT subscribed FROM newsletter_consents WHERE account_id = ? "
+                              "ORDER BY id DESC LIMIT 1", (account_id,)).fetchone()
+            if last and last["subscribed"]:
+                from .newsletter_sync import enqueue
+                enqueue(db, account_id, row["email"], "delete", now)
+            db.execute("DELETE FROM newsletter_consents WHERE account_id = ?", (account_id,))
+            db.execute("DELETE FROM welcomes WHERE account_id = ?", (account_id,))
+            db.execute("DELETE FROM account_prefs WHERE account_id = ?", (account_id,))   # 0.41.0
+            _receipts_forget_email(db, account_id)
+            _reports_forget(db, account_id, row["email"])    # the words stay; account, address and design go
+            db.execute("DELETE FROM data_exports WHERE account_id = ?", (account_id,))
+            _projects_forget(db, account_id)    # 0.46.0
+            _referrals_forget(db, account_id)   # 0.49.1: kept only while both accounts are open
             db.execute("UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL",
                        (now, account_id))
             db.execute("UPDATE accounts SET email = ? WHERE id = ?",
                        (f"deleted:{account_id}", account_id))
             db.execute("INSERT OR IGNORE INTO closed_emails (email_hash, closed_at) VALUES (?, ?)",
                        (_hash(row["email"]), now))
+        from .newsletter_sync import kick
+        kick(self.tokens.path, clock=self._clock)
 
     def purge_expired(self) -> None:
         """Drop sign-in links older than a day and sessions dead for 30 days."""
@@ -697,5 +768,6 @@ class AccountStore(SqliteDB):
             db.execute("DELETE FROM device_codes WHERE created_at < ?", (now - 24 * 3600,))
             db.execute("DELETE FROM signups WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))
             db.execute("DELETE FROM signup_notices WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))
+            db.execute("DELETE FROM welcomes WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))
             db.execute("DELETE FROM sessions WHERE expires_at < ? OR revoked_at < ?",
                        (now - 30 * 24 * 3600, now - 30 * 24 * 3600))

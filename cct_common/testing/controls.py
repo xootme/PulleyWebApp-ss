@@ -258,15 +258,31 @@ def copy_tree(dst: Path):
                     "-x", r"[\\/]\.git[\\/]", str(dst)], check=True, capture_output=True)
 
 
-def _remove(folder):
-    """A lane gone, with its worktree's entry in the repo (that one only)."""
-    subprocess.run(["git", "worktree", "remove", "--force", str(folder)], cwd=affected.ROOT, capture_output=True)
+REMOVE_TRIES, REMOVE_WAIT = 5, 1.0
+_sleep = time.sleep
 
+
+def _remove(folder):
+    """A lane gone, with its worktree's entry in the repo (that one only), or
+    the lanes' folder. A file Windows holds a moment longer (an indexer, a
+    scanner, a process still closing) is tried again, REMOVE_TRIES times
+    REMOVE_WAIT s apart; past that, a warning and the folder is left: the
+    cleanup never changes the run's result (0.51.1: Sprocket's night of
+    2026-10-30 caught all 58, then WinError 32 on a lane failed the night)."""
     def unlock(fn, p, _):                                  # git's objects are read-only
         os.chmod(p, 0o700)
         fn(p)
-    if Path(folder).exists():
-        shutil.rmtree(folder, onexc=unlock)
+    for i in range(REMOVE_TRIES):
+        subprocess.run(["git", "worktree", "remove", "--force", str(folder)], cwd=affected.ROOT, capture_output=True)
+        try:
+            if Path(folder).exists():
+                shutil.rmtree(folder, onexc=unlock)
+            return
+        except OSError as e:
+            err = e
+        if i + 1 < REMOVE_TRIES:
+            _sleep(REMOVE_WAIT)
+    say(f"warning: couldn't remove {folder} ({err}); left behind, the result stands")
 
 
 def _run(cmd, cwd, env, limit, log=None):
@@ -449,7 +465,15 @@ def main(breaks: dict, argv, source=None) -> int:
             with lock:
                 scope_missed.append(f"{name} ({how}: its last catcher, {prior}, is outside it)")
         return found.get("by") or prior, f"its last catcher; {how}"
-    with tempfile.TemporaryDirectory(prefix=f"{affected.APP}-neg-") as tmp:
+    # The lanes' folder goes after the result is printed, and its failing to
+    # go is a warning (_remove), never the run's exit code.
+    tmp, roots = tempfile.mkdtemp(prefix=f"{affected.APP}-neg-"), []
+
+    def cleanup():
+        for root in roots:
+            _remove(root)
+        _remove(tmp)
+    try:
         lanes = min(workers, len(small))
         roots = [Path(tmp) / f"lane{i}" for i in range(max(1, lanes) if todo else 0)]
         for root in roots:
@@ -520,12 +544,14 @@ def main(breaks: dict, argv, source=None) -> int:
                 shown = ", ".join(files[:3]) + (f" and {len(files) - 3} more" if len(files) > 3 else "")
                 scope_missed.append(f"{name} ({how}: {shown}; the whole {suite} suite caught it)")
             done(name, ck, suite is not None, f"its scope didn't catch it ({how})", [], time.time() - t, by)
-        for root in roots:
-            _remove(root)
+    except BaseException:
+        cleanup()
+        raise
     print(f"\n{len(todo)} of {len(breaks)} controls run ({mode}) in {(time.time() - t0) / 60:.1f} min; "
           "the tree untouched (each lane broke its own copy)")
     for s in scope_missed:
         print(f"SCOPE   {s}: caught by the whole suite only; its tests should catch it")
     bad = stale + missed
-    print("missed:", bad or "none")
+    print("missed:", bad or "none", flush=True)
+    cleanup()
     return 1 if bad else 0

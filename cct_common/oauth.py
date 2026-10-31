@@ -7,7 +7,7 @@ ADR-008), feeding the same AccountStore.sign_in as the email link.
 
 Routes (a provider appears only when its client id and secret are set):
     GET  /api/account/providers               {"providers": ["google", ...]}
-    GET  /account/oauth/<provider>/start?next=/path
+    GET  /account/oauth/<provider>/start?next=/path[&ref=<share code>]   (ref: referrals, 0.49.0)
     GET  /account/oauth/<provider>/callback   (the redirect URI to register:
                                                <site>/account/oauth/<provider>/callback)
 
@@ -148,15 +148,18 @@ class OAuthStates(SqliteDB):
     def __init__(self, path: str, clock: Callable[[], float] = time.time):
         super().__init__(path, _SCHEMA)
         self.clock = clock
+        # Referrals (0.49.0): the share code this sign-up came from.
+        self._ensure_columns("oauth_states", {"ref_code": "TEXT"})
 
-    def begin(self, provider: str, browser_secret: str, next_path: str) -> tuple[str, str]:
+    def begin(self, provider: str, browser_secret: str, next_path: str,
+              ref: Optional[str] = None) -> tuple[str, str]:
         state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(48)
         now = self.clock()
         with self._write() as db:
             db.execute("DELETE FROM oauth_states WHERE created_at < ?", (now - STATE_TTL_S,))
             db.execute("INSERT INTO oauth_states (state_hash, provider, verifier, browser_hash, "
-                       "next, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                       (_hash(state), provider, verifier, _hash(browser_secret), next_path, now))
+                       "next, created_at, ref_code) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       (_hash(state), provider, verifier, _hash(browser_secret), next_path, now, ref))
         return state, verifier
 
     def take(self, state: str, provider: str, browser_secret: Optional[str]) -> dict:
@@ -253,9 +256,12 @@ def register_oauth_routes(app, accounts, *, clients: dict, finish: Callable, pag
     def start(provider):
         if provider not in enabled:
             return page("Sign-in unavailable", "<p>That sign-in method isn't available.</p>", 404)
-        from .account_routes import _safe_next
+        from .account_routes import _safe_next, home_path
         browser = secrets.token_urlsafe(32)
-        state, verifier = states.begin(provider, browser, _safe_next(request.args.get("next")))
+        from .referrals import carried
+        state, verifier = states.begin(provider, browser,
+                                       _safe_next(request.args.get("next"), home_path(accounts.path)),
+                                       carried(accounts.path, request.args.get("ref")))
         cfg = PROVIDERS[provider]
         params = {"client_id": enabled[provider][0], "response_type": "code",
                   "redirect_uri": redirect_uri(provider), "scope": cfg["scope"], "state": state,
@@ -289,7 +295,7 @@ def register_oauth_routes(app, accounts, *, clients: dict, finish: Callable, pag
             subject, email, verified = IDENTITY[provider](resp.json(), client_id, clock(), http)
             try:
                 account_id = accounts.sign_in(provider, subject, email, email_verified=verified,
-                                              ip=client_ip())
+                                              ip=client_ip(), ref=flow.get("ref_code"))
             except ValueError as e:
                 raise OAuthError(
                     f"{label} didn't confirm an email address for this account, and an account "

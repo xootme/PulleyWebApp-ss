@@ -15,14 +15,23 @@ Routes:
     GET    /account/sign-in?next=... a sign-in page of its own: Continue with Google /
                                      Microsoft / GitHub, or email me a link; back to `next`
     POST   /account/sign-in          {email, next}  email the link
-    POST   /api/account/login-link   {email, next?}  email a sign-in link
+    POST   /api/account/login-link   {email, next?, ref?}  email a sign-in link (ref: a share code, 0.49.0)
     GET    /account/login?token=...  confirmation page (a button, see below); with no
                                      token, on to /account/sign-in
     POST   /account/login            uses the link, sets the session cookie
     POST   /api/account/logout
     GET    /api/account              email, balance (free / bought), expiry date, buy page,
-                                     sign-in methods, sessions
+                                     sign-in methods, sessions; the newsletter choice while
+                                     newsletter_opt_in is on (0.36.0)
+    POST   /api/account/newsletter   {subscribed, label_version}  the token dialog's checkbox
+    POST   /account/welcome          a new account's welcome page: {newsletter, label_version, next}
+    POST   /api/account/printer      {units, print_compensation_mm}  printer settings (0.41.0,
+                                     the printer_settings setting; also in GET /api/account)
+    POST   /api/newsletter/brevo-webhook   Brevo's unsubscribe and contact-deleted events (0.39.0):
+                                     a 0 row (source "brevo"); needs BREVO_WEBHOOK_SECRET
     GET    /api/account/history      ledger rows, newest first
+    GET    /account/                 the account page (0.38.0, the account_page setting;
+                                     cct_common.account_page)
     DELETE /api/account/sessions/<id>   revoke one session (e.g. a lost laptop)
     POST   /api/account/delete       {confirm_email}  delete the account
     GET    /api/account/providers    OAuth sign-in methods on offer (see oauth.py)
@@ -59,7 +68,7 @@ import html
 from typing import Optional
 from urllib.parse import quote
 
-from .accounts import DEAD_ACCOUNT_IDLE_S, AccountStore, RateLimited, normalize_email
+from .accounts import DEAD_ACCOUNT_IDLE_S, SIGNUP_WINDOW_S, AccountStore, RateLimited, normalize_email
 
 BUDGET_CHOICES = (25, 50, 100, 250, 1000)   # offered on the pages; None = no limit
 
@@ -117,17 +126,63 @@ def parse_budget(value) -> object:
     return n
 
 
-def _safe_next(target: Optional[str]) -> str:
+def _safe_next(target: Optional[str], default: str = "/") -> str:
     # Only same-site paths: blocks open redirects like //evil.com or https://…
     if not target or not target.startswith("/") or target.startswith("//") or "\\" in target:
-        return "/"
+        return default
     return target
+
+
+def home_path(path) -> str:
+    """Where a sign-in with no next (or an unsafe one) goes: the account page
+    while it's on (0.47.0: the site footer's "Your account"), else the site."""
+    from .settings import setting
+    return "/account/" if setting(path, "account_page") is True else "/"
 
 
 # Where the approval page may send the person after they decide: only the
 # hosted MCP gateway's sign-in callback (cct_common.mcp_oauth), which turns the
 # approved device code into an OAuth code for the AI app that asked.
 MCP_CALLBACK_PATH = "/mcp/oauth/callback"
+
+# Brevo's webhook events that mean the person left (0.39.0).
+BREVO_LEAVE_EVENTS = frozenset({"unsubscribed", "unsubscribe", "contact_deleted", "contactDeleted"})
+BREVO_SECRET_HEADER = "X-CCT-Webhook-Secret"
+
+
+def _brevo_lists(ev: dict) -> set:
+    """The list ids a Brevo event names (list_id, listId, listIds, list_ids:
+    a number or a list of them); empty when it names none."""
+    out = set()
+    for key in ("list_id", "listId", "listIds", "list_ids"):
+        v = ev.get(key)
+        for x in (v if isinstance(v, list) else [v]):
+            try:
+                out.add(int(x))
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def _brevo_credentials(headers) -> list:
+    """What a Brevo webhook may carry as the secret (0.41.0): Brevo's docs
+    don't say how its "Token" (auth type bearer) arrives, so every form it can
+    be set up to send counts: "Authorization: Bearer <secret>", the bare
+    secret in Authorization, Basic with the secret as the password (the
+    URL's user:password@), or a custom header X-CCT-Webhook-Secret."""
+    import base64
+    out = [headers.get(BREVO_SECRET_HEADER, "").strip()]
+    auth = headers.get("Authorization", "").strip()
+    if auth[:7].lower() == "bearer ":
+        out.append(auth[7:].strip())
+    elif auth[:6].lower() == "basic ":
+        try:
+            out.append(base64.b64decode(auth[6:].strip(), validate=True).decode("utf-8").partition(":")[2])
+        except (ValueError, UnicodeDecodeError):
+            pass
+    elif auth:
+        out.append(auth)
+    return out                     # an empty one never matches a 16+ character secret
 
 
 def _safe_then(target: Optional[str]) -> Optional[str]:
@@ -212,11 +267,11 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         except ValueError:
             return jsonify({"error": "Enter a valid email address."}), 400
         try:
-            token = accounts.create_login_link(email, ip=_client_ip())
+            token = accounts.create_login_link(email, ip=_client_ip(), ref=data.get("ref"))
         except RateLimited:
             return jsonify({"error": "Too many sign-in emails requested. Try again in an hour.",
                             "code": "RATE_LIMITED"}), 429
-        nxt = _safe_next(data.get("next"))
+        nxt = _safe_next(data.get("next"), home_path(tokens.path))
         link = f"{request.host_url}account/login?token={token}"
         if nxt != "/":
             link += f"&next={quote(nxt, safe='/')}"
@@ -229,7 +284,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
 
     def login_page():
         token = request.args.get("token", "")
-        nxt = _safe_next(request.args.get("next"))
+        nxt = _safe_next(request.args.get("next"), home_path(tokens.path))
         if not token:       # not from an emailed link: a button here could never work
             return redirect(f"/account/sign-in?next={quote(nxt, safe='/')}", code=302)
         return _page(f"Sign in to {app_name}", (
@@ -327,7 +382,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         """For pages outside the tool (the admin dashboard, a bookmarked
         link) that need a signed-in visitor; the tool itself signs in from
         its own dialog."""
-        nxt = _safe_next(request.args.get("next"))
+        nxt = _safe_next(request.args.get("next"), home_path(tokens.path))
         acct = current_account_id()
         if acct:
             return _page("Signed in", (
@@ -346,7 +401,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "<button type='submit'>Email me a sign-in link</button></form>"))
 
     def sign_in_submit():
-        nxt = _safe_next(request.form.get("next"))
+        nxt = _safe_next(request.form.get("next"), home_path(tokens.path))
         try:
             email = normalize_email(request.form.get("email", ""))
         except ValueError:
@@ -365,25 +420,140 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             f"<p>We sent a sign-in link to {html.escape(email)}. It works once, within 15 "
             "minutes, and brings you back here. Check your junk folder if it isn't there.</p>"))
 
+    def _newsletter_on() -> bool:
+        from .settings import setting
+        return setting(tokens.path, "newsletter_opt_in") is True
+
+    def _news_app() -> str:
+        return tokens.app or "site"
+
     def _finish_sign_in(account_id: str, nxt: Optional[str]):
         """Start a browser session and go on to `nxt` — shared by the email
-        link and OAuth. A new account made without its free tokens (the
-        per-network daily limit) is told why first, once."""
-        nxt = _safe_next(nxt)
+        link and OAuth. A new account gets a welcome page first, once: with
+        the newsletter checkbox while newsletter_opt_in is on (0.36.0), and
+        saying why when it was made without its free tokens (the per-network
+        daily limit)."""
+        nxt = _safe_next(nxt, home_path(tokens.path))
+        # Only the browser's name ("Chrome on Windows"), never the raw user agent:
+        # what the privacy policy says a session keeps (0.38.1).
+        from .account_page import browser_name
         session = accounts.create_session(account_id, kind="web",
-                                          label=(request.user_agent.string or "")[:80])
-        if accounts.take_signup_notice(account_id):
+                                          label=browser_name(request.user_agent.string))
+        new = accounts.take_welcome(account_id)
+        withheld = accounts.take_signup_notice(account_id)
+        no_grant = ("<p>New accounts usually start with free tokens, but this network has "
+                    "already had its free tokens for today, so this account starts with none. "
+                    "You can buy tokens whenever you need them.</p>") if withheld else ""
+        if new and _newsletter_on():
+            from .newsletter import LABEL_VERSION, LABELS
             r = _page("You're signed in", (
-                "<p>Welcome! Your account is ready.</p>"
-                "<p>New accounts usually start with free tokens, but this network has "
-                "already had its free tokens for today, so this account starts with none. "
-                "You can buy tokens whenever you need them.</p>"
-                f"<p><a href='{html.escape(nxt, quote=True)}'>Continue</a></p>"))
+                "<p>Welcome! Your account is ready.</p>" + no_grant
+                + "<form method='post' action='/account/welcome'>"
+                f"<input type='hidden' name='next' value='{html.escape(nxt, quote=True)}'>"
+                f"<input type='hidden' name='label_version' value='{LABEL_VERSION}'>"
+                "<p><label style='display:flex;gap:.6rem;align-items:flex-start'>"
+                "<input type='checkbox' name='newsletter' value='1' style='margin-top:.35rem'>"
+                f"<span>{html.escape(LABELS[LABEL_VERSION])}</span></label></p>"
+                "<button type='submit'>Continue</button></form>"))
+        elif withheld:
+            r = _page("You're signed in", (
+                "<p>Welcome! Your account is ready.</p>" + no_grant
+                + f"<p><a href='{html.escape(nxt, quote=True)}'>Continue</a></p>"))
         else:
             r = redirect(nxt, code=303)
         r.set_cookie(COOKIE_NAME, session, max_age=30 * 24 * 3600, httponly=True,
                      secure=secure_cookies, samesite="Lax", path="/")
         return r
+
+    def welcome_submit():
+        """The welcome page's Continue: keep a ticked box (source signup), then
+        on to `next`. Unticked keeps nothing: no row is not subscribed."""
+        nxt = _safe_next(request.form.get("next"), home_path(tokens.path))
+        acct = current_account_id()
+        if acct and request.form.get("newsletter") == "1" and _newsletter_on():
+            from .newsletter import Newsletter, label_version
+            # An account older than a day didn't come from its welcome page.
+            made = tokens.account_created_at(acct) or 0
+            source = "signup" if accounts._clock() - made <= SIGNUP_WINDOW_S else "account"
+            Newsletter(tokens.path, clock=accounts._clock).record(
+                acct, True, app=_news_app(), source=source,
+                label_version=label_version(request.form.get("label_version")))
+        return redirect(nxt, code=303)
+
+    def newsletter_save():
+        """The token dialog's checkbox: {subscribed, label_version}. 404 while
+        newsletter_opt_in is off."""
+        if not _newsletter_on():
+            return jsonify({"error": "not found"}), 404
+        acct, err = _require_account()
+        if err:
+            return err
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("subscribed"), bool):
+            return jsonify({"error": "Send {subscribed: true or false}."}), 400
+        from .newsletter import Newsletter, label_version
+        state = Newsletter(tokens.path, clock=accounts._clock).record(
+            acct, data["subscribed"], app=_news_app(), source="account",
+            label_version=label_version(data.get("label_version")))
+        return jsonify(state)
+
+    def brevo_webhook():
+        """Brevo's unsubscribe link (and a contact deleted in Brevo): the
+        account leaves the newsletter here too, and the contact is deleted.
+        Acts whether or not newsletter_opt_in is still on (a promise kept).
+        Only with the secret Brevo was given (BREVO_WEBHOOK_SECRET)."""
+        import os
+        secret = os.environ.get("BREVO_WEBHOOK_SECRET") or ""
+        if len(secret) < 16 or not any(hmac.compare_digest(g.encode(), secret.encode())
+                                       for g in _brevo_credentials(request.headers)):
+            # The header names only, never their values: which form Brevo used.
+            from flask import current_app
+            current_app.logger.warning("Brevo webhook refused (secret %s); headers: %s",
+                                       "set" if len(secret) >= 16 else "missing",
+                                       ", ".join(sorted(request.headers.keys())))
+            return jsonify({"error": "not found"}), 404
+        body = request.get_json(silent=True)
+        events = body if isinstance(body, list) else [body] if isinstance(body, dict) else []
+        from .newsletter import Newsletter
+        from .newsletter_sync import enqueue, kick
+        news = Newsletter(tokens.path, clock=accounts._clock)
+        from .settings import setting
+        ours = setting(tokens.path, "newsletter_list_id")
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("event") not in BREVO_LEAVE_EVENTS:
+                continue
+            # One Brevo account, two lists (the real one and the test one): an
+            # event for another list is that environment's (0.41.0). One with no
+            # list (a contact deleted, a global unsubscribe) is everyone's.
+            lists = _brevo_lists(ev)
+            if lists and ours is not None and int(ours) not in lists:
+                continue
+            try:
+                email = normalize_email(ev.get("email") or "")
+            except ValueError:
+                continue
+            acct = tokens.account_by_email(email)
+            if acct and news.state(acct)["subscribed"]:
+                news.record(acct, False, app="brevo", source="brevo")     # queues the delete
+            elif ev.get("event") not in ("contact_deleted", "contactDeleted"):
+                with news._write() as db:                                  # not ours: delete it all the same
+                    enqueue(db, acct or "", email, "delete", accounts._clock())
+                kick(tokens.path, clock=accounts._clock)
+        return jsonify({"ok": True})
+
+    def printer_save():
+        """The account page's printer settings. 404 while printer_settings is off."""
+        from .settings import setting
+        if setting(tokens.path, "printer_settings") is not True:
+            return jsonify({"error": "not found"}), 404
+        acct, err = _require_account()
+        if err:
+            return err
+        from .printer_settings import PrinterSettings, PrinterSettingsError
+        try:
+            return jsonify(PrinterSettings(tokens.path, clock=accounts._clock).set(acct, request.get_json(silent=True)))
+        except PrinterSettingsError as e:
+            return jsonify({"error": str(e)}), 400
 
     def logout():
         token = request.cookies.get(COOKIE_NAME)
@@ -432,6 +602,21 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         from flask import current_app
         from .settings import setting
         extra = {"saved_designs": True} if setting(tokens.path, "saved_designs") is True else {}
+        if setting(tokens.path, "account_page") is True:
+            extra["account_page"] = True      # 0.38.0: the token dialog links /account/
+        if setting(tokens.path, "printer_settings") is True:
+            from .printer_settings import PrinterSettings
+            extra["printer"] = PrinterSettings(tokens.path).get(acct)    # 0.41.0: tokens.js hands it to the app
+        if setting(tokens.path, "rewards") is True:     # 0.51.0: the dialog's rewards lines (step 6)
+            from .rewards import progress_lines, state
+            since = tokens.paid_first_since()
+            with tokens._read() as db:
+                lines = progress_lines(state(db, tokens, acct, since)) if since is not None else []
+            extra["rewards"] = {"lines": lines}
+        if _newsletter_on():                  # 0.36.0: the token dialog's checkbox
+            from .newsletter import LABEL_VERSION, LABELS, Newsletter
+            extra["newsletter"] = dict(Newsletter(tokens.path, clock=accounts._clock).state(acct),
+                                       label=LABELS[LABEL_VERSION], label_version=LABEL_VERSION)
         return jsonify({
             **extra,                          # 0.34.0: My designs, Save, the thumbnail (tokens.js)
             "email": tokens.account_email(acct),
@@ -713,6 +898,22 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     app.add_url_rule("/api/account/history", view_func=account_history, methods=["GET"])
     app.add_url_rule("/api/account/sessions/<int:session_id>", view_func=revoke, methods=["DELETE"])
     app.add_url_rule("/api/account/delete", view_func=delete_account, methods=["POST"])
+    app.add_url_rule("/api/account/newsletter", view_func=newsletter_save, methods=["POST"])
+    from .account_page import register_account_page
+    register_account_page(app, accounts, buy_url=_buy_url)
+    from .projects import register_projects
+    register_projects(app, accounts)                   # 0.46.0, behind the projects setting
+    from .share_links import noindex
+    noindex(app)                                       # 0.46.1: shared views stay out of search engines
+    app.add_url_rule("/account/welcome", view_func=welcome_submit, methods=["POST"])
+    app.add_url_rule("/api/newsletter/brevo-webhook", view_func=brevo_webhook, methods=["POST"])
+    app.add_url_rule("/api/account/printer", view_func=printer_save, methods=["POST"])
+
+    @app.before_request
+    def _newsletter_drain():
+        # Every app's waiting newsletter jobs, from the one process with the key (0.41.0).
+        from .newsletter_sync import maybe_kick
+        maybe_kick(tokens.path)
 
     from .oauth import register_oauth_routes
     app.extensions[_EXT_KEY]["oauth_providers"] = register_oauth_routes(

@@ -23,6 +23,10 @@ Controller campaigns/2026-10-27-signup-grant-10.md, phase 1.
   for that app until its own release drops it (phase 3).
 - tokens per dollar is fixed: 1 token = 5 cents (tokens.TOKEN_PRICE_CENTS),
   which refunds rely on. Packs at another rate are allowed, and flagged.
+- A setting in SINCE_KEYS also keeps when it was first turned on, once and
+  for good (`settings_since`; since()). The rewards' switch date (0.37.0):
+  paid tokens are used first for spends from then, even if it's turned off
+  again, so no one's refundable tokens change after the fact.
 """
 from __future__ import annotations
 
@@ -61,7 +65,37 @@ DEFAULTS = {
     # 0.35.0: the buy panel and money beside tokens, off until the owner turns them on.
     "inline_checkout": False,
     "price_in_money": False,
+    # 0.36.0: the newsletter checkbox (welcome page, token dialog, admin
+    # count and export), off until the owner turns it on.
+    "newsletter_opt_in": False,
+    # 0.37.0: the rewards program (bonus tokens, paid tokens used first),
+    # off until the owner turns it on, after the Terms say so.
+    "rewards": False,
+    # 0.38.0: the account page, /account/, off until the owner turns it on.
+    "account_page": False,
+    # 0.39.0: the newsletter list's id in CheapCADTools' Brevo account; none
+    # until it's set up (the sync waits).
+    "newsletter_list_id": None,
+    # 0.40.0: receipts and credit notes, off until the owner turns them on.
+    "receipts": False,
+    # 0.41.0: printer settings, units and formats on the account, off.
+    "printer_settings": False,
+    # 0.42.0: share a saved design by a link, off (needs saved_designs).
+    "share_links": False,
+    # 0.43.0: bookmarks and private notes on saved designs, off (needs saved_designs).
+    "bookmarks": False,
+    # 0.44.0: My reports (the account's reports and their status), off.
+    "my_reports": False,
+    # 0.45.0: "Download all my data" on the account page, off.
+    "data_download": False,
+    # 0.46.0: projects (named groups of saved designs), off (needs saved_designs).
+    "projects": False,
+    # 0.47.0: "My account" in every tool's header, off (the label is the owner's; the layout isn't seen yet).
+    "my_account_button": False,
+    # 0.49.0: referral tokens for share links (the owner's a-f), off (needs share_links).
+    "referrals": False,
 }
+SINCE_KEYS = ("rewards",)
 REDOWNLOAD_WINDOWS = ("24h", "forever")
 
 DESCRIPTIONS = {
@@ -83,6 +117,49 @@ DESCRIPTIONS = {
                        "PayPal without leaving the page, and the download goes on once paid. "
                        "Off: \"Buy tokens\" opens the buy page.",
     "price_in_money": "Money beside tokens wherever tokens are shown: \"STEP: 4 tokens = 20¢\".",
+    "newsletter_opt_in": "The newsletter checkbox: on a new account's welcome page and in the "
+                         "\"Your tokens\" dialog, unticked until the person ticks it. Off: no checkbox "
+                         "anywhere and nothing is recorded. Turn on once the privacy text says so.",
+    "rewards": "Rewards: +25% bonus tokens on a first purchase (once per account and per card or PayPal "
+               "account), +10% after every 200 paid tokens spent (+20% at every 1,000), and paid tokens "
+               "used before free ones for spends from the day it's first turned on. Off: today's rules, "
+               "free tokens first. Turn on only once the Terms say so; the paid-first order stays from "
+               "that day even if it's turned off again.",
+    "account_page": "The account page, /account/: tokens and buying, My designs, the history in plain "
+                    "words, the newsletter box, sign-ins and connected apps, and deleting the account. "
+                    "A section shows only while its own setting is on. Off: a 404, and no link to it.",
+    "newsletter_list_id": "The newsletter list's id in CheapCADTools' Brevo account (a number). Subscribers "
+                          "are added to it and deleted from Brevo when they leave. Empty: nothing is sent "
+                          "to Brevo; changes wait until it's set (and BREVO_API_KEY is in Cloud).",
+    "receipts": "Receipts and credit notes: a numbered receipt for every purchase (CCT-2026-000001) and a "
+                "credit note for every refund or chargeback, at /account/receipts/<number>, linked from the "
+                "account page's history and the Sales tab. Off: nothing is numbered or shown. The first time "
+                "it's on, orders already paid are numbered in the order they were paid.",
+    "printer_settings": "Printer settings on the account: units (mm or inch) and the 3D Printer Compensation "
+                        "(0 to 1.00 mm, for STL files only). Set on the account page; each tool starts a new "
+                        "design from them. Off: none of it is read or shown.",
+    "share_links": "Share links: \"Share\" on a design in My designs makes a public link that opens a copy of "
+                   "it in the tool (settings and picture, never the email). Needs saved designs. Off: no "
+                   "Share button, and every link answers \"isn't shared any more\".",
+    "bookmarks": "Bookmarks and notes on saved designs: a star, a private note (1,000 characters, text "
+                 "only) searchable in My designs, bookmarked designs first and never pushed out at the "
+                 "design limit. Needs saved designs. Off: none of it shows.",
+    "my_reports": "My reports: a signed-in person's bug and feature reports are linked to their account and "
+                  "listed on its page with their status, which the admin sets on the Bug reports tab (and may "
+                  "send one \"fixed\" email). Off: reports are kept as before, linked to no account.",
+    "data_download": "\"Download all my data\" on the account page: a zip of everything the account keeps "
+                     "(saved designs and pictures, notes, share links, printer settings, token history, orders, "
+                     "receipts, reports, newsletter choices, sessions), made at once, 5 an hour. No CAD files.",
+    "projects": "Projects: named groups of saved designs for one build, with a private note; up to 50 per "
+                "account, 100 designs each; shared as a public page with share links on. Needs saved designs. "
+                "Off: none of it shows.",
+    "my_account_button": "\"My account\" in every tool's header in place of \"Sign in\": signed out it opens "
+                         "sign-in (then the account page, while that's on); signed in it opens the account "
+                         "page, beside the balance and Sign out. Off: today's header.",
+    "referrals": "Referrals: someone who opens a share link and makes a new account from it, in that visit, "
+                 "earns the sharer 50 free tokens with their first purchase, up to 10 a month; a refund takes "
+                 "the same share back, never below zero. No cookie. Needs share links. Off: nothing is "
+                 "recorded or paid.",
 }
 
 _SCHEMA = """
@@ -100,6 +177,11 @@ CREATE TABLE IF NOT EXISTS settings_history (
     changed_at  REAL NOT NULL,
     changed_by  TEXT NOT NULL,
     note        TEXT
+);
+CREATE TABLE IF NOT EXISTS settings_since (
+    key         TEXT PRIMARY KEY,
+    since       REAL NOT NULL,
+    by          TEXT NOT NULL
 );
 """
 SEEDED_BY = "cct_common"
@@ -166,7 +248,7 @@ def validate(key: str, value):
         if not any(out.values()):
             raise SettingsError("At least one pack must be on sale")
         return out
-    if key in ("saved_designs", "inline_checkout", "price_in_money"):
+    if key in ("saved_designs", "inline_checkout", "price_in_money", "newsletter_opt_in", "rewards", "account_page", "receipts", "printer_settings", "share_links", "bookmarks", "my_reports", "data_download", "projects", "my_account_button", "referrals"):
         if not isinstance(value, bool):
             raise SettingsError(f"{key.replace('_', ' ').capitalize()} is on or off")
         return value
@@ -174,6 +256,8 @@ def validate(key: str, value):
         if value not in REDOWNLOAD_WINDOWS:
             raise SettingsError("The re-download window is 24h or forever")
         return value
+    if key == "newsletter_list_id":
+        return _int(value, 1, 10**9, "The list id", allow_none=True)
     if key == "buy_url":
         url = str(value or "").strip()
         if not (url.startswith("https://cheapcadtools.com/") or (url.startswith("/") and not url.startswith("//"))):
@@ -196,6 +280,7 @@ class SettingsStore(SqliteDB):
         super().__init__(path, _SCHEMA)
         self._clock = clock
         self._cache: dict = {}
+        self._since: dict = {}
         self._lock = threading.Lock()
         forksafe.after_fork_in_child(self._renew)
         self.seed()
@@ -203,6 +288,24 @@ class SettingsStore(SqliteDB):
     def _renew(self):
         self._lock = threading.Lock()
         self._cache = {}
+        self._since = {}
+
+    def since(self, key: str) -> Optional[float]:
+        """When this SINCE_KEYS setting was first turned on (None: never).
+        Once there, it never moves, so it's kept for good; a None for CACHE_S.
+        Never raises (None, logged)."""
+        hit = self._since.get(key)
+        if hit and (hit[1] is not None or time.monotonic() - hit[0] < CACHE_S):
+            return hit[1]
+        try:
+            with self._read() as db:
+                row = db.execute("SELECT since FROM settings_since WHERE key = ?", (key,)).fetchone()
+        except Exception as e:
+            log.error("setting %s: can't read when it was turned on (%s)", key, e)
+            return None
+        value = float(row[0]) if row else None
+        self._since[key] = (time.monotonic(), value)
+        return value
 
     def seed(self) -> list[str]:
         """Write today's value for every setting that has no row; returns the keys written."""
@@ -269,8 +372,12 @@ class SettingsStore(SqliteDB):
                            (key, text, now, by))
             db.execute("INSERT INTO settings_history (key, old_value, new_value, changed_at, changed_by, note) "
                        "VALUES (?, ?, ?, ?, ?, ?)", (key, old, text, now, by, (note or "")[:500]))
+            if key in SINCE_KEYS and value is True:
+                db.execute("INSERT OR IGNORE INTO settings_since (key, since, by) VALUES (?, ?, ?)",
+                           (key, now, by))
         with self._lock:
             self._cache.pop(key, None)
+            self._since.pop(key, None)
         return value
 
     def rows(self) -> list[dict]:
@@ -341,6 +448,13 @@ def setting(path: Optional[str], key: str):
         return _copy(DEFAULTS[key])
 
 
+def setting_since(path: Optional[str], key: str) -> Optional[float]:
+    """When this SINCE_KEYS setting was first turned on, or None (never, no
+    database or no store opened for it). Never raises or opens a store."""
+    store = _STORES.get(str(path)) if path else None
+    return store.since(key) if store is not None else None
+
+
 def offer(path: Optional[str], *, cents_per_token: int, format_tier: dict) -> dict:
     """What /api/offer answers: the grant, prices, packs per provider, tokens per dollar."""
     packs = setting(path, "packs")
@@ -356,4 +470,7 @@ def offer(path: Optional[str], *, cents_per_token: int, format_tier: dict) -> di
         **({"price_in_money": True, "cents_per_token": cents_per_token}
            if setting(path, "price_in_money") is True else {}),
         **({"inline_checkout": True} if setting(path, "inline_checkout") is True else {}),
+        # 0.47.0, only while on: the header's "My account", and whether the account page is there
+        **({"my_account_button": True} if setting(path, "my_account_button") is True else {}),
+        **({"account_page": True} if setting(path, "account_page") is True else {}),
     }

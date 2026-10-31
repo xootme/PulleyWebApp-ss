@@ -421,6 +421,31 @@ def test_saved_designs_in_postgres(tmp_path, pg_url):
     assert store.list(acct_id) == []
 
 
+def test_the_live_bug_reports_table_takes_the_shared_store(pg_url):
+    """cct_common 0.44.0's ReportStore on the table this app's bug_store.py made: the
+    live database's bug_reports, in its old shape with a report in it, gains the
+    shared columns on first use and keeps every row (the reports' admin tab reads it)."""
+    import psycopg
+    from cct_common.reports import COLUMNS, ReportStore
+    with psycopg.connect(pg_url, autocommit=True) as conn:
+        conn.execute("CREATE TABLE bug_reports (report_id TEXT PRIMARY KEY, created_at REAL NOT NULL, "
+                     "report_type TEXT NOT NULL, seeing TEXT, should_see TEXT, error_msg TEXT, user_comment TEXT, "
+                     "email TEXT, state TEXT, app_version TEXT, issue_url TEXT)")
+        conn.execute("INSERT INTO bug_reports (report_id, created_at, report_type, seeing, state, app_version) "
+                     "VALUES ('old1', 1.0, 'bug', 'from before', '{}', '2.0.30')")
+    store = ReportStore(pg_url)
+    store.add('new1', report_type='bug', seeing='after', should_see='', app_version='2.0.31',
+              app='pulleys', account_id=None)
+    with psycopg.connect(pg_url) as conn:
+        cols = {r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns "
+                                           "WHERE table_name = 'bug_reports' AND table_schema = current_schema()")}
+    assert set(COLUMNS) <= cols
+    assert store.get('old1')['seeing'] == 'from before' and store.get('old1')['app'] is None
+    assert store.get('new1')['app'] == 'pulleys'
+    assert [r['report_id'] for r in store.list()] == ['new1', 'old1']
+    ReportStore(pg_url)                                         # a second server starting: no error
+
+
 # ── new accounts per IP per day ───────────────────────────────────────────
 
 def test_signups_are_limited_per_ip(tmp_path):

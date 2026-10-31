@@ -31,3 +31,21 @@ def test_its_name_and_picture():
     thumb = thumb[:thumb.index('\n};')]
     # the 3D view drawn this frame (its buffer is kept), else the 2D drawing
     assert 'threeRenderer.render(threeScene, threeCamera);' in thumb and "getElementById('preview-img')" in thumb
+
+
+def test_the_accounts_printer_settings_are_defaults():
+    """cct_common 0.41.0's printer settings (off until the owner turns printer_settings on):
+    tokens.js calls cctApplyPrinterSettings once, on a fresh page. Each value fills one this
+    browser still has at the tool's default, never one the person changed here, on both
+    pulleys, and only after the start-up restore (designs_ui.js drives it end to end)."""
+    body = _body('function _applyPrinter() {')
+    assert "sel.value === 'mm' && s.units !== sel.value" in body
+    assert "['print_extra', 'p2_print_extra'].forEach" in body
+    assert 'if (Number(el.value) === 0) el.value = Number(mm);' in body
+    assert 'cctTokens.clampCompensation(s.print_compensation_mm)' in body
+    hook = 'window.cctApplyPrinterSettings = s => { _printerPending = s || null; if (_pageStarted) _applyPrinter(); };'
+    assert hook in PAGE
+    start = PAGE[PAGE.index('window.onload = async () => {'):]
+    start = start[:start.index('\n};')]
+    assert start.index('const restored = await loadSettings();') < start.index('_pageStarted = true;') \
+        < start.index('if (_printerPending) _applyPrinter();')

@@ -41,7 +41,7 @@ HARNESS_RULES = [
     ("exporters/*", ["download_design_ui"]), ("results.py", ["download_design_ui", "tokens_ui"]),
     ("shared_jobs.py", ["download_design_ui"]), ("bundles.py", ["download_design_ui", "tokens_ui"]),
     ("charging.py", ["tokens_ui", "download_design_ui"]), ("accounts_setup.py", ["tokens_ui", "admin_ui"]),
-    ("bug_store.py", ["admin_ui"]),
+    ("cct_common/reports.py", ["admin_ui"]),
     ("static/*_help.html", ["help_ui"]), ("static/help/*", ["help_ui"]),
 ]
 

@@ -108,14 +108,14 @@ async function main() {
   const bob = await js(`(() => { const r = ${rowOf('subs', 'bob@example.com')}; return {
     now: [...r.cells[3].firstChild.children].map(d => d.textContent).join(' | '), life: r.cells[4].textContent,
     uses: [...r.cells[5].querySelectorAll('li')].map(l => l.textContent),
-    refund: [...r.cells[6].querySelectorAll('button')].map(b => b.textContent) }; })()`);
+    refund: [...r.cells[7].querySelectorAll('button')].map(b => b.textContent) }; })()`);   // after Rewards (0.37.0)
   check('bob: tokens now split free / bought', bob.now === '58 | 8 free · 50 bought', bob.now);
   check('bob: lifetime is free + purchased', bob.life === '70', bob.life);
   check('bob: only the last 5 of 6 uses', bob.uses.length === 5, bob.uses);
   check('uses name the tool, tokens and format', /^pulleys · 2 tokens · \d{4}-\d\d-\d\d \d\d:\d\d \(SVG\)$/.test(bob.uses[0]), bob.uses[0]);
-  check('bob (bought tokens) gets Refund…', JSON.stringify(bob.refund) === '["Grant / adjust","Refund…"]', bob.refund);
-  const alice = await js(`${rowOf('subs', 'alice@example.com')}.cells[6].textContent`);
-  check('alice (no purchases) gets no Refund…', alice === 'Grant / adjust', alice);
+  check('bob (bought tokens) gets Refund unused tokens…', JSON.stringify(bob.refund) === '["Grant / adjust","Refund unused tokens…"]', bob.refund);
+  const alice = await js(`${rowOf('subs', 'alice@example.com')}.cells[7].textContent`);
+  check('alice (no purchases) gets no refund', alice === 'Grant / adjust', alice);
 
   await heading('subs', 'Email');
   check('Email sorts A→Z', JSON.stringify(await col('subs')) === JSON.stringify(
@@ -157,13 +157,21 @@ async function main() {
   await waitFor("!document.querySelector('#dlg-grant').open");
   check('an adjust down is not lifetime', (await js(`${rowOf('subs', 'alice@example.com')}.cells[4].textContent`)) === '25');
 
-  // ── sales, reached from bob's Refund… ──
+  // ── bob's Refund unused tokens… (cct_common 0.52.0): its quote, then Cancel; nothing is refunded here ──
   await typeIn('#subs-q', 'bob');
   await js(`${rowOf('subs', 'bob@example.com')}.querySelectorAll('button')[1].click()`);
+  await waitFor("document.querySelector('#dlg-acct-refund').open && !document.querySelector('#acct-refund-go').disabled");
+  check('Refund unused tokens… quotes bob\'s account', (await js("document.querySelector('#dlg-acct-refund').open && document.querySelector('#acct-refund-who').textContent")) === 'bob@example.com — 50 unused bought tokens'
+        && (await js("document.querySelector('#acct-refund-total').textContent")).startsWith('Refund to the customer$5.00Tokens taken back50'),
+        await js("document.querySelector('#acct-refund-who').textContent + ' | ' + document.querySelector('#acct-refund-total').textContent"));
+  await js("document.querySelector('#dlg-acct-refund [data-close]').click()");
+  // ── sales, filtered to bob ──
+  await js("document.querySelector('nav [data-tab=sales]').click()");
+  await typeIn('#sales-q', 'bob@example.com');
   await waitFor("document.querySelectorAll('#sales tbody tr').length > 0");
-  check('Refund… opens Sales filtered to bob', (await js("document.querySelector('#tab-sales').classList.contains('on') && document.querySelector('#sales-q').value")) === 'bob@example.com');
+  check('Sales filtered to bob', (await js("document.querySelector('#tab-sales').classList.contains('on') && document.querySelectorAll('#sales tbody tr').length")) === 1);
   const sale = await js("[...document.querySelector('#sales tbody tr').cells].map(c => c.textContent)");
-  check('the order row', sale.slice(1, 6).join('|') === 'bob@example.com|paypal|50|$5.00|completed', sale);
+  check('the order row', sale.slice(1, 7).join('|') === 'bob@example.com|paypal|50||$5.00|completed', sale);   // Bonus (0.37.0): none
   await js("document.querySelector('#sales tbody tr button').click()");
   await waitFor("document.querySelectorAll('#refund-body .row').length === 4");
   const q = () => js("[...document.querySelectorAll('#refund-body .row b')].map(b => b.textContent)");
@@ -211,6 +219,14 @@ async function main() {
   await waitFor("document.querySelector('#biz-cards').children.length > 0");
   const biz = await js("document.querySelector('#biz-cards').textContent");
   check('business settings: its tab loads', !/Could not load/.test(biz), biz);
+  // the Notices tab (cct_common 0.50.0) loads its card; nothing here is pressed: "Send to all" is
+  // the owner's alone, and even "Send me a test" would email
+  await js("document.querySelector('nav [data-tab=notices]').click()");
+  await waitFor("document.querySelector('#notice-cards').children.length > 0");
+  const notices = await js("document.querySelector('#notice-cards').textContent");
+  check('notices: its tab loads, with its card', !/Could not load/.test(notices) && notices.length > 40, notices.slice(0, 300));
+  check('…offering Send to all (not pressed)',
+        await js("[...document.querySelectorAll('#notice-cards button')].some(b => /Send to all/.test(b.textContent))"));
   const offer = await js("fetch('/api/offer').then(r => r.json())");
   check('offer: answers with a grant', Number.isInteger(offer.signup_grant), offer);
 

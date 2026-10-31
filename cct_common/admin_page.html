@@ -35,9 +35,10 @@
   .uses { margin: 0; padding: 0; list-style: none; font-size: 12px; }
   .uses li { white-space: nowrap; }
   .uses .app { font-weight: 600; }
-  button.act { font: inherit; font-size: 12px; padding: 3px 9px; border: 1px solid #cbd5e1;
+  button.act, a.act { font: inherit; font-size: 12px; padding: 3px 9px; border: 1px solid #cbd5e1;
                background: #fff; border-radius: 4px; cursor: pointer; margin: 0 4px 3px 0; }
-  button.act:hover { border-color: var(--blue); color: var(--blue); }
+  a.act { color: inherit; text-decoration: none; }
+  button.act:hover, a.act:hover { border-color: var(--blue); color: var(--blue); }
   button.danger:hover { border-color: var(--red); color: var(--red); }
   .tab { display: none; } .tab.on { display: block; }
   .pill { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: #e2e8f0; }
@@ -53,6 +54,11 @@
   dialog label { display: block; margin: 10px 0 3px; font-weight: 600; font-size: 13px; }
   dialog input { width: 100%; padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 4px; font: inherit; }
   dialog .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  dialog#dlg-acct-refund { width: 640px; max-width: calc(100vw - 32px); }
+  #acct-refund-parts table { width: 100%; margin: 8px 0; }
+  #acct-refund-parts input { width: 70px; }
+  .warn { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #fef3c7; color: #92400e;
+          font-size: 13px; }
   dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   dialog .buttons button { font: inherit; padding: 6px 14px; border-radius: 4px; cursor: pointer;
                            border: 1px solid #cbd5e1; background: #fff; }
@@ -84,6 +90,8 @@
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
   .card { background: #fff; border: 1px solid var(--line); padding: 12px 14px; }
   .card h3 { margin: 0 0 4px; font-size: 14px; }
+  .notice-text { white-space: pre-wrap; background: #f8fafc; border: 1px solid var(--line); padding: 10px 12px;
+                 font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; max-height: 420px; overflow: auto; }
   .card .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
   .card input[type=number] { width: 90px; } .card input.url { width: 100%; }
   .card input, .card button { font: inherit; padding: 4px 7px; border: 1px solid #cbd5e1; border-radius: 4px; }
@@ -107,6 +115,7 @@
     <button data-tab="status">Status</button>
     <button data-tab="use">Server use</button>
     <button data-tab="biz">Business settings</button>
+    <button data-tab="notices">Notices</button>
   </nav>
   <span id="who"></span>
 </header>
@@ -114,6 +123,11 @@
 <main>
   <section class="tab on" id="tab-subs">
     <div class="bar"><input id="subs-q" placeholder="Search email…"><span class="count" id="subs-count"></span></div>
+    <div class="bar" id="subs-rewards" hidden><span class="count" id="subs-rewards-count"></span></div>
+    <div class="bar" id="subs-refs" hidden><span class="count" id="subs-refs-count"></span></div>
+    <div id="subs-refs-list" hidden></div>
+    <div class="bar" id="subs-news" hidden><span class="count" id="subs-news-count"></span>
+      <a class="act" id="subs-news-csv" href="/admin/api/newsletter.csv" download>Export CSV</a></div>
     <div id="subs"></div>
   </section>
   <section class="tab" id="tab-sales">
@@ -166,6 +180,11 @@
     <h2>Changes</h2>
     <div id="biz-history"></div>
   </section>
+  <section class="tab" id="tab-notices">
+    <div class="notice" style="margin:0 0 12px">An account notice goes to every open account (not the reviewers'
+      test account), ticked for the newsletter or not, once per address. Send yourself a test first.</div>
+    <div class="cards" id="notice-cards"></div>
+  </section>
 </main>
 
 <dialog id="dlg-grant">
@@ -187,8 +206,22 @@
   <label for="refund-fee">Processor fee to keep (cents)</label>
   <input id="refund-fee" type="number" min="0" step="1">
   <div class="sub" id="refund-fee-src"></div>
+  <div class="warn" id="refund-warn" hidden></div>
+  <div class="sub" style="margin-top:10px">Refund here, not in the Stripe or PayPal dashboard. A dashboard refund is booked by the money after the fee: $23.97 back on a $25 pack takes back 479 tokens and 120 bonus, and leaves about 21 paid and 5 bonus tokens behind.</div>
   <div class="msg" id="refund-msg"></div>
   <div class="buttons"><button data-close>Cancel</button><button class="primary danger" id="refund-go">Refund</button></div>
+</dialog>
+
+<dialog id="dlg-acct-refund">
+  <h2>Refund unused tokens</h2>
+  <div class="sub" id="acct-refund-who"></div>
+  <div class="sub" style="margin-top:6px">Booked newest purchase first: the oldest tokens are the ones spent.
+    Each purchase takes back its own share of its bonus, and of any referral tokens it paid.</div>
+  <div id="acct-refund-parts"></div>
+  <div id="acct-refund-total"></div>
+  <div class="sub" style="margin-top:10px">Refund here, not in the Stripe or PayPal dashboard. A dashboard refund is booked by the money after the fee: $23.97 back on a $25 pack takes back 479 tokens and 120 bonus, and leaves about 21 paid and 5 bonus tokens behind.</div>
+  <div class="msg" id="acct-refund-msg"></div>
+  <div class="buttons"><button data-close>Cancel</button><button class="primary danger" id="acct-refund-go">Refund</button></div>
 </dialog>
 
 <script>
@@ -206,7 +239,7 @@ async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: 'same-origin', ...opts,
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
+  if (!r.ok) { const e = new Error(body.error || `${r.status} ${r.statusText}`); e.body = body; throw e; }
   return body;
 }
 
@@ -279,9 +312,10 @@ const subsCols = [
         li.append(el('span', 'app', u.app), ` · ${u.tokens} token${u.tokens === 1 ? '' : 's'} · ${date(u.ts)}`);
         if (u.fmt) li.append(el('span', 'sub', ` (${u.fmt.toUpperCase()})`)); ul.append(li); }
       return ul; } },
+  { key: 'rewards', label: 'Rewards', sort: r => r.rewards ? r.rewards.paid_spent : null, cell: rewardsCell },
   { key: 'actions', label: '', nosort: true, cell: r => { const d = el('div');
       d.append(button('Grant / adjust', () => openGrant(r)));
-      if (r.purchased > 0) d.append(button('Refund…', () => { $('#sales-q').value = r.email; showTab('sales'); }));
+      if (r.purchased > 0) d.append(button('Refund unused tokens…', () => openAcctRefund(r), 'danger'));
       return d; } },
 ];
 function drawSubs() {
@@ -289,10 +323,76 @@ function drawSubs() {
   table($('#subs'), accounts.filter(a => matches(q, a.email)), subsCols, subsSort, $('#subs-count'), 'subscriber');
 }
 loaders.subs = async () => {
-  try { const d = await api('/admin/api/accounts'); accounts = d.accounts; drawSubs(); }
+  try { const d = await api('/admin/api/accounts'); accounts = d.accounts; drawSubs(); drawNews(d.newsletter);
+        drawRewards(d.rewards); drawReferrals(d.referrals); }
   catch (e) { $('#subs').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
 };
 $('#subs-q').oninput = drawSubs;
+// The rewards (0.37.0), from the switch date: each account's paid tokens spent,
+// held reward and unused bonus; the total unused bonus is what we owe in downloads.
+function rewardsCell(r) {
+  if (!r.rewards) return '';
+  const w = r.rewards, d = el('div');
+  d.append(el('div', '', `${w.paid_spent} paid spent`),
+           el('div', 'sub', (w.held ? `holds +${w.held}%` : 'no reward held') +
+                            (w.bonus_unused ? ` · ${w.bonus_unused} bonus unused` : '')));
+  return d;
+}
+function drawRewards(w) {
+  $('#subs-rewards').hidden = !w;
+  if (!w) return;
+  $('#subs-rewards-count').textContent = `Rewards: ${w.on ? 'on' : 'off'}, paid tokens first since ${date(w.since)}` +
+    ` · unused bonus tokens: ${w.bonus_unused}`;
+}
+// Referrals (0.49.0): who shared, the new account, why it paid or didn't, and the month's total.
+const refsSort = { key: 'created_at', dir: -1 };
+const refsCols = [
+  { key: 'created_at', label: 'Made', date: true, cell: r => date(r.created_at) },
+  { key: 'sharer', label: 'Shared by' },
+  { key: 'referred', label: 'New account' },
+  { key: 'app', label: 'Tool' },
+  { key: 'outcome', label: 'Outcome' },
+  { key: 'tokens', label: 'Tokens', num: true },
+];
+function drawReferrals(w) {
+  $('#subs-refs').hidden = $('#subs-refs-list').hidden = !w;
+  if (!w) return;
+  $('#subs-refs-count').textContent = `Referrals: ${w.on ? 'on' : 'off'} · referral tokens this month: ${w.month_tokens}`;
+  table($('#subs-refs-list'), w.rows, refsCols, refsSort, null, 'referral');
+}
+const BONUS_RULES = { first: 'first purchase', 10: '+10%', 20: '+20%' };
+// The order id, and its receipt and credit notes while receipts are on (0.39.0).
+function orderCell(r) {
+  const d = el('div');
+  d.append(el('span', 'sub', r.order_id));
+  for (const num of r.receipts || []) {
+    const a = el('a', 'sub', num); a.href = '/account/receipts/' + encodeURIComponent(num); a.target = '_blank';
+    d.append(el('br'), a);
+  }
+  return d;
+}
+function bonusCell(r) {
+  if (!r.bonus_tokens) return '';
+  return `+${r.bonus_tokens} (${BONUS_RULES[r.bonus_rule] || r.bonus_rule})` +
+    (r.bonus_back ? ` · ${r.bonus_back} back` : '');
+}
+// The newsletter (0.36.0): who's subscribed now, by where they ticked the box.
+// Brevo (0.39.0): whether the sync is set up, what waits, the last nightly check.
+function brevoLine(b) {
+  if (!b) return '';
+  if (b.key_problem === 'smtp') return " · Brevo: BREVO_API_KEY is an SMTP key; Brevo's API needs an API key (xkeysib-…)";
+  if (b.refused) return ` · Brevo: the API key was refused (${b.refused}); check it's an API key, not an SMTP key`;
+  if (!b.configured) return ` · Brevo: not set up (${b.api_key ? 'the list id' : 'BREVO_API_KEY'} is missing) · ${b.waiting} waiting`;
+  return ` · Brevo: last checked ${b.last_reconcile ? date(b.last_reconcile) : 'never'} · ${b.waiting} waiting` +
+    (b.failing ? ` · ${b.failing} failing` : '');
+}
+function drawNews(n) {
+  $('#subs-news').hidden = !n;
+  if (!n) return;
+  $('#subs-news-count').textContent = `Newsletter: ${n.subscribed} subscribed ` +
+    `(${n.signup} joined at sign-up, ${n.account} on the account page)` + (n.on ? '' : ' · sign-up is off') +
+    brevoLine(n.brevo);
+}
 
 let grantFor = null;
 function openGrant(r) {
@@ -319,10 +419,11 @@ const salesCols = [
   { key: 'email', label: 'Email' },
   { key: 'provider', label: 'Via' },
   { key: 'tokens', label: 'Tokens', num: true },
+  { key: 'bonus_tokens', label: 'Bonus', num: true, cell: bonusCell },
   { key: 'cents', label: 'Paid', num: true, cell: r => money(r.cents) },
   { key: 'status', label: 'Status', cell: r => el('span', 'pill ' + r.status, r.status) },
   { key: 'refunded_cents', label: 'Refunded', num: true, cell: r => r.refunded_cents ? money(r.refunded_cents) : '' },
-  { key: 'order_id', label: 'Order', cell: r => el('span', 'sub', r.order_id) },
+  { key: 'order_id', label: 'Order', cell: orderCell },
   { key: 'actions', label: '', nosort: true, cell: r => (r.status === 'completed' || r.status === 'refunded')
       && r.refunded_cents < r.cents ? button('Refund…', () => openRefund(r), 'danger') : '' },
 ];
@@ -349,6 +450,12 @@ function showQuote(q) {
   row('Their value at the price paid', money(q.value_cents));
   row('Less processor fee', '− ' + money(q.fee_cents));
   row('Refund to the customer', money(q.amount_cents));
+  if (q.bonus_back) row('Bonus taken back', String(q.bonus_back));
+  const warn = $('#refund-warn');
+  warn.hidden = !(q.newer_unused > 0);
+  warn.textContent = q.newer_unused > 0 ? `A newer purchase on this account still has ${q.newer_unused} unused `
+    + 'tokens. Refunding this older one first takes back more bonus than the customer\'s spending earned: use '
+    + '“Refund unused tokens” on the account instead, unless this is a special case.' : '';
   $('#refund-fee').value = q.fee_cents;
   $('#refund-fee-src').textContent = { provider: 'Fee as reported by the payment processor.',
     unknown: 'The processor did not report a fee — enter it.', entered: 'Fee as entered.' }[q.fee_source] || '';
@@ -365,6 +472,90 @@ async function openRefund(o) {
 $('#refund-fee').oninput = async () => {
   try { showQuote(await quote(Math.max(0, parseInt($('#refund-fee').value || '0', 10)))); } catch (e) {}
 };
+// Step 8: the account's unused tokens, newest purchase first, each with its fee.
+let acctFor = null, acctQuote = null;
+const VIA = { stripe: 'Stripe', paypal: 'PayPal' };
+async function acctQuoteFor(fees) {
+  const q = fees ? `?fees=${encodeURIComponent(JSON.stringify(fees))}` : '';
+  return api(`/admin/api/accounts/${encodeURIComponent(acctFor.id)}/refund-quote${q}`);
+}
+function acctFees() {
+  const fees = {};
+  document.querySelectorAll('#acct-refund-parts input[data-key]').forEach(i => {
+    fees[i.dataset.key] = Math.max(0, parseInt(i.value || '0', 10)); });
+  return fees;
+}
+function showAcctQuote(q) {
+  acctQuote = q;
+  $('#acct-refund-who').textContent = `${q.email} — ${q.unused_purchased} unused bought tokens`;
+  const host = $('#acct-refund-parts'); host.replaceChildren();
+  if (!q.parts.length) host.append(el('div', 'empty', 'No purchase has unused tokens.'));
+  else {
+    const t = el('table'), head = el('tr');
+    for (const h of ['Purchase', 'Tokens', 'Value', 'Fee (cents)', 'Refund', 'Bonus back'])
+      head.append(el('th', h === 'Purchase' ? '' : 'num', h));
+    t.append(el('thead')); t.tHead.append(head);
+    const tb = el('tbody');
+    for (const part of q.parts) {
+      const tr = el('tr'), what = el('td');
+      what.append(el('div', '', `${date(part.completed_at)} · ${VIA[part.provider] || part.provider}`),
+                  el('div', 'sub', `${part.pack_tokens} tokens for ${money(part.cents)}`));
+      const fee = el('input'); fee.type = 'number'; fee.min = '0'; fee.step = '1';
+      fee.value = part.fee_cents; fee.dataset.key = `${part.provider}:${part.order_id}`;
+      fee.oninput = async () => { try { showAcctQuote(await acctQuoteFor(acctFees())); } catch (e) {} };
+      const feeTd = el('td', 'num'); feeTd.append(fee,
+        el('div', 'sub', { provider: `from ${VIA[part.provider] || part.provider}`, entered: 'as entered',
+                           unknown: 'not reported: enter it' }[part.fee_source] || ''));
+      const refund = el('td', 'num');
+      if (part.amount_cents > 0) refund.textContent = money(part.amount_cents);
+      else refund.append(el('div', 'sub', 'The fee is more than they\'re worth: not refunded, the tokens stay.'));
+      tr.append(what, el('td', 'num', String(part.tokens)), el('td', 'num', money(part.value_cents)), feeTd,
+                refund, el('td', 'num', part.amount_cents > 0 ? String(part.bonus_back) : '—'));
+      tb.append(tr);
+    }
+    t.append(tb); host.append(t);
+  }
+  if (q.unbooked > 0) host.append(el('div', 'sub', `${q.unbooked} unused tokens aren't from any purchase `
+    + 'here (given as bought) and aren\'t refunded.'));
+  const total = $('#acct-refund-total'); total.replaceChildren();
+  const row = (k, v) => { const r = el('div', 'row'); r.append(el('span', '', k), el('b', '', v)); total.append(r); };
+  row('Refund to the customer', money(q.amount_cents));
+  row('Tokens taken back', String(q.tokens));
+  row('Bonus taken back', String(q.bonus_back));
+  if (q.referral_back) row('Referral tokens taken back from the sharer (up to)', String(q.referral_back));
+  $('#acct-refund-go').disabled = !(q.amount_cents > 0);
+}
+async function openAcctRefund(r) {
+  acctFor = r; acctQuote = null;
+  $('#acct-refund-who').textContent = r.email;
+  $('#acct-refund-msg').textContent = ''; $('#acct-refund-parts').textContent = 'Working out the refund…';
+  $('#acct-refund-total').replaceChildren(); $('#acct-refund-go').disabled = true;
+  $('#dlg-acct-refund').showModal();
+  try { showAcctQuote(await acctQuoteFor()); }
+  catch (e) { $('#acct-refund-msg').className = 'msg err'; $('#acct-refund-msg').textContent = e.message; }
+}
+$('#acct-refund-go').onclick = async () => {
+  const msg = $('#acct-refund-msg'); msg.className = 'msg';
+  const q = acctQuote, n = q.parts.filter(p => p.amount_cents > 0).length;
+  if (!confirm(`Refund ${money(q.amount_cents)} to ${q.email} now, across ${n} purchase${n === 1 ? '' : 's'}? `
+               + 'The money goes back through the payment processor and the tokens are taken back.')) return;
+  $('#acct-refund-go').disabled = true;
+  const said = (d, n) => `Refunded ${money(d.amount_cents)} and took back ${d.tokens} tokens and `
+    + `${d.bonus_back} bonus, across ${n} purchase${n === 1 ? '' : 's'}.`;
+  try {
+    const d = await api(`/admin/api/accounts/${encodeURIComponent(acctFor.id)}/refund`, { method: 'POST',
+      body: JSON.stringify({ parts: q.parts }) });
+    msg.className = 'msg ok'; msg.textContent = said(d, d.done.length);
+    await loaders.subs();
+  } catch (e) {
+    const done = (e.body && e.body.done) || [];
+    msg.className = 'msg err';
+    msg.textContent = e.message + (done.length ? ' Refunded so far: ' + money(done.reduce((a, p) => a + p.amount_cents, 0))
+      + ` on ${done.length} purchase${done.length === 1 ? '' : 's'}; those stay booked. Look again before trying the rest.` : '');
+    try { showAcctQuote(await acctQuoteFor(acctFees())); } catch (e2) {}
+  }
+};
+
 $('#refund-go').onclick = async () => {
   const msg = $('#refund-msg'); msg.className = 'msg';
   if (!confirm('Refund this order now? The money goes back to the customer and the tokens are taken back.')) return;
@@ -393,7 +584,8 @@ const bugsCols = [
                        el('pre', 'state', JSON.stringify(r.state, null, 1))); d.append(det); }
       return d; } },
   { key: 'email', label: 'Email' },
-  { key: 'app_version', label: 'Version' },
+  { key: 'app_version', label: 'Version', cell: r => (r.app ? r.app + ' ' : '') + (r.app_version || '') },
+  { key: 'status', label: 'Status', cell: statusCell },
   { key: 'actions', label: '', nosort: true, cell: r => { const d = el('div');
       if (r.issue_url) { const a = el('a', '', 'GitHub'); a.href = r.issue_url; a.target = '_blank';
                          a.rel = 'noopener'; d.append(a, el('br')); }
@@ -403,13 +595,47 @@ const bugsCols = [
               await loaders.bugs(); } catch (e) { alert(e.message); } }, 'danger'));
       return d; } },
 ];
+// My reports (0.44.0): the status the person sees on their account page, while
+// the my_reports setting is on; "Fixed in…" may send them one email.
+let myReports = false;
+const STATUS_WORDS = { received: 'Received', looking: 'Being looked at', fixed: 'Fixed in', wontfix: "Won't fix" };
+function statusWords(r) {
+  const s = r.status || 'received';
+  if (s === 'fixed') return `Fixed in ${r.fixed_in || ''}`.trim();
+  if (s === 'wontfix') return `Won't fix: ${r.status_note || ''}`.trim();
+  return STATUS_WORDS[s];
+}
+async function setStatus(r, status) {
+  const body = { status };
+  if (status === 'fixed') {
+    body.fixed_in = prompt('Fixed in which version?', r.app_version || '');
+    if (!body.fixed_in) return;
+    body.email = confirm('Email the person who reported it? (OK: yes, Cancel: no)');
+  }
+  if (status === 'wontfix') { body.note = prompt("Why it won't be fixed (they'll see this):"); if (!body.note) return; }
+  try {
+    const d = await api(`/admin/api/bugs/${encodeURIComponent(r.report_id)}/status`, { method: 'POST', body: JSON.stringify(body) });
+    if (d.emailed === false) alert('The status is saved, but no email went out (no address, or the send failed).');
+    await loaders.bugs();
+  } catch (e) { alert(e.message); }
+}
+function statusCell(r) {
+  if (!myReports) return '';
+  const d = el('div');
+  d.append(el('div', '', statusWords(r)), el('div', 'sub', r.account_id ? 'signed in' : 'not linked to an account'));
+  if (r.emailed_at) d.append(el('div', 'sub', 'emailed ' + date(r.emailed_at)));
+  d.append(button('Being looked at', () => setStatus(r, 'looking'), 'small'),
+           button('Fixed in…', () => setStatus(r, 'fixed'), 'small'),
+           button("Won't fix…", () => setStatus(r, 'wontfix'), 'small'));
+  return d;
+}
 function drawBugs() {
   const q = $('#bugs-q').value.trim().toLowerCase();
   table($('#bugs'), bugs.filter(b => matches(q, b.seeing, b.should_see, b.email, b.user_comment, b.report_id)),
         bugsCols, bugsSort, $('#bugs-count'), 'report');
 }
 loaders.bugs = async () => {
-  try { const d = await api('/admin/api/bugs'); bugs = d.bugs;
+  try { const d = await api('/admin/api/bugs'); bugs = d.bugs; myReports = !!d.my_reports;
         if (!d.enabled) { $('#bugs').replaceChildren(el('div', 'empty', 'This app has no bug-report store.')); return; }
         drawBugs(); }
   catch (e) { $('#bugs').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
@@ -695,11 +921,15 @@ const TIER_NAMES = { '2d': '2D (SVG, DXF)', stl: 'STL', step: 'STEP' };
 const BIZ_TITLES = { signup_grant: 'Signup grant', tier_prices: 'Prices by tier', packs: 'Token packs',
   device_daily_budget: 'Add-in / AI daily limit', signups_per_ip_per_day: 'Signups per IP per day', buy_url: 'Buy link',
   saved_designs: 'Saved designs', redownload_window: 'Re-download window', inline_checkout: 'Buy panel',
-  price_in_money: 'Money beside tokens' };
+  price_in_money: 'Money beside tokens', newsletter_opt_in: 'Newsletter sign-up', rewards: 'Rewards',
+  account_page: 'Account page', newsletter_list_id: 'Newsletter list (Brevo)',
+  receipts: 'Receipts', printer_settings: 'Printer settings', share_links: 'Share links',
+  bookmarks: 'Bookmarks and notes', my_reports: 'My reports', data_download: 'Download all my data',
+  projects: 'Projects', my_account_button: 'My account button', referrals: 'Referrals' };
 const dollars = c => '$' + (c / 100).toFixed(c % 100 ? 2 : 0);
 const PROVIDER_NAMES = { paypal: 'PayPal', stripe: 'Stripe' };
 function showValue(key, v) {
-  if (v == null) return 'no limit';
+  if (v == null) return key === 'newsletter_list_id' ? 'not set' : 'no limit';
   if (typeof v === 'boolean') return v ? 'on' : 'off';
   if (key === 'tier_prices') return ['2d', 'stl', 'step'].map(t => `${TIER_NAMES[t]} ${v[t]}`).join(' · ');
   if (key === 'packs') return ['paypal', 'stripe'].filter(p => v[p] && v[p].length).map(p =>
@@ -714,6 +944,7 @@ function bizEditor(row) {
   const key = row.key, v = row.value ?? row.default;
   const box = el('div');
   if (key === 'signup_grant') { const i = numberInput(v, 0, 1000); box.append(i, ' tokens'); return [box, () => i.value]; }
+  if (key === 'newsletter_list_id') { const i = numberInput(v, 1, 1e9); box.append(i); return [box, () => i.value === '' ? null : i.value]; }
   if (key === 'device_daily_budget' || key === 'signups_per_ip_per_day') {
     const i = numberInput(v, 1, key === 'device_daily_budget' ? 100000 : 100), c = el('input'), l = el('label');
     c.type = 'checkbox'; c.checked = v == null; i.disabled = c.checked; c.onchange = () => { i.disabled = c.checked; };
@@ -783,6 +1014,71 @@ function bizCard(row) {
       (row.updated_by ? ` · last changed by ${row.updated_by}, ${date(row.updated_at)}` : '')));
   return card;
 }
+// ── account notices (0.50.0, cct_common.notices) ──────────────────────────
+// The text as it will go out, with the date typed for [DATE]; "Send me a test"
+// to the signed-in admin; "Send to all" only after typing SEND, then batches
+// of 10 until everyone is reached. Each address gets it once.
+function noticeCard(n, placeholder) {
+  const card = el('div', 'card');
+  card.append(el('h3', '', n.title));
+  const date = el('input'); date.placeholder = `Date for ${placeholder}, e.g. November 15, 2026`;
+  date.style.width = '100%'; date.value = n.date || '';
+  if (n.date) date.disabled = true;                 // fixed by the first send to all
+  const subj = el('div', 'row'), text = el('div', 'notice-text');
+  const show = () => {
+    const d = date.value.trim() || placeholder;
+    subj.replaceChildren(el('span', 'sub', 'Subject:'), el('b', '', n.subject.split(placeholder).join(d)));
+    text.textContent = n.body.split(placeholder).join(d);
+  };
+  date.oninput = show; show();
+  const counts = el('div', 'sub');
+  const count = s => counts.textContent = `Will go to: ${s.recipients} account${s.recipients === 1 ? '' : 's'}` +
+    ` · sent ${s.sent} · failed ${s.failed} · left ${s.left}` + (s.date ? ` · sending with "${s.date}"` : '');
+  count(n);
+  const errors = el('div', 'sub');
+  const showErrors = s => errors.textContent = s.errors && s.errors.length
+    ? 'Failed: ' + s.errors.map(e => `${e.email} (${e.error})`).join('; ') : '';
+  showErrors(n);
+  const msg = el('div', 'msg');
+  const test = button('Send me a test', async () => {
+    msg.className = 'msg'; msg.textContent = 'Sending…';
+    try {
+      const r = await api(`/admin/api/notices/${n.id}/test`, { method: 'POST', body: JSON.stringify({ date: date.value }) });
+      msg.className = r.ok ? 'msg ok' : 'msg err'; msg.textContent = r.ok ? `Sent to ${r.to}.` : r.error;
+    } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; }
+  });
+  const confirm = el('input'); confirm.placeholder = 'Type SEND'; confirm.hidden = true;
+  const go = button('Send now', null, 'primary'); go.hidden = true;
+  const all = button('Send to all…', () => { confirm.hidden = go.hidden = false; all.hidden = true; confirm.focus(); });
+  go.onclick = async () => {
+    go.disabled = true; msg.className = 'msg'; msg.textContent = 'Starting…';
+    try {
+      const st = await api(`/admin/api/notices/${n.id}/start`, { method: 'POST',
+        body: JSON.stringify({ date: date.value, confirm: confirm.value }) });
+      count(st);
+      for (;;) {
+        const b = await api(`/admin/api/notices/${n.id}/batch`, { method: 'POST', body: JSON.stringify({ pass: st.pass }) });
+        count(b); showErrors(b);
+        msg.textContent = `Sending… ${b.sent} of ${b.recipients}`;
+        if (b.done) {
+          msg.className = b.failed ? 'msg err' : 'msg ok';
+          msg.textContent = b.failed ? `Done, but ${b.failed} failed: Send to all again to retry them.` : 'Sent to everyone.';
+          break;
+        }
+      }
+      setTimeout(loaders.notices, 1500);
+    } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; go.disabled = false; }
+  };
+  const foot = el('div', 'row'); foot.append(test, all, confirm, go);
+  card.append(date, subj, text, counts, errors, foot, msg);
+  return card;
+}
+loaders.notices = async () => {
+  try {
+    const d = await api('/admin/api/notices');
+    $('#notice-cards').replaceChildren(...d.notices.map(n => noticeCard(n, d.placeholder)));
+  } catch (e) { $('#notice-cards').replaceChildren(el('div', 'empty', 'Could not load: ' + e.message)); }
+};
 const bizHistoryState = { key: 'changed_at', dir: -1 };
 loaders.biz = async () => {
   try {

@@ -16,13 +16,23 @@ every change must come from the page's own origin.
 
 Pages (one page, admin_page.html, tabs):
   Subscribers   accounts: first subscribed, last sign-in, tokens now (free /
-                purchased), lifetime tokens, last 5 uses; grant / adjust
-  Sales         token-pack orders; refund by the terms
+                purchased), lifetime tokens, last 5 uses; grant / adjust;
+                the newsletter's count and Export CSV (0.36.0, while
+                newsletter_opt_in is on or anyone is subscribed); from the
+                rewards' switch date (0.37.0), each account's paid tokens
+                spent, held reward and unused bonus, and the total unused;
+                referrals (0.49.0, while on or any are recorded): each one's
+                sharer, new account, tool, when, outcome and tokens, and the
+                referral tokens paid this UTC month
+  Sales         token-pack orders; refund by the terms; each order's bonus
   Bug reports   the app's bug-report store (if given); delete
   Status        version, Cloud Run revision, database, counts; every
                 service's cct_common version and hash (0.26.0)
   Server use    billed hours and CPU by category, tool, action and day, beside
                 Google's own billable time per service (0.27.0, server_use)
+  Notices       account notices (0.50.0, cct_common.notices): each one's
+                subject and body, the date for [DATE], who it goes to and
+                how far it got; "Send me a test"; "Send to all" after SEND
   Business      the business settings (cct_common.settings, 0.28.0): signup
   settings      grant, tier prices, packs per provider, limits, buy link;
                 edit with a note; every change kept (who, when, old, new)
@@ -31,15 +41,23 @@ Routes (JSON under /admin/api/, not /api/admin/ — that prefix carries the old
 dashboard's cross-origin headers):
   GET    /admin
   GET    /admin/api/accounts
+  GET    /admin/api/newsletter.csv               subscribers: email, since, app, label version
   POST   /admin/api/accounts/<id>/grant          {amount, reason}
   GET    /admin/api/orders
   GET    /admin/api/orders/<provider>/<id>/refund-quote[?fee_cents=N]
   POST   /admin/api/orders/<provider>/<id>/refund {fee_cents}
+  GET    /admin/api/accounts/<id>/refund-quote[?fees={"<provider>:<id>": N}]   (0.52.0)
+  POST   /admin/api/accounts/<id>/refund {parts: [{provider, order_id, tokens, fee_cents}]}
   GET    /admin/api/bugs
+  POST   /admin/api/bugs/<id>/status                {status, fixed_in, note, email}  (0.44.0, my_reports)
   DELETE /admin/api/bugs/<id>
   GET    /admin/api/status
   GET    /admin/api/services                     each service's /api/health
   GET    /admin/api/server-use[?days=N]          server_use rows by day + Google's totals
+  GET    /admin/api/notices                      each notice: text, recipients, sent, failed, left
+  POST   /admin/api/notices/<id>/test            {date}: one copy to the signed-in admin
+  POST   /admin/api/notices/<id>/start           {date, confirm: "SEND"} -> {pass, ...}
+  POST   /admin/api/notices/<id>/batch           {pass}: the next 10 -> {sent, failed, left, done}
   GET    /admin/api/settings                     the business settings and their history
   POST   /admin/api/settings/<key>               {value, note}
 
@@ -51,11 +69,21 @@ that order, valued at the price paid, less the payment processor's fee —
 refunded through the provider's API, with exactly those tokens taken back.
 The provider's own refund notification that follows takes nothing more
 (payments.Payments.record_admin_refund).
+
+"Refund unused tokens" on an account (0.52.0, rewards step 8) books the
+refund across its purchases newest first, each with its own bonus and
+referral take-back (payments.Payments.account_refund_quote). The admin sees
+the split and confirms it; the refund goes ahead only if the split is still
+the one shown, one purchase at a time, and a purchase refunded before a
+failure stays booked. The per-order refund stays, and says when a newer
+purchase still has unused tokens.
 """
 from __future__ import annotations
 
 import html
+import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -117,7 +145,8 @@ def service_row(name: str, url: str, fetch=fetch_health) -> dict:
 def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_version: str = "",
                    bug_reports=None, default_app: str = "", download_failures=None,
                    clock=time.time, fetch=fetch_health, app_url: str = "",
-                   server_use: bool = True, google=None) -> None:
+                   server_use: bool = True, google=None, email_sender=None,
+                   notice_sleep=time.sleep) -> None:
     """Mount the admin dashboard. `accounts` is the AccountStore (its
     TokenStore is the ledger); payments come from register_payment_routes
     (app.extensions["cct_payments"]) when it has run. `bug_reports` is an
@@ -139,6 +168,11 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
 
     tokens = accounts.tokens
     page = Path(__file__).with_name("admin_page.html")
+    if bug_reports is None:              # 0.44.0: every app's reports, in the shared database
+        from .reports import ReportStore
+        bug_reports = ReportStore(tokens.path, clock=clock)
+    if email_sender is None:             # the "fixed" email (my_reports), through Resend
+        from .resend_email import send as email_sender
     if server_use:
         from .server_use import register_server_use
         register_server_use(app, accounts, tool=default_app)
@@ -222,7 +256,116 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
                         "last_sign_in": r["last_sign_in"], "balance": int(r["balance"]),
                         "free": free, "purchased": int(r["balance"]) - free,
                         "lifetime": int(r["lifetime"]), "last_uses": last.get(r["id"], [])})
-        return jsonify({"accounts": out, "app": app_name})
+        from .newsletter import Newsletter
+        from .settings import setting
+        news = Newsletter(tokens.path).counts()
+        news["on"] = setting(tokens.path, "newsletter_opt_in") is True
+        from .newsletter_sync import NewsletterSync
+        news["brevo"] = NewsletterSync(tokens.path).status()
+        return jsonify({"accounts": out, "app": app_name, "rewards": _rewards(out), "referrals": _referrals(),
+                        "newsletter": news if news["on"] or news["subscribed"] else None})
+
+    def _rewards(rows: list) -> Optional[dict]:
+        """From the rewards' switch date (0.37.0): each row's paid tokens
+        spent, held reward and unused bonus tokens (bonus tokens count as the
+        last free ones used, so it's an upper bound), and the total."""
+        since = tokens.paid_first_since()
+        if since is None:
+            return None
+        from .rewards import rewards_on, state
+        from .settings import setting
+        total = 0
+        with tokens._read() as db:
+            net = {r["account_id"]: int(r["n"]) for r in db.execute(
+                "SELECT account_id, SUM(amount) AS n FROM ledger WHERE kind = 'bonus' "
+                "OR (kind = 'adjust' AND ref LIKE 'bonusback:%') GROUP BY account_id").fetchall()}
+            for row in rows:
+                st = state(db, tokens, row["id"], since)
+                unused = max(0, min(row["free"], net.get(row["id"], 0)))
+                row["rewards"] = {"paid_spent": st["paid_spent"], "held": st["held"], "bonus_unused": unused}
+                total += unused
+        return {"on": rewards_on(tokens.path), "since": since, "bonus_unused": total}
+
+    def _referrals() -> Optional[dict]:
+        """Referrals (0.49.0): every one recorded, newest first, and the
+        month's referral tokens (net of any taken back); None while off with none."""
+        from .referrals import OUTCOMES, month_bounds, referrals_on
+        on = referrals_on(tokens.path)
+        start, end = month_bounds(clock())
+        with tokens._read() as db:
+            rows = [dict(r) for r in db.execute(
+                "SELECT r.*, s.email AS sharer, n.email AS referred, l.amount AS tokens FROM referrals r "
+                "LEFT JOIN accounts s ON s.id = r.sharer_id LEFT JOIN accounts n ON n.id = r.referred_id "
+                "LEFT JOIN ledger l ON l.kind = 'referral' AND l.ref = 'referral:' || r.referred_id "
+                "ORDER BY r.created_at DESC LIMIT 500").fetchall()]
+            month = db.execute("SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ts >= ? AND ts < ? AND "
+                               "(kind = 'referral' OR (kind = 'adjust' AND ref LIKE 'referralback:%'))",
+                               (start, end)).fetchone()[0]
+        if not on and not rows:
+            return None
+        return {"on": on, "month_tokens": int(month), "rows": [
+            {"sharer": r["sharer"], "referred": r["referred"], "app": r["app"], "created_at": r["created_at"],
+             "outcome": OUTCOMES.get(r["outcome"] or "", "no purchase yet"), "tokens": int(r["tokens"] or 0)}
+            for r in rows]}
+
+    # ── account notices (0.50.0) ──
+    def _notices():
+        from .notices import Notices
+        return Notices(tokens.path, sender=email_sender, clock=clock, sleep=notice_sleep)
+
+    def _notice_call(fn):
+        from .notices import NoticeError
+        try:
+            return jsonify(fn())
+        except NoticeError as e:
+            return jsonify({"error": str(e)}), 400
+
+    def notices_list():
+        _need_admin()
+        from .notices import NOTICES, PLACEHOLDER
+        store = _notices()
+        return jsonify({"placeholder": PLACEHOLDER, "notices": [
+            {**store.status(nid), "title": n["title"], "subject": n["subject"], "body": n["body"]}
+            for nid, n in NOTICES.items()]})
+
+    def notice_test(notice_id):
+        admin = _need_admin()
+        _need_same_origin()
+        body = request.get_json(silent=True) or {}
+
+        def go():
+            ok, err = _notices().test(notice_id, body.get("date"), admin)
+            app.logger.info("admin %s sent themselves a test of notice %s: %s", admin, notice_id, ok or err)
+            return {"ok": bool(ok), "to": admin, **({} if ok else {"error": f"Not sent: {err}"})}
+        return _notice_call(go)
+
+    def notice_start(notice_id):
+        admin = _need_admin()
+        _need_same_origin()
+        body = request.get_json(silent=True) or {}
+
+        def go():
+            out = _notices().start(notice_id, body.get("date"), body.get("confirm"), admin)
+            app.logger.info("admin %s started sending notice %s (%d left)", admin, notice_id, out["left"])
+            return out
+        return _notice_call(go)
+
+    def notice_batch(notice_id):
+        _need_admin()
+        _need_same_origin()
+        body = request.get_json(silent=True) or {}
+        return _notice_call(lambda: _notices().batch(notice_id, body.get("pass")))
+
+    def newsletter_csv():
+        admin = _need_admin()
+        from .newsletter import Newsletter, export_csv
+        rows = Newsletter(tokens.path).subscribers()
+        app.logger.info("admin %s exported %d newsletter subscribers", admin, len(rows))
+        r = Response(export_csv(rows), mimetype="text/csv")
+        r.headers["Content-Disposition"] = (
+            f"attachment; filename=newsletter-{time.strftime('%Y-%m-%d', time.gmtime(clock()))}.csv")
+        r.headers["Cache-Control"] = "no-store"
+        return r
 
     def grant(account_id):
         admin = _need_admin()
@@ -247,7 +390,13 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
     def orders_list():
         _need_admin()
         store = _payments().get("store")
-        return jsonify({"orders": store.list_orders() if store else [],
+        rows = [{k: v for k, v in o.items() if k != "payer_key"} for o in (store.list_orders() if store else [])]
+        receipts = store.receipts() if store else None
+        if receipts is not None:          # 0.40.0: each order's receipt and credit notes
+            receipts.issue_pending()
+            for o in rows:
+                o["receipts"] = [r["number"] for r in receipts.for_order(o["provider"], o["order_id"])]
+        return jsonify({"orders": rows,
                         "enabled": bool(store)})
 
     def _order_or_404(provider, order_id):
@@ -316,12 +465,125 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
         return jsonify({"refund_id": refund_id, **quote,
                         "balance": tokens.balance(order["account_id"])})
 
+    # ── step 8: an account's unused tokens, refunded newest purchase first ──
+    account_refunds = threading.Lock()     # one at a time: a second click finds the split changed
+
+    def _account_quote(account_id, entered: dict):
+        """The newest-first split with each purchase's fee: as entered, else
+        the processor's, else 0 (and said so)."""
+        store = _payments().get("store")
+        if store is None or tokens.account_email(account_id) is None:
+            abort(404)
+        q = store.account_refund_quote(account_id)
+        fees, source = {}, {}
+        for part in q["parts"]:
+            key = (part["provider"], part["order_id"])
+            if f"{key[0]}:{key[1]}" in entered:
+                fees[key], source[key] = max(0, int(entered[f"{key[0]}:{key[1]}"])), "entered"
+            else:
+                fee = _fee(key[0], store.get(*key))
+                fees[key], source[key] = (fee or 0), ("provider" if fee is not None else "unknown")
+        q = store.account_refund_quote(account_id, fees)
+        for part in q["parts"]:
+            part["fee_source"] = source[(part["provider"], part["order_id"])]
+        q["email"] = tokens.account_email(account_id)
+        return store, q
+
+    def account_refund_quote(account_id):
+        _need_admin()
+        try:
+            entered = json.loads(request.args.get("fees") or "{}")
+            assert isinstance(entered, dict)
+            _, q = _account_quote(account_id, entered)
+        except (ValueError, TypeError, AssertionError):
+            return jsonify({"error": "fees must be {\"<provider>:<order id>\": cents}"}), 400
+        return jsonify(q)
+
+    def account_refund(account_id):
+        admin = _need_admin()
+        _need_same_origin()
+        body = request.get_json(silent=True) or {}
+        shown = body.get("parts")
+        if not isinstance(shown, list):
+            return jsonify({"error": "parts: the split you confirmed"}), 400
+        with account_refunds:
+            try:
+                entered = {f"{p['provider']}:{p['order_id']}": int(p.get("fee_cents", 0)) for p in shown}
+                store, q = _account_quote(account_id, entered)
+            except (KeyError, TypeError, ValueError, AttributeError) as e:
+                return jsonify({"error": f"parts: {e}"}), 400
+            todo = [p for p in q["parts"] if p["amount_cents"] > 0]
+            if not todo:
+                return jsonify({"error": "Nothing to refund: no unused purchased tokens on this account, "
+                                         "or each purchase's fee is more than its tokens are worth."}), 400
+            if [(p["provider"], p["order_id"], p["tokens"]) for p in todo] != \
+                    [(p.get("provider"), p.get("order_id"), p.get("tokens")) for p in shown
+                     if p.get("amount_cents", 1) > 0]:
+                return jsonify({"error": "The account changed since you looked: look at the split again."}), 409
+            done = []
+            for part in todo:
+                provider, order_id = part["provider"], part["order_id"]
+                order, client = store.get(provider, order_id), _payments().get(provider)
+                try:
+                    if client is None:
+                        raise PaymentError(f"{provider} isn't configured on this server.")
+                    if provider == "paypal":
+                        refund_id = client.refund_capture(order["payment_ref"], part["amount_cents"])
+                    else:
+                        refund_id = client.refund(order["payment_ref"], part["amount_cents"])
+                except PaymentError as e:
+                    return jsonify({"error": f"{provider} {order_id}: {e}", "done": done,
+                                    "balance": tokens.balance(account_id)}), 502
+                store.record_admin_refund(provider, order_id, refund_id=refund_id,
+                                          amount_cents=part["amount_cents"], tokens=part["tokens"], admin=admin)
+                app.logger.info("admin %s refunded %s %s for account %s: %d cents, %d tokens (refund %s)",
+                                admin, provider, order_id, account_id, part["amount_cents"], part["tokens"],
+                                refund_id)
+                done.append({**part, "refund_id": refund_id})
+        return jsonify({"done": done, "amount_cents": sum(p["amount_cents"] for p in done),
+                        "tokens": sum(p["tokens"] for p in done), "bonus_back": sum(p["bonus_back"] for p in done),
+                        "balance": tokens.balance(account_id)})
+
     # ── bug reports ──
     def bugs_list():
         _need_admin()
         if bug_reports is None:
             return jsonify({"bugs": [], "enabled": False})
-        return jsonify({"bugs": bug_reports.list(500), "enabled": True})
+        from .reports import my_reports_on
+        return jsonify({"bugs": bug_reports.list(500), "enabled": True,
+                        "my_reports": my_reports_on(tokens.path)})
+
+    def bug_status(report_id):
+        """My reports (0.44.0): the status the account page shows, and the one
+        "fixed" email, only when asked for and only while my_reports is on."""
+        admin = _need_admin()
+        _need_same_origin()
+        from .reports import fixed_email, my_reports_on
+        if not my_reports_on(tokens.path) or not hasattr(bug_reports, "set_status"):
+            abort(404)
+        body = request.get_json(silent=True) or {}
+        try:
+            row = bug_reports.set_status(report_id, str(body.get("status") or ""), fixed_in=body.get("fixed_in"),
+                                         note=body.get("note"))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if row is None:
+            abort(404)
+        app.logger.info("admin %s set report %s to %s", admin, report_id, row["status"])
+        emailed = None
+        if row["status"] == "fixed" and body.get("email") is True and not row.get("emailed_at"):
+            to = (tokens.account_email(row["account_id"]) if row.get("account_id") else None) or row.get("email")
+            if to and not str(to).startswith("deleted:"):
+                from .account_page import TOOL_PAGES, tool_title
+                tool = tool_title(row.get("app"))
+                subject, text = fixed_email(row, tool, SITE + TOOL_PAGES.get(row.get("app") or "", "/"))
+                ok, err = email_sender(to, subject, text)
+                if ok:
+                    bug_reports.mark_emailed(report_id)
+                emailed = bool(ok)
+            else:
+                emailed = False
+        return jsonify({"report_id": report_id, "status": row["status"], "emailed": emailed})
 
     def bug_delete(report_id):
         admin = _need_admin()
@@ -426,7 +688,11 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
     app.add_url_rule("/admin", view_func=admin_page, methods=["GET"])
     app.add_url_rule("/admin/", endpoint="admin_page_slash", view_func=admin_page, methods=["GET"])
     app.add_url_rule("/admin/api/accounts", view_func=accounts_list, methods=["GET"])
+    app.add_url_rule("/admin/api/newsletter.csv", view_func=newsletter_csv, methods=["GET"])
     app.add_url_rule("/admin/api/accounts/<account_id>/grant", view_func=grant, methods=["POST"])
+    app.add_url_rule("/admin/api/accounts/<account_id>/refund-quote", view_func=account_refund_quote,
+                     methods=["GET"])
+    app.add_url_rule("/admin/api/accounts/<account_id>/refund", view_func=account_refund, methods=["POST"])
     app.add_url_rule("/admin/api/orders", view_func=orders_list, methods=["GET"])
     app.add_url_rule("/admin/api/orders/<provider>/<order_id>/refund-quote",
                      view_func=refund_quote, methods=["GET"])
@@ -434,6 +700,7 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
                      view_func=refund, methods=["POST"])
     app.add_url_rule("/admin/api/bugs", view_func=bugs_list, methods=["GET"])
     app.add_url_rule("/admin/api/bugs/<report_id>", view_func=bug_delete, methods=["DELETE"])
+    app.add_url_rule("/admin/api/bugs/<report_id>/status", view_func=bug_status, methods=["POST"])
     app.add_url_rule("/admin/api/download-failures", view_func=failures_list, methods=["GET"])
     app.add_url_rule("/admin/api/download-failures", endpoint="failures_clear",
                      view_func=failures_clear, methods=["DELETE"])
@@ -442,5 +709,9 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
     app.add_url_rule("/admin/api/status", view_func=status, methods=["GET"])
     app.add_url_rule("/admin/api/services", view_func=services_list, methods=["GET"])
     app.add_url_rule("/admin/api/server-use", view_func=server_use_report, methods=["GET"])
+    app.add_url_rule("/admin/api/notices", view_func=notices_list, methods=["GET"])
+    app.add_url_rule("/admin/api/notices/<notice_id>/test", view_func=notice_test, methods=["POST"])
+    app.add_url_rule("/admin/api/notices/<notice_id>/start", view_func=notice_start, methods=["POST"])
+    app.add_url_rule("/admin/api/notices/<notice_id>/batch", view_func=notice_batch, methods=["POST"])
     app.add_url_rule("/admin/api/settings", view_func=settings_list, methods=["GET"])
     app.add_url_rule("/admin/api/settings/<key>", view_func=settings_save, methods=["POST"])

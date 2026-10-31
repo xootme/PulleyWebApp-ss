@@ -1910,6 +1910,8 @@ window.onload = async () => {
     document.getElementById('dual_enable').checked ? 'Pulley 1' : 'Pulley';
   if (!_threadFromDesign) applyThreadDefault();   // a new design starts from your default
   _syncNubHeightMax();
+  _pageStarted = true;                            // the account's printer settings may land now
+  if (_printerPending) _applyPrinter();
 
   // Apply Feature Build tab state now that the DOM is fully ready.
   // loadSettings() sets previewTab but doesn't call setPreviewTab().
@@ -2955,6 +2957,32 @@ window.cctApplyDesign = async params => {
   _applyUrlParams(p);
   await onPitchChange();
 };
+// The account's printer settings (cct_common 0.41.0, behind printer_settings): tokens.js calls
+// this once, only on a fresh page (no query). Each one is a default: it fills a value this
+// browser still has at the tool's default (units mm, compensation 0 on both pulleys), never one
+// the person changed here, and waits for the start-up restore so that can't overwrite it.
+let _printerPending = null, _pageStarted = false;
+window.cctApplyPrinterSettings = s => { _printerPending = s || null; if (_pageStarted) _applyPrinter(); };
+function _applyPrinter() {
+  const s = _printerPending;
+  _printerPending = null;
+  if (!s) return;
+  const sel = document.getElementById('units');
+  if ((s.units === 'mm' || s.units === 'in') && sel.value === 'mm' && s.units !== sel.value) {
+    sel.value = s.units;
+    onUnitsChange();
+  }
+  const mm = window.cctTokens && cctTokens.clampCompensation
+    ? cctTokens.clampCompensation(s.print_compensation_mm) : s.print_compensation_mm;
+  if (mm !== null && mm !== undefined && Number.isFinite(Number(mm))) {
+    ['print_extra', 'p2_print_extra'].forEach(id => {
+      const el = document.getElementById(id);
+      if (Number(el.value) === 0) el.value = Number(mm);
+    });
+    schedulePreview();
+  }
+  saveSettings();
+}
 
 // The formats a purchase includes, offered as "also download" checkboxes.
 function _cctExtras(path, params) {

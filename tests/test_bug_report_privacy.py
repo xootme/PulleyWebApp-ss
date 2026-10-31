@@ -107,7 +107,7 @@ def test_log_keeps_everything_under_the_report_id(client):
 
 def test_database_keeps_everything_and_can_delete_it(client, monkeypatch, tmp_path):
     import app as app_module
-    from bug_store import BugReports
+    from cct_common.reports import ReportStore as BugReports
     store = BugReports(str(tmp_path / "bugs.sqlite3"))
     monkeypatch.setattr(app_module, "_bug_store", store)
     rid = _report(client).get_json()["report_id"]
@@ -119,7 +119,7 @@ def test_database_keeps_everything_and_can_delete_it(client, monkeypatch, tmp_pa
 
 def test_database_records_the_issue_link(client, issues, monkeypatch, tmp_path):
     import app as app_module
-    from bug_store import BugReports
+    from cct_common.reports import ReportStore as BugReports
     store = BugReports(str(tmp_path / "bugs.sqlite3"))
     monkeypatch.setattr(app_module, "_bug_store", store)
     rid = _report(client).get_json()["report_id"]

@@ -30,6 +30,12 @@ Routes, each app's at its own base, signed in:
     GET  api/designs/<id>                {app, name, params}: ?saved=<id> (tokens.js)
     POST api/designs                     {design_id, name?}: keep the registered design (Save)
 
+Share links (0.42.0, the share_links setting; cct_common.share_links):
+    POST account/designs/<id>            action=share | unshare  (My designs' card)
+    GET  api/shared/<code>               {app, name, params[, referral]}: public, counts the open;
+                                         409 {open} for another app's
+    GET  api/shared/<code>/thumb         its picture, public
+
 Open is <the app's page>?saved=<id>. tokens.js there asks api/designs/<id> and
 hands the params to window.cctApplyDesign(params); a page without that hook
 is reloaded with them as its query (as the admin's "Open this design" is).
@@ -55,6 +61,7 @@ MAX_DESIGNS = 500
 THUMB_MAX_BYTES = 40_000
 PARAMS_MAX_CHARS = 20_000
 NAME_MAX = 80
+NOTE_MAX = 1000            # bookmarks and notes (0.43.0): a note's characters, text only
 # Not kept: the design's own copy for a file to embed, and a timestamp (0.31.1's rule).
 SKIP_KEYS = frozenset({"design", "_ts"})
 TIER_NAMES = {"2d": "2D files", "stl": "STL", "step": "STEP"}
@@ -64,6 +71,9 @@ _MAGIC = {"image/webp": lambda b: b[:4] == b"RIFF" and b[8:12] == b"WEBP",
           "image/jpeg": lambda b: b[:3] == b"\xff\xd8\xff",
           "image/png": lambda b: b[:8] == b"\x89PNG\r\n\x1a\n"}
 _PAGE = re.compile(r"/[A-Za-z0-9._~/-]{0,199}\Z")
+
+from .share_links import SCHEMA as _SHARE_SCHEMA  # noqa: E402  (beside its own tables)
+from .projects import SCHEMA as _PROJECTS_SCHEMA  # noqa: E402
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS saved_designs (
@@ -88,7 +98,7 @@ CREATE TABLE IF NOT EXISTS saved_design_apps (
     title       TEXT,
     updated_at  REAL NOT NULL
 );
-"""
+""" + _SHARE_SCHEMA + _PROJECTS_SCHEMA   # share links (0.42.0) and projects (0.46.0) go with them
 
 
 class Full(Exception):
@@ -106,6 +116,27 @@ def clean_thumb(value) -> Optional[str]:
     except ValueError:
         return None
     return value if len(raw) <= THUMB_MAX_BYTES and _MAGIC[m.group(1)](raw) else None
+
+
+def clean_note(value) -> Optional[str]:
+    """A note as kept: text only, trimmed, NOTE_MAX characters at most;
+    empty is no note."""
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = "".join(c for c in text if c == "\n" or c == "\t" or c >= " ")
+    return text[:NOTE_MAX] or None
+
+
+def ensure_note_columns(db_store) -> None:
+    """Bookmarks and notes (0.43.0): the columns older databases lack."""
+    db_store._ensure_columns("saved_designs", {"bookmarked": "INTEGER NOT NULL DEFAULT 0", "note": "TEXT",
+                                                "note_edited_at": "REAL"})
+    db_store._ensure_columns("shared_designs", {"note": "TEXT"})
+
+
+def parse_thumb(value) -> Optional[tuple]:
+    """(mimetype, bytes) of a kept thumbnail data URL, or None."""
+    m = _THUMB.match(value) if isinstance(value, str) else None
+    return (m.group(1), base64.b64decode(m.group(2))) if m else None
 
 
 def clean_params(params) -> Optional[dict]:
@@ -134,6 +165,7 @@ class SavedDesigns(SqliteDB):
         super().__init__(path, SCHEMA)
         self._clock = clock
         self._seen: dict = {}
+        ensure_note_columns(self)
 
     def keep(self, account_id: str, app: str, design_key: str, params, *, name=None, thumb=None,
              source: str = "download") -> Optional[str]:
@@ -163,7 +195,8 @@ class SavedDesigns(SqliteDB):
                 if source != "download":
                     raise Full(f"You have {MAX_DESIGNS} saved designs — delete some first.")
                 old = db.execute("SELECT id FROM saved_designs WHERE account_id = ? AND source = 'download' "
-                                 "AND named = 0 ORDER BY updated_at LIMIT 1", (account_id,)).fetchone()
+                                 "AND named = 0 AND bookmarked = 0 ORDER BY updated_at LIMIT 1",   # 0.43.0
+                                 (account_id,)).fetchone()
                 if not old:
                     return None
                 db.execute("DELETE FROM saved_designs WHERE id = ?", (old["id"],))
@@ -180,6 +213,7 @@ class SavedDesigns(SqliteDB):
         with self._read() as db:
             rows = db.execute(
                 "SELECT id, app, design_key, name, named, source, created_at, updated_at, last_download_at, "
+                "bookmarked, note, note_edited_at, "
                 "thumb IS NOT NULL AS has_thumb FROM saved_designs WHERE account_id = ? "
                 "ORDER BY updated_at DESC", (account_id,)).fetchall()
         return [dict(r) for r in rows]
@@ -199,8 +233,21 @@ class SavedDesigns(SqliteDB):
         with self._read() as db:
             row = db.execute("SELECT thumb FROM saved_designs WHERE account_id = ? AND id = ?",
                              (account_id, saved_id)).fetchone()
-        m = _THUMB.match(row["thumb"]) if row and row["thumb"] else None
-        return (m.group(1), base64.b64decode(m.group(2))) if m else None
+        return parse_thumb(row["thumb"] if row else None)
+
+    def bookmark(self, account_id: str, saved_id: str, on: bool) -> bool:
+        with self._write() as db:
+            cur = db.execute("UPDATE saved_designs SET bookmarked = ? WHERE account_id = ? AND id = ?",
+                             (1 if on else 0, account_id, saved_id))
+            return (cur.rowcount or 0) > 0
+
+    def set_note(self, account_id: str, saved_id: str, note) -> bool:
+        """Keep its note (clean_note; empty removes it) and when it was edited."""
+        note = clean_note(note)
+        with self._write() as db:
+            cur = db.execute("UPDATE saved_designs SET note = ?, note_edited_at = ? WHERE account_id = ? AND id = ?",
+                             (note, self._clock() if note else None, account_id, saved_id))
+            return (cur.rowcount or 0) > 0
 
     def rename(self, account_id: str, saved_id: str, name) -> bool:
         """A name the person gave it (never replaced at the cap); blank goes back to none."""
@@ -211,9 +258,15 @@ class SavedDesigns(SqliteDB):
             return (cur.rowcount or 0) > 0
 
     def delete(self, account_id: str, saved_id: str) -> bool:
+        """Delete it, and turn off its share link (0.42.0)."""
         with self._write() as db:
             cur = db.execute("DELETE FROM saved_designs WHERE account_id = ? AND id = ?", (account_id, saved_id))
-            return (cur.rowcount or 0) > 0
+            gone = (cur.rowcount or 0) > 0
+            if gone:
+                db.execute("UPDATE shared_designs SET revoked_at = ? WHERE saved_id = ? AND revoked_at IS NULL",
+                           (self._clock(), saved_id))
+                db.execute("DELETE FROM project_designs WHERE saved_id = ?", (saved_id,))   # 0.46.0
+            return gone
 
     def seen(self, app: str, page, title=None) -> None:
         """Where this app's page is, for the Open links of every app's My designs.
@@ -274,11 +327,18 @@ _CSS = (
     ".card .name{font-weight:600}.card form{margin:0;display:flex;gap:.4rem}"
     ".card input[type=text]{flex:1;min-width:0;font-size:.9rem;padding:.25rem .4rem}"
     ".card button,.card .open{font-size:.9rem;padding:.3rem .8rem;cursor:pointer}"
+    ".card .share{display:flex;flex-direction:column;gap:.3rem;margin-top:.3rem}.card .share input{font-size:.85rem}"
+    ".card .mark{display:flex;flex-direction:column;gap:.3rem}.card .note{white-space:pre-wrap;font-size:.9rem}"
+    ".card textarea{width:100%;box-sizing:border-box;font:inherit;font-size:.9rem}"
+    ".heads-up{background:#fff7e0;border:1px solid #f0d27a;border-left-width:4px;border-radius:8px;"
+    "padding:.6rem .9rem;margin:.8rem 0;font-size:.92rem}.card:target{outline:3px solid #0078d4}"
+    ".search input{width:100%;max-width:24rem;font-size:.95rem;padding:.35rem .6rem;margin-bottom:1rem}"
     ".card .open{display:inline-block;background:#1f1f1f;color:#fff;border-radius:4px;text-decoration:none;"
     "text-align:center}.row{display:flex;gap:.4rem;margin-top:auto}.msg{margin:1rem 0}"
     "@media (prefers-color-scheme:dark){body{background:#16181c;color:#e8e8e8}.card{border-color:#333}"
     ".card img,.card .ph{background:#22252b}.tools a{border-color:#444}"
-    ".tools a.on,.card .open{background:#e8e8e8;color:#16181c}.sub{color:#9aa}}"
+    ".tools a.on,.card .open{background:#e8e8e8;color:#16181c}.sub{color:#9aa}"
+    ".heads-up{background:#2b2617;border-color:#6b5a22}}"
 )
 
 
@@ -305,6 +365,21 @@ def register_saved_designs(app, charges) -> SavedDesigns:
     def on() -> bool:
         return setting(tokens.path, "saved_designs") is True
 
+    from .share_links import BANNER, GONE, NOTICE, Full as SharesFull, ShareLinks, link as share_link
+    shares = ShareLinks(tokens.path)
+
+    def sharing() -> bool:
+        return on() and setting(tokens.path, "share_links") is True
+
+    def marking() -> bool:
+        return on() and setting(tokens.path, "bookmarks") is True
+
+    def grouping() -> bool:
+        return on() and setting(tokens.path, "projects") is True
+
+    def page_of(app_name: str, apps: dict) -> str:
+        return (apps.get(app_name) or {}).get("page") or f"/tools/{app_name}/"
+
     def page(notice: str = ""):
         if not on():
             return _doc("Not found", "<p>That page isn't here.</p>", 404)
@@ -319,9 +394,29 @@ def register_saved_designs(app, charges) -> SavedDesigns:
         tools = sorted({r["app"] for r in rows}, key=lambda a: title(a).lower())
         pick = request.args.get("app") or ""
         shown = [r for r in rows if not pick or r["app"] == pick]
+        marks = marking()
+        query = (request.args.get("q") or "").strip().lower() if marks else ""
+        if marks:
+            if request.args.get("bookmarked"):
+                shown = [r for r in shown if r["bookmarked"]]
+            if query:
+                shown = [r for r in shown if query in (r["name"] or "").lower() or query in (r["note"] or "").lower()]
+            shown.sort(key=lambda r: 0 if r["bookmarked"] else 1)      # stable: newest first within
         forever = setting(tokens.path, "redownload_window") == "forever"
+        live = shares.live_for(acct) if sharing() else {}
+        from .projects import Projects
+        groups = Projects(tokens.path).list(acct) if grouping() else None
         filt = ""
-        if len(tools) > 1:
+        if marks:
+            chips = [("", "All tools", not pick and not request.args.get("bookmarked"))]
+            chips += [(f"?app={html.escape(a, quote=True)}", title(a), a == pick) for a in tools] if len(tools) > 1 else []
+            chips += [("?bookmarked=1", "Bookmarked", bool(request.args.get("bookmarked")))]
+            filt = ("<nav class='tools'>" + "".join(f"<a href='designs{h}'{' class=on' if o else ''}>{html.escape(t)}</a>"
+                                                    for h, t, o in chips) + "</nav>"
+                    "<form class='search' method='get' action='designs'><input type='search' name='q' "
+                    f"value='{html.escape(request.args.get('q') or '', quote=True)}' "
+                    "placeholder='Search names and notes' aria-label='Search names and notes'></form>")
+        elif len(tools) > 1:
             filt = "<nav class='tools'>" + "".join(
                 f"<a href='designs{'?app=' + html.escape(a, quote=True) if a else ''}'"
                 f"{' class=on' if a == pick else ''}>{html.escape(title(a) if a else 'All tools')}</a>"
@@ -333,7 +428,7 @@ def register_saved_designs(app, charges) -> SavedDesigns:
                    else "<div class='ph'>No picture</div>")
             name = r["name"] or f"{title(r['app'])} design"
             cards.append(
-                f"<div class='card'>{img}<div class='in'>"
+                f"<div class='card' id='d-{sid}'>{img}<div class='in'>"
                 f"<div class='name'>{html.escape(name)}</div>"
                 f"<div class='sub'>{html.escape(title(r['app']))} · {_when(r['updated_at'])}</div>"
                 f"<div class='sub'>{html.escape(bought_line(tokens, acct, r['design_key'], forever))}</div>"
@@ -345,13 +440,71 @@ def register_saved_designs(app, charges) -> SavedDesigns:
                 f"<form method='post' action='designs/{sid}' "
                 "onsubmit=\"return confirm('Delete this saved design? Files you bought stay yours.')\">"
                 "<input type='hidden' name='action' value='delete'><button type='submit'>Delete</button>"
-                "</form></div></div></div>")
-        body = ("<div class='grid'>" + "".join(cards) + "</div>") if cards else (
-            "<p>Nothing here yet. Every design you download is kept here, and so is any you save "
-            "from the Download window.</p>")
+                f"</form></div>{mark_box(r)}{project_box(r, groups)}{share_box(r, live, apps, title)}</div></div>")
+        if cards:
+            body = "<div class='grid'>" + "".join(cards) + "</div>"
+        elif rows and marks and (query or request.args.get("bookmarked")):
+            body = "<p>No designs match.</p>"                 # 0.43.0: a search or filter found none
+        else:
+            body = ("<p>Nothing here yet. Every design you download is kept here, and so is any you save "
+                    "from the Download window.</p>")
+        from .account_page import KEPT_NOTICE
         return _doc("My designs", (
             "<h1>My designs</h1><div class='sub'>The designs you've downloaded or saved: open one to go on "
-            "where you left off.</div>" + notice + filt + body))
+            "where you left off.</div>" + notice +
+            f"<p class='heads-up'><strong>Good to know:</strong> {html.escape(KEPT_NOTICE)}</p>" + filt + body))
+
+    def project_box(r, groups) -> str:
+        """The card's "Add to project" (0.46.0)."""
+        if groups is None:
+            return ""
+        sid = html.escape(r["id"], quote=True)
+        options = "".join(f"<option value='{html.escape(g['id'], quote=True)}'>{html.escape(g['name'])}</option>"
+                          for g in groups)
+        return (f"<form class='share' method='post' action='designs/{sid}/project'>"
+                f"<select name='project' aria-label='Project'>{options}<option value='new'>New project…</option>"
+                "</select><input type='text' name='new_name' maxlength='80' placeholder='New project name' "
+                "aria-label='New project name'><button type='submit'>Add to project</button></form>")
+
+    def mark_box(r) -> str:
+        """The card's star and note (0.43.0)."""
+        if not marking():
+            return ""
+        sid = html.escape(r["id"], quote=True)
+        star = (f"<form method='post' action='designs/{sid}'><input type='hidden' name='action' "
+                f"value='{'unbookmark' if r['bookmarked'] else 'bookmark'}'><button type='submit' class='star' "
+                f"aria-pressed='{'true' if r['bookmarked'] else 'false'}'>"
+                f"{'★ Bookmarked' if r['bookmarked'] else '☆ Bookmark'}</button></form>")
+        note = r["note"] or ""
+        shown = (f"<div class='note'>{html.escape(note)}</div><div class='sub'>Edited {_when(r['note_edited_at'])}</div>"
+                 if note else "")
+        edit_form = (f"<details><summary>{'Edit' if note else 'Add a note'}</summary>"
+                     f"<form method='post' action='designs/{sid}'><input type='hidden' name='action' value='note'>"
+                     f"<textarea name='note' maxlength='{NOTE_MAX}' rows='4' aria-label='Note' "
+                     f"oninput=\"this.nextElementSibling.textContent=this.value.length+' / {NOTE_MAX:,}'\">"
+                     f"{html.escape(note)}</textarea><div class='sub'>{len(note):,} / {NOTE_MAX:,}</div>"
+                     "<button type='submit'>Save note</button></form></details>")
+        return f"<div class='mark'>{star}{shown}{edit_form}</div>"
+
+    def share_box(r, live, apps, title) -> str:
+        """The card's sharing: its live link and opens, or a Share button."""
+        if not sharing():
+            return ""
+        sid = html.escape(r["id"], quote=True)
+        got = live.get(r["id"])
+        if got:
+            url = share_link(page_of(r["app"], apps), got["code"], request.host_url)
+            return (f"<div class='share'><input type='text' readonly value='{html.escape(url, quote=True)}' "
+                    "aria-label='Share link' onclick='this.select()'>"
+                    f"<div class='sub'>Shared · opened {got['opens']} time{'' if got['opens'] == 1 else 's'}</div>"
+                    f"<form method='post' action='designs/{sid}'><input type='hidden' name='action' value='unshare'>"
+                    "<button type='submit'>Stop sharing</button></form></div>")
+        warn = html.escape(json.dumps(NOTICE.format(tool=title(r["app"]))), quote=True)   # a JS string, in an attribute
+        with_note = ("<label class='sub'><input type='checkbox' name='include_note' value='1'> Include my note "
+                     "in the link</label>") if marking() and r.get("note") else ""
+        return (f"<form class='share' method='post' action='designs/{sid}' "
+                f"onsubmit=\"return confirm({warn})\"><input type='hidden' name='action' value='share'>"
+                f"{with_note}<button type='submit'>Share</button></form>")
 
     def update(saved_id):
         if not on():
@@ -360,6 +513,25 @@ def register_saved_designs(app, charges) -> SavedDesigns:
         if not acct:
             return redirect("../designs", code=303)
         action = request.form.get("action")
+        if action in ("bookmark", "unbookmark", "note") and marking():
+            ok = (store.set_note(acct, saved_id, request.form.get("note")) if action == "note"
+                  else store.bookmark(acct, saved_id, action == "bookmark"))
+            if not ok:
+                return page("<p class='msg' style='color:#b00020'>That design isn't here any more.</p>"), 404
+            return redirect("../designs" + (f"?app={request.args['app']}" if request.args.get("app") else ""),
+                            code=303)
+        if action in ("share", "unshare") and sharing():
+            include = marking() and request.form.get("include_note") == "1"
+            try:
+                ok = ((shares.share(acct, saved_id, include_note=include) is not None) if action == "share"
+                      else shares.stop(acct, saved_id))
+            except SharesFull:
+                return page("<p class='msg' style='color:#b00020'>You have 100 shared links. Stop sharing one "
+                            "before you share another.</p>"), 409
+            if not ok:
+                return page("<p class='msg' style='color:#b00020'>That design isn't here any more.</p>"), 404
+            return redirect("../designs" + (f"?app={request.args['app']}" if request.args.get("app") else ""),
+                            code=303)
         ok = (store.delete(acct, saved_id) if action == "delete"
               else store.rename(acct, saved_id, request.form.get("name")) if action == "rename" else False)
         if not ok:
@@ -390,6 +562,33 @@ def register_saved_designs(app, charges) -> SavedDesigns:
                                                                                  store.apps())}), 409
         return jsonify({"app": row["app"], "name": row["name"], "params": row["params"]})
 
+    def shared(code):
+        """Public: a live share link's design, for the page that opens it."""
+        if not sharing():
+            return jsonify({"error": GONE}), 404
+        peek = shares.app_of(code)
+        if peek is None:
+            return jsonify({"error": GONE}), 404
+        if peek != own:                           # another app's: open it there (counted there)
+            return jsonify({"error": "another tool's design",
+                            "open": share_link(page_of(peek, store.apps()), code)}), 409
+        got = shares.open(code)
+        if not got:
+            return jsonify({"error": GONE}), 404
+        from .referrals import referrals_on
+        # Referrals (0.49.0): only while on, the page carries this code through a sign-up it starts.
+        r = jsonify({**got, "banner": BANNER, **({"referral": True} if referrals_on(tokens.path) else {})})
+        r.headers["Cache-Control"] = "no-store"
+        return r
+
+    def shared_thumb(code):
+        found = parse_thumb(shares.thumb(code)) if sharing() else None
+        if not found:
+            return Response(status=404)
+        r = Response(found[1], mimetype=found[0])
+        r.headers["Cache-Control"] = "public, max-age=3600"
+        return r
+
     def save():
         if not on():
             return jsonify({"error": "not found"}), 404
@@ -417,4 +616,7 @@ def register_saved_designs(app, charges) -> SavedDesigns:
                      methods=["GET"])
     app.add_url_rule("/api/designs/<saved_id>", endpoint="cct_saved_design", view_func=one, methods=["GET"])
     app.add_url_rule("/api/designs", endpoint="cct_saved_design_save", view_func=save, methods=["POST"])
+    app.add_url_rule("/api/shared/<code>", endpoint="cct_shared_design", view_func=shared, methods=["GET"])
+    app.add_url_rule("/api/shared/<code>/thumb", endpoint="cct_shared_design_thumb", view_func=shared_thumb,
+                     methods=["GET"])
     return store
