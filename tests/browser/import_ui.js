@@ -76,7 +76,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   await send('Runtime.enable');
   await send('DOM.enable');
@@ -87,7 +88,7 @@ async function main() {
     await send('Page.navigate', { url: `${BASE}/` });
     await settled('a blank page, storage cleared');
   };
-  const to3d = async () => { await js("document.getElementById('feature_build').checked || document.getElementById('feature_build').click()"); await sleep(1500); };
+  const to3d = async () => { await js("document.getElementById('feature_build').checked || document.getElementById('feature_build').click()"); await settled('3D Mode'); };
   const shown = elId => js(`(() => { const e = document.getElementById('${elId}'); return !!e && e.style.display !== 'none'; })()`);
   const panels = async (label, want) => {
     for (const n of [1, 2]) {
@@ -116,8 +117,8 @@ async function main() {
     const doc = await send('DOM.getDocument', { depth: -1 });
     const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: '#import-file-input' });
     await send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] });
-    await js('executeImport()');
-    await sleep(2500);
+    await js('executeImport()');                     // (awaited: the file read and applied)
+    await settled('the import');
     check(`${name}: imported (dialog closed, two pulleys)`,
           (await js("document.getElementById('import-overlay').style.display")) === 'none'
           && await js("document.getElementById('dual_enable').checked"),
@@ -142,8 +143,8 @@ async function main() {
     const doc = await send('DOM.getDocument', { depth: -1 });
     const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: '#import-file-input' });
     await send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] });
-    await js('executeImport()');
-    await sleep(2500);
+    await js('executeImport()');                     // (awaited: the file read and applied)
+    await settled('the import');
   };
   const ret = n => js(`document.getElementById('hub${n}_retention').value`);
   const ROUND = `${DRIVE}&hub_od=20&hub_height=8&hub_screw_size=M3&hub_screw_count=2&hub_screw_hold=nut` +
@@ -177,11 +178,11 @@ async function main() {
   await send('Page.navigate', { url: `${BASE}/?${DRIVE}&hub_od=20&hub_height=8&hub_screw_size=M3&hub_screw_count=1&hub_screw_hold=insert` });
   await settled('a drive with heat-set inserts');
   await to3d();
-  const idle = async () => { for (let i = 0; i < 40 && await js('typeof restoringHistory !== "undefined" && restoringHistory'); i++) await sleep(150); await sleep(800); };
+  const idle = () => settled('undo or redo');      // the restore's own flag is page work (later)
   const before = await ret(1);
   await js(`(() => { const el = document.getElementById('bore1_shape'); el.value = 'spline';
     el.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  await sleep(2500);
+  await settled('a spline');
   check('undo: switching to a spline locks Retention at None', (await ret(1)) === 'none', [before, await ret(1)]);
   await js('undo()'); await idle();
   check('undo: back to the round bore gives back the insert', (await ret(1)) === before, await ret(1));

@@ -102,6 +102,26 @@ def stop(proc):
         proc.log.close()
 
 
+# A failed harness's whole output, kept (as Gear's tools/test_all.py does): a lane's temp folder
+# goes with it, and the printed tail once cut a run's FAIL lines off (2026-10-31, bore_ui on msi).
+# logs/ is git-ignored; the last KEEP_RUNS stay.
+FAILED_RUNS = ROOT / 'logs' / 'harness_failures'
+KEEP_RUNS = 50
+SHOW_LINES = 200                    # a failure's output printed in full up to this many lines
+
+
+def keep_failure(label, code, out):
+    try:
+        FAILED_RUNS.mkdir(parents=True, exist_ok=True)
+        f = FAILED_RUNS / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}-{os.getpid()}-{threading.get_ident()}.txt"
+        f.write_text(f'{label}: exit {code}\n{out}', encoding='utf-8')
+        for old in sorted(FAILED_RUNS.glob('*.txt'))[:-KEEP_RUNS]:
+            old.unlink(missing_ok=True)
+        return f
+    except OSError:
+        return None
+
+
 def run(label, cmd, env, results):
     t0 = time.time()
     with _print:
@@ -118,8 +138,16 @@ def run(label, cmd, env, results):
     tail = next((ln.strip() for ln in reversed(lines) if ln.strip()), f'(no output, exit {proc.returncode})')
     passed = proc.returncode == 0 and bool(lines) and not bad and not timed_out
     secs = time.time() - t0
+    kept = None if passed else keep_failure(label, 'timeout' if timed_out else proc.returncode, out)
     with _print:
-        print(f'\n=== {label} done ({secs:.0f} s)\n' + '\n'.join(lines[-40:]), flush=True)
+        if passed:
+            print(f'\n=== {label} done ({secs:.0f} s)\n' + '\n'.join(lines[-40:]), flush=True)
+        else:   # a failure's output in full (to SHOW_LINES), so a lane on msi brings it back too
+            print(f'\n=== {label} FAILED ({secs:.0f} s), exit {proc.returncode}; its output, {len(lines)} lines'
+                  + (f' (the last {SHOW_LINES})' if len(lines) > SHOW_LINES else '')
+                  + (f'; kept in {kept}' if kept else '') + ':\n'
+                  + '\n'.join([ln for ln in lines[:-SHOW_LINES] if ln.startswith('FAIL')] + lines[-SHOW_LINES:]),
+                  flush=True)
     note = f'stopped after {TIMEOUT_S // 60} min' if timed_out else tail[:110]
     results.append((label, passed, f'{note} ({secs:.0f} s)'))
 

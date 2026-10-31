@@ -201,7 +201,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   await send('Runtime.enable'); await send('DOM.enable');
   const blank = async (query = '') => {
@@ -219,14 +220,15 @@ async function main() {
     const steps = [];
     if (!(await js(`document.getElementById('feature_build').checked`))) { await js(`document.getElementById('feature_build').click()`); steps.push('feature_build on'); }
     if (await js(`__walk.rnd() < 0.5`)) { await js(`document.getElementById('dual_enable').click()`); steps.push('dual_enable ' + (await js(`document.getElementById('dual_enable').checked`) ? 'on' : 'off')); }
-    await sleep(800);
+    // Every wait here is the page going idle, never a fixed time (under load a fixed one ended early).
+    await settled('the toggles');
     steps.push(...await js('__walk.features()'));
-    await sleep(1500);
-    for (let s = 0; s < STEPS; s++) { const st = await js('__walk.step()'); if (st) steps.push(st); await sleep(200); }
+    await settled('the features');
+    for (let s = 0; s < STEPS; s++) { const st = await js('__walk.step()'); if (st) steps.push(st); await settled('a step'); }
     // The design is read once the page is idle: after a fixed 2.5 s, on a busy machine, a
     // step's follow-ups (a debounced redraw, the centre from the belt) came after it was
     // read, and the 2D view's later values (teeth, centre) looked like a loss.
-    await sleep(500); await settled('the walk');
+    await settled('the walk');
     const A = await js(PARAMS), visA = await js(VISIBLE), modeA = await js(MODE);
     const qs = new URLSearchParams(A).toString();
 
@@ -248,7 +250,7 @@ async function main() {
     }
     // The 2D view's drawings: its own requests leave the hubs out, but each file must
     // still embed the whole design (Sprocket's find: a 2D DXF imported as a plain plate).
-    if (await js(MODE)) { await js(`document.getElementById('feature_build').click()`); await sleep(500); await settled('the 2D view'); }
+    if (await js(MODE)) { await js(`document.getElementById('feature_build').click()`); await settled('the 2D view'); }
     if (await js(MODE)) rec.problems.push('could not switch to the 2D view');
     for (const x of diffKeys(A, await js(PARAMS))) rec.problems.push(`2D view designParams: ${x}`);
     for (const f of await js(FILES_2D)) {
@@ -271,11 +273,11 @@ async function main() {
       const doc = await send('DOM.getDocument', { depth: -1 });
       const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: '#import-file-input' });
       await send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] });
-      await js('executeImport()');
-      await sleep(3500);
+      await js('executeImport()');                     // awaits the file's design being applied
+      await settled('the import');
       const B = await js(PARAMS);
       if (has3d(A) && !(await js(MODE))) rec.problems.push(`import ${ext}: a 3D design opened in 2D mode`);
-      if ((await js(MODE)) !== modeA) { await js(`document.getElementById('feature_build').click()`); await sleep(800); }
+      if ((await js(MODE)) !== modeA) { await js(`document.getElementById('feature_build').click()`); await settled('the mode'); }
       const visB = await js(VISIBLE);
       for (const x of await diffParams(A, B)) rec.problems.push(`import ${ext}: ${x}`);
       for (const x of diffVisible(visA, visB)) rec.problems.push(`import ${ext} visible: ${x}`);
@@ -283,7 +285,7 @@ async function main() {
     await blank(qs);
     const C = await js(PARAMS);
     if (has3d(A) && !(await js(MODE))) rec.problems.push('link: a 3D design opened in 2D mode');
-    if ((await js(MODE)) !== modeA) { await js(`document.getElementById('feature_build').click()`); await sleep(800); }
+    if ((await js(MODE)) !== modeA) { await js(`document.getElementById('feature_build').click()`); await settled('the mode'); }
     const visC = await js(VISIBLE);
     for (const x of await diffParams(A, C)) rec.problems.push(`link: ${x}`);
     for (const x of diffVisible(visA, visC)) rec.problems.push(`link visible: ${x}`);

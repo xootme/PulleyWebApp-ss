@@ -79,7 +79,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
@@ -111,7 +112,7 @@ async function main() {
     holding = false;
     for (const rid of held.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
   };
-  const waitHeld = async (n = 1) => { for (let i = 0; i < 100 && held.length < n; i++) await sleep(50); return held.length >= n; };
+  const waitHeld = async (n = 1) => { for (let i = 0; i < 400 && held.length < n; i++) await sleep(50); return held.length >= n; };
   const look = () => js(`(() => {
     const o = document.querySelector('#preview-box .cct-busy'), c = o && o.querySelector('.cct-busy-card');
     if (!o || o.hidden) return null;
@@ -121,7 +122,7 @@ async function main() {
              dx: Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2), dy: Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) };
   })()`);
   const lookShown = async () => {               // past the fade-in (0.15 s + 0.2 s)
-    for (let i = 0; i < 40; i++) { const l = await look(); if (l && Number(l.opacity) === 1) return l; await sleep(50); }
+    for (let i = 0; i < 200; i++) { const l = await look(); if (l && Number(l.opacity) === 1) return l; await sleep(50); }
     return look();
   };
 
@@ -174,7 +175,7 @@ async function main() {
   // ── typing: the warnings wait ──
   await load(BASE + '/?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=15&clearance_height=8');
   await js("document.getElementById('dims-details').open = true");
-  await sleep(1500);
+  await settled('the design');
   check('a design with a wide enough face: no warning', !(await warned()));
   await js(`window.__warnSeen = false; new MutationObserver(() => {
     if (document.querySelectorAll('#dims-warnings li').length) window.__warnSeen = true;
@@ -190,8 +191,10 @@ async function main() {
   check('1 left as typed: no warning 1 s on', !(await warned()));
   await shot('typing_1s_no_warning.png');
   check('…the warning 2 s after the last keystroke, with Auto-fix', await waitFor('(' + fixShownExpr() + ')', 4000));
+  // Right after the check's answer: the 2 s hold isn't page work, so a warning that only
+  // cleared after it would still be up here.
   await type('clearance_height', '10');
-  await sleep(1500);
+  await settled('the valid 10');
   check('a valid value takes the warning down at once', !(await warned()));
 
   // An input that asks nothing again keeps the waiting warning (0.25.9, Sprocket's find:
@@ -206,14 +209,15 @@ async function main() {
   check('…and shows 2 s after it, kept', await waitFor('(' + fixShownExpr() + ')', 4000));
   await js("document.getElementById('bug-seeing').value = ''");
   await type('clearance_height', '10');
-  await sleep(1500);
+  await settled('10 again');
   check('…10 again: no warning', !(await warned()));
 
   await type('clearance_height', '1');
   await sleep(400);
   check('too narrow, still typing: no warning yet', !(await warned()));
   await js("document.getElementById('clearance_height').blur()");
-  check('leaving the field: the warning at once', await waitFor('(' + fixShownExpr() + ')', 1500));
+  await settled('leaving the field');
+  check('leaving the field: the warning at once', await js('(' + fixShownExpr() + ')'));
   await shot('autofix_before.png');
 
   // ── Auto-fix ──
@@ -231,7 +235,7 @@ async function main() {
   check('drawn with the fixed clearance, the overlay gone',
         await waitFor('!CCTBusy.shown(document.getElementById("preview-box"))', 8000) && Number(await val('clearance_height')) > 1,
         await val('clearance_height'));
-  await sleep(1500);
+  await settled('the fixed design');
   check('…and no warning left', !(await warned()));
 
   // ── the spoke card's Auto-fit ──
@@ -255,25 +259,25 @@ async function main() {
   // 2 s wait, 1's refusal would show if the check's ticket didn't drop it.
   await load(BASE + '/?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=15&clearance_height=8');
   await js("document.getElementById('dims-details').open = true");
-  await sleep(1500);
+  await settled('the design');
   await js(`window.__warnSeen = false; new MutationObserver(() => {
     if (document.querySelectorAll('#dims-warnings li').length) window.__warnSeen = true;
   }).observe(document.getElementById('dims-warnings'), { childList: true })`);
   holdingDims = true;
   await type('clearance_height', '1');
   let ok = false;
-  for (let i = 0; i < 60 && !dimsHeld.length; i++) await sleep(50);
+  for (let i = 0; i < 400 && !dimsHeld.length; i++) await sleep(50);
   check('typing 1: its check answered (held)', dimsHeld.length === 1, dimsHeld.length);
   await type('clearance_height', '10');
   await send('Fetch.continueRequest', { requestId: dimsHeld.shift() });   // 1's answer, after the 0
-  for (let i = 0; i < 40 && !dimsHeld.length; i++) await sleep(50);
+  for (let i = 0; i < 400 && !dimsHeld.length; i++) await sleep(50);
   ok = dimsHeld.length === 1;
   await sleep(2600);                                                       // 10's answer held past 2 s
   check('…10 asked again, its answer slow', ok);
   check('…1\'s refusal never shows, typed over before it came back', !(await js('window.__warnSeen')) && !(await warned()));
   holdingDims = false;
   for (const rid of dimsHeld.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
-  await sleep(1500);
+  await settled('10 answered');
   check('…and 10, valid, no warning', !(await js('window.__warnSeen')) && !(await warned()), await val('clearance_height'));
 
   // ── the idle hook every harness's load waits on (Sprocket's start-up hole, 2026-10-22) ──
@@ -290,13 +294,15 @@ async function main() {
   // A start-up load held back: the page is not idle, and a harness's wait says it never settled.
   holdingStart = true;
   await send('Page.navigate', { url: BASE + '/?family=HTD&pitch=5M&teeth=24&bore=8' });
-  for (let i = 0; i < 100 && !startHeld.length; i++) await sleep(50);
+  for (let i = 0; i < 400 && !startHeld.length; i++) await sleep(50);
   check("idle: the start-up's tables asked for (held)", startHeld.length === 1, startHeld.length);
   await sleep(2000);
   check('…not idle while they load', !(await js("typeof pageIdle === 'function' && pageIdle()")));
   let threw = false;
-  try { await settled('held', 2000); } catch (e) { threw = /never settled/.test(e.message); }
+  let said = '';
+  try { await settled('held', 2000); } catch (e) { said = e.message; threw = /never settled/.test(e.message); }
   check('…a load waiting on it says the page never settled', threw);
+  check('…and says what it waits on: the tables still out', /"fetches":\[[^\]]*"\/api\/splines"/.test(said), said);
   holdingStart = false;
   for (const rid of startHeld.splice(0)) await send('Fetch.continueRequest', { requestId: rid });
   let settledOk = true;
@@ -305,7 +311,7 @@ async function main() {
   // After the start-up: a check's answer still out keeps it busy.
   holdingDims = true;
   await js("(() => { const e = document.getElementById('bore'); e.value = '9'; e.dispatchEvent(new Event('input', {bubbles:true})); e.dispatchEvent(new Event('change', {bubbles:true})); })()");
-  for (let i = 0; i < 60 && !dimsHeld.length; i++) await sleep(50);
+  for (let i = 0; i < 400 && !dimsHeld.length; i++) await sleep(50);
   check("idle: a change's dimensions asked for (held)", dimsHeld.length === 1, dimsHeld.length);
   await sleep(1500);
   check('…not idle while the answer is out', !(await js('pageIdle()')));

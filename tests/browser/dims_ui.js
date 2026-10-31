@@ -60,7 +60,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
@@ -76,7 +77,7 @@ async function main() {
   const setVal = (sel, v) => js(`(() => { const e = document.querySelector('${sel}'); e.value = ${JSON.stringify(v)};
     e.dispatchEvent(new Event('input', {bubbles:true})); e.dispatchEvent(new Event('change', {bubbles:true})); })()`);
   const warnings = () => js("[...document.querySelectorAll('#dims-warnings li')].map(li => li.textContent)");
-  const settle = () => sleep(1200);
+  const settle = () => settled('the change');
   let w;
   const rowText = () => js("[...document.querySelectorAll('#dims-table tr')].map(r => r.textContent)");
 

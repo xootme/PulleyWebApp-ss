@@ -91,7 +91,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   await send('Runtime.enable');
 
@@ -112,7 +113,7 @@ async function main() {
       await js('(() => { try { localStorage.clear(); } catch (e) {} })()');
       await send('Page.navigate', { url: `${BASE}/?${query}` });
       await settled(query);
-      if (mode === '3d') { await js("document.getElementById('feature_build').checked || document.getElementById('feature_build').click()"); await sleep(2500); }
+      if (mode === '3d') { await js("document.getElementById('feature_build').checked || document.getElementById('feature_build').click()"); await settled('3D Mode'); }
       if (extra === 'rim' && mode === '2d') {
         await js(`(() => { for (const n of [1, 2]) { const w = document.getElementById('rim-layer' + n + '-wrap');
           const c = document.getElementById('rim_layer' + n + '_enabled'); if (w && w.style.display !== 'none' && !c.checked) c.click(); } })()`);

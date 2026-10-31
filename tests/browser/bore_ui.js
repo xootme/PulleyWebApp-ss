@@ -64,7 +64,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
@@ -80,7 +81,7 @@ async function main() {
   const val = sel => js(`document.querySelector('${sel}').value`);
   const params = () => js('buildParams()');
   const shown = sel => js(`!document.querySelector('${sel}').classList.contains('hidden')`);
-  const settle = () => sleep(600);                 // /api/spline answers after 150 ms
+  const settle = () => settled('the spline');      // /api/spline's ask is page work (later), then its fetch
   const text = sel => js(`document.querySelector('${sel}').textContent`);
 
   await send('Runtime.enable'); await send('Page.enable');
@@ -88,7 +89,7 @@ async function main() {
   await js("localStorage.clear()");
   await load(BASE + '/?family=HTD&pitch=5M&teeth=40&bore=12');
   await js("(() => { const d = document.getElementById('dual_enable'); if (d.checked) d.click(); })()");
-  await sleep(800);
+  await settled('one pulley');
 
   // ── the menu ──
   check('Bore Shape: Round, D-flat, Keyway, Spline',
@@ -244,7 +245,7 @@ async function main() {
 
   // ── Pulley 2 has its own ──
   await js("(() => { const d = document.getElementById('dual_enable'); if (!d.checked) d.click(); })()");
-  await sleep(1500);
+  await settled('two pulleys');
   await setSel('#bore2_shape', 'spline');
   await settle();
   p = await params();

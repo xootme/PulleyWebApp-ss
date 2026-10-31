@@ -75,7 +75,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
@@ -91,6 +92,8 @@ async function main() {
   const turn = () => js('window.pulleyTurn()');
   const shown = sel => js(`(() => { const e = document.querySelector('${sel}'); return !!e && e.offsetParent !== null; })()`);
   const pressed = () => js("document.getElementById('spin_btn').getAttribute('aria-pressed')");
+  // n animation frames drawn (however slow the machine): the time a still view must stay still
+  const frames = n => js(`new Promise(r => { let k = ${n}; const f = () => (--k > 0 ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // A drive in 3D, its pulleys and belt loaded.
   const open = async q => {
@@ -151,9 +154,10 @@ async function main() {
     check(`${d.name}: a belt tooth on pulley 1 turns with it`, k >= 0 && near(turned, half, 2e-3), [k, turned, half]);
 
     // press: it turns; pulley 2 keeps its ratio; press again: it stops
+    // (each wait is on the drive's own state, never a fixed time: under load frames come slower)
     await js('window.pulleySetTurn(0)');
     await click('#spin_btn');
-    await sleep(1200);
+    await waitFor('(() => { const t = window.pulleyTurn(); return t.spinning && t.u > 0.2; })()', 30000);
     s = await turn();
     check(`${d.name}: pressing Turn turns the drive`, await pressed() === 'true' && s.spinning && s.u > 0.2, s.u);
     check(`${d.name}: …blue while pressed`, await js("getComputedStyle(document.getElementById('spin_btn')).backgroundColor") === 'rgb(0, 120, 212)');
@@ -161,17 +165,20 @@ async function main() {
     if (di === 0) {
       // the Pulley 1 view: one part alone, no Turn, shown at rest
       await js("(() => { const w = document.getElementById('view3d_which'); w.value = '1'; w.dispatchEvent(new Event('change')); })()");
-      await sleep(400);
+      await waitFor(`(() => { const e = document.getElementById('spin_btn'); return (!e || e.offsetParent === null)
+        && window.pulleyTurn() && window.pulleyTurn().u === 0; })()`, 30000);
       const u1 = (await turn()).u;
-      await sleep(600);
+      await frames(10);                                   // ten frames drawn: still at rest
       check('the Pulley 1 view hides Turn, at rest and still', !(await shown('#spin_btn')) && u1 === 0 && (await turn()).u === 0);
       await js("(() => { const w = document.getElementById('view3d_which'); w.value = 'drive'; w.dispatchEvent(new Event('change')); })()");
-      await sleep(800);
+      await waitFor(`(() => { const e = document.getElementById('spin_btn'); return !!e && e.offsetParent !== null
+        && window.pulleyTurn() && window.pulleyTurn().u > 0; })()`, 30000);
       check('back on the Drive view it turns again', await shown('#spin_btn') && (await turn()).u > 0);
     }
     await click('#spin_btn');
+    await waitFor("document.getElementById('spin_btn').getAttribute('aria-pressed') === 'false' && !window.pulleyTurn().spinning", 30000);
     const u0 = (await turn()).u;
-    await sleep(700);
+    await frames(10);                                     // ten frames drawn: it hasn't moved
     check(`${d.name}: pressing again stops it`, await pressed() === 'false' && (await turn()).u === u0);
   }
 

@@ -1108,11 +1108,15 @@
 let pageBusy = 1;
 let _lastWork = 0;
 const _owed = new Set();
+const _out = new Map();              // the fetches still out, by path, for pageWaits()
 {
   const _fetch = window.fetch.bind(window);
+  let n = 0;
   window.fetch = (...a) => {
     pageBusy++;
-    return _fetch(...a).finally(() => { pageBusy--; _lastWork = performance.now(); });
+    const k = ++n;
+    _out.set(k, String(a[0] && a[0].url || a[0]).split('?')[0]);
+    return _fetch(...a).finally(() => { pageBusy--; _out.delete(k); _lastWork = performance.now(); });
   };
 }
 function later(f, ms) {
@@ -1125,6 +1129,11 @@ function cancelLater(id) { clearTimeout(id); _owed.delete(id); }
 function pageIdle() {
   return pageBusy === 0 && _owed.size === 0 && !CCTBusy.shown(previewBox())
       && performance.now() - _lastWork > 250;
+}
+// What pageIdle() still waits on, for a harness that gives up to say.
+function pageWaits() {
+  return { startUp: !historyReady, fetches: [..._out.values()], timers: _owed.size,
+           overlay: CCTBusy.shown(previewBox()) };
 }
 </script>
 <!-- cct_common's shared scripts (static/cct/, 0.29.0). This app's routes are at the
@@ -1201,8 +1210,8 @@ let teethLock2   = false;
 
     if (isNaN(val) || val < min || val > max) {
       el.classList.add('input-out-of-range');
-      clearTimeout(clampTimers.get(el));
-      clampTimers.set(el, setTimeout(function () {
+      cancelLater(clampTimers.get(el));
+      clampTimers.set(el, later(function () {
         const cur = parseFloat(el.value);
         if (isNaN(cur)) {
           // Field is empty — keep red, do not insert min; user is still editing
@@ -1217,7 +1226,7 @@ let teethLock2   = false;
         }
       }, 1000));
     } else {
-      clearTimeout(clampTimers.get(el));
+      cancelLater(clampTimers.get(el));
       el.classList.remove('input-out-of-range');
     }
   }, true);
@@ -1767,7 +1776,7 @@ function recordUndoStep(now) {
 }
 
 function dropPendingFixes() {
-  for (const t of [beltCorrectionTimer, teethTimer1, teethTimer2, odTimer1, odTimer2, ratioSnapTimer]) clearTimeout(t);
+  for (const t of [beltCorrectionTimer, teethTimer1, teethTimer2, odTimer1, odTimer2, ratioSnapTimer]) cancelLater(t);
   timerHolds.clear();
 }
 
@@ -1791,7 +1800,7 @@ async function applyHistory(step) {
   } finally {
     currentStep = step;
     // The redraw's own saves (debounced) belong to this step.
-    setTimeout(() => { restoringHistory = false; }, 900);
+    later(() => { restoringHistory = false; }, 900);
     refreshUndoUI();
   }
 }
@@ -1863,7 +1872,7 @@ window.addEventListener('pointerdown', () => { gestureActive = true; gestureReco
 // A click's follow-ups (a debounced redraw) still belong to it; a click into
 // a field lasts until the field is left (focusout).
 window.addEventListener('pointerup', () => {
-  setTimeout(() => {
+  later(() => {
     const a = document.activeElement;
     if (!(a && a.matches('input:not([type=checkbox]):not([type=radio]), select, textarea'))) gestureActive = false;
   }, 700);
@@ -1912,6 +1921,7 @@ window.onload = async () => {
   _syncNubHeightMax();
   _pageStarted = true;                            // the account's printer settings may land now
   if (_printerPending) _applyPrinter();
+  if (_designPending) await _applyDesign();       // and a saved design opened from My designs
 
   // Apply Feature Build tab state now that the DOM is fully ready.
   // loadSettings() sets previewTab but doesn't call setPreviewTab().
@@ -2145,9 +2155,9 @@ function onCenterDistanceInput() {
   updateMinDistance();
   updateBeltTeethFromCenter();
   // Cancel any pending correction and reschedule for 3 s
-  clearTimeout(beltCorrectionTimer);
+  cancelLater(beltCorrectionTimer);
   holdStep('belt');
-  beltCorrectionTimer = setTimeout(() => settleThen('belt', correctCenterDistance), 3000);
+  beltCorrectionTimer = later(() => settleThen('belt', correctCenterDistance), 3000);
   schedulePreview();
 }
 
@@ -2208,9 +2218,9 @@ async function _applyBeltTeeth() {
 // defer the API call (and centre-distance correction) until 3 s idle.
 function onBeltTeethInput() {
   updateBeltLengthDisplay();
-  clearTimeout(beltCorrectionTimer);
+  cancelLater(beltCorrectionTimer);
   holdStep('belt');
-  beltCorrectionTimer = setTimeout(() => settleThen('belt', _applyBeltTeeth), 3000);
+  beltCorrectionTimer = later(() => settleThen('belt', _applyBeltTeeth), 3000);
   schedulePreview();
 }
 
@@ -2226,9 +2236,9 @@ function updateBeltLengthDisplay() {
 // snap to nearest tooth and update everything after 3 s idle.
 function onBeltLengthInput() {
   _clearBeltError();
-  clearTimeout(beltCorrectionTimer);
+  cancelLater(beltCorrectionTimer);
   holdStep('belt');
-  beltCorrectionTimer = setTimeout(() => settleThen('belt', correctBeltLength), 3000);
+  beltCorrectionTimer = later(() => settleThen('belt', correctBeltLength), 3000);
 }
 
 async function correctBeltLength() {
@@ -2288,8 +2298,8 @@ async function onPitchChange() {
 // user can finish typing without the field being overwritten mid-entry.
 function onTeethChange(n) {
   holdStep('teeth' + n);
-  if (n === 1) { clearTimeout(teethTimer1); teethTimer1 = setTimeout(() => settleThen('teeth1', () => _doTeethChange(1)), 1000); }
-  else         { clearTimeout(teethTimer2); teethTimer2 = setTimeout(() => settleThen('teeth2', () => _doTeethChange(2)), 1000); }
+  if (n === 1) { cancelLater(teethTimer1); teethTimer1 = later(() => settleThen('teeth1', () => _doTeethChange(1)), 1000); }
+  else         { cancelLater(teethTimer2); teethTimer2 = later(() => settleThen('teeth2', () => _doTeethChange(2)), 1000); }
 }
 
 async function _doTeethChange(n) {
@@ -2335,8 +2345,8 @@ async function _doTeethChange(n) {
 
 function onODChange(n) {
   holdStep('od' + n);
-  if (n === 1) { clearTimeout(odTimer1); odTimer1 = setTimeout(() => settleThen('od1', () => _doODChange(1)), 1000); }
-  else         { clearTimeout(odTimer2); odTimer2 = setTimeout(() => settleThen('od2', () => _doODChange(2)), 1000); }
+  if (n === 1) { cancelLater(odTimer1); odTimer1 = later(() => settleThen('od1', () => _doODChange(1)), 1000); }
+  else         { cancelLater(odTimer2); odTimer2 = later(() => settleThen('od2', () => _doODChange(2)), 1000); }
 }
 
 async function _doODChange(n) {
@@ -2508,9 +2518,9 @@ function onGearRatioChange() {
   // Drive P2 immediately but don't snap the ratio display yet
   applyRatioToP2(t1, false);
   // Snap to true ratio 3 seconds after the user stops typing
-  clearTimeout(ratioSnapTimer);
+  cancelLater(ratioSnapTimer);
   holdStep('ratio');
-  ratioSnapTimer = setTimeout(() => settleThen('ratio', () => {
+  ratioSnapTimer = later(() => settleThen('ratio', () => {
     const t2 = parseInt(document.getElementById('p2_teeth').value) || 1;
     document.getElementById('gear_ratio').value = (t2 / t1).toFixed(3);
   }), 3000);
@@ -2950,13 +2960,25 @@ window.cctDesignThumbnail = async () => {
   g.drawImage(img, (c.width - w * s) / 2, (c.height - h * s) / 2, w * s, h * s);
   return c;
 };
-// Open from My designs: as Import applies a file's design.
-window.cctApplyDesign = async params => {
-  const p = new URLSearchParams(params);
-  migrateParams(p);
-  _applyUrlParams(p);
-  await onPitchChange();
-};
+// Open from My designs: as Import applies a file's design. tokens.js calls it on the window's
+// load, while the start-up may still be restoring this browser's design: it waits for that, or
+// the restore would put the old design back over it (designs_ui on msi, 2026-10-31).
+let _designPending = null;
+window.cctApplyDesign = params => new Promise(done => {
+  _designPending = { params, done };
+  if (_pageStarted) _applyDesign();
+});
+async function _applyDesign() {
+  const d = _designPending;
+  _designPending = null;
+  if (!d) return;
+  try {
+    const p = new URLSearchParams(d.params);
+    migrateParams(p);
+    _applyUrlParams(p);
+    await onPitchChange();
+  } finally { d.done(); }
+}
 // The account's printer settings (cct_common 0.41.0, behind printer_settings): tokens.js calls
 // this once, only on a fresh page (no query). Each one is a default: it fills a value this
 // browser still has at the tool's default (units mm, compensation 0 on both pulleys), never one
@@ -4667,8 +4689,8 @@ function onSplineShowChange(n) {
 const _splineFitTimer = {};
 const SPLINE_FIT = {};                  // pulley -> the last /api/spline answer
 function _fetchSplineFit(n) {
-  clearTimeout(_splineFitTimer[n]);
-  _splineFitTimer[n] = setTimeout(async () => {
+  cancelLater(_splineFitTimer[n]);
+  _splineFitTimer[n] = later(async () => {
     const pre = n === 1 ? '' : 'p2_', p = { pulley: String(n) };
     boreParams(p, n, pre);
     const out = document.getElementById(`spline${n}_ring_info`);

@@ -84,7 +84,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const fire = expr => js(`setTimeout(() => { ${expr}; }, 0); true`);
   const waitFor = async (expr, ms = 20000) => {
@@ -96,7 +97,7 @@ async function main() {
     await send('Page.navigate', { url });
     await waitFor("document.readyState === 'complete'");
     await js('window.cctTokens ? window.cctTokens.ready : true');
-    await sleep(800);
+    if (await js("typeof pageIdle === 'function'")) await settled(url);   // the sign-in page has no idle hook
   };
   const dialogTitle = () => js("document.querySelector('.cct-dialog-title')?.textContent || ''");
   const goLabel = () => js("document.querySelector('.cct-dl .cct-btn-primary')?.textContent || ''");
@@ -104,7 +105,7 @@ async function main() {
   const parts = () => js("[...document.querySelectorAll('.cct-dl-parts .cct-check')].map(l => l.textContent.trim())");
   const allTicked = () => js("[...document.querySelectorAll('.cct-dl input[type=checkbox]')].every(c => c.checked)");
   const tick = (idsel, on) => js(`(() => { const c = document.getElementById('${idsel}'); if (c.checked !== ${on}) c.click(); })()`);
-  const labelSettles = async () => { await sleep(300); await waitFor("!(document.querySelector('.cct-dl .cct-btn-primary')?.textContent || '').includes('…')"); return goLabel(); };
+  const labelSettles = async () => { await settled('the price'); await waitFor("!(document.querySelector('.cct-dl .cct-btn-primary')?.textContent || '').includes('…')"); return goLabel(); };
   const openWindow = async () => { await fire('openDownloadWindow()'); await waitFor("!!document.querySelector('.cct-dl')"); return labelSettles(); };
   const closeWindow = () => js("document.querySelector('.cct-dialog-overlay')?.remove()");
   const history = () => js("fetch('/api/account/history?limit=200').then(r => r.json())");
@@ -120,7 +121,7 @@ async function main() {
                                         + " && document.getElementById('loading-overlay').style.display !== 'flex'")) break;
       await sleep(300);
     }
-    await sleep(1000);
+    await settled('the zip');
   };
   const setMode3D = on => js(`(() => { const e = document.getElementById('feature_build'); if (e.checked !== ${on}) e.click(); })()`);
   const bumpTeeth = by => js(`(() => { const t = document.getElementById('teeth'); t.value = String(Number(t.value) + ${by});
@@ -132,7 +133,7 @@ async function main() {
   await js(`(() => { const on = id => { const e = document.getElementById(id); if (e && !e.checked) e.click(); };
     on('feature_build'); on('dual_enable'); on('spokes1_enabled'); on('flange1_enabled');
     on('flange1_3dprint'); on('flange1_top_separate'); })()`);  // separate top flange: a part of its own
-  await sleep(2500);
+  await settled('the parts on');
 
   if (MODE === 'off') {
     check('tokens off: account box hidden', await js("document.getElementById('cct-account').hidden"));
@@ -172,8 +173,9 @@ async function main() {
   const link = [...fs.readFileSync(ERRLOG, 'utf8').matchAll(/(http:\/\/\S+\/account\/login\?token=[A-Za-z0-9_-]+(?:&next=\S+)?)/g)].pop();
   check('sign-in link logged (dev, no Resend key)', !!link);
   await load(link[1]);
-  await js("document.querySelector('button[type=submit]').click()");
-  await sleep(1500); await settled('signed in'); await js('window.cctTokens.ready');
+  await js("window.__beforeSubmit = true; document.querySelector('button[type=submit]').click()");
+  await waitFor('!window.__beforeSubmit && document.readyState === "complete"', 30000);   // the page it goes to
+  await settled('signed in'); await js('window.cctTokens.ready');
   check('signed in: header shows email and 20 tokens',
         await js("document.querySelector('.cct-account-email')?.textContent === 'ui-test@example.com' && document.getElementById('cct-balance')?.textContent === '20 tokens'"));
   // Clicking the balance opens the token dialog: count, expiry dates, the
@@ -197,7 +199,7 @@ async function main() {
   await js(`(() => { const on = id => { const e = document.getElementById(id); if (e && !e.checked) e.click(); };
     on('feature_build'); on('dual_enable'); on('spokes1_enabled'); on('flange1_enabled');
     on('flange1_3dprint'); on('flange1_top_separate'); })()`);  // separate top flange: a part of its own
-  await sleep(2500);
+  await settled('the parts on');
 
   // 2. the 3D window
   let label = await openWindow();
@@ -250,7 +252,7 @@ async function main() {
   await closeWindow();
 
   // 4. the 2D window: drawings only
-  await setMode3D(false); await sleep(2000);
+  await setMode3D(false); await settled('2D');
   label = await openWindow();
   check('2D: only the drawings tier', JSON.stringify(await tiers()) === JSON.stringify(['2 tokens · 2D drawings']), await tiers());
   check('2D: no cost note with a single tier', await js("!document.querySelector('.cct-dl .cct-dl-costnote')"));
@@ -266,7 +268,7 @@ async function main() {
   check('2D zip: drawings only', !n2.step && !n2.stl && n2.svg >= 3 && n2.dxf >= 4, n2);
 
   // 5. a changed design costs again
-  await bumpTeeth(2); await sleep(1500);
+  await bumpTeeth(2); await settled('2 more teeth');
   label = await openWindow();
   check('changed design: 2D zip priced at 2 tokens', label === 'Download zip (2 tokens)', label);
   await closeWindow();
@@ -278,7 +280,7 @@ s = TokenStore(r"${path.join(LOGDIR, 'accounts.sqlite3')}")
 a = s.account_by_email("ui-test@example.com")
 s.credit(a, -(s.balance(a) - 1), kind="adjust", detail="browser test")`], { cwd: APPDIR });
   await js('cctTokens.refresh()');
-  await setMode3D(true); await sleep(2000);
+  await setMode3D(true); await settled('3D Mode');
   label = await openWindow();
   check('low balance: status says what you have', (await js("document.querySelector('.cct-dl-status').textContent")) === 'You have 1 token.',
         await js("document.querySelector('.cct-dl-status').textContent"));

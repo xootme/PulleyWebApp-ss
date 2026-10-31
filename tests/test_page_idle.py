@@ -93,3 +93,30 @@ def test_page_settles_its_start_up(client, monkeypatch):
     monkeypatch.setenv('QUEUE_DISABLED', '1')
     page = client.get('/').get_data(as_text=True)
     assert "historyReady = true; refreshUndoUI(); pageBusy--;" in page
+
+
+def test_a_typed_value_is_work_until_its_step_runs(client, monkeypatch):
+    """A typed Num. Teeth or Outer Dia. waits 1 s before the page asks the server, the belt's
+    correction and the ratio's snap 3 s: each is a later() (and cancelLater()), so the page
+    isn't idle until it has run. With a raw setTimeout a harness read the design before a
+    typed OD was applied (roundtrip_ui's design 1013, 2026-10-31: od 9.31 shown, 16 teeth kept)."""
+    monkeypatch.setenv('QUEUE_DISABLED', '1')
+    page = client.get('/').get_data(as_text=True)
+    for timer in ('teethTimer1', 'teethTimer2', 'odTimer1', 'odTimer2', 'beltCorrectionTimer', 'ratioSnapTimer'):
+        assert f'{timer} = later(' in page, timer
+        assert f'{timer} = setTimeout(' not in page and f'clearTimeout({timer})' not in page, timer
+    assert 'odTimer1, odTimer2, ratioSnapTimer]) cancelLater(t);' in page
+
+
+def test_the_pages_other_waits_are_work_too(client, monkeypatch):
+    """The out-of-range clamp (1 s), the spline's fitted figures, the undo restore's flag and a
+    click's follow-ups are later()s too, so a harness's settled() waits for them instead of a
+    fixed sleep (the harness sweep, 2026-10-31); and pageWaits() names what is still out."""
+    monkeypatch.setenv('QUEUE_DISABLED', '1')
+    page = client.get('/').get_data(as_text=True)
+    for line in ("clampTimers.set(el, later(function () {", "_splineFitTimer[n] = later(async () => {",
+                 "later(() => { restoringHistory = false; }, 900);",
+                 "window.addEventListener('pointerup', () => {\n  later(() => {"):
+        assert line in page.replace('\r\n', '\n'), line
+    assert 'clearTimeout(clampTimers' not in page and 'clearTimeout(_splineFitTimer' not in page
+    assert "fetches: [..._out.values()], timers: _owed.size," in page

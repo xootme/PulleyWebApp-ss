@@ -60,7 +60,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
@@ -86,7 +87,7 @@ async function main() {
   await js(`(() => { const fb = document.getElementById('feature_build'); if (!fb.checked) fb.click();
     const h = document.getElementById('hub1_enabled'); if (!h.checked) h.click();
     if (!document.getElementById('hub1-body').classList.contains('open')) toggleHub(1); })()`);
-  await sleep(800);
+  await settled('3D Mode, hub 1 open');
 
   // ── sizes ──
   const opts = await js("[...document.querySelectorAll('#hub1_screw_size option')].map(o => o.value)");

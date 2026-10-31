@@ -61,7 +61,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 10000) => {
     const t = Date.now();
@@ -84,15 +85,15 @@ async function main() {
     await click(sel);
     await js(`document.querySelector('${sel}').select()`);
     await send('Input.insertText', { text: String(value) });
-    await sleep(500);
+    await sleep(500);                                 // a moment in the field, as a person types
     await js(`document.querySelector('${sel}').blur()`);
-    await sleep(1200);
+    await settled(`typing ${sel}`);
   };
   const key = async (k, code) => {
     await js('document.activeElement && document.activeElement.blur()');
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, modifiers: 2, windowsVirtualKeyCode: k.toUpperCase().charCodeAt(0) });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, modifiers: 2, windowsVirtualKeyCode: k.toUpperCase().charCodeAt(0) });
-    await sleep(1500);
+    await settled(`Ctrl+${k}`);
   };
   const val = sel => js(`document.querySelector('${sel}').value`);
   const steps = () => js('undoStack.length');
@@ -114,19 +115,19 @@ async function main() {
   // several updates while in one field are still one step
   await click('#bore');
   await js("document.querySelector('#bore').select()");
-  await send('Input.insertText', { text: '9' }); await sleep(700);
+  await send('Input.insertText', { text: '9' }); await settled('9, still in the field');
   await js("document.querySelector('#bore').select()");
-  await send('Input.insertText', { text: '10' }); await sleep(700);
-  await js("document.querySelector('#bore').blur()"); await sleep(1200);
+  await send('Input.insertText', { text: '10' }); await settled('10, still in the field');
+  await js("document.querySelector('#bore').blur()"); await settled('leaving the bore');
   check('one visit to a field is one step, however many edits', (await steps()) === 2, await steps());
 
   // ── undo, redo ──
-  await click('#undo_btn'); await idle(); await sleep(800);
+  await click('#undo_btn'); await idle(); await settled('undo or redo');
   check('Undo puts the bore back', (await val('#bore')) === '8', await val('#bore'));
-  await click('#undo_btn'); await idle(); await sleep(800);
+  await click('#undo_btn'); await idle(); await settled('undo or redo');
   check('Undo again puts Teeth back', (await val('#teeth')) === '20', await val('#teeth'));
   check('…and nothing is left to undo', await js("document.getElementById('undo_btn').disabled"));
-  await click('#redo_btn'); await idle(); await sleep(800);
+  await click('#redo_btn'); await idle(); await settled('undo or redo');
   check('Redo brings Teeth back', (await val('#teeth')) === '24', await val('#teeth'));
   check('Redo tooltip names the next change', /Redo .*8 → 10/.test(await js("document.getElementById('redo_btn').title")),
         await js("document.getElementById('redo_btn').title"));
@@ -144,9 +145,9 @@ async function main() {
   // ── one click is one step, knock-ons included ──
   const before = await steps();
   const dualWas = await js("document.getElementById('dual_enable').checked");
-  await click('#dual_enable'); await sleep(2500);
+  await click('#dual_enable'); await settled('two pulleys');
   check('toggling Two Pulley Drive is one step', (await steps()) === before + 1, [before, await steps()]);
-  await click('#undo_btn'); await idle(); await sleep(1200);
+  await click('#undo_btn'); await idle(); await settled('undo or redo');
   check('Undo puts it back', (await js("document.getElementById('dual_enable').checked")) === dualWas);
   check('…with the Pulley 2 panel to match',
     (await js("document.getElementById('panel2').classList.contains('hidden')")) === !dualWas);
@@ -155,38 +156,35 @@ async function main() {
   // Min sets a rounded-up centre, then snaps it to a whole belt 3 s later:
   // only the settled centre is a step, and Undo goes back to before Min.
   await js("(() => { const d = document.getElementById('dual_enable'); if (!d.checked) d.click(); })()");
-  await sleep(5000);
-  await type('#center_distance', '150');
-  await sleep(4500);                                       // the 3 s snap lands
+  await settled('two pulleys');
+  await type('#center_distance', '150');                    // (settled: the 3 s snap has landed)
   const cBefore = await val('#center_distance'), sMin = await steps();
   await click('#min_distance_btn');
-  await sleep(600);
   check('while the snap is pending, Undo offers the change in progress',
-    (await js("document.getElementById('undo_btn').title")).includes('in progress'), await js("document.getElementById('undo_btn').title"));
+    await waitFor("(document.getElementById('undo_btn').title || '').includes('in progress')"), await js("document.getElementById('undo_btn').title"));
   check('…and no step is recorded yet', (await steps()) === sMin, [sMin, await steps()]);
-  await sleep(4500);
+  await settled('the snap');
   check('Min is one step once it settles', (await steps()) === sMin + 1, [sMin, await steps()]);
   const cMin = await val('#center_distance');
   check('…at the snapped centre', parseFloat(cMin) < parseFloat(cBefore), [cBefore, cMin]);
-  await click('#undo_btn'); await idle(); await sleep(1500);
+  await click('#undo_btn'); await idle(); await settled('undo or redo');
   check('Undo returns to the centre before Min', (await val('#center_distance')) === cBefore, [cBefore, await val('#center_distance')]);
-  await click('#redo_btn'); await idle(); await sleep(1500);
+  await click('#redo_btn'); await idle(); await settled('undo or redo');
   check('Redo returns to the snapped centre, not the rounded one', (await val('#center_distance')) === cMin, [cMin, await val('#center_distance')]);
   // Undo while the snap is still pending drops the change entirely
   const sPend = await steps();
   await click('#min_distance_btn');
-  await sleep(400);
-  await click('#undo_btn'); await idle(); await sleep(4500);
+  check('…the snap pending again', await waitFor("(document.getElementById('undo_btn').title || '').includes('in progress')"));
+  await click('#undo_btn'); await idle(); await settled('undo or redo');
   check('Undo during a pending snap drops the change', (await val('#center_distance')) === cMin && (await steps()) === sPend,
         [cMin, await val('#center_distance'), sPend, await steps()]);
 
   // Teeth under the minimum are clamped a second later: one step, the clamped one
   const t0 = await val('#teeth'), sT = await steps();
-  await type('#teeth', '3');
-  await sleep(4500);
+  await type('#teeth', '3');                                  // (settled: clamped a second later)
   const tMin = await val('#teeth');
   check('teeth under the minimum settle to the minimum as one step', tMin !== '3' && (await steps()) === sT + 1, [tMin, sT, await steps()]);
-  await click('#undo_btn'); await idle(); await sleep(1500);
+  await click('#undo_btn'); await idle(); await settled('undo or redo');
   check('Undo goes back to the teeth before, never to 3', (await val('#teeth')) === t0, [t0, await val('#teeth')]);
 
   // ── the automatic clearance height folds into the change that moved it ──
@@ -194,13 +192,12 @@ async function main() {
   await load(BASE + '/?family=Imperial&pitch=MXL&teeth=20&bore=5');
   await waitFor("document.getElementById('clearance_height').value === '2.5' || document.getElementById('clearance_height').value !== '0.5'", 6000);
   await js("(() => { const fb = document.getElementById('feature_build'); if (!fb.checked) fb.click(); })()");
-  await sleep(2500);
+  await settled('3D Mode');
   const s0 = await steps(), ch0 = await val('#clearance_height');
   await type('#belt_height', '4.8');
-  await sleep(1500);
   check('belt width and its automatic clearance are one step', (await steps()) === s0 + 1, [s0, await steps()]);
   check('…the clearance followed', (await val('#clearance_height')) === '2.3', await val('#clearance_height'));
-  await click('#undo_btn'); await idle(); await sleep(1500);
+  await click('#undo_btn'); await idle(); await settled('undo or redo');
   check('Undo puts both back', (await val('#belt_height')) === '10' && (await val('#clearance_height')) === ch0,
         [await val('#belt_height'), await val('#clearance_height'), ch0]);
 

@@ -19,8 +19,7 @@ def test_a_saved_design_is_the_whole_design():
 
 
 def test_open_applies_a_design_as_import_does():
-    body = PAGE[PAGE.index('window.cctApplyDesign = async params => {'):]
-    body = body[:body.index('\n};') + 3]
+    body = _body('async function _applyDesign() {')     # what cctApplyDesign runs, once the page has started
     for step in ('migrateParams(p);', '_applyUrlParams(p);', 'await onPitchChange();'):
         assert step in body, step
 
@@ -49,3 +48,17 @@ def test_the_accounts_printer_settings_are_defaults():
     start = start[:start.index('\n};')]
     assert start.index('const restored = await loadSettings();') < start.index('_pageStarted = true;') \
         < start.index('if (_printerPending) _applyPrinter();')
+
+
+def test_a_saved_design_opens_after_the_start_up_restore():
+    """tokens.js opens ?saved= on the window's load, while the start-up may still be restoring
+    this browser's design (loadSplines, then loadSettings): cctApplyDesign waits until the page
+    has started, or the restore puts the old design back over it (designs_ui on msi, 2026-10-31)."""
+    assert "window.cctApplyDesign = params => new Promise(done => {" in PAGE
+    assert "  if (_pageStarted) _applyDesign();" in PAGE
+    body = _body('async function _applyDesign() {')
+    assert '_applyUrlParams(p);' in body and 'await onPitchChange();' in body and 'd.done();' in body
+    start = PAGE[PAGE.index('window.onload = async () => {'):]
+    start = start[:start.index('\n};')]
+    assert start.index('const restored = await loadSettings();') < start.index('_pageStarted = true;') \
+        < start.index('if (_designPending) await _applyDesign();')

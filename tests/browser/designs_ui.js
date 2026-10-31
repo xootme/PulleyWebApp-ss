@@ -73,7 +73,8 @@ settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("saved_designs", T
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 20000) => {
     const t = Date.now();
@@ -84,10 +85,10 @@ settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("saved_designs", T
     await send('Page.navigate', { url });
     await waitFor("document.readyState === 'complete'");
     if (await js('!!window.cctTokens')) await js('window.cctTokens.ready');
-    await sleep(500);
+    if (await js("typeof pageIdle === 'function'")) await settled(url);   // the sign-in page has no idle hook
   };
   const fire = expr => js(`setTimeout(() => { ${expr}; }, 0); true`);
-  const labelSettles = async () => { await sleep(300); await waitFor("!(document.querySelector('.cct-dl .cct-btn-primary')?.textContent || '').includes('…')"); };
+  const labelSettles = async () => { await settled('the price'); await waitFor("!(document.querySelector('.cct-dl .cct-btn-primary')?.textContent || '').includes('…')"); };
 
   await send('Runtime.enable'); await send('Page.enable');
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
@@ -102,8 +103,9 @@ settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("saved_designs", T
   await js("document.querySelector('.cct-dialog .cct-btn-primary').click()");
   const link = [...fs.readFileSync(ERRLOG, 'utf8').matchAll(/(http:\/\/\S+\/account\/login\?token=[A-Za-z0-9_-]+(?:&next=\S+)?)/g)].pop();
   await load(link[1]);
-  await js("document.querySelector('button[type=submit]').click()");
-  await sleep(1500);
+  await js("window.__beforeSubmit = true; document.querySelector('button[type=submit]').click()");
+  await waitFor('!window.__beforeSubmit && document.readyState === "complete"', 30000);   // the page it goes to
+  await settled('signed in');
 
   // the design, in 3D Mode
   await load(`${BASE}/?${DESIGN}`); await settled('the design');
@@ -148,6 +150,10 @@ settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("saved_designs", T
   execFileSync(PY, ['-c', `
 from cct_common.settings import settings_for
 settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("printer_settings", True, by="designs_ui")`]);
+  // The server reads a setting at most every CACHE_S (30 s) and has already read this one off:
+  // wait until its api/account says printer, never a fixed time (on msi the save came first: 404).
+  check('the server sees printer settings on',
+        await waitFor("fetch('/api/account').then(r => r.json()).then(j => 'printer' in j)", 60000));
   const saved = await js(`fetch('/api/account/printer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ units: 'in', print_compensation_mm: 0.2 }) }).then(r => r.status)`);
   check('printer settings saved on the account', saved === 200, saved);
@@ -163,14 +169,14 @@ settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("printer_settings"
         Math.abs(await mmOf('print_extra') - 0.2) < 1e-9 && Math.abs(await mmOf('p2_print_extra') - 0.2) < 1e-9,
         [await mmOf('print_extra'), await mmOf('p2_print_extra')]);
   await send('Storage.clearDataForOrigin', { origin: new URL(BASE).origin, storageTypes: 'local_storage,session_storage' });
-  await load(`${BASE}/?${DESIGN}`); await settled('a design\'s address'); await sleep(1500);
+  await load(`${BASE}/?${DESIGN}`); await settled('a design\'s address');
   check('an address with a design keeps its own values',
         (await js("document.getElementById('units').value")) === 'mm' && (await mmOf('print_extra')) === 0,
         [await js("document.getElementById('units').value"), await mmOf('print_extra')]);
   await fresh('a fresh page again');
   await waitFor("Number(document.getElementById('print_extra').value) > 0", 10000);
   await js("(() => { const el = document.getElementById('print_extra'); el.value = 0.4; saveSettings(); return true; })()");
-  await load(BASE + '/'); await settled('a reload'); await sleep(1500);
+  await load(BASE + '/'); await settled('a reload');
   check('a value changed in this browser stays', Math.abs(await mmOf('print_extra') - 0.4) < 1e-9, await mmOf('print_extra'));
 
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : '  -> ' + String(JSON.stringify(r.detail)).slice(0, 600)}`);

@@ -70,7 +70,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 15000) => {
     const t = Date.now();
@@ -93,7 +94,7 @@ async function main() {
         await js(`!document.getElementById('hub1_enabled').checked && document.getElementById('hub1-body').style.opacity === '0.45'`));
   await js(`(() => { const f = document.getElementById('feature_build'); f.checked = true; onFeatureBuildToggle(); })()`);
   await waitFor(`document.getElementById('preview-footer').textContent.includes('drag to orbit')`, 30000);
-  await sleep(2500);
+  await settled('3D Mode');
   check('row 13: Import stays in 3D Mode', await js(`document.getElementById('import_btn').offsetParent !== null`));
   const cards = await js(`[...document.querySelectorAll('#panel1 .card')].filter(c => c.offsetParent !== null)
     .map(c => (c.querySelector(':scope > h2, :scope > .hub-header') || c).textContent.replace(/[▲▼ⓘ]/g, '').replace(/\\s+/g, ' ').trim())`);
@@ -112,7 +113,18 @@ async function main() {
   // own viewer orbited +y). Top looks straight down with +y up; the next view puts +z back.
   const camRel = () => js(`(() => { const p = threeCamera.position, t = threeControls.target;
     return [p.x - t.x, p.y - t.y, p.z - t.z, ...threeCamera.up.toArray()]; })()`);
-  await js(`snapView('oblique')`); await sleep(1200);
+  // The camera at rest: the same place 5 frames running (a drag's damping coasts on; a snap is
+  // at once). Not page work, so not in settled().
+  const camStill = async () => {
+    let last = null, same = 0;
+    for (let i = 0; i < 600 && same < 5; i++) {
+      const now = JSON.stringify(await js(`new Promise(r => requestAnimationFrame(() => r((() => { const p = threeCamera.position;
+        return [p.x, p.y, p.z].map(v => v.toFixed(6)); })())))`));
+      same = now === last ? same + 1 : 0; last = now;
+    }
+    return same >= 5;
+  };
+  await js(`snapView('oblique')`); await camStill();
   const box = await js(`(() => { const r = document.getElementById('three-canvas').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
   const before = await camRel();
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box[0], y: box[1] });
@@ -122,17 +134,17 @@ async function main() {
     await sleep(30);
   }
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box[0] + 150, y: box[1], button: 'left', clickCount: 1 });
-  await sleep(1500);
+  await camStill();
   const after = await camRel();
   check('3D: a sideways drag orbits z (the camera keeps its height)',
         Math.abs(after[2] - before[2]) < 1e-3 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1, { before, after });
-  await js(`snapView('top')`); await sleep(1200);
+  await js(`snapView('top')`); await camStill();
   const top = await camRel();
   check('3D: Top looks straight down, +y up', Math.hypot(top[0], top[1]) < 1e-3 && top[2] > 0 && top[4] === 1, top);
-  await js(`snapView('front')`); await sleep(1200);
+  await js(`snapView('front')`); await camStill();
   check('3D: the next view puts +z back up', (await camRel()).slice(3).join() === '0,0,1', await camRel());
   await js(`(() => { const f = document.getElementById('feature_build'); f.checked = false; onFeatureBuildToggle(); })()`);
-  await sleep(1200);
+  await settled('2D');
 
   // ── 2. the status line names both pulleys and the drive ─────────────────────
   const line2d = await text('preview-footer');
@@ -145,20 +157,20 @@ async function main() {
         await waitFor(`document.getElementById('preview-footer').textContent.includes('drag to orbit')`, 30000),
         await text('preview-footer'));
   await js(`(() => { const f = document.getElementById('feature_build'); f.checked = false; onFeatureBuildToggle(); })()`);
-  await sleep(1500);
+  await settled('leaving 3D Mode');
   const back = await text('preview-footer');
   check('leaving 3D Mode: the 2D line is back', !back.includes('3D') && !back.includes('orbit') && /P1: \d+T/.test(back), back);
 
   // ── 4. re-ticking Two Pulley Drive keeps the centre distance ────────────────
   await js(`(async () => { document.getElementById('center_distance').value = 120; await correctCenterDistance(); })()`);
-  await sleep(800);
+  await settled('the centre');
   const c0 = parseFloat(await val('center_distance'));
   check('a centre distance near 120 mm is set', Math.abs(c0 - 120) < 3, c0);
   await js(`(() => { const d = document.getElementById('dual_enable'); d.checked = false; onDualToggle(); })()`);
-  await sleep(800);
+  await settled('one pulley');
   check('one pulley: left panel says "Pulley"', (await text('panel1-title')) === 'Pulley');
   await js(`(() => { const d = document.getElementById('dual_enable'); d.checked = true; onDualToggle(); })()`);
-  await sleep(2500);
+  await settled('two pulleys');
   const c1 = parseFloat(await val('center_distance'));
   check('re-ticked: the centre distance is kept', Math.abs(c1 - c0) < 0.01, { before: c0, after: c1 });
   check('re-ticked: left panel says "Pulley 1"', (await text('panel1-title')) === 'Pulley 1');
@@ -182,7 +194,7 @@ async function main() {
   await js(`document.getElementById('bore').value = 8`);
   const undoBefore = await js(`document.getElementById('undo_btn').disabled`);
   await js(`(() => { const u = document.getElementById('units'); u.value = 'in'; u.dispatchEvent(new Event('change')); })()`);
-  await sleep(1200);
+  await settled('inch');
   check('inch: Bore shows 0.3150 in', (await nativeText('bore')) === '0.3150', await nativeText('bore'));
   check('inch: the script still reads 8 mm', (await val('bore')) === '8', await val('bore'));
   check('inch: the labels say in', await js(`document.querySelector('label[for="bore"] .unit-label').textContent === 'in'`));
@@ -190,16 +202,17 @@ async function main() {
   check('inch: Pitch diameter in inches', /in$/.test(await text('pitch-circle-info')), await text('pitch-circle-info'));
   check('the switch is not an undo step', (await js(`document.getElementById('undo_btn').disabled`)) === undoBefore);
   await typeIn('bore', '0.5');
-  await sleep(600);
+  await settled('0.5 in');
   check('typed 0.5 in: the design gets 12.7 mm', (await val('bore')) === '12.7' && (await js(`collectSettings().bore`)) === '12.7', await val('bore'));
-  await sleep(1200);
-  await send('Page.reload'); await sleep(500);
+  await js('window.__beforeReload = true');
+  await send('Page.reload');
+  await waitFor('!window.__beforeReload && document.readyState === "complete"', 30000);   // the new page, not the old
   await settled('reload');
   check('reload: still inch', (await val('units')) === 'in');
   check('reload: Bore shows 0.5000 in, is 12.7 mm', (await nativeText('bore')) === '0.5000' && (await val('bore')) === '12.7',
         [await nativeText('bore'), await val('bore')]);
   await js(`(() => { const u = document.getElementById('units'); u.value = 'mm'; u.dispatchEvent(new Event('change')); })()`);
-  await sleep(800);
+  await settled('mm');
   check('back to mm: Bore shows 12.7', (await nativeText('bore')) === '12.7', await nativeText('bore'));
 
   // ── 7. panels and preview, as Sprocket and Gear Designer (rows 19, 22, 25–30) ──
@@ -210,10 +223,10 @@ async function main() {
   const tabs = await js(`[...document.querySelectorAll('button.preview-tab')].filter(b => b.offsetParent !== null).map(b => b.id).join()`);
   check('row 25: one Belt toggle, no 2D tab', tabs === 'tab-belt', tabs);
   await js(`document.getElementById('tab-belt').click()`);
-  await sleep(1500);
+  await settled('the belt view');
   check('row 25: Belt toggles the belt view on', await js(`previewTab === 'belt' && document.getElementById('tab-belt').classList.contains('active')`));
   await js(`document.getElementById('tab-belt').click()`);
-  await sleep(1500);
+  await settled('the belt view');
   check('…and off again, back to the pulleys', await js(`previewTab === 'pulley'`));
   check('row 26: no OD readout', !(await js(`!!document.getElementById('od-label')`)));
   // Row 27: the drive preview (a PNG): pulley 1 light blue, pulley 2 light red.

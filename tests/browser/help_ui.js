@@ -65,7 +65,8 @@ async function main() {
       if (await js("document.readyState === 'complete' && typeof pageIdle === 'function' && pageIdle()").catch(() => false)) return;
       await sleep(150);
     }
-    throw new Error(`the page never settled in ${ms / 1000} s (${what})`);
+    const waits = await js("typeof pageWaits === 'function' ? pageWaits() : null").catch(() => null);
+    throw new Error(`the page never settled in ${ms / 1000} s (${what}); it waits on ${JSON.stringify(waits)}`);
   };
   const waitFor = async (expr, ms = 15000) => {
     const t = Date.now();
@@ -80,11 +81,13 @@ async function main() {
   const hover = async (selector, picture) => {
     await js(`document.querySelector('${selector}').dispatchEvent(new MouseEvent('mouseenter'))`);
     const shown = await waitFor(`(() => { const p = document.querySelector('.feature-pic');
-      return p.classList.contains('open') && p.querySelector('img').src.endsWith('${picture}'); })()`, 3000);
-    const inView = await js(`(() => { const r = document.querySelector('.feature-pic').getBoundingClientRect();
-      return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; })()`);
+      return p.classList.contains('open') && p.querySelector('img').src.endsWith('${picture}'); })()`);
+    // placed once its picture has loaded: wait for that, not the first look
+    const inView = await waitFor(`(() => { const p = document.querySelector('.feature-pic'), r = p.getBoundingClientRect();
+      return p.querySelector('img').complete && r.width > 0
+        && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; })()`);
     await js(`document.querySelector('${selector}').dispatchEvent(new MouseEvent('mouseleave'))`);
-    const hidden = await waitFor(`!document.querySelector('.feature-pic').classList.contains('open')`, 3000);
+    const hidden = await waitFor(`!document.querySelector('.feature-pic').classList.contains('open')`);
     check(`hover ${selector}: shows ${picture}, in view, hides on leave`, shown && inView && hidden,
           { shown, inView, hidden });
   };
@@ -94,7 +97,7 @@ async function main() {
   await hover('label[for="spokes2_fillet_tip"]', '/static/help/fillets.svg');   // spokes_ keys
   await js(`(() => { const f = document.getElementById('feature_build');         // 3D panels
     if (!f.checked) f.click(); return true; })()`);
-  await sleep(500);
+  await settled('3D Mode');
   await hover('label[for="hub1_retention"]', '/static/help/hub_retention.svg'); // hub_ keys
   await hover('label[for="hub2_height"]', '/static/help/hub_size.svg');
   await hover('label[for="bore1_shape"]', '/static/help/bore_shape.svg');         // bore_ keys (a macro)
@@ -117,7 +120,7 @@ async function main() {
   // wide pictures show at their own size (text stays readable), capped to the window
   await js(`document.querySelector('label[for="hub1_retention"]').dispatchEvent(new MouseEvent('mouseenter'))`);
   await waitFor(`document.querySelector('.feature-pic').classList.contains('open') &&
-                 document.querySelector('.feature-pic img').complete`, 3000);
+                 document.querySelector('.feature-pic img').complete`);
   const shown = await js(`(() => { const i = document.querySelector('.feature-pic img');
     return [i.getBoundingClientRect().width, i.naturalWidth, innerWidth]; })()`);
   check('pop-up shows the picture at its own size (or the window width)',
@@ -125,7 +128,7 @@ async function main() {
   await js(`document.querySelector('label[for="hub1_retention"]').dispatchEvent(new MouseEvent('mouseleave'))`);
   await js(`(() => { const f = document.getElementById('feature_build');
     if (f.checked) f.click(); return true; })()`);
-  await sleep(500);
+  await settled('2D');
   check('hover labels are marked', await js(`document.querySelectorAll('label.has-picture').length >= 20`),
         await js(`document.querySelectorAll('label.has-picture').length`));
 
@@ -167,7 +170,7 @@ async function main() {
   }
 
   // ── 3. spoke fit warning and Auto-fit (the reported case) ────────────────────
-  await setField('p2_teeth', '30'); await sleep(600);
+  await setField('p2_teeth', '30'); await settled('30 teeth');
   await js(`(() => {
     const set = (k, val) => { document.getElementById('spokes2_' + k).value = val; };
     document.getElementById('spokes2_enabled').checked = true;
@@ -191,7 +194,7 @@ async function main() {
     check('warning goes once the settings fit', cleared);
   }
   // a pulley too small for any spokes: warning, no button
-  await setField('pitch', '3M'); await setField('p2_teeth', '12'); await sleep(600);
+  await setField('pitch', '3M'); await setField('p2_teeth', '12'); await settled('3M, 12 teeth');
   await js(`(() => { document.getElementById('spokes2_hub_od').value = 30; onSpokesChange(2); return true; })()`);
   const none = await waitFor(`(() => { const w = document.getElementById('spokes2_overlap_warn');
     return w.style.display === 'block' && w.textContent.includes('No spokes fit'); })()`);
@@ -204,20 +207,20 @@ async function main() {
   const escape = async () => {
     for (const type of ['keyDown', 'keyUp'])
       await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-    await sleep(300);
+    await settled('Escape');
   };
   const isShown = id => js(`(() => { const el = document.getElementById('${id}');
     return !!el && getComputedStyle(el).display !== 'none'; })()`);
   const before = errors.length;
   await js(`document.querySelector('.btn-help[data-help2d]').click()`);
-  check('Escape: help opens', await waitFor(`getComputedStyle(document.getElementById('help-overlay')).display !== 'none'`, 3000));
+  check('Escape: help opens', await waitFor(`getComputedStyle(document.getElementById('help-overlay')).display !== 'none'`));
   await escape();
   check('Escape: closes help', !(await isShown('help-overlay')));
-  await js(`openBugReport()`); await sleep(300);
+  await js(`openBugReport()`); await settled('the bug report');
   check('Escape: bug report opens', await isShown('bug-report-overlay'));
   await escape();
   check('Escape: closes the bug report', !(await isShown('bug-report-overlay')));
-  await js(`openImportDialog()`); await sleep(300);
+  await js(`openImportDialog()`); await settled('import');
   check('Escape: import opens', await isShown('import-overlay'));
   await escape();
   check('Escape: closes import', !(await isShown('import-overlay')));
