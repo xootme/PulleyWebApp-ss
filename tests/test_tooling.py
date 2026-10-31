@@ -142,6 +142,30 @@ def pg_url():
             conn.execute(f"DROP SCHEMA {schema} CASCADE")
 
 
+def test_the_ledger_is_read_as_of_the_time(monkeypatch):
+    """Without a Postgres (the night has none, so the test below skips there): both totals are
+    asked as of the time, the accounts by created_at and the ledger by ts, and nothing else."""
+    import types
+    import release
+    asked = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, params):
+            asked.append((sql, params))
+            return types.SimpleNamespace(fetchone=lambda: (len(asked),))
+    monkeypatch.setitem(sys.modules, "psycopg",
+                        types.SimpleNamespace(connect=lambda *a, **k: Conn(), Error=Exception))
+    assert release.ledger_totals("postgresql://test", 1_000_001.0) == (1, 2)
+    assert asked == [("SELECT COUNT(*) FROM accounts WHERE created_at < %s", (1_000_001.0,)),
+                     ("SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ts < %s", (1_000_001.0,))]
+
+
 def test_the_ledger_totals_as_of_a_time(pg_url):
     """The accounts and the sum of every balance written before the time; later work is left out,
     and a lost entry or account shows."""
