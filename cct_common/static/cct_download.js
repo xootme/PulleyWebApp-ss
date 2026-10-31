@@ -135,6 +135,13 @@
     }
 
     const status = el("p", "cct-dl-status");
+    // A message a person's own action wrote (the save's answer, the zip's
+    // progress or failure) counts up `said`. The price line, which waits on
+    // the quote, is only written if nothing was said since that quote was
+    // asked for, so a late quote never covers "Saved to My designs." (0.56.3,
+    // found by Gear's designs_ui).
+    let said = 0;
+    const say = (text) => { said++; status.textContent = text; };
     const cancel = el("button", "cct-btn", "Cancel");
     cancel.type = "button";
     const go = el("button", "cct-btn cct-btn-primary", "Download zip");
@@ -151,7 +158,7 @@
       save.addEventListener("click", async () => {
         save.disabled = true;
         const r = await tokens.saveDesign();
-        status.textContent = r.ok ? "Saved to My designs." : r.error;
+        say(r.ok ? "Saved to My designs." : r.error);
         save.disabled = false;
       });
       buttons.append(save);
@@ -216,18 +223,20 @@
       if (charging.unavailable) { go.textContent = "Download zip"; status.textContent = "Accounts are temporarily unavailable."; return; }
       if (!charging.signedIn) { go.textContent = "Sign in to download"; status.textContent = ""; return; }
       go.textContent = "Download zip …";
+      const asked = said;
       const q = await charging.quote(top);
       if (mine !== seq) return;                       // a newer tick is already pricing
       quote = q;
-      if (!q) { go.textContent = "Download zip"; status.textContent = ""; return; }
+      const price = (text) => { if (said === asked) status.textContent = text; };   // nothing said since
+      if (!q) { go.textContent = "Download zip"; price(""); return; }
       if (q.cost === 0) {
         go.textContent = "Download zip (already paid)";
-        status.textContent = "Already unlocked for this design — no tokens used.";
+        price("Already unlocked for this design — no tokens used.");
       } else {
         go.textContent = `Download zip (${tokensText(q.cost)})`;
-        status.textContent = q.cost > q.balance
+        price(q.cost > q.balance
           ? `You have ${plural(q.balance, "token")}.`
-          : `Balance: ${q.balance} → ${q.balance - q.cost}.`;
+          : `Balance: ${q.balance} → ${q.balance - q.cost}.`);
       }
     };
     dlg.addEventListener("change", update);
@@ -235,7 +244,7 @@
 
     const ui = {
       close,
-      status: (text) => { status.textContent = text; },
+      status: say,
       enable: () => { go.disabled = false; },
     };
     go.addEventListener("click", async () => {
@@ -266,7 +275,7 @@
       try {
         await submit(body, ui);
       } catch (e) {
-        status.textContent = e.message || String(e);
+        say(e.message || String(e));
         go.disabled = false;
         reportFailure(submitFailure(e, body, Date.now() - t0));
       }

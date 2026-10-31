@@ -22,6 +22,18 @@ task cctcommon-brevo-sync-for-the-newsletter-opt-in).
   who's subscribed here. Missing ones are added, extras deleted, and anyone
   Brevo blocklisted gets a 0 row (an unsubscribe whose webhook we missed).
   It also catches choices made in apps still on an older cct_common.
+- While newsletter_opt_in is off (0.55.0; found by Pulley), reconcile()
+  doesn't even read the list, so a list that already has contacts (imported
+  another way) is never emptied because nobody here is subscribed. The
+  drain then sends only "delete" jobs: one person's own unsubscribe or
+  account deletion, which the privacy text promises to carry out (0.55.1).
+  Adds, and the reconcile's bulk deletions ("extra" jobs), wait until it's
+  on. Each says why in one log line, and the admin page says it too.
+- A reconcile that would delete more than RECONCILE_GUARD_MIN contacts and
+  more than RECONCILE_GUARD_SHARE of the list deletes none of them, and the
+  log and the admin page say how many it held back. It still adds the
+  missing ones and records Brevo's unsubscribes. A big clean-up is a
+  deliberate reconcile(allow_big=True).
 - A contact is just its email: no name, account id or tool.
 - The key (0.44.0): one that starts "xsmtpsib-" is Brevo's SMTP key, which its
   API refuses, so nothing is sent with it and the admin page says so; a 401
@@ -43,6 +55,13 @@ from typing import Callable, Optional
 from .sqlite_db import SqliteDB
 
 log = logging.getLogger(__name__)
+
+# The reconcile's guard (0.55.0): it deletes no extras when they're more than
+# both of these: RECONCILE_GUARD_MIN contacts and this share of the list.
+RECONCILE_GUARD_MIN = 10
+RECONCILE_GUARD_SHARE = 0.2
+OFF = "newsletter sign-up (newsletter_opt_in) is off"
+_said_off = False                                    # the drain's one log line while it's off
 
 API = "https://api.brevo.com/v3"
 SMTP_KEY_PREFIX = "xsmtpsib-"         # Brevo's SMTP key; its API needs an API key (xkeysib-...)
@@ -84,7 +103,7 @@ CREATE TABLE IF NOT EXISTS newsletter_sync_state (
 def enqueue(db, account_id: str, email: Optional[str], action: str, now: float) -> None:
     """Queue a Brevo change inside the caller's write (Newsletter.record,
     delete_account): the latest one for the account wins."""
-    if action not in ("add", "delete") or not email:
+    if action not in ("add", "delete", "extra") or not email:
         return
     if account_id:
         db.execute("UPDATE newsletter_sync SET done_at = ?, email = NULL, last_error = 'superseded' "
@@ -210,17 +229,32 @@ class NewsletterSync(SqliteDB):
         key, list_id = self.config()
         return Brevo(key, self._http) if key and list_id else None
 
+    def opt_in_on(self) -> bool:
+        """The sign-up box (newsletter_opt_in): while it's off nothing reaches Brevo."""
+        from .settings import setting
+        return setting(self.path, "newsletter_opt_in") is True
+
     def drain(self, limit: int = BATCH) -> dict:
         """Run the jobs that are due; {"done", "failed", "waiting"}."""
         brevo, (_, list_id) = self.brevo(), self.config()
         now = self._clock()
+        on = self.opt_in_on()                         # off: only one person's own deletes go (0.55.1)
         with self._read() as db:
             jobs = [dict(r) for r in db.execute(
-                "SELECT * FROM newsletter_sync WHERE done_at IS NULL AND next_at <= ? ORDER BY id LIMIT ?",
-                (now, limit)).fetchall()]
+                "SELECT * FROM newsletter_sync WHERE done_at IS NULL AND next_at <= ?"
+                + ("" if on else " AND action = 'delete'") + " ORDER BY id LIMIT ?", (now, limit)).fetchall()]
         done = failed = 0
         if brevo is None:
             return {"done": 0, "failed": 0, "waiting": self.waiting()}
+        global _said_off
+        if not on:
+            held = self.waiting() - len(jobs)
+            if held and not _said_off:
+                log.warning("newsletter sync: %s, so only people's own deletions are sent to Brevo; "
+                            "%d other jobs wait", OFF, held)
+                _said_off = True
+        else:
+            _said_off = False
         for job in jobs:
             try:
                 (brevo.add(job["email"], list_id) if job["action"] == "add" else brevo.delete(job["email"], list_id))
@@ -249,11 +283,16 @@ class NewsletterSync(SqliteDB):
         with self._read() as db:
             return int(db.execute("SELECT COUNT(*) FROM newsletter_sync WHERE done_at IS NULL").fetchone()[0])
 
-    def reconcile(self) -> Optional[dict]:
-        """Make the list match who's subscribed here (None while not set up)."""
+    def reconcile(self, *, allow_big: bool = False) -> Optional[dict]:
+        """Make the list match who's subscribed here (None while not set up).
+        Nothing at all while newsletter_opt_in is off; no deletions when
+        they'd be more than the guard allows, unless `allow_big`."""
         brevo, (_, list_id) = self.brevo(), self.config()
         if brevo is None:
             return None
+        if not self.opt_in_on():
+            log.warning("newsletter sync: %s, so the reconcile left Brevo's list %s as it is", OFF, list_id)
+            return self._keep_result({"added": 0, "deleted": 0, "unsubscribed": 0, "skipped": OFF})
         from .newsletter import Newsletter
         news = Newsletter(self.path, clock=self._clock)
         try:
@@ -268,13 +307,22 @@ class NewsletterSync(SqliteDB):
         with self._read() as db:
             ids = {r["email"].lower(): r["id"] for r in db.execute(
                 "SELECT id, email FROM accounts WHERE email NOT LIKE 'deleted:%'").fetchall()}
+        extras = [e for e, blocked in theirs.items() if e not in ours]
+        limit = max(RECONCILE_GUARD_MIN, len(theirs) * RECONCILE_GUARD_SHARE)
+        hold = len(extras) > limit and not allow_big
+        if hold:
+            out.update(held=len(extras), of=len(theirs))
+            log.warning("newsletter sync: the reconcile would delete %d of the %d contacts on Brevo's list %s "
+                        "(more than %d, or %d%% of the list), so it deleted none; a deliberate clean-up is "
+                        "reconcile(allow_big=True)", len(extras), len(theirs), list_id, RECONCILE_GUARD_MIN,
+                        round(RECONCILE_GUARD_SHARE * 100))
         for email, blocked in theirs.items():
             if blocked and email in ours:                     # unsubscribed in Brevo, webhook missed
                 news.record(ids[email], False, app="brevo", source="brevo")   # queues the delete
                 out["unsubscribed"] += 1
-            elif email not in ours:
+            elif email not in ours and not hold:          # "extra": waits while sign-up is off
                 with self._write() as db:
-                    enqueue(db, ids.get(email, ""), email, "delete", now)
+                    enqueue(db, ids.get(email, ""), email, "extra", now)
                 out["deleted"] += 1
         for email in ours:
             if email not in theirs and email in ids:
@@ -282,10 +330,14 @@ class NewsletterSync(SqliteDB):
                     enqueue(db, ids[email], email, "add", now)
                 out["added"] += 1
         out.update(self.drain(limit=10_000))
+        return self._keep_result(out)
+
+    def _keep_result(self, out: dict) -> dict:
+        """The reconcile's result, for the admin page."""
         with self._write() as db:
             db.execute("INSERT INTO newsletter_sync_state (key, value, updated_at) VALUES ('reconcile', ?, ?) "
                        "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                       (json.dumps(out, sort_keys=True), now))
+                       (json.dumps(out, sort_keys=True), self._clock()))
         return out
 
     def status(self) -> dict:
@@ -297,7 +349,7 @@ class NewsletterSync(SqliteDB):
             row = db.execute("SELECT value, updated_at FROM newsletter_sync_state WHERE key = 'reconcile'").fetchone()
             refused = db.execute("SELECT value FROM newsletter_sync_state WHERE key = 'refused'").fetchone()
         return {"configured": bool(key and list_id), "api_key": bool(key), "list_id": list_id,
-                "key_problem": self.key_problem(),
+                "key_problem": self.key_problem(), "opt_in": self.opt_in_on(),
                 "refused": json.loads(refused["value"])["code"] if refused else None,
                 "waiting": self.waiting(), "failing": failing,
                 "last_reconcile": row["updated_at"] if row else None,

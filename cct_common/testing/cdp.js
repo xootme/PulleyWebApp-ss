@@ -41,7 +41,9 @@
  *                  waits on (a string, or anything JSON), and a settle that
  *                  fails prints it with the requests still open (0.32.1)
  *   waitIdleMs     waitIdle()'s default timeout (20 s)
- *   idleThrows     waitIdle() throws when it runs out, rather than returning false
+ *   idleThrows     waitIdle() throws when it runs out, rather than returning false;
+ *                  the error names what the page still waits on, as a failed
+ *                  settle does (0.55.2)
  *   settleMs       how long opening or reloading the page may take to settle (60 s)
  *   leave          the event setValue() fires after 'input', as leaving the
  *                  field does: "focusout" (Gear's refusal gate), "change"
@@ -199,7 +201,7 @@ function forApp({
         .result.result.value;
     // Wait until the page has applied every change (window.<idle>): the
     // debounce has fired, its requests are back and any 3D model has loaded.
-    const waitIdle = async (timeout = waitIdleMs) => {
+    const idleWithin = async (timeout) => {
       const t0 = Date.now();
       await sleep(30);
       while (Date.now() - t0 < timeout) {
@@ -208,7 +210,14 @@ function forApp({
         if (await evaluate(`!!window.${idle} && window.${idle}()`)) return true;
         await sleep(50);
       }
-      if (idleThrows) throw new Error(`the page was still drawing after ${timeout / 1000} s`);
+      return false;
+    };
+    // Given up with idleThrows: the first line says so, the next ones what
+    // the page still waits on (0.55.2: Sprocket's saved_ui gave up with no
+    // way to tell why).
+    const waitIdle = async (timeout = waitIdleMs) => {
+      if (await idleWithin(timeout)) return true;
+      if (idleThrows) throw new Error(`the page was still drawing after ${timeout / 1000} s\n${await waitingOn()}`);
       return false;
     };
     // What the page still waits on, for a settle that failed: the requests
@@ -238,9 +247,7 @@ function forApp({
     // handlers). Not settled in time is a failure, never a page to test. The
     // first line says so; the next ones what it still waits on.
     const settled = async (what, ms) => {
-      let idleNow = false;
-      try { idleNow = await waitIdle(ms); } catch { /* idleThrows: said below */ }
-      if (!idleNow) throw new Error(`${what}: the page never settled in ${ms / 1000} s\n${await waitingOn()}`);
+      if (!await idleWithin(ms)) throw new Error(`${what}: the page never settled in ${ms / 1000} s\n${await waitingOn()}`);
     };
     // Reload and wait for the new document's first drawing. The old document is
     // marked, so its idle answer can't be taken for the new one's. The settle

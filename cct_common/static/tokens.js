@@ -112,6 +112,21 @@
   const BASE = (script && script.dataset && script.dataset.apiBase) || '';
   const api = path => BASE + path;
 
+  // One retry after a dropped connection (0.56.4, from Sprocket's read): fetch
+  // rejects with a TypeError when no answer came at all, and a request that
+  // only reads (or prices) is asked once more. Never after an answer (an HTTP
+  // error is the server's word), nor for a request that does something (the
+  // zip, the login link's email, sign-out, a card's confirm, a design kept):
+  // those say their error as before.
+  async function fetchRetry(url, opts) {
+    try {
+      return await fetch(url, opts);
+    } catch (e) {
+      if (!e || e.name !== 'TypeError') throw e;
+      return fetch(url, opts);
+    }
+  }
+
   const T = {
     enabled: false,
     unavailable: false,
@@ -133,7 +148,7 @@
   async function refresh() {
     let r;
     try {
-      r = await fetch(api('api/account'), { credentials: 'same-origin' });
+      r = await fetchRetry(api('api/account'), { credentials: 'same-origin' });
     } catch (e) {
       return;                         // offline: leave the page as it is
     }
@@ -195,7 +210,7 @@
   let _offer = null;
   function loadOffer() {
     if (!_offer) {
-      _offer = fetch(api('api/offer'), { credentials: 'same-origin' })
+      _offer = fetchRetry(api('api/offer'), { credentials: 'same-origin' })
         .then(r => (r.ok ? r.json() : null))
         .catch(() => null)
         .then(d => { T.offer = d; render(); return d; });     // the header follows the offer (0.47.0)
@@ -317,7 +332,7 @@
   async function providers() {
     if (_providers) return _providers;
     try {
-      const r = await fetch('/api/account/providers', { credentials: 'same-origin' });
+      const r = await fetchRetry('/api/account/providers', { credentials: 'same-origin' });
       _providers = r.ok ? (await r.json()).providers || [] : [];
     } catch (e) {
       _providers = [];
@@ -498,7 +513,7 @@
   let _checkout = null;                 // /api/payments/config, read once a purchase
   function checkoutConfig() {
     if (!_checkout) {
-      _checkout = fetch('/api/payments/config', { credentials: 'same-origin' })
+      _checkout = fetchRetry('/api/payments/config', { credentials: 'same-origin' })
         .then(r => (r.ok ? r.json() : null)).catch(() => null);
     }
     return _checkout;
@@ -762,7 +777,7 @@
     if (!did) return null;
     let r;
     try {
-      r = await fetch(api('api/tokens/quote'), {
+      r = await fetchRetry(api('api/tokens/quote'), {      // prices only: safe to ask again
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ design_id: did, fmt }),
@@ -803,7 +818,7 @@
     if (!id || !T.enabled) return;
     if (!T.signedIn) { await signIn(); return; }
     let r;
-    try { r = await fetch(api('api/designs/' + encodeURIComponent(id)), { credentials: 'same-origin' }); }
+    try { r = await fetchRetry(api('api/designs/' + encodeURIComponent(id)), { credentials: 'same-origin' }); }
     catch (e) { return; }
     const d = await r.json().catch(() => ({}));
     if (r.status === 409 && d.open) { location.replace(d.open); return; }
@@ -824,7 +839,7 @@
     const code = q.get('shared');
     if (!code) return;
     let r;
-    try { r = await fetch(api('api/shared/' + encodeURIComponent(code)), { credentials: 'same-origin' }); }
+    try { r = await fetchRetry(api('api/shared/' + encodeURIComponent(code)), { credentials: 'same-origin' }); }
     catch (e) { return; }
     const d = await r.json().catch(() => ({}));
     if (r.status === 409 && d.open) { location.replace(d.open); return; }
@@ -887,7 +902,7 @@
     if (did) params.design_id = did;
     let r;
     try {
-      r = await fetch(api('api/tokens/quote'), {
+      r = await fetchRetry(api('api/tokens/quote'), {      // prices only: safe to ask again
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path, params }),

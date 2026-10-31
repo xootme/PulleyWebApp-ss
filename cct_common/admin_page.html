@@ -383,8 +383,12 @@ function brevoLine(b) {
   if (b.key_problem === 'smtp') return " · Brevo: BREVO_API_KEY is an SMTP key; Brevo's API needs an API key (xkeysib-…)";
   if (b.refused) return ` · Brevo: the API key was refused (${b.refused}); check it's an API key, not an SMTP key`;
   if (!b.configured) return ` · Brevo: not set up (${b.api_key ? 'the list id' : 'BREVO_API_KEY'} is missing) · ${b.waiting} waiting`;
+  // 0.55.0: nothing reaches Brevo while sign-up is off, and the nightly check's guard.
+  if (b.opt_in === false) return ` · Brevo: sign-up is off, so only removals are sent · ${b.waiting} waiting`;
+  const r = b.last_result || {};
   return ` · Brevo: last checked ${b.last_reconcile ? date(b.last_reconcile) : 'never'} · ${b.waiting} waiting` +
-    (b.failing ? ` · ${b.failing} failing` : '');
+    (b.failing ? ` · ${b.failing} failing` : '') +
+    (r.held ? ` · the last check would have deleted ${r.held} of ${r.of} contacts, so it deleted none` : '');
 }
 function drawNews(n) {
   $('#subs-news').hidden = !n;

@@ -39,6 +39,9 @@ from .sqlite_db import SqliteDB
 LABELS = {
     1: "Once a month we'll tell you about new and upcoming CAD apps, "
        "new features and bug fixes to existing apps.",
+    # The owner's words, 2026-10-31, after trying the account page on pulley-test.
+    2: "Once a Month Newsletter, we'll tell you about new and upcoming CAD apps, "
+       "new features and bug fixes to existing apps.",
 }
 LABEL_VERSION = max(LABELS)
 SOURCES = ("signup", "account", "brevo")
