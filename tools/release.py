@@ -7,6 +7,7 @@ tested commit (detached HEAD), when the owner queued "release tonight":
     .venv314/Scripts/python.exe tools/release.py              release (CCT_NIGHTLY=1)
     .venv314/Scripts/python.exe tools/release.py --dry-run    preconditions and the plan only
     .venv314/Scripts/python.exe tools/release.py --smoke      smoke-test what is live now
+    .venv314/Scripts/python.exe tools/release.py --ledger     each service's ledger totals now
 
 CCT_RELEASE_VERSION names the version (else +0.0.1); CCT_RELEASE_NOTE is the owner's words.
 CCT_Build_and_Deploy.md §3, unattended:
@@ -17,6 +18,8 @@ CCT_Build_and_Deploy.md §3, unattended:
   3. pulley-test deployed and smoke-tested; on failure prod is left alone;
   4. pulley deployed and smoke-tested through cheapcadtools.com; on failure prod goes back
      to the revision(s) it served before;
+  (3, 4: each service's ledger, its accounts and the sum of every balance as of just before
+     the deploy, read again after it; a difference fails the smoke test. Totals only.)
   5. prints `RELEASED <version> pulley-test=<rev> pulley=<rev>` and exits 0 only then.
 gcloud runs on its stored login (configuration cheapcadtools); no prompts, no secrets.
 The Worker and the accounts/backup jobs are separate releases and are not touched.
@@ -47,6 +50,7 @@ VERSION_FILES = [   # (file, pattern whose group 2 is the version)
     ('tests/browser/admin_ui.js', r"('Timing Pulleys )(\d+\.\d+\.\d+)(')"),
 ]
 UA = 'CCT-PulleyRelease/1.0'
+LEDGER_SETTLE_S = 60   # the ledger is compared as of a minute before the deploy: a request under way then has committed
 
 
 class Fail(Exception):
@@ -222,6 +226,50 @@ def smoke(name, version, revision):
     return bad
 
 
+# --- the ledger (the owner, 2026-10-31: "we should not wipe out each persons existing tokens") ---
+
+def database_url(name):
+    """The database the service itself uses: the secret its DATABASE_URL mounts. Never printed."""
+    env = service(name)['spec']['template']['spec']['containers'][0].get('env', [])
+    ref = next((e.get('valueFrom', {}).get('secretKeyRef') for e in env if e['name'] == 'DATABASE_URL'), None)
+    if not ref:
+        raise Fail(f'{name}: DATABASE_URL is not a mounted secret')
+    return gcloud('secrets', 'versions', 'access', ref['key'], '--secret', ref['name'], quiet=True).strip()
+
+
+def ledger_totals(url, upto):
+    """(accounts, tokens) as of `upto`: the accounts made before it and the sum of every ledger
+    entry written before it (a balance is its entries' sum). What people do during the deploy
+    comes after `upto`, so it can't make a good release look like a loss. Totals only."""
+    import psycopg
+    for attempt in range(3):
+        try:
+            with psycopg.connect(url, connect_timeout=20) as c:
+                n = c.execute('SELECT COUNT(*) FROM accounts WHERE created_at < %s', (upto,)).fetchone()[0]
+                t = c.execute('SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ts < %s', (upto,)).fetchone()[0]
+            return int(n), int(t)
+        except psycopg.Error as e:
+            if attempt == 2:
+                raise Fail(f'the ledger could not be read: {type(e).__name__}') from None
+            time.sleep(10)
+
+
+def ledger_kept(name, url, upto, before):
+    """The problems found (empty = every account and token from before the deploy is still there)."""
+    try:
+        after = ledger_totals(url, upto)
+    except Fail as e:
+        say(f'{name}: FAIL {e}')
+        return [str(e)]
+    say(f'{name}: the ledger after: {after[0]} accounts, {after[1]} tokens')
+    if after == before:
+        return []
+    bad = (f'the ledger changed: {before[0]} accounts, {before[1]} tokens before; '
+           f'{after[0]} accounts, {after[1]} tokens after')
+    say(f'{name}: FAIL {bad}')
+    return [bad]
+
+
 # --- the release ----------------------------------------------------------------
 
 def preflight():
@@ -246,8 +294,11 @@ def release():
     git('push', 'origin', f'HEAD:refs/heads/{BRANCH}')
     revs = {}
     for name in SERVICES:
+        url, upto = database_url(name), time.time() - LEDGER_SETTLE_S
+        held = ledger_totals(url, upto)
+        say(f'{name}: the ledger before: {held[0]} accounts, {held[1]} tokens')
         revs[name] = deploy(name)
-        bad = smoke(name, new, revs[name])
+        bad = smoke(name, new, revs[name]) + ledger_kept(name, url, upto, held)
         if bad and name == 'pulley':
             roll_back(name, before[name])
             code, body = http(SERVICES[name] + '/')
@@ -273,6 +324,10 @@ def main(args):
                 bad += smoke(name, current_version(), live)
             print('SMOKE OK' if not bad else 'SMOKE FAILED', flush=True)
             return 1 if bad else 0
+        elif '--ledger' in args:
+            for name in SERVICES:
+                n, t = ledger_totals(database_url(name), time.time())
+                say(f'{name}: {n} accounts, {t} tokens')
         else:
             release()
         return 0

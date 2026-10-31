@@ -175,6 +175,13 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "printer: both pulleys": ("templates/index.html", "['print_extra', 'p2_print_extra'].forEach", "['print_extra'].forEach"),
     "night: a skip fails the night":("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
+    # every balance kept through a deploy (the owner, 2026-10-31)
+    "release: the ledger read again after the deploy": ("tools/release.py",
+        "        bad = smoke(name, new, revs[name]) + ledger_kept(name, url, upto, held)",
+        "        bad = smoke(name, new, revs[name])"),
+    "release: the ledger as of before the deploy": ("tools/release.py",
+        "'SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ts < %s'",
+        "'SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ts < %s OR TRUE'"),
 }
 
 
