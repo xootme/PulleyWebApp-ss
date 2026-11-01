@@ -4,7 +4,8 @@ pulleywebapp-sync-cct-common-0-36-1-newsletter-opt-in-welcome): pulley hosts the
 account routes on cheapcadtools.com, so these are the checks that nothing a
 user sees changes until the owner turns a setting on.
 
-- /account/ is a 404 (account_page off), signed in or not;
+- /account/ is a 404 (account_page off), signed in or not, and the sign-in page says
+  what's coming (cct_common 0.56.6, the owner's words), signed in or not;
 - a new account's sign-in goes straight on, with no welcome page, and the
   welcome form keeps nothing (newsletter_opt_in off); the newsletter save
   route is a 404;
@@ -55,6 +56,19 @@ def test_the_account_page_is_a_404(state):
     c, _ = _client(state, 'page@example.com')
     assert c.get('/account/').status_code == 404
     assert c.get('/account').status_code in (404, 308)        # /account redirects to /account/ at most
+
+
+SOON = 'Coming soon to your account: personalized settings, download history and more.'
+
+
+def test_the_sign_in_page_says_what_is_coming(state):
+    """While the account page is off, under the sign-in form and under "Sign in with a
+    different account"; it goes when account_page does (cct_common 0.56.6)."""
+    page = _client(state)[0].get('/account/sign-in').get_data(as_text=True)
+    assert 'Email me a sign-in link</button></form>' in page and SOON in page
+    c, _ = _client(state, 'soon@example.com')
+    page = c.get('/account/sign-in').get_data(as_text=True)
+    assert 'Sign in with a different account' in page and SOON in page
 
 
 def test_a_new_account_signs_in_with_no_welcome_page_and_lands_on_home(state):

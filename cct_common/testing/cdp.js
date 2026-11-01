@@ -44,6 +44,12 @@
  *   idleThrows     waitIdle() throws when it runs out, rather than returning false;
  *                  the error names what the page still waits on, as a failed
  *                  settle does (0.55.2)
+ * Every request that failed (Network.loadingFailed: Chrome's net::ERR_... for
+ * a fetch's bare "Failed to fetch") is kept, the last 50, in page.failedLoads
+ * ({ method, url, errorText, canceled, blocked, cors, t }). The last few are
+ * printed with what a failed settle or waitIdle waits on, and after a failing
+ * check, those not printed yet (0.56.5: Bevel's prefix_ui had a zip's GET die
+ * with "Failed to fetch" and nothing to say why).
  *   settleMs       how long opening or reloading the page may take to settle (60 s)
  *   leave          the event setValue() fires after 'input', as leaving the
  *                  field does: "focusout" (Gear's refusal gate), "change"
@@ -70,6 +76,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const chromes = new Set();      // every Chrome this run started, killed on a crash
 let ended = false;              // a verdict has been printed
+const KEPT = 50;                // failed loads kept, per page and for the run
+const SHOWN = 5;                // failed loads printed at a time
+const failedLoads = [];         // every page's, the newest last: a failing check prints them
+let failedShown = 0;            // how many of the run's a failing check has printed
+
+// "  failed load: GET <url>: net::ERR_CONNECTION_RESET (2.1 s ago)"
+const failedLine = (f, now) => {
+  const why = [f.errorText || "no error text", f.canceled ? "canceled" : null,
+               f.blocked ? `blocked: ${f.blocked}` : null, f.cors ? `CORS: ${f.cors}` : null].filter(Boolean);
+  return `  failed load: ${f.method} ${f.url.slice(0, 200)}: ${why.join(", ")} (${((now - f.t) / 1000).toFixed(1)} s ago)`;
+};
 
 // `detail` (a stack) goes first: the verdict is always the LAST line.
 function crashed(why, detail) {
@@ -149,6 +166,7 @@ function forApp({
     const serverErrors = [];            // 5xx answers, once watchServer() is on
     let watching = false;
     const open = new Map();             // requestId -> { method, url, t0 }: sent, not yet finished
+    const loads = [];                   // this page's failed loads, the newest last
     const listeners = new Map();        // CDP event -> handlers (on())
     // Open, then lost without close() asking: every waiting call fails, then the run.
     const lost = (why) => {
@@ -173,6 +191,16 @@ function forApp({
       if (msg.method === "Network.requestWillBeSent")       // a redirect keeps its id and its start
         open.set(msg.params.requestId, { method: msg.params.request.method, url: msg.params.request.url,
                                          t0: (open.get(msg.params.requestId) || {}).t0 || Date.now() });
+      if (msg.method === "Network.loadingFailed") {
+        const p = msg.params, r = open.get(p.requestId) || {};
+        const f = { method: r.method || "?", url: r.url || `(request ${p.requestId})`, errorText: p.errorText || "",
+                    canceled: !!p.canceled, blocked: p.blockedReason || null,
+                    cors: (p.corsErrorStatus && p.corsErrorStatus.corsError) || null, t: Date.now() };
+        loads.push(f);
+        if (loads.length > KEPT) loads.shift();
+        failedLoads.push(f);
+        if (failedLoads.length > KEPT) { failedLoads.shift(); failedShown = Math.max(0, failedShown - 1); }
+      }
       if (msg.method === "Network.loadingFinished" || msg.method === "Network.loadingFailed")
         open.delete(msg.params.requestId);
       if (msg.method === "Runtime.consoleAPICalled" && msg.params.type === "error")
@@ -221,8 +249,8 @@ function forApp({
       return false;
     };
     // What the page still waits on, for a settle that failed: the requests
-    // sent and not finished, the longest open first, and window.<idle>Why()'s
-    // answer. Gear reproduced a bare "never settled" 72 times to learn it was
+    // sent and not finished, the longest open first, the last failed loads
+    // (0.56.5), and window.<idle>Why()'s answer. Gear reproduced a bare "never settled" 72 times to learn it was
     // load (2026-10-30, its ADR-053). A page that no longer answers says so.
     const waitingOn = async () => {
       const now = Date.now();
@@ -231,6 +259,8 @@ function forApp({
         `  still open: ${r.method} ${r.url.slice(0, 200)} (${((now - r.t0) / 1000).toFixed(1)} s)`);
       if (reqs.length > 10) lines.push(`  ... and ${reqs.length - 10} more`);
       if (!reqs.length) lines.push("  no request still open");
+      for (const f of loads.slice(-SHOWN)) lines.push(failedLine(f, now));
+      if (!loads.length) lines.push("  no failed load");
       const why = `${idle}Why`;
       const asked = evaluate(`(async () => { try {
           if (typeof window.${why} !== "function") return null;
@@ -323,7 +353,7 @@ function forApp({
     // Handle a CDP event (e.g. Fetch.requestPaused, to hold a request back).
     const on = (method, f) => listeners.set(method, [...(listeners.get(method) || []), f]);
     return { send, evaluate, setValue, waitIdle, reload, visible, screenshot, errors, close,
-             serverErrors, watchServer, on, setCheck, openSection, ...downloads,
+             serverErrors, watchServer, on, setCheck, openSection, failedLoads: loads, ...downloads,
              ...(extend ? extend({ evaluate, waitIdle, send, sleep }) : {}) };
   }
 
@@ -332,9 +362,17 @@ function forApp({
 
 function checker() {
   let failures = 0;
+  // A failing check is followed by the failed loads no earlier one printed,
+  // the last few: a "Failed to fetch" comes with Chrome's own reason.
   const check = (ok, what) => {
     console.log(`${ok ? "PASS" : "FAIL"}  ${what}`);
-    if (!ok) failures++;
+    if (ok) return;
+    failures++;
+    const fresh = failedLoads.slice(failedShown);
+    failedShown = failedLoads.length;
+    if (fresh.length > SHOWN) console.log(`  ... and ${fresh.length - SHOWN} earlier failed loads`);
+    const now = Date.now();
+    for (const f of fresh.slice(-SHOWN)) console.log(failedLine(f, now));
   };
   const finish = (page) => {
     check(page.errors.length === 0, `no page errors (${page.errors.join(" | ") || "none"})`);

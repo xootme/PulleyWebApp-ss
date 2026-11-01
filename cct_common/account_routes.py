@@ -383,6 +383,13 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         link) that need a signed-in visitor; the tool itself signs in from
         its own dialog."""
         nxt = _safe_next(request.args.get("next"), home_path(tokens.path))
+        # The owner's note (2026-11-01), signed out and signed in, only until
+        # the account page is on: it goes when account_page does, with no
+        # second change.
+        from .settings import setting
+        soon = ("" if setting(tokens.path, "account_page") is True else
+                "<p style='font-size:.9rem;color:#666;margin-top:1.2rem'>Coming soon to your account: "
+                "personalized settings, download history and more.</p>")
         acct = current_account_id()
         if acct:
             return _page("Signed in", (
@@ -390,7 +397,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                 "</strong>.</p>"
                 f"<p><a href='{html.escape(nxt, quote=True)}'>Continue</a></p>"
                 "<p><button class='secondary' type='button' onclick=\"fetch('/api/account/logout',{method:'POST'})"
-                ".then(()=>location.reload())\">Sign in with a different account</button></p>"))
+                ".then(()=>location.reload())\">Sign in with a different account</button></p>" + soon))
         buttons = _oauth_buttons(nxt)
         return _page(f"Sign in to {app_name}", (
             buttons + ("<div class='or'>or</div>" if buttons else "")
@@ -398,7 +405,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             f"<input type='hidden' name='next' value='{html.escape(nxt, quote=True)}'>"
             "<p><input type='email' name='email' placeholder='you@example.com' required "
             "style='font-size:1rem;padding:.4rem;width:100%'></p>"
-            "<button type='submit'>Email me a sign-in link</button></form>"))
+            "<button type='submit'>Email me a sign-in link</button></form>" + soon))
 
     def sign_in_submit():
         nxt = _safe_next(request.form.get("next"), home_path(tokens.path))

@@ -27,8 +27,8 @@ or shown.
   1.00 mm in 0.01 mm steps (COMPENSATION_MIN_MM, COMPENSATION_MAX_MM,
   COMPENSATION_STEP_MM). tokens.js has the same numbers
   (cctTokens.printCompensation; a test keeps them equal), so pages don't
-  write their own. An app whose small gears need less (a tooth-size cap,
-  such as 0.15 × module) clamps the account's value with
+  write their own. An app whose small gears need less (a tooth-size cap:
+  each tooth keeps at least half its width) clamps the account's value with
   clamp_compensation(value, cap), or cctTokens.clampCompensation on the
   page, rather than refusing it, and says so where the cap applies.
 """

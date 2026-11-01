@@ -25,6 +25,10 @@
  *   takeStrays()  the strays since the last take (tokens_ui's "nothing else asked")
  *   shared()    "METHOD /path" that went to the shared paths
  *   asked()     "METHOD /path" the app was asked, prefix stripped (prefix_ui)
+ *   dropped()   "METHOD /path Error: why" for each connection that dropped while its
+ *               request was read or answered ("- -": before its first line), the
+ *               site's port; appDropped(), the bare app's (0.56.5). A page's
+ *               "Failed to fetch" with nothing here never reached the server.
  *   waitFor(re, ms)  the last match of `re` (global) in the log, waiting up to ms (null)
  *   stop()      ends the Python and everything it started (taskkill /T on Windows)
  * }
@@ -67,7 +71,8 @@ function killTree(proc) {
   } catch { /* already gone */ }
 }
 
-// The request lines of one kind ("app", "shared", "stray"): "METHOD path",
+// The request lines of one kind ("app", "shared", "stray", "dropped",
+// "app-dropped"): "METHOD path" (a dropped one's error after it),
 // whole lines only (a last one still being written isn't one yet).
 function requestLines(text, kind) {
   const whole = text.split("\n").slice(0, -1);
@@ -134,6 +139,8 @@ async function startSite({ app, prefix, shared = null, env = {}, python = null, 
     takeStrays: () => { const all = lines("stray"); const fresh = all.slice(taken); taken = all.length; return fresh; },
     shared: () => lines("shared"),
     asked: () => lines("app"),
+    dropped: () => lines("dropped"),
+    appDropped: () => lines("app-dropped"),
     async waitFor(re, ms = 10000) {
       const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
       for (const t1 = Date.now(); ;) {

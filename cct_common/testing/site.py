@@ -26,7 +26,14 @@ The requests file (--requests; the log's name + ".requests" if not given)
 gets, first, "SITE <port>" and "APP <port>" once both are listening, then a
 line for every request through the site: "SITE app <METHOD> <path>",
 "SITE shared ...", "SITE stray ...", so a harness can check that nothing
-else asked the root. Each line is written whole, under one lock, and
+else asked the root; and a line for every connection that dropped while its
+request was read or answered (0.56.5): "SITE dropped <METHOD> <path>
+<error>" on the site's port, "SITE app-dropped ..." on the bare app's, with
+"- -" for a request whose first line never came. werkzeug ignores those
+(connection_dropped does nothing), so a page's "Failed to fetch" that never
+reached the dispatcher left no trace (Bevel's prefix_ui, 2026-10-31). A
+connection closed cleanly with nothing asked (Chrome's unused spare) is no
+line. Each line is written whole, under one lock, and
 nothing else writes there (0.56.2: in the log file, werkzeug's access log
 from other threads glued itself onto them, and site.js lost 58 of Gear's
 150 strays). The log file gets everything the app and its server print (the
@@ -89,6 +96,24 @@ class RequestLines:
     def note(self, kind: str, method: str, path: str) -> None:
         self.write(f"SITE {kind} {method} {path}\n")
 
+    def dropped(self, kind: str, method: Optional[str], path: Optional[str], error: BaseException) -> None:
+        why = " ".join(f"{type(error).__name__}: {error}".split())          # one line
+        self.write(f"SITE {kind} {method or '-'} {path or '-'} {why}\n")
+
+
+def _handler(kind: str, lines: RequestLines):
+    """werkzeug's request handler, a dropped connection noted as `kind`.
+    werkzeug calls connection_dropped for a reset while it read the request
+    (no environ yet) or while the app read the body or the answer was
+    written; the request line's method and path are there once it was read."""
+    from werkzeug.serving import WSGIRequestHandler
+
+    class Handler(WSGIRequestHandler):
+        def connection_dropped(self, error, environ=None):
+            lines.dropped(kind, getattr(self, "command", None), getattr(self, "path", None), error)
+
+    return Handler
+
 
 def _to_file(log_path: str):
     """stdout and stderr (the file descriptors too, for anything below
@@ -124,8 +149,9 @@ def main(argv=None) -> int:
     sys.path.insert(0, app_dir)
     app = getattr(importlib.import_module(a.module), a.attr)
     from werkzeug.serving import make_server
-    site = make_server("127.0.0.1", a.port, Site(app, a.prefix, a.shared, lines.note), threaded=True)
-    bare = make_server("127.0.0.1", a.app_port, app, threaded=True)
+    site = make_server("127.0.0.1", a.port, Site(app, a.prefix, a.shared, lines.note), threaded=True,
+                       request_handler=_handler("dropped", lines))
+    bare = make_server("127.0.0.1", a.app_port, app, threaded=True, request_handler=_handler("app-dropped", lines))
     for server in (site, bare):
         threading.Thread(target=server.serve_forever, daemon=True).start()
     lines.write(f"SITE {site.server_port}\nAPP {bare.server_port}\n")
