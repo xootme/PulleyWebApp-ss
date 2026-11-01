@@ -9,7 +9,6 @@ passes, or never finishes, says the break went unseen. From the repo root, in a 
 The breaks are HAND below: name -> (harness, file, [(the text, its broken form), ...]). They are for
 checks that only a browser can catch (a converted wait that must still fail when its state
 never comes), so tools/neg_controls.py, which runs pytest, can't run them."""
-import os
 import shutil
 import socket
 import subprocess
@@ -18,6 +17,9 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import harnesses  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
@@ -33,8 +35,17 @@ HAND = {
          '        if (false) {\n          el.value = Math.min(max, Math.max(min, cur));'),
         ('  if (parseInt(teethEl.value) < minT) teethEl.value = minT;\n  const teeth = teethEl.value;',
          '  const teeth = teethEl.value;')]),
+    # a dropped download poll (Sprocket's lost paid zip, 2026-10-31): polling must go on
+    'downloads: a dropped poll stops the download': ('tokens_ui', PAGE, [
+        ('      if (++_pollErrors < 60) { _jobPollTimer = setTimeout(pollJobStatus, 1000); return; }',
+         '      if (++_pollErrors < 60) { return; }')]),
 }
-SECRETS = ('RESEND', 'STRIPE', 'PAYPAL', 'DATABASE_URL', 'GOOGLE_CLIENT', 'BACKUP_', 'TOKENS_', 'BREVO')
+# A harness that needs more than a plain server (as tools/harnesses.py starts it): the server's
+# extra settings, and the harness's arguments after the base URL from the server's log folder.
+SETUP = {
+    'tokens_ui': ({'TOKENS_ENABLED': '1', 'GOOGLE_CLIENT_ID': 'test', 'GOOGLE_CLIENT_SECRET': 'test'},
+                  lambda logs: [logs, PY]),
+}
 
 
 def copy_tree(dst):
@@ -64,9 +75,10 @@ def run(name):
         f.write_text(text, encoding='utf-8', newline='')
         s = socket.socket(); s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]; s.close()
         logs = tempfile.mkdtemp(prefix='hand-ctl-logs-')
-        env = {k: v for k, v in os.environ.items() if not any(x in k.upper() for x in SECRETS)}
+        env = harnesses.environment()            # the runner's (no secrets; the STEP binary the day runs use)
         env.update(QUEUE_DISABLED='1', PULLEY_LOG_DIR=logs, PYTHONIOENCODING='utf-8', PYTHONDONTWRITEBYTECODE='1')
-        srv = subprocess.Popen([PY, 'app.py', '--port', str(port), '--no-debug'], cwd=tree, env=env,
+        extra, args = SETUP.get(harness, ({}, lambda logs: []))
+        srv = subprocess.Popen([PY, 'app.py', '--port', str(port), '--no-debug'], cwd=tree, env={**env, **extra},
                                stdout=open(Path(logs) / 'server.log', 'w'), stderr=subprocess.STDOUT)
         try:
             for _ in range(240):
@@ -75,7 +87,7 @@ def run(name):
                 except Exception:
                     time.sleep(0.5)
             try:
-                out = subprocess.run(['node', f'tests/browser/{harness}.js', f'http://127.0.0.1:{port}'], cwd=tree,
+                out = subprocess.run(['node', f'tests/browser/{harness}.js', f'http://127.0.0.1:{port}', *args(logs)], cwd=tree,
                                      env=env, capture_output=True, text=True, encoding='utf-8', timeout=900)
                 code, text = out.returncode, out.stdout + out.stderr
             except subprocess.TimeoutExpired:

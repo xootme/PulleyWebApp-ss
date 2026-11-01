@@ -139,6 +139,9 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    THREE, OrbitControls: class extends OrbitControls { constructor(c, d) { const u = c.up.clone();"
         " c.up.set(0, 1, 0); super(c, d); c.up.copy(u); } }, canvas, maxPixelRatio: 2,"),
     "3D: Top keeps +y up": ("templates/index.html", "    snaps: { top: [[0, 0, 1], [0, 1, 0]],", "    snaps: { top: [0, 0, 1],"),
+    "downloads: a dropped poll is asked again": ("templates/index.html",   # polling just stops
+        "      if (++_pollErrors < 60) { _jobPollTimer = setTimeout(pollJobStatus, 1000); return; }",
+        "      if (++_pollErrors < 60) { return; }"),
     "downloads: a failed job is reported with its id": ("templates/index.html",   # 0.31.1's order, undone
         "        _reportDlFailure({ status: job._lost ? 404 : null, error: (job._lost ? 'poll: ' : '') + (job.error || '') });\n"
         "        hideProgressModal();",

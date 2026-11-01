@@ -26,6 +26,15 @@ def test_every_suite_run_can_record():
     assert "-p cct_common.testing.record" in _ini()["addopts"]
 
 
+def test_each_worker_logs_in_a_folder_of_its_own():
+    """conftest's logs folder is this process's, not one inherited from xdist's controller
+    (shared, the workers' download-failure stores locked each other, 2026-10-31)."""
+    import os
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    assert os.environ.get("PULLEY_LOG_DIR_FOR") == worker
+    assert Path(os.environ["PULLEY_LOG_DIR"]).name.startswith(f"pulley-tests-{worker}-")
+
+
 def test_the_listed_caches_are_dicts():
     specs = _ini()["cct_test_caches"].split()
     assert specs

@@ -315,6 +315,35 @@ s.credit(a, -(s.balance(a) - 1), kind="adjust", detail="browser test")`], { cwd:
         && sent[0].error === 'Generation failed', sent);
   check('a start the server kept: not reported again', sent.length === 1, sent);
 
+  // 8. a dropped poll (no answer at all: fetch rejects with a TypeError, as Sprocket's lost
+  //    paid download did) is asked again, and the download goes on: not reported, no error
+  const dropped = await js(`(async () => {
+    const realFetch = window.fetch, realReport = window.cctReportDownloadFailure, sent = [];
+    let polls = 0;
+    window.cctReportDownloadFailure = r => sent.push(r.error);
+    try {
+      window.fetch = async (url, o) => {
+        if (!String(url).includes('/api/download-status/')) return realFetch(url, o);
+        if (++polls === 1) throw new TypeError('Failed to fetch');
+        return new Response(JSON.stringify({ status: 'done', mirrored: true }),   // mirrored: no file saved
+          { status: 200, headers: { 'Content-Type': 'application/json' } });
+      };
+      _currentJobInfo = { route: '/api/download/bundle', params: {}, t0: Date.now() };
+      _currentJobId = 'job-dropped-poll';
+      _pollErrors = 0;
+      pollJobStatus();
+      const t0 = Date.now();
+      while (polls < 2 && Date.now() - t0 < 5000) await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 300));          // the done answer handled
+    } finally { window.fetch = realFetch; window.cctReportDownloadFailure = realReport; }
+    const err = document.getElementById('error-modal-overlay');
+    const shown = !!err && err.style.display !== 'none' && err.style.display !== '';
+    closeErrorModal();
+    return { polls, sent, shown, toast: (document.getElementById('cct-toast') || {}).textContent || '' };
+  })()`);
+  check('a dropped poll is asked again and the download goes on', dropped.polls === 2 && !dropped.sent.length
+        && !dropped.shown && dropped.toast.includes('Sent to your CAD app'), dropped);
+
   finish(errors);
   ws.close(); chrome.kill();
 }

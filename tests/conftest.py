@@ -15,9 +15,14 @@ from cpu_cap import test_cpus
 # bundles, the failure log): each run and each xdist worker gets its own, set
 # before any test imports app — workers writing one folder would race, and
 # tests have no business writing the repo's logs/ anyway.
-if not os.environ.get('PULLEY_LOG_DIR'):
-    os.environ['PULLEY_LOG_DIR'] = tempfile.mkdtemp(
-        prefix=f"pulley-tests-{os.environ.get('PYTEST_XDIST_WORKER', 'main')}-")
+# A worker inherits the controller's environment, this folder included, so one set here for
+# another process (PULLEY_LOG_DIR_FOR names whose it is) is replaced: shared, the workers opened
+# one download-failures database at once ("database is locked", 2026-10-31) and cleared each
+# other's rows. A folder given from outside is kept.
+_WORKER = os.environ.get('PYTEST_XDIST_WORKER', 'main')
+if not os.environ.get('PULLEY_LOG_DIR') or os.environ.get('PULLEY_LOG_DIR_FOR', _WORKER) != _WORKER:
+    os.environ['PULLEY_LOG_DIR'] = tempfile.mkdtemp(prefix=f"pulley-tests-{_WORKER}-")
+    os.environ['PULLEY_LOG_DIR_FOR'] = _WORKER
 
 
 def pytest_xdist_auto_num_workers(config):
