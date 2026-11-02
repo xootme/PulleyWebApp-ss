@@ -100,6 +100,10 @@ def _raw_config(r):
             # gives the designs it always did, with the screws named.
             cfg['hub_screw_size']  = f'M{screw_dia:g}'
             cfg['hub_screw_hold']  = 'nut' if nut else 'thread'
+            # and as many as the page lets it (activeScrew): 1 or 2 (the field's range; a named
+            # screw's count is checked against it), one on a flat or key. Still the same draw.
+            keyed = 'hub_flat_depth' in cfg or 'hub_keyway_w' in cfg
+            cfg['hub_screw_count'] = 1 if keyed else min(cfg['hub_screw_count'], 2)
     else:
         hub_od = 0.0
 
@@ -239,14 +243,21 @@ def _save_configs(run_id, configs):
     path = log_dir / f'{datetime.now().strftime("%Y-%m-%d")}_{run_id}.json'
     # Whole or not at all: every xdist worker runs this module's fixture, and one read another's
     # file while it was still being written (JSONDecodeError, 2026-11-02). The same seed gives
-    # every worker the same configs, so whichever lands is the run's.
+    # every worker the same configs, so whichever lands is the run's: on Windows a replace is
+    # refused while another worker has the file (PermissionError, the same day), and then the
+    # one there already is this worker's too.
     tmp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
     tmp.write_text(json.dumps({
         'run_id':    run_id,
         'timestamp': datetime.now().isoformat(),
         'configs':   configs,
     }, indent=2), encoding='utf-8')
-    os.replace(tmp, path)
+    try:
+        os.replace(tmp, path)
+    except PermissionError:
+        tmp.unlink(missing_ok=True)
+        if not path.is_file():
+            raise
     return path
 
 
