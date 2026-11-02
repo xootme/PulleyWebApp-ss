@@ -52,6 +52,17 @@ def test_quiet_otherwise(client, q):
     assert _hole_warnings(_dims(client, **{**INSERT, **q})) == []
 
 
+@pytest.mark.parametrize('bore', [{'hub_flat_depth': 0.5}, {'hub_keyway_w': 2.0, 'hub_keyway_h': 1.0}],
+                         ids=['D-flat', 'keyway'])
+def test_a_captured_nut_is_checked_on_any_bore(client, bore):
+    """small_step drills a captured nut's screw only under 95 % of the bore's radius whatever the
+    bore (captured_screw_too_big): an M5 nut on a Ø4.2 bore with a D-flat showed no warning and
+    STEP refused it (the night of 2026-11-01)."""
+    d = _dims(client, hub_screw_size='M8', hub_screw_hold='nut', **bore)
+    [w] = _hole_warnings(d)
+    assert w.startswith('the Ø9.00 mm hole for the M8 set screw')
+
+
 def test_the_10_30_design_shows_both_refusals_at_once(client):
     """STEP stopped at the nubs first; the panel names both together."""
     d = _dims(client, **INSERT, flange_enabled=1, flange_3dprint=1, flange_top_separate=1,

@@ -165,6 +165,8 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     # cct_common 0.32's one hub-hole check (the owner's wording, 2026-10-30)
     "screws: a hole too big for the bore, the panel warns": (AP, "    if too_big is None:\n        return [], {}, []",
                                                              "    if True:\n        return [], {}, []"),
+    "screws: a captured nut is checked on a flat or key too": (AP,   # the 11-01 night's design
+        "(not keyed or screw.hold == 'nut')", "(not keyed)"),
     "screws: the hole's bore is the pulley's own": (AP, "    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]\n    too_big",
                                                     "    bore_mm = 50.0\n    too_big"),
     # cct_common 0.36-0.54 (all behind settings that are off): the report store, printer settings

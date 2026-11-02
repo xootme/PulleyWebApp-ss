@@ -1400,8 +1400,12 @@ def _screw_hole_too_big(args, pfx, n, who):
         return [], {}, []
     if screw is None:
         return [], {}, []
-    round_bore = (args.get(f'{pfx}bore_shape') != 'spline' and fd <= 0
-                  and not (kw_w > 0 and kw_h > 0))       # a flat, key or hex bar has rules of its own
+    # A flat, key or hex bar has rules of its own for a screw held by its thread or an insert;
+    # a captured nut's screw is drilled only under 95 % of the bore's radius whatever the bore
+    # shape (small_step's captured_screw_too_big): an M5 nut on a Ø4.2 bore with a D-flat
+    # showed no warning and STEP refused it (the night of 2026-11-01).
+    keyed = fd > 0 or (kw_w > 0 and kw_h > 0)
+    round_bore = args.get(f'{pfx}bore_shape') != 'spline' and (not keyed or screw.hold == 'nut')
     ts = _ss.thread_settings(args)
     bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
     too_big = screws.hub_hole_too_big(
