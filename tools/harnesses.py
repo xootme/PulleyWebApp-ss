@@ -110,6 +110,55 @@ KEEP_RUNS = 50
 SHOW_LINES = 200                    # a failure's output printed in full up to this many lines
 
 
+# node's own report of a crash: a harness that dies on node's fast-fail leaves only its exit code
+# (roundtrip_ui, 0xC0000409 after design 1005, 2026-11-02), so every harness runs with node's
+# fatal-error and uncaught-exception reports on, each into a folder of its own; a failed run's
+# report is named in its output and summarised (event, top frames), a passed run's folder goes.
+NODE_REPORTS = FAILED_RUNS / 'node_reports'
+REPORT_FLAGS = '--report-on-fatalerror --report-uncaught-exception'
+
+
+def report_env(env, label):
+    """(env with NODE_OPTIONS asking node for its crash report, the folder it goes in)."""
+    folder = NODE_REPORTS / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}-{os.getpid()}-{threading.get_ident()}"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return env, None
+    opts = f"{env.get('NODE_OPTIONS', '')} {REPORT_FLAGS} --report-directory={folder}".strip()
+    return {**env, 'NODE_OPTIONS': opts}, folder
+
+
+def report_summary(folder):
+    """The lines naming each report node wrote in `folder` (none: an empty list): the file, its
+    event, and the top JS and native frames."""
+    import json
+    lines = []
+    for f in sorted(folder.glob('*.json')) if folder else []:
+        lines.append(f'node report: {f}')
+        try:
+            r = json.loads(f.read_text(encoding='utf-8', errors='replace'))
+        except (OSError, ValueError):
+            continue
+        head, js = r.get('header', {}), r.get('javascriptStack', {})
+        lines.append(f"  event: {head.get('event')} (trigger {head.get('trigger')})"
+                     + (f"; {js.get('message')}" if js.get('message') else ''))
+        lines += [f'  js: {s}' for s in (js.get('stack') or [])[:8]]
+        lines += [f"  native: {s.get('symbol', s) if isinstance(s, dict) else s}" for s in (r.get('nativeStack') or [])[:8]]
+    return lines
+
+
+def drop_reports(folder):
+    """A run's report folder, gone when it is empty; only the last KEEP_RUNS folders stay."""
+    try:
+        if folder and folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+        for old in sorted(p for p in NODE_REPORTS.iterdir() if p.is_dir())[:-KEEP_RUNS]:
+            shutil.rmtree(old, ignore_errors=True)
+    except OSError:
+        pass
+
+
 def keep_failure(label, code, out):
     try:
         FAILED_RUNS.mkdir(parents=True, exist_ok=True)
@@ -126,6 +175,7 @@ def run(label, cmd, env, results):
     t0 = time.time()
     with _print:
         print(f'\n=== {label}: {" ".join(cmd)}', flush=True)
+    env, reports = report_env(env, label)
     proc = subprocess.Popen(cmd, cwd=ROOT, env=env, text=True, encoding='utf-8', errors='replace',
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
     timer = threading.Timer(TIMEOUT_S, stop, [proc])
@@ -138,6 +188,12 @@ def run(label, cmd, env, results):
     tail = next((ln.strip() for ln in reversed(lines) if ln.strip()), f'(no output, exit {proc.returncode})')
     passed = proc.returncode == 0 and bool(lines) and not bad and not timed_out
     secs = time.time() - t0
+    if passed and reports:
+        shutil.rmtree(reports, ignore_errors=True)
+    else:
+        lines += report_summary(reports)
+        out = '\n'.join(lines)
+    drop_reports(reports)
     kept = None if passed else keep_failure(label, 'timeout' if timed_out else proc.returncode, out)
     with _print:
         if passed:

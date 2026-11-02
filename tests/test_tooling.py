@@ -7,6 +7,7 @@ naming_skip): a control on pytest.ini needs a test here to catch it."""
 import configparser
 import importlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -150,6 +151,42 @@ def test_a_test_ledger_changed_leaves_prod_alone(monkeypatch):
     with pytest.raises(release.Fail, match="prod was not touched"):
         release.release()
     assert not calls
+
+
+def _harnesses_in(tmp_path, monkeypatch):
+    sys.path.insert(0, str(ROOT / "tools"))
+    import harnesses
+    monkeypatch.setattr(harnesses, "FAILED_RUNS", tmp_path / "failures")
+    monkeypatch.setattr(harnesses, "NODE_REPORTS", tmp_path / "failures" / "node_reports")
+    return harnesses
+
+
+def test_a_harness_crash_leaves_nodes_report(tmp_path, monkeypatch, capsys):
+    """tools/harnesses.py runs node with its crash reports on: a harness that dies is named with
+    node's report, its event and its top frames, in the output and the kept failure (roundtrip_ui
+    died with only "exit 3221226505", 2026-11-02)."""
+    import shutil as _shutil
+    if not _shutil.which("node"):
+        pytest.skip("no node")
+    harnesses = _harnesses_in(tmp_path, monkeypatch)
+    results = []
+    harnesses.run("crash", ["node", "-e", "function deep() { throw new Error('boom') } deep()"], dict(os.environ), results)
+    out = capsys.readouterr().out
+    assert results[0][1] is False
+    assert "node report: " in out and "event: " in out and "boom" in out and "  js: " in out
+    kept = list((tmp_path / "failures").glob("*-crash-*.txt"))
+    assert kept and "node report: " in kept[0].read_text(encoding="utf-8")
+
+
+def test_a_passed_harness_leaves_no_report_folder(tmp_path, monkeypatch, capsys):
+    import shutil as _shutil
+    if not _shutil.which("node"):
+        pytest.skip("no node")
+    harnesses = _harnesses_in(tmp_path, monkeypatch)
+    results = []
+    harnesses.run("fine", ["node", "-e", "console.log('1/1 passed')"], dict(os.environ), results)
+    assert results[0][1] is True
+    assert not list((tmp_path / "failures" / "node_reports").glob("*fine*"))
 
 
 def test_health_names_the_running_small_step(client):
