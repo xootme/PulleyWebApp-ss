@@ -568,11 +568,15 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                       flange_ext_mm: float = 0.0,
                       set_screw=None,
                       lobe_cone_mm: float = 0.0,
-                      spline=None) -> trimesh.Trimesh:
+                      spline=None,
+                      cuts_out: list = None) -> trimesh.Trimesh:
     """
     Union a hub boss onto `body`, subtract the bore through the full height,
     then optionally drill radial set-screw holes and (for captured_nut=True)
     rectangular nut pockets that open from the hub top face.
+    `cuts_out`, a list: the screw holes and nut pockets are left uncut and
+    their cutters put in it, for the caller to cut once its flanges printed
+    in place are unioned on (a top flange's band filled them otherwise).
 
     Captured nut geometry
     ---------------------
@@ -765,7 +769,9 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                 hole.apply_transform(
                     trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
             hole.fix_normals()
-            if body.is_watertight:
+            if cuts_out is not None:
+                cuts_out.append(hole)                # cut by the caller, after its flanges
+            elif body.is_watertight:
                 body = trimesh.boolean.difference([body, hole], engine='manifold')
 
             # ── Nut pocket (opens from hub top face) ──────────────────────────
@@ -804,7 +810,10 @@ def _add_hub_and_bore(body: trimesh.Trimesh,
                     pocket.apply_transform(
                         trimesh.transformations.rotation_matrix(angle, [0, 0, 1]))
                 pocket.fix_normals()
-                body = trimesh.boolean.difference([body, pocket], engine='manifold')
+                if cuts_out is not None:
+                    cuts_out.append(pocket)
+                else:
+                    body = trimesh.boolean.difference([body, pocket], engine='manifold')
 
     return _cut_counterbore(body, spline)
 
@@ -837,9 +846,12 @@ def generate_pulley_stl(
     flange_height_mm: float = 0.0,
     set_screw=None,
     spline=None,
+    cuts_out: list = None,
 ) -> bytes:
     """
     Return binary STL bytes of an extruded timing pulley solid.
+    `cuts_out`: as _add_hub_and_bore's (the screw holes and nut pockets left
+    uncut, their cutters in the list).
 
     The toothed body is extruded from z=0 to z=belt_height_mm.
     If hub_od_mm and hub_height_mm are given, a hub cylinder is unioned on top
@@ -950,7 +962,8 @@ def generate_pulley_stl(
                                flange_ext_mm=_flange_ext_stl,
                                set_screw=set_screw,
                                lobe_cone_mm=_lobe_cone_stl,
-                               spline=spline)
+                               spline=spline,
+                               cuts_out=cuts_out)
     return result.export(file_type='stl')
 
 

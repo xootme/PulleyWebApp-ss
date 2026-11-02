@@ -2402,20 +2402,32 @@ def _parse_hub_params(args, prefix=''):
     return hub_od, hub_height, screw_dia, screw_count, captured_nut, flat_depth, keyway_w, keyway_h
 
 
-def _printed_as_one(meshes):
+def _printed_as_one(meshes, cuts=()):
     """A 3D-print pulley and the flanges printed with it, as ONE solid. They
     touch face to face (and share the bore's edge ring), so stacked as
     separate bodies the STL wasn't watertight; a union is. Falls back to
-    stacking them if any part isn't a closed volume or the union fails."""
+    stacking them if any part isn't a closed volume or the union fails.
+    `cuts`: the pulley's screw holes and nut pockets, left uncut by
+    generate_pulley_stl (cuts_out), cut from the union: cut first, a captured
+    nut's screw hole (and pocket) where it crosses the top flange's band was
+    filled by the flange (the night of 2026-11-01's [3]; the owner, 2026-11-02,
+    with SmallStep). Stacked, they are cut from the pulley (the first mesh)."""
     import trimesh
     parts = [m for m in meshes if m is not None and len(m.faces)]
     if all(getattr(m, 'is_volume', False) for m in parts):
         try:
             one = trimesh.boolean.union(parts, engine='manifold')
+            if cuts and one.is_watertight:
+                one = trimesh.boolean.difference([one, *cuts], engine='manifold')
             if one.is_watertight:
                 return one
         except Exception:
             app.logger.exception('flange union failed; exporting the parts stacked')
+    if cuts and parts:
+        try:
+            parts[0] = trimesh.boolean.difference([parts[0], *cuts], engine='manifold')
+        except Exception:
+            app.logger.exception("the pulley's screw holes could not be cut")
     return trimesh.util.concatenate(parts)
 
 
@@ -2761,6 +2773,9 @@ def _pulley_stl(args):
     _raise_h  = (fp.get('flange_height_mm', 1.5) if _fl_3dp
                  else fp.get('plate_height_mm', 1.0) if _fl_metal
                  else 0.0)
+    # Flanges printed in place, the top one with it: the screw holes and nut pockets are cut
+    # once the flanges are unioned on (_printed_as_one), or the top flange's band fills them.
+    _cuts = [] if (_fl_3dp and not fp.get('top_separate')) else None
     stl = generate_pulley_stl(
         family, pitch, num_teeth, bore_mm, belt_height,
         cl_mm, bl_mm, pr_ex, hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h,
@@ -2771,6 +2786,7 @@ def _pulley_stl(args):
         flange_enabled=_fl_enabled,
         flange_height_mm=_raise_h,
         set_screw=_set_screw(args, pfx),
+        cuts_out=_cuts,
     )
     import io as _io0
     import trimesh as _tm0
@@ -2834,7 +2850,7 @@ def _pulley_stl(args):
             top_mesh = trimesh.load(_io.BytesIO(
                 generate_3dprint_flange_stl(which='top', nubs_enabled=False, **_top_kw)
             ), file_type='stl')
-            stl = _printed_as_one([pulley_mesh, bot_mesh, top_mesh]).export(file_type='stl')
+            stl = _printed_as_one([pulley_mesh, bot_mesh, top_mesh], cuts=_cuts).export(file_type='stl')
         else:
             # Separate top flange: the preview builder, which can cut nub
             # sockets on the live trimesh mesh, left uncentred (see centre=).
