@@ -229,11 +229,16 @@ def _save_configs(run_id, configs):
     log_dir  = Path(__file__).parent.parent / 'logs' / 'nightly_random'
     log_dir.mkdir(parents=True, exist_ok=True)
     path = log_dir / f'{datetime.now().strftime("%Y-%m-%d")}_{run_id}.json'
-    path.write_text(json.dumps({
+    # Whole or not at all: every xdist worker runs this module's fixture, and one read another's
+    # file while it was still being written (JSONDecodeError, 2026-11-02). The same seed gives
+    # every worker the same configs, so whichever lands is the run's.
+    tmp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    tmp.write_text(json.dumps({
         'run_id':    run_id,
         'timestamp': datetime.now().isoformat(),
         'configs':   configs,
     }, indent=2), encoding='utf-8')
+    os.replace(tmp, path)
     return path
 
 

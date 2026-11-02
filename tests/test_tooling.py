@@ -35,6 +35,30 @@ def test_each_worker_logs_in_a_folder_of_its_own():
     assert Path(os.environ["PULLEY_LOG_DIR"]).name.startswith(f"pulley-tests-{worker}-")
 
 
+def test_the_linux_binary_check_allows_only_the_last_bit():
+    """tools/linux_binary_check.py: the Linux small_step's STEP must be the Windows build's, but for
+    the two maths libraries rounding the last bit: a signed zero ("-0." against "0.") and a
+    number's last printed digit (at most 1e-12 mm); anything else is a difference."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import linux_binary_check as L
+    a = b"#7=CARTESIAN_POINT('',(1.5,0.,-2.));\n"
+    assert L.compare(a, a) == ("exact", 0.0)
+    assert L.compare(a, b"#7=CARTESIAN_POINT('',(1.5,-0.,-2.));\n")[0] == "signed zero"
+    assert L.compare(b"(-0.,1.)", b"(0.,1.)")[0] == "signed zero"
+    p = b"#8609=CARTESIAN_POINT('',(3.463133033888,-2.002253107701,16.812407850868));\n"
+    rule, d = L.compare(p, p.replace(b"850868", b"850869"))           # the 0.18.2 samples' kind
+    assert rule == "last digit" and 0.9e-12 < d < 1.1e-12
+    assert L.compare(p, p.replace(b"850868", b"850870"))[0] is None   # two units
+    assert L.compare(p, p.replace(b"16.812407850868", b"16.81240785087"))[0] is None   # 2e-12
+    t = b"#18545=CARTESIAN_POINT('',(7.143232341201,-0.166260908246,3.94658513077));\n"
+    assert L.compare(t, t.replace(b"7.143232341201", b"7.1432323412"))[0] == "last digit"   # ...200
+    assert L.compare(t, t.replace(b"7.143232341201", b"7.14323234"))[0] is None   # 1.2e-9
+    assert L.compare(b"(1.5,-0.5,-2.)", b"(1.5,0.5,-2.)")[0] is None   # a real number's sign
+    assert L.compare(a, b"#7=CARTESIAN_POINT('',(1.5,0.,-2.1));\n")[0] is None
+    assert L.compare(b"#7=LINE('',#5,#6);\n", b"#7=LINE('',#5,#8);\n")[0] is None   # a reference
+    assert L.compare(a, a + b"#8=VECTOR('',#9,1.);\n")[0] is None                   # a line more
+
+
 def test_the_listed_caches_are_dicts():
     specs = _ini()["cct_test_caches"].split()
     assert specs

@@ -63,7 +63,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # self-intersecting, and a second screw reaching a D-flat or key slot's side
 # INVALID; both built now, a hex pair past the meeting refused by name
 # (0.11.2: a screw the key's own width builds again, as 0.11.0 built it).
-SMALL_STEP_MIN_VERSION = (0, 11, 2)
+# 0.18.2: a top flange printed in place whose hole lies inside a hub within the
+# teeth takes the hub's radius as its hole; it ran up through the flange's band
+# as a second solid (+3.77 %, the night of 2026-11-01). bin/small_step_linux is
+# 0.18.2 from the same commit (32d6300): raise this only with that binary.
+SMALL_STEP_MIN_VERSION = (0, 18, 2)
 
 _version_checked: dict = {}   # bin_path → True once verified
 # small_step builds a captured nut under a top ring counterbore correctly from
