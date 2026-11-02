@@ -90,8 +90,16 @@ def _raw_config(r):
         if screw_dia > 0:
             cfg['hub_screw_dia']   = screw_dia
             cfg['hub_screw_count'] = r.choice([1, 2, 3])
-            if r.random() > 0.5:
+            nut = r.random() > 0.5
+            if nut:
                 cfg['hub_captured_nut'] = '1'
+            # As the page sends a screw (screwParams): its named size and how it holds, which
+            # decide the hole and every screw check; a diameter alone is an old design, which
+            # the server re-exports unchecked (the owner, 2026-11-02, after the 11-01 night's
+            # [0]: a Ø5 captured nut on a Ø4.2 bore). Drawn from the same numbers, so a seed
+            # gives the designs it always did, with the screws named.
+            cfg['hub_screw_size']  = f'M{screw_dia:g}'
+            cfg['hub_screw_hold']  = 'nut' if nut else 'thread'
     else:
         hub_od = 0.0
 
