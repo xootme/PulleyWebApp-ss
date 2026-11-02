@@ -152,6 +152,46 @@ def test_a_test_ledger_changed_leaves_prod_alone(monkeypatch):
     assert not calls
 
 
+def test_health_names_the_running_small_step(client):
+    """/api/health's small_step is the binary's own --version (the release smoke test reads it)."""
+    import os
+    from app import _SS_BIN
+    from exporters.step_worker_ss import _binary_version
+    if not (_SS_BIN and os.path.isfile(_SS_BIN)):
+        pytest.skip("no small_step binary")
+    got = client.get("/api/health").get_json()["small_step"]
+    assert got == ".".join(map(str, _binary_version(_SS_BIN))) and got.count(".") == 2
+
+
+@pytest.mark.parametrize("health, want", [
+    ({"version": "2.0.33", "small_step": "0.18.2"}, []),
+    ({"version": "2.0.33", "small_step": "0.19.0"}, []),
+    ({"version": "2.0.33", "small_step": "0.13.4"}, ["below the minimum 0.18.2"]),
+    ({"version": "2.0.33", "small_step": None}, ["below the minimum 0.18.2"]),
+    ({"version": "2.0.32", "small_step": "0.18.2"}, ["version 2.0.32 (want 2.0.33)"]),
+], ids=["the minimum", "newer", "0.13.4", "none", "the old revision"])
+def test_the_smoke_test_holds_the_new_revisions_small_step(monkeypatch, capsys, health, want):
+    """release.smoke fails (so rolls back) unless the new revision's own health names a small_step
+    at least SMALL_STEP_MIN_VERSION, and prints it for the morning report."""
+    import json as _json
+    import release
+    asked = []
+    monkeypatch.setattr(release, "small_step_min", lambda: (0, 18, 2))
+    monkeypatch.setattr(release, "http", lambda url, data=None, tries=4: (asked.append(url), (200, _json.dumps(health)))[1])
+    bad = release.small_step_check("pulley", "2.0.33", "https://example.test/tools/pulleys")
+    assert len(bad) == len(want) and all(w in b for w, b in zip(want, bad)), bad
+    assert asked[0].startswith("https://example.test/tools/pulleys/api/health?fresh=")   # never a cached answer
+    assert f"pulley: small_step {health['small_step']} (minimum 0.18.2)" in capsys.readouterr().out
+
+
+def test_the_smoke_tests_minimum_is_the_released_one():
+    import inspect
+    import release
+    from exporters.step_worker_ss import SMALL_STEP_MIN_VERSION
+    assert release.small_step_min() == SMALL_STEP_MIN_VERSION
+    assert "bad += small_step_check(name, version, base)" in inspect.getsource(release.smoke)
+
+
 @pytest.fixture
 def pg_url():
     """A Postgres URL on a schema made for this test alone (skipped unless CCT_TEST_POSTGRES

@@ -5011,9 +5011,15 @@ register_download_failure_log(app, _failure_store, app_name='pulleys', app_versi
 @app.route('/api/health')
 def api_health():
     """The app's version and its cct_common's (version, hash, whether it's the released
-    copy): the admin page's Status tab asks every service for it (cct_common 0.26.0)."""
+    copy): the admin page's Status tab asks every service for it (cct_common 0.26.0).
+    `small_step`: the STEP engine this instance runs, as its binary says (--version), or
+    None without one; the release smoke test holds it to SMALL_STEP_MIN_VERSION (prod made
+    its STEPs with 0.13.4 while the tests ran 0.18, found 2026-11-02)."""
     from cct_common.release import health_fields
-    return jsonify(status='ok', version=APP_VERSION, **health_fields())
+    from exporters.step_worker_ss import _binary_version
+    ss = _binary_version(_SS_BIN) if _SS_BIN and os.path.isfile(_SS_BIN) else (0, 0, 0)
+    return jsonify(status='ok', version=APP_VERSION,
+                   small_step='.'.join(map(str, ss)) if any(ss) else None, **health_fields())
 
 
 if _accounts_state.accounts is not None:

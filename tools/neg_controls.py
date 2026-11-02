@@ -112,8 +112,8 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    _R_tr = R_OD - tooth_ht        # both kinds (the metal one's was unset: every metal flange STEP failed)\n\n    if flange_3dprint:\n",
         "\n    if flange_3dprint:\n        _R_tr = R_OD - tooth_ht\n"),
     # cct_common 0.26.0: the copy is a release, /api/health says which, the admin opens designs in the app
-    "health: names its cct_common": (AP, "    return jsonify(status='ok', version=APP_VERSION, **health_fields())",
-                                      "    return jsonify(status='ok', version=APP_VERSION)"),
+    "health: names its cct_common": (AP, "small_step='.'.join(map(str, ss)) if any(ss) else None, **health_fields())",
+                                      "small_step='.'.join(map(str, ss)) if any(ss) else None)"),
     "admin: a design opens in the app": (AP, "download_failures=_failure_store, app_url='https://cheapcadtools.com/tools/pulleys')",
                                          "download_failures=_failure_store)"),
     "vendored: a copy edited in place fails": ("cct_common/forksafe.py", '    if hasattr(os, "register_at_fork"):',
@@ -199,6 +199,13 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "release: the ledger as of before the deploy": ("tools/release.py",
         "'SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ts < %s'",
         "'SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ts < %s OR TRUE'"),
+    # the smoke test holds the new revision's small_step (2026-11-02, campaign small-step-linux-binaries)
+    "release: a small_step below the minimum fails the smoke test": ("tools/release.py",
+        "    if not got or have < small_step_min():", "    if not got:"),
+    "release: the smoke test asks the new revision's small_step": ("tools/release.py",
+        "    bad += small_step_check(name, version, base)\n", ""),
+    "health: names the running small_step": (AP,
+        "small_step='.'.join(map(str, ss)) if any(ss) else None,", "small_step=None,"),
 }
 
 

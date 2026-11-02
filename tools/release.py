@@ -184,6 +184,38 @@ def queued_check(label, cmd, cwd, tries=2):
     return False, '\n'.join(lines[-6:])
 
 
+def small_step_min():
+    """SMALL_STEP_MIN_VERSION as this release ships it (exporters/step_worker_ss.py)."""
+    text = (ROOT / 'exporters' / 'step_worker_ss.py').read_text(encoding='utf-8')
+    return tuple(int(x) for x in re.search(r'^SMALL_STEP_MIN_VERSION = \((\d+), (\d+), (\d+)\)', text, re.M).groups())
+
+
+def small_step_check(name, version, base):
+    """The new revision's STEP engine, from its own /api/health (a fresh query, so no cache
+    answers, and only if it is this release's version): at least the minimum the release needs.
+    Production made its STEPs with 0.13.4 while the tests ran 0.18 (found 2026-11-02); the line
+    goes in the release log for the morning report."""
+    want = '.'.join(map(str, small_step_min()))
+    code, body = http(f'{base}/api/health?fresh={secrets.token_hex(8)}')
+    try:
+        health = json.loads(body) if code == 200 else {}
+    except ValueError:
+        health = {}
+    got = health.get('small_step')
+    say(f'{name}: small_step {got} (minimum {want}), from the health of {health.get("version")}')
+    if code != 200:
+        return [f'health: {code}']
+    if health.get('version') != version:
+        return [f'health: version {health.get("version")} (want {version}), so its small_step is not this release\'s']
+    try:
+        have = tuple(int(x) for x in str(got).split('.'))
+    except ValueError:
+        have = ()
+    if not got or have < small_step_min():
+        return [f'small_step {got} on the new revision, below the minimum {want}']
+    return []
+
+
 def smoke(name, version, revision):
     """Returns the problems found (empty = passed)."""
     base, bad = SERVICES[name], []
@@ -192,6 +224,7 @@ def smoke(name, version, revision):
     found = re.search(r'Ver\. (\d+\.\d+\.\d+)', body)
     if code != 200 or not found or found.group(1) != version:
         bad.append(f'page: {code}, version {found.group(1) if found else "none"} (want {version})')
+    bad += small_step_check(name, version, base)
     code, _ = http(base + '/api/v1/describe')
     if code != 200:
         bad.append(f'describe: {code}')
