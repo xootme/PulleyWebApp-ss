@@ -39,6 +39,9 @@ HAND = {
     'downloads: a dropped poll stops the download': ('tokens_ui', PAGE, [
         ('      if (++_pollErrors < 60) { _jobPollTimer = setTimeout(pollJobStatus, 1000); return; }',
          '      if (++_pollErrors < 60) { return; }')]),
+    # the zip's spinner (the 11-02 night): seen however briefly it shows, and missed when it never does
+    'zip: no spinner while the files are built': ('tokens_ui', PAGE, [
+        ("      const done = _busy('Building your files…');", "      const done = () => {};")]),
 }
 # A harness that needs more than a plain server (as tools/harnesses.py starts it): the server's
 # extra settings, and the harness's arguments after the base URL from the server's log folder.

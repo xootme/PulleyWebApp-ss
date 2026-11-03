@@ -232,9 +232,19 @@ async function main() {
 
   // 3. download: one zip, one charge
   let before = (await history()).length;
+  // The spinner is up only until the server answers with a job id; a starved harness (the 11-02
+  // night, a 1-CPU crawl) looked after it had gone. The page notes it the moment it shows.
+  await js(`(() => {
+    const ov = document.getElementById('loading-overlay'), tx = document.getElementById('loading-text');
+    window._sawBuilding = false;
+    window._buildingSeen = new MutationObserver(() => {
+      if (ov.style.display === 'flex' && tx.textContent.startsWith('Building your files')) window._sawBuilding = true;
+    });
+    window._buildingSeen.observe(ov, { attributes: true, attributeFilter: ['style'] });
+  })()`);
   await js("document.querySelector('.cct-dl .cct-btn-primary').click()");
-  check('zip: a spinner shows while the files are built',
-        await waitFor("document.getElementById('loading-overlay').style.display === 'flex' && document.getElementById('loading-text').textContent.startsWith('Building your files')", 3000));
+  check('zip: a spinner shows while the files are built', await waitFor('window._sawBuilding', 3000));
+  await js('window._buildingSeen.disconnect()');
   await waitJob();
   const h = (await history()).slice(0, (await history()).length - before);
   check('zip: exactly one spend of 4 for STEP', h.length === 1 && h[0].kind === 'spend' && h[0].amount === -4 && h[0].fmt === 'step', h);
@@ -343,6 +353,9 @@ s.credit(a, -(s.balance(a) - 1), kind="adjust", detail="browser test")`], { cwd:
   })()`);
   check('a dropped poll is asked again and the download goes on', dropped.polls === 2 && !dropped.sent.length
         && !dropped.shown && dropped.toast.includes('Sent to your CAD app'), dropped);
+  // the page logs the poll this check dropped; that one isn't a page error
+  const own = errors.findIndex(e => e.startsWith('Poll error: TypeError: Failed to fetch'));
+  if (own >= 0) errors.splice(own, 1);
 
   finish(errors);
   ws.close(); chrome.kill();
