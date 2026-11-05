@@ -168,6 +168,11 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "stl: a captured nut's hole is cut after a flange printed in place": (AP,   # the 11-01 night's [3]
         "    _cuts = [] if (_fl_3dp and not fp.get('top_separate')) else None",
         "    _cuts = None"),
+    "screws: a hub too short for its screw warns": (AP,   # the owner's option b, 2026-11-02
+        "    if hub_h >= need - 1e-9:\n        return [], {}, []", "    if True:\n        return [], {}, []"),
+    "random: only a short hub skips the STEP volume check": ("tests/test_nightly_random.py",   # option c, 2026-11-04
+        "    return any(w.startswith(f'{who}Hub height too short') for w in warnings)",
+        "    return any('Hub height too short' in w for w in warnings)"),
     "screws: a captured nut is checked on a flat or key too": (AP,   # the 11-01 night's design
         "(not keyed or screw.hold == 'nut')", "(not keyed)"),
     "screws: the hole's bore is the pulley's own": (AP, "    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]\n    too_big",

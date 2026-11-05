@@ -1421,6 +1421,37 @@ def _screw_hole_too_big(args, pfx, n, who):
         f'{who}set screw {screw.size} → {too_big.fix_size} (the bore can\'t take a larger one)']
 
 
+def _hub_too_short(args, pfx, n, who, fix_size=None):
+    """A hub shorter than twice its set screw's major diameter: the page's own hub rule
+    (_validateHub, "Hub height too short (need ≥ 10 mm for M5)"), until 2026-11-02 shown only
+    in the browser's hub panel. Shorter, the screw's hole breaks out of the hub's top and
+    bottom in the STL, and small_step quietly builds a taller hub than asked (its plan_hub:
+    hole + 1 mm), so the two files disagreed (the night random test's +1.98 %, a GT 5M 53T with
+    an M5 on a 3.8 mm hub; the owner's option b, 2026-11-02). Every hold the page has (thread,
+    captured nut, heat-set insert); a design from before screws had names isn't checked, as
+    with the other screw rules. Returns ([warning], {element id: value}, [change text]); the
+    fix is the height the rule asks for, of `fix_size` when the Auto-fix also changes the
+    screw (none when the hub is already tall enough for that one)."""
+    try:
+        screw = _set_screw(args, pfx)
+    except ValueError:
+        return [], {}, []
+    hub_h = _safe_float(args.get(f'{pfx}hub_height'), 0.0)
+    if screw is None or hub_h <= 0 or _safe_float(args.get(f'{pfx}hub_od'), 0.0) <= 0:
+        return [], {}, []
+    need = round(2 * screw.major, 2)
+    if hub_h >= need - 1e-9:
+        return [], {}, []
+    name = 'this screw' if screw.size == 'Custom' else screw.size
+    warn = [f'{who}Hub height too short (need ≥ {need:g} mm for {name})']
+    if fix_size and fix_size != screw.size:
+        from cct_common import screws as _screws
+        need = round(2 * _screws.get(fix_size).major_diameter, 2)
+        if hub_h >= need - 1e-9:
+            return warn, {}, []
+    return warn, {f'hub{n}_height': need}, [f'{who}hub height {hub_h:g} → {need:g} mm']
+
+
 def _captured_nut_hub(args, pfx, n, who, root_d):
     """A captured nut in a hub too narrow for it: no wall left round its screw
     behind a key slot — STEP can't make it (geometry/captured_nut_hub.py, the same check the STEP worker
@@ -1633,6 +1664,11 @@ def _dimensions(args):
                     changes = [c for c in changes if not c.startswith(f'{who}set screw ')]
             fix_set.update(big_fix)
             changes += big_changes
+            short_warn, short_fix, short_changes = _hub_too_short(args, pfx, n, who,
+                                                                  fix_set.get(f'hub{n}_screw_size'))
+            warnings += short_warn
+            fix_set.update(short_fix)
+            changes += short_changes
 
         flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
         p['flanged'] = flanged

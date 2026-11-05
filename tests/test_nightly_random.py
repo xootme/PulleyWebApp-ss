@@ -343,6 +343,15 @@ def test_random_stl_download(client, random_configs, idx):
     assert len(r.data) > 84
 
 
+def _short_hub(warnings, n, dual):
+    """Whether the page warns pulley n's hub too short for its set screw. Its STEP is still made,
+    but small_step grows that hub to fit the hole and the STL doesn't, so only their volumes are
+    not compared (the owner's option c, 2026-11-04). Once small_step refuses such a design (its
+    planned screw_hole_past_hub), its STEP isn't made and this never applies."""
+    who = f'Pulley {n}: ' if dual else ''
+    return any(w.startswith(f'{who}Hub height too short') for w in warnings)
+
+
 @pytest.mark.parametrize('idx', range(5))
 def test_random_step(client, random_configs, idx):
     """Each pulley's STEP, as the Download window makes it alone, is its STL
@@ -362,7 +371,8 @@ def test_random_step(client, random_configs, idx):
                               f'refuses: {r.data[:300]}\n{json.dumps(cfg, indent=2)}')
             continue
         assert b'ISO-10303-21' in r.data
-        bad = problems(r.data, reference_volume(client, q, n), STEP_REL)
+        dual = q.get('dual') == 'true'
+        bad = problems(r.data, None if _short_hub(warnings, n, dual) else reference_volume(client, q, n), STEP_REL)
         assert not bad, f'config[{idx}] pulley {n}: {bad}\n{json.dumps(cfg, indent=2)}'
 
 
