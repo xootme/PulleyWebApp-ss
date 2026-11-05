@@ -43,6 +43,9 @@ HAND = {
     # the zip's spinner (the 11-02 night): seen however briefly it shows, and missed when it never does
     'zip: no spinner while the files are built': ('tokens_ui', PAGE, [
         ("      const done = _busy('Building your files…');", "      const done = () => {};")]),
+    # the key slot's two Auto-fixes (the owner, 2026-11-04): the page shows (b) beside (a)
+    'screws: the second Auto-fix never shows': ('screw_ui', PAGE, [
+        ("    fixBtnB.classList.toggle('hidden', !dimsFixB);", "    fixBtnB.classList.toggle('hidden', true);")]),
     # 3D Print Compensation (the owner, 2026-10-31): the account's value is clamped to each pulley's cap
     'comp: the account\'s value over the cap is kept': ('designs_ui', PAGE, [
         ('cctTokens.clampCompensation(raw, caps[i])', 'cctTokens.clampCompensation(raw)')]),

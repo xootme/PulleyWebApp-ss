@@ -181,6 +181,10 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "trial: the add-in's status counts the week from Monday midnight": (AP,   # cct_common 0.56.8
         "    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)",
         "    week_start = now - timedelta(days=now.weekday())"),
+    "screws: a captured nut's screw wider than its key slot warns": (AP,   # the 11-03 live download
+        "or screw.hole['diameter'] <= kw_w + 1e-9:\n        return none", "or True:\n        return none"),
+    "screws: the key slot's second Auto-fix is offered": (AP,   # the owner, 2026-11-04: (a) or (b)
+        "                alt_set.update(slot_b)\n", "                pass\n"),
     "screws: a hub too short for its screw warns": (AP,   # the owner's option b, 2026-11-02
         "    if hub_h >= need - 1e-9:\n        return [], {}, []", "    if True:\n        return [], {}, []"),
     "random: only a short hub skips the STEP volume check": ("tests/test_nightly_random.py",   # option c, 2026-11-04

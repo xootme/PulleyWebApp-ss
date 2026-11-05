@@ -628,6 +628,7 @@
     <div class="dims-results" id="dims-results">
       <div class="warn-row" id="dims-warn-row">
         <button type="button" class="spoke-fit-btn hidden" id="dims_fix" onclick="applyDimsFix()">Auto-fix</button>
+        <button type="button" class="spoke-fit-btn hidden" id="dims_fix_b" onclick="applyDimsFix('b')">Auto-fix (b)</button>
         <ul class="dims-warnings" id="dims-warnings"></ul>
       </div>
       <details id="dims-details" ontoggle="rememberDimsOpen()">
@@ -3988,7 +3989,7 @@ function inchMessage(text) {
 }
 const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height',
                     flange_overlap: 'flange_min_overlap' };
-let dimsTimer = null, dimsSeq = 0, dimsFix = null;
+let dimsTimer = null, dimsSeq = 0, dimsFix = null, dimsFixB = null;
 // The warnings and their Auto-fix wait while a value is part-way typed ("1" on the way
 // to "18"), until 2 s after the last keystroke, Enter, Tab or leaving the field (cct_busy.js;
 // the owner, 2026-10-22). A design with nothing to warn of clears them at once. The ticket,
@@ -4034,9 +4035,13 @@ function showDims(data, ticket) {
     document.querySelectorAll('.setting-refused').forEach(el => el.classList.remove('setting-refused'));
     if (data.field) document.getElementById(data.field)?.classList.add('setting-refused');
     dimsFix = data.fix || null;
-    const fixBtn = document.getElementById('dims_fix');
+    dimsFixB = (dimsFix && data.fix_b) || null;    // a second fix to choose (the owner, 2026-11-04)
+    const fixBtn = document.getElementById('dims_fix'), fixBtnB = document.getElementById('dims_fix_b');
     fixBtn.classList.toggle('hidden', !dimsFix);
+    fixBtn.textContent = dimsFixB ? 'Auto-fix (a)' : 'Auto-fix';
     if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
+    fixBtnB.classList.toggle('hidden', !dimsFixB);
+    if (dimsFixB) fixBtnB.title = 'Changes: ' + dimsFixB.changes.join('; ');
     document.getElementById('dims-warn-row').classList.remove('hidden');   // Auto-fix closed it
   };
   if (lines.length) refusals.show(showWarnings, ticket);
@@ -4123,14 +4128,16 @@ function showDims(data, ticket) {
 }
 
 // Auto-fix: set each field the server named and let its own handler run. The warnings
-// close at once and the overlay shows until the redraw is in (cct_busy.js).
-function applyDimsFix() {
-  if (!dimsFix) return;
-  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), _applyDimsFix, busyText());
+// close at once and the overlay shows until the redraw is in (cct_busy.js). 'b' is the
+// second fix, where a warning offers two.
+function applyDimsFix(which) {
+  const fix = which === 'b' ? dimsFixB : dimsFix;
+  if (!fix) return;
+  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), () => _applyDimsFix(fix), busyText());
 }
-function _applyDimsFix() {
-  if ('clearance_height' in dimsFix.set) clearanceAuto = false;
-  for (const [id, value] of Object.entries(dimsFix.set)) {
+function _applyDimsFix(fix) {
+  if ('clearance_height' in fix.set) clearanceAuto = false;
+  for (const [id, value] of Object.entries(fix.set)) {
     const el = document.getElementById(id);
     if (!el) {                             // a radio group (the threaded hole's shape): its name
       const radio = document.querySelector(`input[type="radio"][name="${id}"][value="${value}"]`);

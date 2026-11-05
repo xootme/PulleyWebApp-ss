@@ -235,6 +235,33 @@ async function main() {
   check('Reset: a new design starts from your default', (await js('threadShape()')) === 'round'
     && (await js("document.getElementById('thread_engagement').value")) === '70');
 
+  // ── a captured nut's screw wider than the key slot: two Auto-fixes (the owner, 2026-11-04) ──
+  // the live download that failed on 11-03: an M5 nut aimed into a 5 mm keyway
+  const slot = `${BASE}/?family=Imperial&pitch=XL&teeth=35&bore=14&hub_od=35&hub_height=10&hub_keyway_w=5`
+    + '&hub_keyway_h=2.6&hub_screw_size=M5&hub_screw_hold=nut&hub_captured_nut=1&hub_screw_count=1&feature_build=1';
+  const WIDE = "The M5 captured-nut screw's hole (Ø5.50 mm) is wider than the 5 mm key slot it goes through: "
+    + 'its edge would sit half in the slot and half on the bore. Use a smaller screw or a threaded hole.';
+  const warned = () => waitFor(`[...document.querySelectorAll('#dims-warnings li')].some(li => li.textContent === ${JSON.stringify(WIDE)})`, 15000);
+  const quiet = () => waitFor(`![...document.querySelectorAll('#dims-warnings li')].some(li => li.textContent.includes('key slot'))`, 15000);
+  const btn = id => js(`(() => { const b = document.getElementById('${id}'); return b.classList.contains('hidden') ? null : b.textContent; })()`);
+  await load(slot);
+  check('key slot: the page warns in the owner\'s words', await warned(), await text('#dims-warnings'));
+  check('key slot: two Auto-fixes, (a) and (b)', (await btn('dims_fix')) === 'Auto-fix (a)' && (await btn('dims_fix_b')) === 'Auto-fix (b)',
+        [await btn('dims_fix'), await btn('dims_fix_b')]);
+  await js("document.getElementById('dims_fix_b').click()");
+  check('key slot: (b) makes it a threaded hole, the same M5', await quiet()
+    && (await js("document.getElementById('hub1_retention').value")) === 'set_screw_std'
+    && (await js("document.getElementById('hub1_screw_size').value")) === 'M5', await text('#dims-warnings'));
+  await settled('Auto-fix (b)');
+  check('key slot: one fix again once it is fixed', (await btn('dims_fix_b')) === null);
+  await load(slot);
+  await warned();
+  await js("document.getElementById('dims_fix').click()");
+  check('key slot: (a) makes it an M4, still with its nut', await quiet()
+    && (await js("document.getElementById('hub1_retention').value")) === 'set_screw_nut'
+    && (await js("document.getElementById('hub1_screw_size').value")) === 'M4', await text('#dims-warnings'));
+  await settled('Auto-fix (a)');
+
   finish(errors);
   ws.close(); chrome.kill();
 }
