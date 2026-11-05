@@ -168,6 +168,16 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "stl: a captured nut's hole is cut after a flange printed in place": (AP,   # the 11-01 night's [3]
         "    _cuts = [] if (_fl_3dp and not fp.get('top_separate')) else None",
         "    _cuts = None"),
+    # 3D Print Compensation, 0 to 1.00 mm and each tooth keeps half its width (the owner, 2026-10-31, 11-02)
+    "comp: more than the teeth take is refused": ("geometry/labels.py",
+        "        if float(raw) > cap + 1e-9:", "        if False:"),
+    "comp: each tooth keeps half its width": ("geometry/print_comp.py",
+        "cap=tooth_width_mid(family, pitch, int(teeth)) / 4.0)", "cap=tooth_width_mid(family, pitch, int(teeth)) / 2.0)"),
+    "comp: the shared range": ("agent.py", "max=COMPENSATION_MAX_MM, default=0,", "max=5, default=0,"),
+    "comp: the agents' check holds the cap": ("agent.py", "        labels.compensation(query)\n", "        pass\n"),
+    "comp: the range reads 1.00 mm": ("geometry/labels.py", 'TWO_PLACES = {"print_extra"}', "TWO_PLACES = set()"),
+    "comp: the account's value takes each pulley's cap": ("templates/index.html",
+        "cctTokens.clampCompensation(raw, caps[i])", "cctTokens.clampCompensation(raw)"),
     "screws: a hub too short for its screw warns": (AP,   # the owner's option b, 2026-11-02
         "    if hub_h >= need - 1e-9:\n        return [], {}, []", "    if True:\n        return [], {}, []"),
     "random: only a short hub skips the STEP volume check": ("tests/test_nightly_random.py",   # option c, 2026-11-04

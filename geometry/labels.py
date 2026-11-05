@@ -64,6 +64,9 @@ SETTINGS = {
 P2_SAME_ID = {"teeth", "bore", "print_extra", "clearance_preset", "clearance_custom", "backlash_preset",
               "backlash_custom"}
 UNITS = {"deg": "°"}
+# A range whose top reads with two places, in the owner's words for every tool ("3D Print
+# Compensation must be 0 to 1.00 mm.", Controller's campaign 2026-10-31-print-compensation).
+TWO_PLACES = {"print_extra"}
 
 
 def split(key: str):
@@ -137,7 +140,8 @@ def number(raw, key: str, lo=-math.inf, hi=math.inf, whole=False, default=None, 
         raise SettingError(f"{label(key)} must be a whole number.", field(key), nearest(v, lo, hi, whole))
     if not lo <= v <= hi:
         what = "a whole number from " if whole else ""
-        raise SettingError(f"{label(key)} must be {what}{_with_unit(f'{lo:g} to {hi:g}', unit)}.",
+        top = f"{hi:.2f}" if split(key)[0] in TWO_PLACES else f"{hi:g}"
+        raise SettingError(f"{label(key)} must be {what}{_with_unit(f'{lo:g} to {top}', unit)}.",
                            field(key), nearest(v, lo, hi, whole))
     return int(v) if whole else v
 
@@ -213,6 +217,32 @@ def check(args) -> None:
                     options = [str(c) for c in table.get(str(args.get(other, limits()[other].default)), [])]
                 if options:
                     choice(raw, key, options, p.default)
+    compensation(args)
+
+
+def compensation(args) -> None:
+    """No more 3D Print Compensation than a pulley's teeth take: each tooth keeps at least half
+    its width, measured half-way up its height (geometry/print_comp.py; the owner, 2026-10-31
+    and 2026-11-02). After check()'s ranges, so the value, the family, the pitch and the teeth
+    are ones the page could have sent; the Auto-fix is the cap."""
+    from geometry import print_comp
+    p = limits().get("print_extra")
+    for prefix in ("", "p2_"):
+        key = prefix + "print_extra"
+        raw = args.get(key)
+        if p is None or raw is None or str(raw).strip() == "" or not _applies(p, args, prefix):
+            continue
+        family = args.get("family") or limits()["family"].default
+        pitch = args.get("pitch") or limits()["pitch"].default
+        teeth = args.get(prefix + "teeth") or limits()["teeth"].default
+        try:
+            cap = print_comp.cap(str(family), str(pitch), int(float(teeth)))
+        except (KeyError, ValueError, TypeError, IndexError):
+            continue                     # a profile the outline can't be drawn for: its own refusal
+        if float(raw) > cap + 1e-9:
+            shown = "0" if cap == 0 else f"{cap:.2f}"
+            raise SettingError(f"{label(key)} can be at most {shown} mm for these teeth: more would "
+                               "leave each tooth less than half its width.", field(key), shown)
 
 
 def blank_number(key: str, raw) -> bool:

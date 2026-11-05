@@ -73,7 +73,9 @@ Custom values) or 3D Print Compensation on either pulley changes the other pulle
 printed walls tend to be slightly thicker than designed, which tightens belt grooves. Every
 surface of the teeth and grooves moves this distance, measured square to the surface: the tooth
 tips come in, and the groove walls and bottom move out, so the printed part comes out at its
-nominal size. The outer diameter gets smaller by twice the value.</p>
+nominal size. The outer diameter gets smaller by twice the value. It is 0 to 1.00 mm, the same
+in every tool, and less for small teeth: each tooth keeps at least half its width, so it is at
+most 0.18 mm for a 10-tooth GT2 pulley and 0.40 mm for a 12-tooth HTD 5M.</p>
 <ul>
   <li>Typical FDM value: <code>0.1–0.2 mm</code></li>
   <li>Set to <code>0</code> for CNC machining or resin printing.</li>

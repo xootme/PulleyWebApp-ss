@@ -179,6 +179,20 @@ settings_for(r"${path.join(LOGDIR, 'accounts.sqlite3')}").set("printer_settings"
   await load(BASE + '/'); await settled('a reload');
   check('a value changed in this browser stays', Math.abs(await mmOf('print_extra') - 0.4) < 1e-9, await mmOf('print_extra'));
 
+  // An account's value over these teeth's cap is clamped to each pulley's own cap without a word
+  // (the owner, 2026-10-31: each tooth keeps at least half its width; geometry/print_comp.py).
+  const most = await js(`fetch('/api/account/printer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ units: 'mm', print_compensation_mm: 1.0 }) }).then(r => r.status)`);
+  check('the account keeps 1.00 mm', most === 200, most);
+  await fresh('a fresh page, the account at 1.00 mm');
+  await waitFor("Number(document.getElementById('print_extra').value) > 0 && Number(document.getElementById('p2_print_extra').value) > 0", 10000);
+  const caps = await js(`(() => { const v = id => document.getElementById(id).value;
+    return fetch('/api/compensation-cap?' + new URLSearchParams({ family: v('family'), pitch: v('pitch'), teeth: v('teeth'),
+      p2_teeth: v('p2_teeth') })).then(r => r.json()).then(j => j.cap); })()`);
+  const got = [await mmOf('print_extra'), await mmOf('p2_print_extra')];
+  check('…clamped to each pulley\'s cap', got[0] === caps[0] && got[1] === caps[1] && caps[0] < 1, { got, caps });
+  check('…without a word', !(await js("document.body.innerText.includes('Print Compensation can be at most')")));
+
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok ? '' : '  -> ' + String(JSON.stringify(r.detail)).slice(0, 600)}`);
   console.log(`page errors: ${errors.length ? JSON.stringify(errors.slice(0, 5)) : 'none'}`);
   if (errors.length) results.push({ ok: false });

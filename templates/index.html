@@ -354,7 +354,7 @@
         <div class="preset-info" id="backlash_info"></div>
 
         <label for="print_extra">3D Print Compensation (mm)</label>
-        <input type="number" id="print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
+        <input type="number" id="print_extra" value="0" min="0" max="1" step="0.01" oninput="schedulePreview()">
       </div>
     </section>
 
@@ -721,7 +721,7 @@
         <div class="preset-info" id="p2_backlash_info"></div>
 
         <label for="p2_print_extra">3D Print Compensation (mm)</label>
-        <input type="number" id="p2_print_extra" value="0" min="0" max="5" step="0.05" oninput="schedulePreview()">
+        <input type="number" id="p2_print_extra" value="0" min="0" max="1" step="0.01" oninput="schedulePreview()">
       </div>
     </section>
 
@@ -1920,7 +1920,7 @@ window.onload = async () => {
   if (!_threadFromDesign) applyThreadDefault();   // a new design starts from your default
   _syncNubHeightMax();
   _pageStarted = true;                            // the account's printer settings may land now
-  if (_printerPending) _applyPrinter();
+  if (_printerPending) await _applyPrinter();     // (its caps asked first, then the fields)
   if (_designPending) await _applyDesign();       // and a saved design opened from My designs
 
   // Apply Feature Build tab state now that the DOM is fully ready.
@@ -2985,7 +2985,16 @@ async function _applyDesign() {
 // the person changed here, and waits for the start-up restore so that can't overwrite it.
 let _printerPending = null, _pageStarted = false;
 window.cctApplyPrinterSettings = s => { _printerPending = s || null; if (_pageStarted) _applyPrinter(); };
-function _applyPrinter() {
+// Each pulley's most 3D Print Compensation (each tooth keeps at least half its width, the
+// server's geometry/print_comp.py): [pulley 1, pulley 2], null for one it couldn't say.
+async function _compensationCaps() {
+  const v = id => document.getElementById(id).value;
+  const q = new URLSearchParams({ family: v('family'), pitch: v('pitch'), teeth: v('teeth'), p2_teeth: v('p2_teeth') });
+  const caps = await fetch('/api/compensation-cap?' + q).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  return (caps && caps.cap) || [null, null];
+}
+
+async function _applyPrinter() {
   const s = _printerPending;
   _printerPending = null;
   if (!s) return;
@@ -2994,10 +3003,13 @@ function _applyPrinter() {
     sel.value = s.units;
     onUnitsChange();
   }
-  const mm = window.cctTokens && cctTokens.clampCompensation
-    ? cctTokens.clampCompensation(s.print_compensation_mm) : s.print_compensation_mm;
-  if (mm !== null && mm !== undefined && Number.isFinite(Number(mm))) {
-    ['print_extra', 'p2_print_extra'].forEach(id => {
+  const raw = s.print_compensation_mm;
+  if (raw !== null && raw !== undefined && Number.isFinite(Number(raw))) {
+    // the account's value, clamped to each pulley's cap without a word (the owner, 2026-10-31)
+    const caps = await _compensationCaps();
+    ['print_extra', 'p2_print_extra'].forEach((id, i) => {
+      const mm = window.cctTokens && cctTokens.clampCompensation
+        ? cctTokens.clampCompensation(raw, caps[i]) : raw;
       const el = document.getElementById(id);
       if (Number(el.value) === 0) el.value = Number(mm);
     });

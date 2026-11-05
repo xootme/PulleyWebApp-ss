@@ -147,6 +147,12 @@ def _raw_config(r):
         cfg['p2_clearance_preset'] = r.choice(_CLEARANCE)
         cfg['p2_backlash_preset']  = r.choice(_BACKLASH)
 
+    # No more 3D Print Compensation than the page lets these teeth take (each tooth keeps at
+    # least half its width; geometry/print_comp.py, the owner, 2026-10-31): still the same draw.
+    from geometry.print_comp import cap
+    cfg['print_extra'] = min(cfg['print_extra'], cap(family, pitch, teeth))
+    if dual:
+        cfg['p2_print_extra'] = min(cfg['p2_print_extra'], cap(family, pitch, cfg['p2_teeth']))
     return cfg
 
 

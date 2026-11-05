@@ -51,7 +51,7 @@ METAL_WIDE_HUB = {
 }
 
 WIDE_KEY = {
-    'family': 'GT', 'pitch': '2M', 'teeth': 33, 'bore': 4.1, 'print_extra': 0.33,
+    'family': 'GT', 'pitch': '2M', 'teeth': 33, 'bore': 4.1, 'print_extra': 0.2,    # under GT2 33T's cap (0.22) since 2026-11-02; it was 0.33
     'clearance_preset': 'STANDARD', 'backlash_preset': 'LOOSE', 'belt_height': 15.7,
     'clearance_height': 0.1, 'hub_keyway_w': 6.0, 'hub_keyway_h': 3.0, 'hub_od': 14.9, 'hub_height': 8.1,
 }

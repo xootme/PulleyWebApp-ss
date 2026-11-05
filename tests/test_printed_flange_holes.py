@@ -11,7 +11,7 @@ import pytest
 
 # The night's [3], as the random test sent it (its screw by diameter alone)
 NIGHT_3 = {
-    'family': 'STD', 'pitch': '2M', 'teeth': '54', 'bore': '11.2', 'print_extra': '0.39',
+    'family': 'STD', 'pitch': '2M', 'teeth': '54', 'bore': '11.2', 'print_extra': '0.15',   # 0.39 that night: over its cap now
     'clearance_preset': 'TIGHT', 'backlash_preset': 'NONE', 'belt_height': '13.2',
     'clearance_height': '0.4', 'hub_flat_depth': '2.61', 'hub_od': '28.7', 'hub_height': '5.4',
     'hub_screw_dia': '3.0', 'hub_screw_count': '1', 'hub_captured_nut': '1',

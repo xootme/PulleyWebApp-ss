@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 
 from cct_common.agent_api import Description, Param, Part, AgentError, register_agent_api
+from cct_common.printer_settings import COMPENSATION_MAX_MM, COMPENSATION_MIN_MM
 
 APP_ID = "pulleys"
 
@@ -34,8 +35,9 @@ def _params(families: dict, screw_sizes: list) -> list:
         P("bore", "number", "Round bore diameter (0: none; a spline or hex bar sets the bore itself)", unit="mm",
           min=0, max=300, default=8, group=size, per_part=True),
         P("print_extra", "number", "3D-print compensation: tooth profile offset; for a splined or hex "
-          "bore the STL's bore grows by it (STEP, SVG, DXF stay nominal)", unit="mm", min=0, max=5,
-          default=0, group=size, per_part=True),
+          "bore the STL's bore grows by it (STEP, SVG, DXF stay nominal). 0 to 1.00 mm in every tool, "
+          "and less for small teeth: each tooth keeps at least half its width", unit="mm",
+          min=COMPENSATION_MIN_MM, max=COMPENSATION_MAX_MM, default=0, group=size, per_part=True),
         P("clearance_preset", "enum", "Tooth clearance", choices=("TIGHT", "STANDARD", "LOOSE", "CUSTOM"),
           default="STANDARD", group=size, per_part=True),
         P("clearance_custom", "number", "Tooth clearance when CUSTOM", unit="mm", min=0, max=2,
@@ -271,7 +273,12 @@ def _belt_centre(query: dict) -> dict:
 def check(query: dict) -> dict:
     from app import _dimensions, _spline_of, _spoke_fit
     from cct_common import splines
+    from geometry import labels
     query = _belt_centre(query)
+    try:                                 # the page's cap for these teeth, as the downloads hold it
+        labels.compensation(query)
+    except labels.SettingError as e:
+        raise AgentError(str(e), [f"{e.field}: set it to {e.fix}"]) from None
     out = _dimensions(dict(query, feature_build="1"))
     if out.get("fix"):
         out["fix"]["params"] = _fix_params(out["fix"]["set"])

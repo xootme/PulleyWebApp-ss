@@ -1570,6 +1570,22 @@ def api_dimensions():
         return jsonify({'error': str(e)}), 400
 
 
+@app.route('/api/compensation-cap')
+def api_compensation_cap():
+    """Each pulley's most 3D Print Compensation (geometry/print_comp.py: each tooth keeps at
+    least half its width): {"cap": [pulley 1, pulley 2]}, for the page to clamp the account's
+    printer setting to without a word (the owner, 2026-10-31). Takes family, pitch, teeth and
+    p2_teeth; a 400 for a profile with no outline (the page then clamps to the range alone)."""
+    from geometry import print_comp
+    family, pitch = request.args.get('family', 'HTD'), request.args.get('pitch', '5M')
+    try:
+        t1 = int(float(request.args.get('teeth', 20)))
+        t2 = int(float(request.args.get('p2_teeth', t1)))
+        return jsonify(cap=[print_comp.cap(family, pitch, t1), print_comp.cap(family, pitch, t2)])
+    except (KeyError, ValueError, TypeError, IndexError):
+        return jsonify(error=f'no outline for {family} {pitch}'), 400
+
+
 def _dimensions(args):
     """The Dimensions panel's figures, warnings and Auto-fix as a dict (the
     page's /api/dimensions and the agents' /api/v1/check). Raises ValueError."""

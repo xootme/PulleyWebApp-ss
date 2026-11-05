@@ -9,6 +9,7 @@ passes, or never finishes, says the break went unseen. From the repo root, in a 
 The breaks are HAND below: name -> (harness, file, [(the text, its broken form), ...]). They are for
 checks that only a browser can catch (a converted wait that must still fail when its state
 never comes), so tools/neg_controls.py, which runs pytest, can't run them."""
+import os
 import shutil
 import socket
 import subprocess
@@ -42,18 +43,30 @@ HAND = {
     # the zip's spinner (the 11-02 night): seen however briefly it shows, and missed when it never does
     'zip: no spinner while the files are built': ('tokens_ui', PAGE, [
         ("      const done = _busy('Building your files…');", "      const done = () => {};")]),
+    # 3D Print Compensation (the owner, 2026-10-31): the account's value is clamped to each pulley's cap
+    'comp: the account\'s value over the cap is kept': ('designs_ui', PAGE, [
+        ('cctTokens.clampCompensation(raw, caps[i])', 'cctTokens.clampCompensation(raw)')]),
 }
 # A harness that needs more than a plain server (as tools/harnesses.py starts it): the server's
 # extra settings, and the harness's arguments after the base URL from the server's log folder.
 SETUP = {
     'tokens_ui': ({'TOKENS_ENABLED': '1', 'GOOGLE_CLIENT_ID': 'test', 'GOOGLE_CLIENT_SECRET': 'test'},
                   lambda logs: [logs, PY]),
+    'designs_ui': ({'TOKENS_ENABLED': '1', 'GOOGLE_CLIENT_ID': 'test', 'GOOGLE_CLIENT_SECRET': 'test'},
+                   lambda logs: [logs, PY]),
 }
 
 
 def copy_tree(dst):
-    files = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT, capture_output=True, check=True).stdout.split(b'\0')
-    for f in filter(None, files):
+    """The tree as the working copy has it: the tracked files, and a new file not yet added in a
+    folder that has tracked ones (geometry/print_comp.py, 2026-11-02, was missing, so the copy's
+    route failed and a break looked caught); never a folder of untracked files someone else keeps."""
+    ls = lambda *a: [f for f in subprocess.run(['git', 'ls-files', '-z', *a], cwd=ROOT, capture_output=True,   # noqa: E731
+                                                check=True).stdout.split(b'\0') if f]
+    tracked = ls()
+    folders = {os.path.dirname(f.decode()) for f in tracked}
+    files = tracked + [f for f in ls('--others', '--exclude-standard') if os.path.dirname(f.decode()) in folders]
+    for f in files:
         src = ROOT / f.decode()
         if src.is_file():
             out = dst / f.decode()

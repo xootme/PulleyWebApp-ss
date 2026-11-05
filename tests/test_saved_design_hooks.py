@@ -37,17 +37,20 @@ def test_the_accounts_printer_settings_are_defaults():
     tokens.js calls cctApplyPrinterSettings once, on a fresh page. Each value fills one this
     browser still has at the tool's default, never one the person changed here, on both
     pulleys, and only after the start-up restore (designs_ui.js drives it end to end)."""
-    body = _body('function _applyPrinter() {')
+    body = _body('async function _applyPrinter() {')
     assert "sel.value === 'mm' && s.units !== sel.value" in body
-    assert "['print_extra', 'p2_print_extra'].forEach" in body
+    assert "['print_extra', 'p2_print_extra'].forEach((id, i) => {" in body
     assert 'if (Number(el.value) === 0) el.value = Number(mm);' in body
-    assert 'cctTokens.clampCompensation(s.print_compensation_mm)' in body
+    # each pulley's own cap (the owner, 2026-10-31: the account's value clamped without a word)
+    assert 'const caps = await _compensationCaps();' in body
+    assert 'cctTokens.clampCompensation(raw, caps[i])' in body
+    assert "fetch('/api/compensation-cap?' + q)" in _body('async function _compensationCaps() {')
     hook = 'window.cctApplyPrinterSettings = s => { _printerPending = s || null; if (_pageStarted) _applyPrinter(); };'
     assert hook in PAGE
     start = PAGE[PAGE.index('window.onload = async () => {'):]
     start = start[:start.index('\n};')]
     assert start.index('const restored = await loadSettings();') < start.index('_pageStarted = true;') \
-        < start.index('if (_printerPending) _applyPrinter();')
+        < start.index('if (_printerPending) await _applyPrinter();')
 
 
 def test_a_saved_design_opens_after_the_start_up_restore():
