@@ -77,8 +77,8 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                                        "    if centre is None:"),
     # cct_common 0.25.7's busy overlay (the owner, 2026-10-22; tests/browser/busy_ui.js drives it)
     "busy: Auto-fix closes the warnings at once": ("templates/index.html",
-        "  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), _applyDimsFix, busyText());",
-        "  _applyDimsFix();"),
+        "  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), () => _applyDimsFix(fix), busyText());",
+        "  _applyDimsFix(fix);"),
     "busy: the warnings wait while a value is typed": ("templates/index.html",
         "  if (lines.length) refusals.show(showWarnings, ticket);", "  if (lines.length) showWarnings();"),
     "busy: a refusal of a value changed since never shows": ("templates/index.html",
