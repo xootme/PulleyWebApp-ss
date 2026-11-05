@@ -382,7 +382,7 @@ def build_hosted_app(apps: dict, database_url: str, site_url: str, http=None):
     person's decision."""
     from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
     from .accounts import AccountStore
-    from .mcp_oauth import SCOPE, CCTOAuthProvider, OAuthStore
+    from .mcp_oauth import SCOPE, CCTOAuthProvider, OAuthStore, token_route
     from .tokens import TokenStore
 
     site = site_url.rstrip("/")
@@ -412,6 +412,9 @@ def build_hosted_app(apps: dict, database_url: str, site_url: str, http=None):
     # see CCTOAuthProvider.revoke for why the SDK's can't revoke our tokens.
     from starlette.routing import Route
     app.router.routes.insert(0, Route("/revoke", provider.revoke, methods=["POST"]))
+    # Ours ahead of the SDK's /token too: the secret by either method, and every
+    # refusal logged with why (mcp_oauth.token_authenticator, 0.56.7: Glama's 401).
+    app.router.routes.insert(0, token_route(provider))
     app.router.routes.insert(0, Route("/mcp/api/health", _health, methods=["GET"]))
     # What the gateway spends its billed time on (the admin page's Server use tab).
     from .server_use import ServerUseStore, Tracker, _Who, server_use_asgi, service_name, tool_name

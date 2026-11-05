@@ -178,6 +178,9 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "comp: the range reads 1.00 mm": ("geometry/labels.py", 'TWO_PLACES = {"print_extra"}', "TWO_PLACES = set()"),
     "comp: the account's value takes each pulley's cap": ("templates/index.html",
         "cctTokens.clampCompensation(raw, caps[i])", "cctTokens.clampCompensation(raw)"),
+    "trial: the add-in's status counts the week from Monday midnight": (AP,   # cct_common 0.56.8
+        "    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)",
+        "    week_start = now - timedelta(days=now.weekday())"),
     "screws: a hub too short for its screw warns": (AP,   # the owner's option b, 2026-11-02
         "    if hub_h >= need - 1e-9:\n        return [], {}, []", "    if True:\n        return [], {}, []"),
     "random: only a short hub skips the STEP volume check": ("tests/test_nightly_random.py",   # option c, 2026-11-04

@@ -29,10 +29,13 @@ the gateway runs as its own service, the approval page in the apps.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import json
+import logging
 import secrets
 import time
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 from .account_routes import MCP_CALLBACK_PATH
 from .accounts import SESSION_TTL_S, AccountStore, _hash
@@ -41,6 +44,9 @@ from .sqlite_db import SqliteDB
 SCOPE = "cct"
 CODE_TTL_S = 5 * 60          # an authorization code must be exchanged within this
 REQUEST_TTL_S = 15 * 60      # an authorization started must be approved within this
+SECRET_METHODS = ("client_secret_post", "client_secret_basic")   # both advertised in the metadata
+
+log = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS mcp_clients (
@@ -247,6 +253,123 @@ class CCTOAuthProvider:
 
     async def revoke_token(self, token) -> None:
         self.accounts.revoke_session(token.token)
+
+
+# ── /token: either way of sending the secret (0.56.7) ────────────────────
+# Glama's health checker (node) registered, was approved, then got 401 at
+# /token, twice; Claude's connector, on the same flow, works. The SDK's
+# ClientAuthenticator takes the secret only the way the client registered
+# (no method given: client_secret_post), while the metadata advertises both,
+# and a client that forgets which one it registered (the TypeScript SDK then
+# picks Basic) is refused. With Basic, RFC 6749 §2.3.1 also lets it leave
+# client_id out of the body, which the SDK refuses too ("Missing client_id").
+# So /token takes a client's secret by either method, and the client_id from
+# a Basic header when the body has none. The secret is still required and
+# still checked by the SDK; a client registered with none stays public. Each
+# refusal is logged with why, the method registered and the one used (never
+# the secret): Cloud Run's logs don't keep the 401's body.
+
+def _basic(header: str):
+    """(client_id, secret) from an HTTP Basic Authorization header, else None."""
+    if not header.startswith("Basic "):
+        return None
+    try:
+        raw = base64.b64decode(header[6:]).decode("utf-8")
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return None
+    if ":" not in raw:
+        return None
+    client_id, secret = raw.split(":", 1)
+    return unquote(client_id), unquote(secret)
+
+
+def _sent_method(request, form) -> str:
+    if request.headers.get("Authorization", "").startswith("Basic "):
+        return "client_secret_basic"
+    return "client_secret_post" if form.get("client_secret") else "none"
+
+
+def token_authenticator(provider):
+    """The SDK's ClientAuthenticator, taking a secret-holding client's secret
+    by whichever of the two methods it used, and logging every refusal."""
+    from mcp.server.auth.middleware.client_auth import AuthenticationError, ClientAuthenticator
+
+    class AsSent:
+        """A provider that answers with this one client (its method as sent)."""
+
+        def __init__(self, client):
+            self.client = client
+
+        async def get_client(self, client_id: str):
+            return self.client
+
+    class EitherSecretMethod(ClientAuthenticator):
+        async def authenticate_request(self, request):
+            form = await request.form()
+            client_id = str(form.get("client_id") or "")
+            client = await provider.get_client(client_id) if client_id else None
+            registered = getattr(client, "token_endpoint_auth_method", None)
+            sent = _sent_method(request, form)
+            try:
+                if registered in SECRET_METHODS and sent in SECRET_METHODS and sent != registered:
+                    as_sent = client.model_copy(update={"token_endpoint_auth_method": sent})
+                    await ClientAuthenticator(AsSent(as_sent)).authenticate_request(request)
+                    return client
+                return await super().authenticate_request(request)
+            except AuthenticationError as e:
+                log.warning("mcp /token refused (invalid_client): %s; client %s %r, registered %s, sent %s",
+                            e.message, client_id or "-", getattr(client, "client_name", None),
+                            registered or "-", sent)
+                raise
+
+    return EitherSecretMethod(provider)
+
+
+def basic_client_id(app):
+    """ASGI, around /token: a form sent with HTTP Basic and no client_id gets
+    the Basic header's (the SDK's form model needs it). Anything else passes
+    as it came."""
+    async def wrapped(scope, receive, send):
+        headers = dict(scope.get("headers") or []) if scope["type"] == "http" else {}
+        basic = _basic(headers.get(b"authorization", b"").decode("latin-1"))
+        form = headers.get(b"content-type", b"").startswith(b"application/x-www-form-urlencoded")
+        if scope["type"] != "http" or scope["method"] != "POST" or not basic or not form:
+            await app(scope, receive, send)
+            return
+        body, more = b"", True
+        while more:
+            message = await receive()
+            if message["type"] != "http.request":
+                break
+            body += message.get("body", b"")
+            more = message.get("more_body", False)
+        if not any(k == "client_id" for k, _ in parse_qsl(body.decode("utf-8", "replace"), keep_blank_values=True)):
+            body += (b"&" if body else b"") + urlencode({"client_id": basic[0]}).encode()
+        replayed = False
+
+        async def replay():
+            nonlocal replayed
+            if replayed:
+                return await receive()
+            replayed = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        scope = dict(scope, headers=[(k, v) for k, v in scope["headers"] if k != b"content-length"]
+                     + [(b"content-length", str(len(body)).encode())])
+        await app(scope, replay, send)
+
+    return wrapped
+
+
+def token_route(provider):
+    """POST /token, as the SDK builds it (CORS, the body limit), on
+    token_authenticator and basic_client_id."""
+    from mcp.server.auth.handlers.token import TokenHandler
+    from mcp.server.auth.routes import TOKEN_PATH, _body_limited, _cors
+    from starlette.routing import Route, request_response
+    handler = TokenHandler(provider, token_authenticator(provider))
+    return Route(TOKEN_PATH, endpoint=_cors(_body_limited(basic_client_id(request_response(handler.handle))),
+                                            ["POST", "OPTIONS"]), methods=["POST", "OPTIONS"])
 
 
 def _page(title: str, body: str) -> str:

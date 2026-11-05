@@ -4631,7 +4631,9 @@ def api_trial_status():
 
     data = _cc_load_trial_downloads()
     now = datetime.now()
-    week_start = now - timedelta(days=now.weekday())
+    # Monday at midnight, as the limit itself counts it (cct_common 0.56.8's
+    # register_trial_download); it was Monday at this time of day.
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
     if machine_id not in data:
         count = 0

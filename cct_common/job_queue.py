@@ -617,7 +617,10 @@ def register_trial_download(machine_id, fmt="step"):
     with _TRIAL_LOCK:
         data = _load_trial_downloads()
         now = datetime.now()
-        week_start = now - timedelta(days=now.weekday())
+        # Monday at midnight, the web limit's ISO week (0.56.8). It was
+        # Monday at this time of day: on a Monday nothing earlier counted,
+        # so the limit never held (the 2026-11-02 night, a Monday).
+        week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
         if machine_id not in data:
             data[machine_id] = []
         this_week = [d for d in data[machine_id]
