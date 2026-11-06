@@ -69,7 +69,7 @@ def test_check_and_its_autofix_as_parameters(client):
     fix = d['fix']['params']
     assert fix['hub_od'] == 30.5 and (fix['spline_n'], fix['spline_minor'], fix['spline_major']) == (6, 16, 20)
     again = client.post('/api/v1/check', json={"params": dict(DRIVE, **fix)}).get_json()
-    assert again['fix'] is None
+    assert again['fixes'] == [] and again['fix'] == {'set': {}, 'changes': [], 'params': {}}   # cct_common 0.58.0
 
 
 def test_autofix_face_width_is_not_a_float_tenth_over(client):

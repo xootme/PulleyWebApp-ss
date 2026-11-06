@@ -31,12 +31,13 @@ def _lobe(d):
 def test_warns_with_three_fixes_to_choose(client):
     d = _dims(client)
     assert _lobe(d) == [LOBE]
-    assert d['fix'] == {'set': {'hub1_od': 19.5},
-                        'changes': ['hub OD 12 → 19.5 mm (holds the captured nut without a lobe)']}
-    assert d['fix_b'] == {'set': {'hub1_retention': 'set_screw_std'},
-                          'changes': ['set screw M3: captured nut → threaded hole']}
-    assert d['fix_c'] == {'set': {'flange1_top_separate': True},
-                          'changes': ['top flange printed separately']}
+    assert d['fixes'] == [{'set': {'hub1_od': 19.5},
+                           'changes': ['hub OD 12 → 19.5 mm (holds the captured nut without a lobe)']},
+                          {'set': {'hub1_retention': 'set_screw_std'},
+                           'changes': ['set screw M3: captured nut → threaded hole']},
+                          {'set': {'flange1_top_separate': True},
+                           'changes': ['top flange printed separately']}]
+    assert d['fix'] == d['fixes'][0]
 
 
 @pytest.mark.parametrize('q', [
@@ -51,7 +52,7 @@ def test_warns_with_three_fixes_to_choose(client):
 ], ids=['13T', 'separate', 'threaded', 'metal', 'no flange', 'nubs', 'hub past the teeth', '2D'])
 def test_quiet_otherwise(client, q):
     d = _dims(client, **q)
-    assert not _lobe(d) and not d.get('fix_c')
+    assert not _lobe(d) and len(d['fixes']) <= 2
 
 
 def test_one_that_cant_apply_leaves_the_next_to_move_up(client):
@@ -59,7 +60,7 @@ def test_one_that_cant_apply_leaves_the_next_to_move_up(client):
     d = _dims(client, spokes_enabled=1)
     assert _lobe(d) == [LOBE]
     assert d['fix']['set'].get('hub1_retention') == 'set_screw_std' and 'hub1_od' not in d['fix']['set']
-    assert d['fix_b']['set'].get('flange1_top_separate') is True and not d['fix_c']
+    assert d['fixes'][1]['set'].get('flange1_top_separate') is True and len(d['fixes']) == 2
 
 
 def test_pulley_2_is_named(client):
@@ -69,8 +70,24 @@ def test_pulley_2_is_named(client):
               p2_flange_top_separate=0)
     assert _lobe(d) == ['Pulley 2: ' + LOBE]
     assert d['fix']['set'] == {'hub2_od': 19.5}
-    assert d['fix_b']['set'] == {'hub2_retention': 'set_screw_std'}
-    assert d['fix_c']['set'] == {'flange2_top_separate': True}
+    assert [f['set'] for f in d['fixes'][1:]] == [{'hub2_retention': 'set_screw_std'},
+                                                  {'flange2_top_separate': True}]
+
+
+def test_an_agent_gets_all_three_and_each_clears_it(client):
+    """/api/v1/check answers the three as fixes (cct_common 0.58.0), each with params in the API's
+    names: merged into the design, each one clears the lobe (hub_retention was no API name)."""
+    base = {'family': 'Imperial', 'pitch': 'XL', 'teeth': 12, 'bore': 5, 'hub_od': 12, 'hub_height': 10,
+            'hub_screw_count': 1, 'hub_screw_size': 'M3', 'hub_screw_hold': 'nut',
+            'flange_enabled': True, 'flange_3dprint': True, 'flange_top_separate': False}
+    d = client.post('/api/v1/check', json={'params': base}).get_json()
+    assert [f['params'] for f in d['fixes']] == [{'clearance_height': 1.1, 'hub_od': 19.5},
+                                                 {'clearance_height': 1.1, 'hub_screw_hold': 'thread'},
+                                                 {'clearance_height': 1.1, 'flange_top_separate': True}]
+    assert d['fix'] == d['fixes'][0] and 'fix_b' not in d
+    for f in d['fixes']:
+        r = client.post('/api/v1/check', json={'params': {**base, **f['params']}})
+        assert r.status_code == 200 and not _lobe(r.get_json()), (f['params'], r.get_data()[:300])
 
 
 def _step(client, q):

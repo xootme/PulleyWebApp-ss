@@ -45,10 +45,12 @@ HAND = {
         ("      const done = _busy('Building your files…');", "      const done = () => {};")]),
     # the key slot's two Auto-fixes (the owner, 2026-11-04): the page shows (b) beside (a)
     'screws: the second Auto-fix never shows': ('screw_ui', PAGE, [
-        ("    fixBtnB.classList.toggle('hidden', !dimsFixB);", "    fixBtnB.classList.toggle('hidden', true);")]),
+        ("    const fixes = (data.fixes || [data.fix]).filter(Boolean);",
+         "    const fixes = (data.fixes || [data.fix]).filter(Boolean).slice(0, 1);")]),
     # up to three Auto-fixes (the owner, 2026-11-05): the nut lobe's (c) shows beside (a) and (b)
     'screws: the third Auto-fix never shows': ('screw_ui', PAGE, [
-        ("    fixBtnC.classList.toggle('hidden', !dimsFixC);", "    fixBtnC.classList.toggle('hidden', true);")]),
+        ("    const fixes = (data.fixes || [data.fix]).filter(Boolean);",
+         "    const fixes = (data.fixes || [data.fix]).filter(Boolean).slice(0, 2);")]),
     # Import reads a download's .cct.json and zip too (cct_common 0.57.0): the picker offers them
     'import: the picker takes only the old files': ('import_ui', PAGE, [
         ('accept=".step,.stp,.dxf,.svg,.stl,.cct.json,.json,.zip"', 'accept=".step,.stp,.dxf,.svg,.stl"')]),

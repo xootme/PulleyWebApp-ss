@@ -1909,13 +1909,15 @@ def _dimensions(args):
                             f'(over {bs.LONG_SPAN_RATIO:g}): Gates (p. 63) suggests flanging '
                             'both pulleys.')
 
-    fix = {'set': fix_set, 'changes': changes} if fix_set else None
-    more = [{'set': {**{k: v for k, v in fix_set.items() if k not in a['drop']}, **a['set']},
-             'changes': [c for c in changes if c not in a['drop_changes']] + a['changes']}
-            for a in alts.values() if a['set']]
-    fix_b, fix_c = (more + [None, None])[:2]          # one that can't apply leaves the next to move up
-    return {'pulleys': pulleys, 'drive': drive, 'warnings': warnings, 'fix': fix, 'fix_b': fix_b,
-            'fix_c': fix_c}
+    # Up to three options, (a) first (cct_common.autofix, 0.58.0): one that can't apply, or
+    # repeats another, leaves the next to move up. fix stays the first, as before.
+    from cct_common.autofix import fix_options
+    fixes = fix_options([{'set': fix_set, 'changes': changes}]
+                        + [{'set': {**{k: v for k, v in fix_set.items() if k not in a['drop']}, **a['set']},
+                            'changes': [c for c in changes if c not in a['drop_changes']] + a['changes']}
+                           for a in alts.values() if a['set']])
+    return {'pulleys': pulleys, 'drive': drive, 'warnings': warnings,
+            'fix': fixes[0] if fixes else None, 'fixes': fixes}
 
 
 @app.route('/api/od')

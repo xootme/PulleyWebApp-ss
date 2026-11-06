@@ -243,7 +243,10 @@ async function main() {
     + 'its edge would sit half in the slot and half on the bore. Use a smaller screw or a threaded hole.';
   const warned = () => waitFor(`[...document.querySelectorAll('#dims-warnings li')].some(li => li.textContent === ${JSON.stringify(WIDE)})`, 15000);
   const quiet = () => waitFor(`![...document.querySelectorAll('#dims-warnings li')].some(li => li.textContent.includes('key slot'))`, 15000);
-  const btn = id => js(`(() => { const b = document.getElementById('${id}'); return b.classList.contains('hidden') ? null : b.textContent; })()`);
+  // an offered option's button (cct_autofix.js makes only those), else null
+  const btn = id => js(`(() => { const b = document.getElementById('${id}'); return !b || b.closest('.hidden') ? null : b.textContent; })()`);
+  // the changes cct_autofix.js shows as text beside an option's button (phones have no hover)
+  const said = id => js(`document.getElementById('${id}')?.nextElementSibling?.textContent ?? null`);
   await load(slot);
   check('key slot: the page warns in the owner\'s words', await warned(), await text('#dims-warnings'));
   check('key slot: two Auto-fixes, (a) and (b)', (await btn('dims_fix')) === 'Auto-fix (a)' && (await btn('dims_fix_b')) === 'Auto-fix (b)',
@@ -279,6 +282,11 @@ async function main() {
   check('nut lobe: three Auto-fixes, (a), (b) and (c)', (await btn('dims_fix')) === 'Auto-fix (a)'
     && (await btn('dims_fix_b')) === 'Auto-fix (b)' && (await btn('dims_fix_c')) === 'Auto-fix (c)',
         [await btn('dims_fix'), await btn('dims_fix_b'), await btn('dims_fix_c')]);
+  check('nut lobe: each option\'s changes show beside its button',
+    (await said('dims_fix')) === 'hub OD 12 → 19.5 mm (holds the captured nut without a lobe)'
+    && (await said('dims_fix_b')) === 'set screw M3: captured nut → threaded hole'
+    && (await said('dims_fix_c')) === 'top flange printed separately',
+    [await said('dims_fix'), await said('dims_fix_b'), await said('dims_fix_c')]);
   await js("document.getElementById('dims_fix_c').click()");
   check('nut lobe: (c) prints the top flange separately, the nut kept', await lobeQuiet()
     && (await js("document.getElementById('flange1_top_separate').checked")) === true

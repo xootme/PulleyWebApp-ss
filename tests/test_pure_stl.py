@@ -182,6 +182,15 @@ def test_import_reads_a_zip(client, shop, pure):
     assert r.status_code == 200 and r.get_json()['params']['teeth'] == '25'
 
 
+@pytest.mark.parametrize('name', ['design.dxf', 'f', 'pulley.txt'], ids=["another kind's name", 'no name', 'renamed'])
+def test_import_reads_a_file_by_what_is_in_it_whatever_its_name(client, name):
+    """cct_common 0.58.1: when the name's reader finds nothing, import_meta reads by content, as
+    Import did before 0.57.0 (a renamed download, or one the browser gave no extension)."""
+    for route in ('/download/stl', '/download/step', '/download/svg'):
+        r = _import(client, name, _get(client, route, ONE.replace('teeth=20', 'teeth=24')))
+        assert r.status_code == 200 and r.get_json()['params']['teeth'] == '24', (route, r.get_data()[:200])
+
+
 def test_import_still_refuses_a_file_without_settings(client):
     r = _import(client, 'plain.stl', b'\0' * 80 + (0).to_bytes(4, 'little'))
     assert r.status_code == 400 and r.get_json()['error'] == IMPORT_NONE

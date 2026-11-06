@@ -324,7 +324,7 @@ async function main() {
   check('no page errors', errors.length === 0, errors);
 }
 function fixShownExpr() {
-  return "!document.getElementById('dims_fix').classList.contains('hidden') && !document.getElementById('dims-warn-row').classList.contains('hidden')";
+  return "!!document.querySelector('#dims-fixes:not(.hidden) #dims_fix') && !document.getElementById('dims-warn-row').classList.contains('hidden')";
 }
 
 main().catch(e => check('harness ran', false, e.stack)).finally(() => {

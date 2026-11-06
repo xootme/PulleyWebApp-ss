@@ -292,3 +292,13 @@
   .cct-busy           { animation: none; }
   .cct-busy-spinner   { animation-duration: 2.4s; }
 }
+
+/* ── Auto-fix: up to three options beside a warning (static/cct_autofix.js, 0.58.0) ──
+   The owner, 2026-11-05: up to three, each option's changes shown beside its
+   button (phones have no hover). ── */
+.cct-autofix          { display: flex; flex-direction: column; gap: 6px; }
+.cct-autofix.hidden,
+.cct-autofix[hidden]  { display: none; }
+.cct-autofix-option   { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.cct-autofix-btn      { flex: none; }
+.cct-autofix-changes  { color: var(--cct-text); font-family: var(--cct-font); font-size: 0.9em; }

@@ -208,7 +208,8 @@ def describe(version: str = "") -> Description:
         prefixes={"p2_": "pulley 2 of a two-pulley drive (dual = true): p2_teeth, p2_bore, …"},
         notes=["Sizes are mm. Parameters left out take the app's defaults (describe lists them).",
                "check returns the dimensions, the spec warnings and an Auto-fix: fix.set holds the "
-               "parameter changes (keyed by the page's field ids) and fix.changes says what they do.",
+               "parameter changes (keyed by the page's field ids) and fix.changes says what they do; "
+               "fixes lists up to three options to choose from, fix first.",
                "STL files carry the print compensation; STEP, SVG and DXF are nominal.",
                "STEP is one file for the whole design: an assembly of every part asked for, each a "
                "component placed as assembled (a shaft carries its retaining rings).",
@@ -218,6 +219,9 @@ def describe(version: str = "") -> Description:
 
 
 # ── check: the Dimensions panel, the spline and the spoke fit as data ───────
+
+HOLD_OF_RETENTION = {"set_screw_std": "thread", "set_screw_nut": "nut", "set_screw_insert": "insert"}
+
 
 def _fix_params(fix_set: dict) -> dict:
     """The Auto-fix's page-field changes as agent parameters (the names
@@ -239,6 +243,8 @@ def _fix_params(fix_set: dict) -> dict:
             series, af = str(value).split(":")[:2]
             out.update({f"{pfx}spline_series": series, f"{pfx}spline_af": float(af),
                         f"{pfx}spline_rounded": False})
+        elif kind == "hub" and rest == "retention":            # the page's menu is hub_screw_hold's
+            out[f"{pfx}hub_screw_hold"] = HOLD_OF_RETENTION[value]
         else:
             out[f"{pfx}{kind}_{rest}"] = value                   # hub_od, spline_z, flange_angle …
     return out
@@ -280,8 +286,8 @@ def check(query: dict) -> dict:
     except labels.SettingError as e:
         raise AgentError(str(e), [f"{e.field}: set it to {e.fix}"]) from None
     out = _dimensions(dict(query, feature_build="1"))
-    if out.get("fix"):
-        out["fix"]["params"] = _fix_params(out["fix"]["set"])
+    for option in out.get("fixes") or []:  # fix is fixes[0], so it gets them too
+        option["params"] = _fix_params(option["set"])
     extra = {}
     for n, pfx in ((1, ""), (2, "p2_")) if query.get("dual") == "true" else ((1, ""),):
         sp = _spline_of(query, pfx)

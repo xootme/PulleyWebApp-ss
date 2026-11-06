@@ -29,11 +29,11 @@ def _slot(d):
 def test_warns_with_two_fixes_to_choose(client):
     d = _dims(client)
     assert _slot(d) == [WIDE]
-    assert d['fix'] == {'set': {'hub1_screw_size': 'M4'},
-                        'changes': ['set screw M5 → M4 (its hole fits the key slot)']}
-    assert d['fix_b'] == {'set': {'hub1_retention': 'set_screw_std'},
-                          'changes': ['set screw M5: captured nut → threaded hole']}
-    assert d['fix_c'] is None
+    assert d['fixes'] == [{'set': {'hub1_screw_size': 'M4'},
+                           'changes': ['set screw M5 → M4 (its hole fits the key slot)']},
+                          {'set': {'hub1_retention': 'set_screw_std'},
+                           'changes': ['set screw M5: captured nut → threaded hole']}]
+    assert d['fix'] == d['fixes'][0]
 
 
 @pytest.mark.parametrize('q', [
@@ -46,7 +46,7 @@ def test_warns_with_two_fixes_to_choose(client):
 def test_quiet_otherwise(client, q):
     r = client.get('/api/dimensions', query_string={k: v for k, v in {**BASE, **q}.items() if v is not None})
     d = r.get_json()
-    assert not _slot(d) and not d.get('fix_b')
+    assert not _slot(d) and len(d['fixes']) <= 1
 
 
 def test_one_fix_when_no_smaller_screw_fits(client):
@@ -55,7 +55,7 @@ def test_one_fix_when_no_smaller_screw_fits(client):
     assert _slot(d) == ["The captured-nut screw's hole (Ø6.00 mm) is wider than the 5 mm key slot it goes "
                         "through: its edge would sit half in the slot and half on the bore. Use a smaller "
                         "screw or a threaded hole."]
-    assert d['fix']['set']['hub1_retention'] == 'set_screw_std' and not d['fix_b']    # (the hub's height too)
+    assert d['fix']['set']['hub1_retention'] == 'set_screw_std' and len(d['fixes']) == 1    # (the hub's height too)
 
 
 def test_pulley_2_is_named(client):
@@ -64,7 +64,19 @@ def test_pulley_2_is_named(client):
               p2_hub_screw_size='M5', p2_hub_screw_hold='nut', hub_screw_size='M4')
     assert _slot(d) == ['Pulley 2: ' + WIDE]
     assert d['fix']['set'] == {'hub2_screw_size': 'M4'}
-    assert d['fix_b']['set'] == {'hub2_retention': 'set_screw_std'}
+    assert d['fixes'][1]['set'] == {'hub2_retention': 'set_screw_std'}
+
+
+def test_an_agent_gets_both_and_each_clears_it(client):
+    """/api/v1/check's fixes (cct_common 0.58.0): the threaded hole's params are hub_screw_hold's."""
+    base = {'family': 'Imperial', 'pitch': 'XL', 'teeth': 35, 'bore': 14, 'hub_od': 35, 'hub_height': 10,
+            'hub_keyway_w': 5, 'hub_keyway_h': 2.6, 'hub_screw_count': 1, 'hub_screw_size': 'M5',
+            'hub_screw_hold': 'nut'}
+    d = client.post('/api/v1/check', json={'params': base}).get_json()
+    assert [f['params'].get('hub_screw_size') or f['params'].get('hub_screw_hold') for f in d['fixes']] == ['M4', 'thread']
+    for f in d['fixes']:
+        r = client.post('/api/v1/check', json={'params': {**base, **f['params']}})
+        assert r.status_code == 200 and not _slot(r.get_json()), (f['params'], r.get_data()[:300])
 
 
 def test_the_page_and_step_agree(client):

@@ -18,6 +18,10 @@ It reads, by the file's name:
 - .cct.json: the settings beside an STL (cct_common.stl.settings_sidecar).
 - .zip: its .cct.json, else any STEP, DXF, SVG or STL inside that holds them.
 - .step/.stp, .dxf, .svg: as extract_step, extract_dxf, extract_svg do.
+- Anything else, or a name whose reader finds nothing (0.58.1: a renamed
+  file, one with no name, design.dxf that is an STL): by its content, as
+  the apps' Import read every file before: a zip, the .cct.json, STEP, DXF,
+  SVG, the STL trailer or a pure STL's key. A pure STL's NO_KEY still answers.
 
 The account and the database come from the request (the app's accounts
 database, its signed-in session); pass db= and account= outside one.
@@ -81,6 +85,34 @@ def _stl(name, data, db, account) -> dict:
 
 
 def _one(name: str, data: bytes, db, account, inside: bool) -> dict:
+    """By the name's reader, then, finding nothing, by content (whose STL and
+    zip readers answer a pure STL's NO_KEY as the name's do)."""
+    got = _by_name(name, data, db, account, inside)
+    if got["meta"] or got["saved"]:
+        return got
+    return _by_content(name, data, db, account, inside)
+
+
+def _by_content(name: str, data: bytes, db, account, inside: bool) -> dict:
+    if data[:4] == b"PK\x03\x04" and not inside:
+        try:
+            return _zip(data, db, account)
+        except Exception:
+            return _result()
+    text = data.decode("utf-8", errors="replace")
+    readers = (lambda: _sidecar(data) if text.lstrip("\ufeff \t\r\n")[:1] == "{" else None,
+               lambda: extract_step(data), lambda: extract_dxf(data), lambda: extract_svg(text))
+    for read in readers:
+        try:
+            meta = read()
+        except Exception:
+            meta = None
+        if meta:
+            return _result(meta, found_in=name)
+    return _stl(name, data, db, account)
+
+
+def _by_name(name: str, data: bytes, db, account, inside: bool) -> dict:
     low = name.lower()
     if low.endswith(SIDECAR) or low.endswith(".json"):
         return _result(_sidecar(data), found_in=name)

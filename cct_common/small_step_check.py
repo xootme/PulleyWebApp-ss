@@ -39,10 +39,12 @@ What this module adds over calling it directly:
     output as cp1252, which garbles it, and then a message no longer equals
     the build's stderr. Everything here is decoded as UTF-8.
   * to_autofix(): turns each fix alternative into the app's own field
-    changes. Every alternative is returned, because the owner's rule is that
-    the user picks and no app chooses one silently. An alternative with a flag
-    the app has no field for is returned marked `complete=False`, never mapped
-    by guesswork.
+    changes. Every alternative is returned, so the app can verify each and
+    the user picks (no app chooses one silently); the page offers at most
+    three, the first three that verify, in small_step's order (the owner,
+    2026-11-05): pass the mapped choices through cct_common.autofix.fix_options.
+    An alternative with a flag the app has no field for is returned marked
+    `complete=False`, never mapped by guesswork.
 
 Any subcommand works (combined, flange-3d, flange-metal…): the argv is passed
 through as given.

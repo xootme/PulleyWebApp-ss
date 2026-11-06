@@ -231,11 +231,22 @@ HOLDS = ("thread", "nut", "insert")
 
 
 @dataclass(frozen=True)
+class HoleFix:
+    """One Auto-fix option for HoleTooBig (0.58.0), for the app to put in its
+    own fields: kind "size", a smaller screw held the same way (value its
+    size); kind "hold", the same size held another way (value "thread" or
+    "nut")."""
+    kind: str
+    value: str
+
+
+@dataclass(frozen=True)
 class HoleTooBig:
     message: str                  # the warning, the owner's words (2026-10-30)
     hole_mm: float                # the hole as small_step measures it (a hex hole across its corners)
     limit_mm: float               # the hole must stay under this
     fix_size: Optional[str]       # the Auto-fix: a smaller screw of the same kind that fits, else None
+    fixes: tuple = ()             # up to three HoleFix options, in the order to offer them (0.58.0)
 
 
 def hub_screw_hole(size: Size, hold: str, *, hole_mm: float = 0.0, shape: str = "round",
@@ -273,7 +284,17 @@ def hub_hole_too_big(*, part: str, size: Size, hold: str, bore_mm: float, hub_od
     hole as hub_screw_hole cuts it. The Auto-fix (fix_size) is the largest
     smaller size of the same kind (metric or inch, out of `sizes`, the
     app's; all of them by default) whose hole fits, held the same way. None
-    for an insert (another insert is a hardware choice) or a CUSTOM screw."""
+    for an insert (another insert is a hardware choice) or a CUSTOM screw.
+
+    `fixes` (0.58.0; Gear's and Sprocket's words, the owner, 2026-11-05):
+    - a screw: (a) that smaller screw; for a captured nut, (b) a threaded
+      hole for the same screw when its tap hole fits, and the warning then
+      ends "use a smaller screw or a threaded hole.";
+    - a heat-set insert of a named size: (a) a threaded hole, (b) a captured
+      nut, each when its hole fits. The nut's pocket is the app's to check
+      (its recheck, cct_common.autofix.fix_options).
+    A larger Hub OD is never one: the limit is the bore's whenever there is
+    a hub to warn about."""
     if not round_bore or bore_mm <= 0 or hub_od_mm <= bore_mm:
         return None
     h = hub_screw_hole(size, hold, hole_mm=hole_mm, shape=shape, engagement_percent=engagement_percent,
@@ -284,17 +305,26 @@ def hub_hole_too_big(*, part: str, size: Size, hold: str, bore_mm: float, hub_od
     named = size != CUSTOM
     what = (f"the {size} heat-set insert" if named else "the heat-set insert") if hold == "insert" \
         else (f"the {size} set screw" if named else "the set screw")
+    def fits(s, how):
+        return hole_reach(hub_screw_hole(s, how, shape=shape, engagement_percent=engagement_percent,
+                                         hex_flat_percent=hex_flat_percent)) < limit - WELD_TOL
+    fix, fixes = None, []
+    if named and hold != "insert":
+        kind = METRIC_COARSE if get(size).name in METRIC_COARSE else UNC
+        smaller = [s for s in (kind.values() if sizes is None else (get(n) for n in sizes if get(n).name in kind))
+                   if s.major_diameter < get(size).major_diameter and fits(s, hold)]
+        fix = max(smaller, key=lambda s: s.major_diameter).name if smaller else None
+        if fix:
+            fixes.append(HoleFix("size", fix))
+        if hold == "nut" and fits(size, "thread"):
+            fixes.append(HoleFix("hold", "thread"))
+    elif named:
+        fixes += [HoleFix("hold", how) for how in ("thread", "nut") if fits(size, how)]
+    threaded = any(f == HoleFix("hold", "thread") for f in fixes)
     end = "use a smaller insert, or hold the screw by its thread or a captured nut" if hold == "insert" \
-        else "use a smaller screw"
+        else "use a smaller screw or a threaded hole" if threaded else "use a smaller screw"
     message = (f"{part + ': ' if part else ''}the Ø{2 * reach:.2f} mm hole for {what} is wider than 95 % of "
                f"the Ø{bore_mm:.2f} mm bore (it must stay under Ø{2 * limit:.2f} mm), so it can't be drilled "
                f"— {end}.")
-    fix = None
-    if named and hold != "insert":
-        kind = METRIC_COARSE if get(size).name in METRIC_COARSE else UNC
-        fits = [s for s in (kind.values() if sizes is None else (get(n) for n in sizes if get(n).name in kind))
-                if s.major_diameter < get(size).major_diameter
-                and hole_reach(hub_screw_hole(s, hold, shape=shape, engagement_percent=engagement_percent,
-                                              hex_flat_percent=hex_flat_percent)) < limit - WELD_TOL]
-        fix = max(fits, key=lambda s: s.major_diameter).name if fits else None
-    return HoleTooBig(message=message, hole_mm=2 * reach, limit_mm=2 * limit, fix_size=fix)
+    return HoleTooBig(message=message, hole_mm=2 * reach, limit_mm=2 * limit, fix_size=fix,
+                      fixes=tuple(fixes[:3]))

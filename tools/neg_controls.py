@@ -77,8 +77,8 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                                        "    if centre is None:"),
     # cct_common 0.25.7's busy overlay (the owner, 2026-10-22; tests/browser/busy_ui.js drives it)
     "busy: Auto-fix closes the warnings at once": ("templates/index.html",
-        "  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), () => _applyDimsFix(fix), busyText());",
-        "  _applyDimsFix(fix);"),
+        "    const apply = fix => CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(),",
+        "    const apply = fix => CCTBusy.applyFix(null, previewBox(),"),
     "busy: the warnings wait while a value is typed": ("templates/index.html",
         "  if (lines.length) refusals.show(showWarnings, ticket);", "  if (lines.length) showWarnings();"),
     "busy: a refusal of a value changed since never shows": ("templates/index.html",
@@ -193,7 +193,12 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    if not fp['flange_3dprint'] or fp['top_separate'] or fp['nubs_enabled']:",
         "    if not fp['flange_3dprint'] or fp['nubs_enabled']:"),
     "auto-fix: a third fix is offered": (AP,
-        "    fix_b, fix_c = (more + [None, None])[:2]", "    fix_b, fix_c = (more + [None, None])[0], None"),
+        "                           for a in alts.values() if a['set']])",
+        "                           for a in list(alts.values())[:1] if a['set']])"),
+    # cct_common 0.58.0: an agent's options carry the API's names (hub_retention was none)
+    "auto-fix: a threaded hole is hub_screw_hold to an agent": ("agent.py",
+        '            out[f"{pfx}hub_screw_hold"] = HOLD_OF_RETENTION[value]',
+        '            out[f"{pfx}hub_{rest}"] = value'),
     "screws: a hub too short for its screw warns": (AP,   # the owner's option b, 2026-11-02
         "    if hub_h >= need - 1e-9:\n        return [], {}, []", "    if True:\n        return [], {}, []"),
     "random: only a short hub skips the STEP volume check": ("tests/test_nightly_random.py",   # option c, 2026-11-04

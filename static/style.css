@@ -186,7 +186,9 @@ label.mode3d.has-picture { text-decoration: none; cursor: pointer; }
 .dims-results summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #0078d4;
   text-transform: uppercase; letter-spacing: 0.5px; }
 .warn-row .dims-warnings { flex: 1; min-width: 0; }
-.warn-row #dims_fix { flex-shrink: 0; margin-top: 4px; white-space: nowrap; }
+/* the Auto-fix options (cct_autofix.js), each one's changes beside its button */
+.warn-row #dims-fixes { flex: 0 1 45%; min-width: 0; margin-top: 4px; font-size: 12px; }
+.warn-row #dims-fixes .cct-autofix-btn { white-space: nowrap; }
 .dims-warnings { margin: 4px 0; padding-left: 18px; color: #b91c1c; font-size: 12px; }
 .dims-warnings:empty { display: none; }
 .dims td.short { color: #b91c1c; font-weight: 600; }

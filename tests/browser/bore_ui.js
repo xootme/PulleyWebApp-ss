@@ -254,7 +254,7 @@ async function main() {
   check('Pulley 2: its own sample shaft', (await js('_dlParts(true).map(x => x.id)')).includes('sh2'));
 
   // ── Auto-fix: a spline the part can't hold (bug report 2026-09-29) ──
-  const fixBtn = "!document.getElementById('dims_fix').classList.contains('hidden')";
+  const fixBtn = "!!document.querySelector('#dims-fixes:not(.hidden) #dims_fix')";   // cct_autofix.js's (a)
   await js("localStorage.clear()");
   await load(BASE + '/?family=STD&pitch=8M&teeth=22&bore=8&bore_shape=spline&spline_type=straight&spline_n=6&spline_minor=23&spline_major=26&spline_width=6&spline_ring=top&hub_od=25&hub_height=10');
   await js("(() => { const d = document.getElementById('dual_enable'); if (d.checked) d.click(); const f = document.getElementById('feature_build'); if (!f.checked) f.click(); const h = document.getElementById('hub1_enabled'); if (!h.checked) h.click(); })()");

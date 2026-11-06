@@ -201,7 +201,7 @@ def file_url(path: str, params: dict, design_id: str | None = None) -> str:
 
 
 def register_agent_api(app, desc: Description, *, check, files, quote=None, design_id=None,
-                       prefix: str = "/api/v1") -> None:
+                       prefix: str = "/api/v1", fix_params=None) -> None:
     """The four v1 routes on a Flask app.
 
     check(query) -> dict                       the design as the app reads it
@@ -210,12 +210,18 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
     design_id(query, files) -> str | None      registers the design — every file's
                                                parameters — for the caller (tokens on,
                                                signed in), so one payment covers them all
+    fix_params(set) -> dict                    an Auto-fix option's page fields as the API's
+                                               names, for options that come without `params`
+
+    check's answer always carries `fix` and `fixes` (0.58.0, cct_common.autofix):
+    up to three options, fix = fixes[0]; Pulley's fix_b / fix_c fold into fixes.
 
     Every app calls this, so it also turns on server-use counting
     (cct_common.server_use) for the app.
     """
     from flask import jsonify, request
 
+    from .autofix import agent_fixes
     from .server_use import register_server_use
     from .shared_static import register_shared_static
     register_server_use(app, tool=desc.app)
@@ -246,7 +252,7 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
     def check_route():
         try:
             query = coerce(desc, _body().get("params", {}))
-            return jsonify({"params": query, **check(query)})
+            return jsonify({"params": query, **agent_fixes(check(query), fix_params=fix_params)})
         except (AgentError, ValueError) as e:
             return _error(e)
 

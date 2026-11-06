@@ -141,7 +141,10 @@ class Gateway:
         return self._call(app, "GET", "/api/v1/describe")
 
     def check(self, app: str, params: dict) -> dict:
-        return self._call(app, "POST", "/api/v1/check", {"params": params})
+        # fixes beside fix (0.58.0) even from an app on an older cct_common
+        from .autofix import agent_fixes
+        out = self._call(app, "POST", "/api/v1/check", {"params": params})
+        return agent_fixes(out) if isinstance(out, dict) else out
 
     def quote(self, app: str, params: dict, formats: list | None = None) -> dict:
         q = self._call(app, "POST", "/api/v1/quote", {"params": params, "formats": formats})
@@ -260,8 +263,9 @@ def _filename(disposition: str, fallback: str) -> str:
 INSTRUCTIONS = (
     "CCT (CheapCADTools) parametric part generators. Start with list_apps, then "
     "describe(app) for the app's parameters (their names, units, limits and choices). "
-    "check(app, params) returns the design's dimensions, spec warnings and an Auto-fix "
-    "(fix.set = parameter changes to apply). export(app, params, formats, parts, out_dir) "
+    "check(app, params) returns the design's dimensions, spec warnings and an Auto-fix: "
+    "fix is the suggested change; fixes lists up to three alternatives (fix first): pick one, "
+    "put its set into the params, check again. export(app, params, formats, parts, out_dir) "
     "writes the files. Downloads can cost tokens: quote first; if an app answers "
     "SIGN_IN_REQUIRED, use sign_in / sign_in_finish. All sizes are mm.")
 
@@ -273,9 +277,9 @@ INSTRUCTIONS_HOSTED = (
     "alone, as a two-part drive or as a planetary set) with six tools and "
     "nothing else. list_apps names the generators. describe gives "
     "one generator's parameters: names, units, limits and choices. check returns the "
-    "design's dimensions, any spec warnings and a suggested fix: fix.set lists parameter "
-    "values; to use them, put them in the params yourself and call check again, until "
-    "there are no warnings. quote gives the token cost of the files without making them. "
+    "design's dimensions, any spec warnings and a suggested fix: fix is the suggested change; "
+    "fixes lists up to three alternatives (fix first): pick one, put its set into the params "
+    "yourself and call check again, until there are no warnings. quote gives the token cost of the files without making them. "
     "export returns a download link for the person; it is the only tool that leads to a "
     "charge, and only when they open the link, so call quote first and export only after "
     "they agree. balance shows the account's tokens. All sizes are mm.")
@@ -334,7 +338,8 @@ def build_server(gateway: Gateway, *, hosted: bool = False, provider=None, auth=
         return run("describe", app)
 
     @server.tool(**reads("Check a design"), description="Check a design: dimensions, spec warnings, and an Auto-fix — "
-                             "fix.set holds parameter changes that clear the warnings.")
+                             "fix is the suggested change; fixes lists up to three alternatives "
+                             "(fix first): pick one, put its set into the params, check again.")
     def check(app: str, params: dict) -> dict:
         return run("check", app, params)
 

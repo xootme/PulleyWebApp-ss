@@ -10,7 +10,7 @@
        then the layout every CCT app shares, then this page's own. -->
   <link rel="stylesheet" href="/static/cct/cct_theme.css">
   <link rel="stylesheet" href="/static/cct/cct_layout.css">
-  <link rel="stylesheet" href="/static/style.css?v=47">
+  <link rel="stylesheet" href="/static/style.css?v=48">
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
@@ -627,9 +627,7 @@
     <!-- Dimensions and spec warnings (the Sprocket app's panel; /api/dimensions) -->
     <div class="dims-results" id="dims-results">
       <div class="warn-row" id="dims-warn-row">
-        <button type="button" class="spoke-fit-btn hidden" id="dims_fix" onclick="applyDimsFix()">Auto-fix</button>
-        <button type="button" class="spoke-fit-btn hidden" id="dims_fix_b" onclick="applyDimsFix('b')">Auto-fix (b)</button>
-        <button type="button" class="spoke-fit-btn hidden" id="dims_fix_c" onclick="applyDimsFix('c')">Auto-fix (c)</button>
+        <div class="hidden" id="dims-fixes"></div>
         <ul class="dims-warnings" id="dims-warnings"></ul>
       </div>
       <details id="dims-details" ontoggle="rememberDimsOpen()">
@@ -1145,6 +1143,7 @@ function pageWaits() {
 <script src="/static/cct/cct_units.js"></script>
 <script src="/static/cct/cct_download.js"></script>
 <script src="/static/cct/cct_busy.js"></script>
+<script src="/static/cct/cct_autofix.js"></script>
 <script>
 const FAMILIES      = {{ families | tojson }};
 const BELT_FAMILIES = new Set({{ belt_families | tojson }});
@@ -3973,7 +3972,8 @@ function inchMessage(text) {
 }
 const DIM_SHORT = { face_width: 'face_width_min', flange_reach: 'flange_min_height',
                     flange_overlap: 'flange_min_overlap' };
-let dimsTimer = null, dimsSeq = 0, dimsFix = null, dimsFixB = null, dimsFixC = null;
+let dimsTimer = null, dimsSeq = 0;
+const DIMS_FIX_IDS = ['dims_fix', 'dims_fix_b', 'dims_fix_c'];   // (a), (b), (c), for the harnesses
 // The warnings and their Auto-fix wait while a value is part-way typed ("1" on the way
 // to "18"), until 2 s after the last keystroke, Enter, Tab or leaving the field (cct_busy.js;
 // the owner, 2026-10-22). A design with nothing to warn of clears them at once. The ticket,
@@ -4018,18 +4018,14 @@ function showDims(data, ticket) {
     warn.replaceChildren(...lines.map(w => { const li = document.createElement('li'); li.textContent = inchMessage(w); return li; }));
     document.querySelectorAll('.setting-refused').forEach(el => el.classList.remove('setting-refused'));
     if (data.field) document.getElementById(data.field)?.classList.add('setting-refused');
-    dimsFix = data.fix || null;
-    dimsFixB = (dimsFix && data.fix_b) || null;    // a second fix to choose (the owner, 2026-11-04)
-    dimsFixC = (dimsFixB && data.fix_c) || null;   // and a third: up to three (the owner, 2026-11-05)
-    const fixBtn = document.getElementById('dims_fix'), fixBtnB = document.getElementById('dims_fix_b');
-    const fixBtnC = document.getElementById('dims_fix_c');
-    fixBtn.classList.toggle('hidden', !dimsFix);
-    fixBtn.textContent = dimsFixB ? 'Auto-fix (a)' : 'Auto-fix';
-    if (dimsFix) fixBtn.title = 'Changes: ' + dimsFix.changes.join('; ');
-    fixBtnB.classList.toggle('hidden', !dimsFixB);
-    if (dimsFixB) fixBtnB.title = 'Changes: ' + dimsFixB.changes.join('; ');
-    fixBtnC.classList.toggle('hidden', !dimsFixC);
-    if (dimsFixC) fixBtnC.title = 'Changes: ' + dimsFixC.changes.join('; ');
+    // Up to three options, each one's changes beside its button (cct_common's cct_autofix.js;
+    // the owner, 2026-11-05). A refusal's one fix comes as fix alone.
+    const fixes = (data.fixes || [data.fix]).filter(Boolean);
+    // The busy text is the tab's as Apply is pressed, so the overlay is CCTBusy's here.
+    const apply = fix => CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(),
+                                          () => _applyDimsFix(fix), busyText());
+    cctAutofix.show(document.getElementById('dims-fixes'), fixes, apply, { buttonClass: 'spoke-fit-btn' })
+      .forEach((b, i) => { b.id = DIMS_FIX_IDS[i]; });
     document.getElementById('dims-warn-row').classList.remove('hidden');   // Auto-fix closed it
   };
   if (lines.length) refusals.show(showWarnings, ticket);
@@ -4116,13 +4112,7 @@ function showDims(data, ticket) {
 }
 
 // Auto-fix: set each field the server named and let its own handler run. The warnings
-// close at once and the overlay shows until the redraw is in (cct_busy.js). 'b' and 'c' are
-// the second and third fixes, where a warning offers more than one.
-function applyDimsFix(which) {
-  const fix = which === 'b' ? dimsFixB : which === 'c' ? dimsFixC : dimsFix;
-  if (!fix) return;
-  CCTBusy.applyFix(document.getElementById('dims-warn-row'), previewBox(), () => _applyDimsFix(fix), busyText());
-}
+// close at once and the overlay shows until the redraw is in (cctAutofix through cct_busy.js).
 function _applyDimsFix(fix) {
   if ('clearance_height' in fix.set) clearanceAuto = false;
   for (const [id, value] of Object.entries(fix.set)) {

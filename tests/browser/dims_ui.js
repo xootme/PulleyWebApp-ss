@@ -148,13 +148,13 @@ async function main() {
   await settle();
   w = await warnings();
   check('narrow face warns with its source', w.some(x => x.includes('15.5 mm wide') && x.includes('ISO 13050 Table 17')), w);
-  check('Auto-fix offered', await js("!document.getElementById('dims_fix').classList.contains('hidden')"));
+  check('Auto-fix offered', await js("!!document.querySelector('#dims-fixes:not(.hidden) #dims_fix')"));
   await js("document.getElementById('dims_fix').click()");
   await settle();
   check('Auto-fix set the clearance height', (await js("document.getElementById('clearance_height').value")) === '6', await js("document.getElementById('clearance_height').value"));
   w = await warnings();
   check('…and the warning cleared', !w.some(x => x.includes('face')), w);
-  check('Auto-fix hidden again', await js("document.getElementById('dims_fix').classList.contains('hidden')"));
+  check('Auto-fix hidden again', await js("!document.querySelector('#dims-fixes:not(.hidden) #dims_fix')"));
 
   // ── two pulleys: the drive table and drive warnings ──
   await js("(() => { const d = document.getElementById('dual_enable'); if (!d.checked) d.click(); })()");
