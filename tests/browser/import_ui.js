@@ -102,6 +102,12 @@ async function main() {
     }
   };
 
+  // the picker takes what Import reads (cct_common 0.57.0): a download's .cct.json and its zip too
+  await blank();
+  const accept = await js("document.getElementById('import-file-input').accept");
+  check('the Import picker takes STEP, DXF, SVG, STL, .cct.json and .zip',
+        ['.step', '.dxf', '.svg', '.stl', '.cct.json', '.zip'].every(x => accept.split(',').includes(x)), accept);
+
   for (const [name, query, want] of CASES) {
     // a file the app made, holding this design
     await blank();

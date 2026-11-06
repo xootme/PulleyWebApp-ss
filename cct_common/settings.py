@@ -94,6 +94,8 @@ DEFAULTS = {
     "my_account_button": False,
     # 0.49.0: referral tokens for share links (the owner's a-f), off (needs share_links).
     "referrals": False,
+    # 0.57.0: pure STL files (the settings beside them, not after the triangles), off.
+    "pure_stl": False,
 }
 SINCE_KEYS = ("rewards",)
 REDOWNLOAD_WINDOWS = ("24h", "forever")
@@ -160,6 +162,10 @@ DESCRIPTIONS = {
                  "earns the sharer 50 free tokens with their first purchase, up to 10 a month; a refund takes "
                  "the same share back, never below zero. No cookie. Needs share links. Off: nothing is "
                  "recorded or paid.",
+    "pure_stl": "Pure STL: STL files hold the shape only, as strict readers (trimesh) need. The header names "
+                "the tool and, for a signed-in account's download while saved designs are on, its saved design; "
+                "the settings go beside the STL as <name>.cct.json in a zip, and Import reads both. Off: today's "
+                "files, the settings appended after the triangles (which strict readers refuse).",
 }
 
 _SCHEMA = """
@@ -248,7 +254,7 @@ def validate(key: str, value):
         if not any(out.values()):
             raise SettingsError("At least one pack must be on sale")
         return out
-    if key in ("saved_designs", "inline_checkout", "price_in_money", "newsletter_opt_in", "rewards", "account_page", "receipts", "printer_settings", "share_links", "bookmarks", "my_reports", "data_download", "projects", "my_account_button", "referrals"):
+    if key in ("saved_designs", "inline_checkout", "price_in_money", "newsletter_opt_in", "rewards", "account_page", "receipts", "printer_settings", "share_links", "bookmarks", "my_reports", "data_download", "projects", "my_account_button", "referrals", "pure_stl"):
         if not isinstance(value, bool):
             raise SettingsError(f"{key.replace('_', ' ').capitalize()} is on or off")
         return value

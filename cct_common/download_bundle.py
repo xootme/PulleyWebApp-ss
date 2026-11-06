@@ -36,6 +36,7 @@ import threading
 import zipfile
 
 from .download_failures import _TESTING, BUNDLE_ENVIRON, is_testing
+from .stl import MARK_KEY, SIDECAR
 from .tokens import FORMAT_TIER, TIER_PRICE, BudgetReached, InsufficientTokens
 
 MAX_FILES = 40
@@ -58,11 +59,13 @@ def build_zip(app, planned, *, headers=None, progress=None, mark=None) -> bytes:
     in-process; a name that repeats gets -2, -3 … Raises RuntimeError naming
     the first route that fails. `mark` ({"job_id": …, "testing": …}) goes to
     each call's environ as BUNDLE_ENVIRON; the failure log sets
-    mark["recorded"]."""
+    mark["recorded"]. A pure STL's settings come back on the mark
+    (cct_common.stl, 0.57.0) and go beside it as <stem>.cct.json."""
     buf, seen = io.BytesIO(), set()
     mark = {"job_id": ""} if mark is None else mark
     with app.test_client() as c, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for i, (path, params) in enumerate(planned):
+            mark.pop(MARK_KEY, None)
             r = c.get(path, query_string=params, headers=headers or {}, environ_overrides={BUNDLE_ENVIRON: mark})
             if r.status_code != 200:
                 err = (r.get_json(silent=True) or {}).get("error") if r.is_json else None
@@ -76,6 +79,11 @@ def build_zip(app, planned, *, headers=None, progress=None, mark=None) -> bytes:
                 n += 1
             seen.add(fname)
             z.writestr(fname, r.get_data())
+            blob = mark.pop(MARK_KEY, None)
+            if blob is not None and ext.lower() == ".stl":
+                side = os.path.splitext(fname)[0] + SIDECAR
+                seen.add(side)
+                z.writestr(side, (blob + "\n").encode("utf-8"))
             if progress:
                 progress(int(100 * (i + 1) / (len(planned) + 1)))
     return buf.getvalue()
@@ -121,7 +129,7 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
         if refusal:
             return refusal
 
-        context = None
+        context, who = None, {}
         if charges is not None and charges.enabled:
             acct, refusal = charges._refusal()
             if refusal:
@@ -133,6 +141,7 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
             for path, params in planned:
                 if not charges.matches(params, design):
                     return jsonify({"error": f"{path} isn't part of this design"}), 400
+            who = {"account": acct, "key": did}            # a pure STL's header (0.57.0)
             if top is not None:                            # only free files (a README, a report): no charge
                 context, refusal = charges.begin_design(did, top)
                 if refusal:
@@ -146,7 +155,7 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
             else None
 
         if jobs is None:                                   # the zip is the answer
-            quote, mark = None, {"job_id": "", "testing": is_testing()}
+            quote, mark = None, {"job_id": "", "testing": is_testing(), **who}
             try:
                 if charge:
                     with charge() as quote:
@@ -185,7 +194,7 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
             start_job(job.id)
             try:
                 with (charge() if charge else _null()) as quote:
-                    data = build_zip(app, planned, headers=headers, mark={"job_id": job.id, "testing": testing},
+                    data = build_zip(app, planned, headers=headers, mark={"job_id": job.id, "testing": testing, **who},
                                      progress=lambda pct: update_progress(job.id, pct))
                     url = save_result(data, name + ".zip")
                     if charges is not None:

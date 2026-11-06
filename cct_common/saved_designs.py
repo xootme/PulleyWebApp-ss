@@ -228,6 +228,19 @@ class SavedDesigns(SqliteDB):
         d["params"] = json.loads(d["params"])
         return d
 
+    def by_key(self, account_id: str, design_key: str) -> Optional[dict]:
+        """This account's design filed under design_key (a pure STL's header
+        key, 0.57.0): {id, app, design_key, name, params}, or None. Never another account's."""
+        with self._read() as db:
+            row = db.execute("SELECT id, app, design_key, name, params FROM saved_designs "
+                             "WHERE account_id = ? AND design_key = ? ORDER BY updated_at DESC LIMIT 1",
+                             (account_id, design_key)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["params"] = json.loads(d["params"])
+        return d
+
     def thumb(self, account_id: str, saved_id: str) -> Optional[tuple]:
         """(mimetype, bytes) of its thumbnail, or None."""
         with self._read() as db:

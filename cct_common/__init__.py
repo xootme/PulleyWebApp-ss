@@ -122,15 +122,16 @@ with a hook for the off-server copy and alerts on failure):
 from .core import build_meta, dump_blob, flatten_params, parse_meta
 from .dxf import embed_dxf, extract_dxf
 from .step import embed_step, extract_step, rename_step_product
-from .stl import embed_stl, extract_stl
+from .stl import embed_stl, extract_stl, is_strict_stl, settings_sidecar, stl_files
+from .imports import import_meta
 from .svg import embed_svg, extract_svg
 
 __all__ = [
     "build_meta", "dump_blob", "parse_meta", "flatten_params",
     "embed_step", "extract_step", "rename_step_product",
-    "embed_stl", "extract_stl",
+    "embed_stl", "extract_stl", "is_strict_stl", "settings_sidecar", "stl_files", "import_meta",
     "embed_dxf", "extract_dxf",
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.56.8"
+__version__ = "0.57.0"

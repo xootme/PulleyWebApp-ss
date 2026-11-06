@@ -18,6 +18,8 @@ cct_common.testing.affected:
   commits to test files, past the night's limit. A control caught before
   0.30.0 has no catcher on record and keeps the old rule until it next runs.
   A filter runs every control whose name holds it; --all runs them all.
+  Every control is checked for STALE (its pattern not once in its file),
+  filter or not (0.56.9).
 - **Which tests.** A control with a catcher on record runs it first, alone;
   if it no longer catches, the control's scope and then the whole suites, as
   below, and the test that caught it is the new catcher (pytest's FAILED or
@@ -414,11 +416,13 @@ def main(breaks: dict, argv, source=None) -> int:
     todo, stale, meta = [], [], {}
     for name, entry in breaks.items():
         path, old, new = entry
-        if only and not any(o in name for o in only):
-            continue
+        # Every control's pattern, named or not (0.56.9): a filtered by-day
+        # run skipped the others', and Pulley's night was first to see one stale.
         if (affected.ROOT / path).read_text(encoding="utf-8").count(old) != 1:   # the code moved on: refresh it
             print(f"STALE   {name}: pattern not found once in {path}", flush=True)
             stale.append(name)
+            continue
+        if only and not any(o in name for o in only):
             continue
         files, how, key = ([], "--whole-suite", path) if whole else scope(path, old, index, graph, lines)
         files = cheapest_first(files, tstate, {t for t in {f.split("::")[0] for f in files}

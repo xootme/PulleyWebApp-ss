@@ -573,6 +573,8 @@ class Charges:
                     params = dict(params, design_id=raw["design_id"])
                 key = self.design_key_for(params)
                 self._remember(acct, key, params)
+                from .stl import DOWNLOAD_ENVIRON
+                request.environ[DOWNLOAD_ENVIRON] = {"account": acct, "key": key}   # a pure STL's header (0.57.0)
                 tokens = self.state.tokens
                 sid, budget = self._session()
                 try:

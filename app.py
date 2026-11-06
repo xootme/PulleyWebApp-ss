@@ -2467,6 +2467,33 @@ def _embed_svg(svg_str: str, args) -> str:
                           schema_version=CCT_SCHEMA_VERSION)
 
 
+IMPORT_NONE = ('No CheapCADTools design data found in this file. Only files exported from this '
+               'tool contain embedded parameters.')
+
+
+@app.route('/api/import', methods=['POST'])
+def api_import():
+    """The design in a file this tool exported, for the Import dialog: STEP, DXF, SVG, STL, a
+    .cct.json or a zip of them (cct_common 0.57.0's import_meta; the owner approved pure STL,
+    2026-11-05). An STL's trailer reads for good; a pure STL's header key opens the signed-in
+    account's saved design, its page's params as My designs' Open applies them; a pure STL with
+    no usable key says where its settings are (imports.NO_KEY). Returns {params}; the page
+    checks they are a pulley's, as it did when it read the file itself."""
+    from cct_common.core import flatten_params
+    from cct_common.imports import import_meta
+    up = request.files.get('file')
+    if up is None:
+        return jsonify(error='Please select a file first.'), 400
+    found = import_meta(up.filename or '', up.read())
+    if found['saved']:
+        if found['saved'].get('app') not in (None, 'pulleys'):        # another tool's saved design
+            return jsonify(error=IMPORT_NONE), 400
+        return jsonify(params=dict(found['saved'].get('params') or {}))
+    if not found['meta']:
+        return jsonify(error=found['error'] or IMPORT_NONE), 400
+    return jsonify(params=flatten_params(found['meta']))
+
+
 def _rename_step_product(step_bytes: bytes, product_name: str) -> bytes:
     """Replace PRODUCT names in a STEP file so the CAD app shows correct component names.
 

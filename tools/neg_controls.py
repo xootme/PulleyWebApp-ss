@@ -235,6 +235,11 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    if not got or have < small_step_min():", "    if not got:"),
     "release: the smoke test asks the new revision's small_step": ("tools/release.py",
         "    bad += small_step_check(name, version, base)\n", ""),
+    # Import through cct_common 0.57.0's import_meta (the owner approved pure STL, 2026-11-05)
+    "import: a pure STL's key opens the account's saved design": (AP,
+        "    if found['saved']:\n        if found['saved'].get('app')", "    if False:\n        if found['saved'].get('app')"),
+    "import: another tool's saved design is turned away": (AP,
+        "        if found['saved'].get('app') not in (None, 'pulleys'):", "        if False:"),
     # small_step 0.18.4 prints the same maths on both builds: the Linux check is exact again
     "linux check: a last digit is a difference by default": ("tools/linux_binary_check.py",
         "    if not tolerant:\n        return None, 0.0\n", ""),
