@@ -213,6 +213,9 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "                small, other = (1, 2) if t1 <= t2 else (2, 1)", "                small, other = (1, 2)"),
     "auto-fix: few teeth in mesh offers more teeth": (AP,
         "                if len(mesh) > 1:", "                if False:"),
+    # one version number (baseline finding 5, the owner 2026-11-04): the release bumps version.txt too
+    "release: version.txt is the app's version": ("tools/release.py",
+        "    ('version.txt', r\"^()(\\d+\\.\\d+\\.\\d+)()$\"),\n", ""),
     # cct_common 0.58.0: an agent's options carry the API's names (hub_retention was none)
     "auto-fix: a threaded hole is hub_screw_hold to an agent": ("agent.py",
         '            out[f"{pfx}hub_screw_hold"] = HOLD_OF_RETENTION[value]',

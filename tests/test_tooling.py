@@ -8,6 +8,7 @@ import configparser
 import importlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -112,6 +113,18 @@ def test_the_release_version(monkeypatch):
         monkeypatch.setenv("CCT_RELEASE_VERSION", bad)
         with pytest.raises(release.Fail):
             release.next_version("2.0.28")
+
+
+def test_every_version_file_says_the_apps_version():
+    """One number (baseline finding 5, the owner 2026-11-04): APP_VERSION, which the release
+    bumps and the dashboard reads, and every other file that names it, version.txt (the desktop
+    build's) included. version.txt said 1.2.1 while the app was 2.0.33."""
+    import release
+    cur = release.current_version()
+    assert "version.txt" in [p for p, _ in release.VERSION_FILES]      # the release bumps it too
+    for path, pat in release.VERSION_FILES:
+        m = re.search(pat, (ROOT / path).read_text(encoding="utf-8"), re.M)
+        assert m and m.group(2) == cur, (path, m and m.group(2), cur)
 
 
 def test_the_release_bumps_both_places(tmp_path, monkeypatch):

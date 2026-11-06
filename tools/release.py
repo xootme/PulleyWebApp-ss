@@ -48,6 +48,9 @@ CCT = Path(r'C:\Users\cmyer\Documents\CCT_Controller\bin\cct.py')
 VERSION_FILES = [   # (file, pattern whose group 2 is the version)
     ('app.py', r"^(APP_VERSION\s*=\s*')(\d+\.\d+\.\d+)(')"),
     ('tests/browser/admin_ui.js', r"('Timing Pulleys )(\d+\.\d+\.\d+)(')"),
+    # the desktop build's number (packaging/), APP_VERSION's since 2026-11-06: it said 1.2.1
+    # while the app was 2.0.33 (baseline finding 5, the owner 2026-11-04)
+    ('version.txt', r"^()(\d+\.\d+\.\d+)()$"),
 ]
 UA = 'CCT-PulleyRelease/1.0'
 LEDGER_SETTLE_S = 60   # the ledger is compared as of a minute before the deploy: a request under way then has committed
