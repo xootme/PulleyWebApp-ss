@@ -54,6 +54,10 @@ HAND = {
     # Import reads a download's .cct.json and zip too (cct_common 0.57.0): the picker offers them
     'import: the picker takes only the old files': ('import_ui', PAGE, [
         ('accept=".step,.stp,.dxf,.svg,.stl,.cct.json,.json,.zip"', 'accept=".step,.stp,.dxf,.svg,.stl"')]),
+    # a link is laid over the defaults, never the visitor's saved settings (CCT_App_Baseline §3, finding 2)
+    'links: the saved settings fill what a link leaves out': ('link_ui', PAGE, [
+        ('  const restored = designInUrl() ? false : await loadSettings();',
+         '  const restored = await loadSettings();')]),
     # 3D Print Compensation (the owner, 2026-10-31): the account's value is clamped to each pulley's cap
     'comp: the account\'s value over the cap is kept': ('designs_ui', PAGE, [
         ('cctTokens.clampCompensation(raw, caps[i])', 'cctTokens.clampCompensation(raw)')]),

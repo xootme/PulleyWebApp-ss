@@ -39,7 +39,7 @@ import nightly_test  # noqa: E402
 # Longest first, so the lanes finish together. 'tokens_off' is tokens_ui.js with tokens off.
 HARNESSES = ['roundtrip_ui', 'download_design_ui', 'turn_ui', 'help_ui', 'busy_ui', 'import_ui',
              'tokens_ui', 'designs_ui', 'tokens_off', 'admin_ui', 'bore_ui', 'dims_ui', 'screw_ui', 'undo_ui',
-             'parity_ui']
+             'parity_ui', 'link_ui']
 TIMEOUT_S = 30 * 60
 # Nothing a harness starts may reach a real service or account: whatever the shell has is dropped.
 SCRUB = ('RESEND', 'STRIPE', 'PAYPAL', 'SENDGRID', 'DATABASE_URL', 'GOOGLE_CLIENT', 'BACKUP_', 'ADMIN_EMAILS',

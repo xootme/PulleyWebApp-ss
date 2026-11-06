@@ -49,7 +49,7 @@ def test_the_accounts_printer_settings_are_defaults():
     assert hook in PAGE
     start = PAGE[PAGE.index('window.onload = async () => {'):]
     start = start[:start.index('\n};')]
-    assert start.index('const restored = await loadSettings();') < start.index('_pageStarted = true;') \
+    assert start.index('const restored = designInUrl() ? false : await loadSettings();') < start.index('_pageStarted = true;') \
         < start.index('if (_printerPending) await _applyPrinter();')
 
 
@@ -63,5 +63,5 @@ def test_a_saved_design_opens_after_the_start_up_restore():
     assert '_applyUrlParams(p);' in body and 'await onPitchChange();' in body and 'd.done();' in body
     start = PAGE[PAGE.index('window.onload = async () => {'):]
     start = start[:start.index('\n};')]
-    assert start.index('const restored = await loadSettings();') < start.index('_pageStarted = true;') \
+    assert start.index('const restored = designInUrl() ? false : await loadSettings();') < start.index('_pageStarted = true;') \
         < start.index('if (_designPending) await _applyDesign();')

@@ -174,6 +174,9 @@ async function main() {
 
   // ── typing: the warnings wait ──
   await load(BASE + '/?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=15&clearance_height=8');
+  // Clearance Height is a 3D Mode field, and a link without a hub, flange or spline opens in
+  // 2D: a link no longer takes 3D Mode from the saved settings (CCT_App_Baseline §3).
+  await js("(() => { const fb = document.getElementById('feature_build'); if (!fb.checked) fb.click(); })()");
   await js("document.getElementById('dims-details').open = true");
   await settled('the design');
   check('a design with a wide enough face: no warning', !(await warned()));
@@ -215,9 +218,10 @@ async function main() {
   await type('clearance_height', '1');
   await sleep(400);
   check('too narrow, still typing: no warning yet', !(await warned()));
+  const focus = await js("JSON.stringify({ active: document.activeElement && document.activeElement.id, shown: !!document.getElementById('clearance_height').offsetParent })");
   await js("document.getElementById('clearance_height').blur()");
   await settled('leaving the field');
-  check('leaving the field: the warning at once', await js('(' + fixShownExpr() + ')'));
+  check('leaving the field: the warning at once', await js('(' + fixShownExpr() + ')'), focus);
   await shot('autofix_before.png');
 
   // ── Auto-fix ──
@@ -258,6 +262,9 @@ async function main() {
   // 1's answer comes back just after the 0 of 10 is typed, and 10's takes 3 s: past the
   // 2 s wait, 1's refusal would show if the check's ticket didn't drop it.
   await load(BASE + '/?family=HTD&pitch=5M&teeth=20&bore=8&belt_height=15&clearance_height=8');
+  // Clearance Height is a 3D Mode field, and a link without a hub, flange or spline opens in
+  // 2D: a link no longer takes 3D Mode from the saved settings (CCT_App_Baseline §3).
+  await js("(() => { const fb = document.getElementById('feature_build'); if (!fb.checked) fb.click(); })()");
   await js("document.getElementById('dims-details').open = true");
   await settled('the design');
   await js(`window.__warnSeen = false; new MutationObserver(() => {

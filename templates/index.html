@@ -1425,9 +1425,15 @@ function _applyUrlParams(p) {
 }
 
 // ── Restore design from URL params (set by Fusion addin or file metadata) ─────
+// A design in the address: its query has family or teeth.
+function designInUrl() {
+  const p = new URLSearchParams(window.location.search);
+  return p.has('family') || p.has('teeth');
+}
+
 function loadParamsFromUrl() {
   const p = new URLSearchParams(window.location.search);
-  if (!p.has('family') && !p.has('teeth')) return false;
+  if (!designInUrl()) return false;
   migrateParams(p);
   _applyUrlParams(p);
   return true;
@@ -1912,8 +1918,12 @@ window.onload = async () => {
   document.getElementById('units').addEventListener('change', () => { onUnitsChange(); saveSettings(); });
   populatePitches('HTD');
   await loadSplines();
-  const restored = await loadSettings();
-  loadParamsFromUrl();   // URL params override saved settings when present
+  // A design in the address opens exactly that design, laid over the page's defaults, never
+  // over your saved settings, so a link is the same for everyone (CCT_App_Baseline §3, as
+  // Sprocket's designFromUrl); what it leaves out is the default. A plain visit comes back
+  // as it was left.
+  const restored = designInUrl() ? false : await loadSettings();
+  loadParamsFromUrl();
   // The page opens with Two Pulley Drive ticked; only a click or a restored
   // design set this title before, so a first visit read "Pulley" beside "Pulley 2".
   document.getElementById('panel1-title').textContent =
