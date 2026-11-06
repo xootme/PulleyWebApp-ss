@@ -7,21 +7,24 @@ sample pulley (CCT_WebSite's samples.generated.json, as tests/test_sample_design
 reads it; --queries FILE for a JSON list of other designs' queries) goes through the app's own
 /download/assembly-step, and each small_step run it makes is run a second time, with the same
 arguments and input files, by the Linux binary in WSL. The two outputs must be byte-identical
-(small_step writes no timestamp), but for a signed zero ("-0." against "0.") and a number's
-last printed digit (at most 1e-12 mm); the runs each rule was needed for are counted and named
-(compare() below). Also: both binaries report the same version, and the Linux one is static
-(no NEEDED, no INTERP: the Dockerfile's gate runs it on a slim image).
+(small_step writes no timestamp; since 0.18.4 both builds do the same maths, ss-core's dmath).
+--tolerant allows what builds before 0.18.4 needed: a signed zero ("-0." against "0.") and a
+number's last printed digit (at most 1e-12 mm); the runs each rule was needed for are counted
+and named (compare() below). Also: both binaries report the same version, and the Linux one is
+static (no NEEDED, no INTERP: the Dockerfile's gate runs it on a slim image).
 
-From the repo root, with an interpreter that has the app's packages (a test turn; WSL's
-Ubuntu must be installed, so it stays on this PC):
+From the repo root, with an interpreter that has the app's packages (a test turn with
+CCT_TEST_WHERE=here: WSL's Ubuntu must be installed, so it stays on this PC):
 
   .venv312/Scripts/python.exe tools/linux_binary_check.py [--linux bin/small_step_linux]
       [--windows <small_step.exe>] [--distro ubuntu-claude] [--queries FILE] [--keep DIR]
+      [--tolerant]
 
 --keep DIR keeps both outputs of every run that isn't byte-identical.
 
-Exit 0 when every run matches. Copy it for another app: only `designs()` and the STEP route
-are this app's."""
+Exit 0 when every run matches, 1 on a difference, 2 when nothing was compared (no WSL, no such
+distro, or no design reached small_step): a check that compared nothing has proved nothing.
+Copy it for another app: only `designs()` and the STEP route are this app's."""
 import argparse
 import hashlib
 import json
@@ -46,9 +49,9 @@ def wsl_path(p: str) -> str:
     return f"/mnt/{m.group(1).lower()}/{m.group(2).replace(chr(92), '/')}" if m else p
 
 
-# The two differences allowed, both the platforms' maths libraries rounding the last bit, each
-# counted and named in the report (Controller, 2026-11-02; SmallStep is to make the builds print
-# the same, and then this goes back to exact):
+# The two differences --tolerant allows, both the platforms' maths libraries rounding the last
+# bit, each counted and named in the report (Controller, 2026-11-02; small_step 0.18.4 made the
+# builds print the same, so by default this is exact again):
 # - a signed zero: a sine rounded to 0 from either side reads "-0." on one and "0." on the other
 #   (SmallStep, 189 builds of 0.18.2: 7 captured-nut cases, one line each);
 # - the last printed digit: a number that differs by at most one unit in its last printed place
@@ -80,11 +83,13 @@ def _last_digit(x: bytes, y: bytes) -> float | None:
     return worst
 
 
-def compare(a: bytes, b: bytes) -> tuple:
-    """(rule, largest last-digit difference): rule 'exact', 'signed zero', 'last digit' or None
-    (a difference no rule allows)."""
+def compare(a: bytes, b: bytes, tolerant: bool = False) -> tuple:
+    """(rule, largest last-digit difference): rule 'exact', or None (a difference no rule
+    allows); `tolerant` also allows 'signed zero' and 'last digit'."""
     if a == b:
         return 'exact', 0.0
+    if not tolerant:
+        return None, 0.0
     a, b = NEG_ZERO.sub(b'0.', a), NEG_ZERO.sub(b'0.', b)
     if a == b:
         return 'signed zero', 0.0
@@ -126,8 +131,18 @@ def main(argv=None):
     ap.add_argument('--distro', default='ubuntu-claude')
     ap.add_argument('--queries', help='a JSON list of design queries instead of the samples')
     ap.add_argument('--keep', help='a folder to keep both outputs of each run that differs in')
+    ap.add_argument('--tolerant', action='store_true',
+                    help="allow a signed zero and a last printed digit (builds before 0.18.4)")
     a = ap.parse_args(argv)
     linux = wsl_path(str(Path(a.linux).resolve()))
+    try:                                                 # wsl.exe's own errors are UTF-16
+        up = wsl(a.distro, 'true', timeout=120)
+        why = None if up.returncode == 0 else (up.stderr or up.stdout).replace(b'\0', b'').decode(errors='replace')
+    except (OSError, subprocess.TimeoutExpired) as e:
+        why = str(e)
+    if why is not None:
+        print(f"nothing compared: WSL's {a.distro} does not run here ({why.strip() or 'no reason given'})")
+        return 2
 
     wv = subprocess.run([a.windows, '--version'], capture_output=True, text=True).stdout.strip()
     lv = wsl(a.distro, linux, '--version', text=True)
@@ -174,7 +189,7 @@ def main(argv=None):
                            f'{lr.stderr.decode(errors="replace")[:200]}')
                 print(f'FAIL   {label} ({sub}): linux exit {lr.returncode}')
                 continue
-            rule, d = compare(out, lr.stdout)
+            rule, d = compare(out, lr.stdout, a.tolerant)
             if rule is None:
                 bad.append(f'{label} ({sub}): outputs differ ({len(out)} bytes on Windows, {len(lr.stdout)} on Linux)')
                 print(f'DIFF   {label} ({sub}): windows {hashlib.md5(out).hexdigest()[:12]}, '
@@ -197,7 +212,10 @@ def main(argv=None):
               + (f': {", ".join(lab for lab, _ in got)}' if got else ''))
     for b in bad:
         print('  ' + b)
-    return 1 if bad or not runs else 0
+    if not runs:
+        print('nothing compared: no design reached small_step')
+        return 2
+    return 1 if bad else 0
 
 
 if __name__ == '__main__':

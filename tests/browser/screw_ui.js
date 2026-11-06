@@ -261,6 +261,42 @@ async function main() {
     && (await js("document.getElementById('hub1_retention').value")) === 'set_screw_nut'
     && (await js("document.getElementById('hub1_screw_size').value")) === 'M4', await text('#dims-warnings'));
   await settled('Auto-fix (a)');
+  check('key slot: two, not three', (await btn('dims_fix_c')) === null);
+
+  // ── a captured nut's lobe at the tooth tips, under a top flange printed with it: up to
+  //    three Auto-fixes (the owner, 2026-11-05) ──
+  const lobe = `${BASE}/?family=Imperial&pitch=XL&teeth=12&bore=5&hub_od=12&hub_height=10&hub_screw_size=M3`
+    + '&hub_screw_hold=nut&hub_captured_nut=1&hub_screw_count=1&feature_build=1'
+    + '&flange_enabled=1&flange_3dprint=1&flange_top_separate=0';
+  const LOBE = 'The M3 captured nut needs a Ø19.40 mm hub round it, and the lobe the hub grows for it '
+    + 'reaches the tooth tips (Ø18.90 mm), where the printed top flange starts to flare: the flange '
+    + "can't be cut round it. Widen the hub, use a threaded hole, or print the top flange separately.";
+  const lobeWarned = () => waitFor(`[...document.querySelectorAll('#dims-warnings li')].some(li => li.textContent === ${JSON.stringify(LOBE)})`, 15000);
+  const lobeQuiet = () => waitFor(`![...document.querySelectorAll('#dims-warnings li')].some(li => li.textContent.includes('lobe'))`, 15000);
+  const val = id => js(`document.getElementById('${id}').value`);
+  await load(lobe);
+  check('nut lobe: the page warns', await lobeWarned(), await text('#dims-warnings'));
+  check('nut lobe: three Auto-fixes, (a), (b) and (c)', (await btn('dims_fix')) === 'Auto-fix (a)'
+    && (await btn('dims_fix_b')) === 'Auto-fix (b)' && (await btn('dims_fix_c')) === 'Auto-fix (c)',
+        [await btn('dims_fix'), await btn('dims_fix_b'), await btn('dims_fix_c')]);
+  await js("document.getElementById('dims_fix_c').click()");
+  check('nut lobe: (c) prints the top flange separately, the nut kept', await lobeQuiet()
+    && (await js("document.getElementById('flange1_top_separate').checked")) === true
+    && (await val('hub1_retention')) === 'set_screw_nut' && (await val('hub1_od')) === '12', await text('#dims-warnings'));
+  await settled('Auto-fix (c)');
+  await load(lobe);
+  await lobeWarned();
+  await js("document.getElementById('dims_fix_b').click()");
+  check('nut lobe: (b) makes it a threaded hole', await lobeQuiet()
+    && (await val('hub1_retention')) === 'set_screw_std'
+    && (await js("document.getElementById('flange1_top_separate').checked")) === false, await text('#dims-warnings'));
+  await settled('Auto-fix (b)');
+  await load(lobe);
+  await lobeWarned();
+  await js("document.getElementById('dims_fix').click()");
+  check('nut lobe: (a) widens the hub to hold the nut', await lobeQuiet()
+    && (await val('hub1_od')) === '19.5' && (await val('hub1_retention')) === 'set_screw_nut', await text('#dims-warnings'));
+  await settled('Auto-fix (a)');
 
   finish(errors);
   ws.close(); chrome.kill();

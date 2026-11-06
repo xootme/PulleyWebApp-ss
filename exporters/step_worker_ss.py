@@ -65,9 +65,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # (0.11.2: a screw the key's own width builds again, as 0.11.0 built it).
 # 0.18.2: a top flange printed in place whose hole lies inside a hub within the
 # teeth takes the hub's radius as its hole; it ran up through the flange's band
-# as a second solid (+3.77 %, the night of 2026-11-01). bin/small_step_linux is
-# 0.18.2 from the same commit (32d6300): raise this only with that binary.
-SMALL_STEP_MIN_VERSION = (0, 18, 2)
+# as a second solid (+3.77 %, the night of 2026-11-01).
+# 0.18.4: a printed top flange is cut round a lobed captured-nut hub (0.18.3), and one
+# whose lobe reaches the tooth tips is refused by name (nut_lobe_past_flange_flat; the page
+# warns first, app._nut_lobe_past_flange); the Linux and Windows builds print the same
+# maths (ss-core's dmath). bin/small_step_linux is 0.18.4 from the same commit (148261a,
+# sha256 57c7d4ad...): raise this only with that binary.
+SMALL_STEP_MIN_VERSION = (0, 18, 4)
 
 _version_checked: dict = {}   # bin_path → True once verified
 # small_step builds a captured nut under a top ring counterbore correctly from

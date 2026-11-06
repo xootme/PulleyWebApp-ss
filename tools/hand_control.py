@@ -46,6 +46,9 @@ HAND = {
     # the key slot's two Auto-fixes (the owner, 2026-11-04): the page shows (b) beside (a)
     'screws: the second Auto-fix never shows': ('screw_ui', PAGE, [
         ("    fixBtnB.classList.toggle('hidden', !dimsFixB);", "    fixBtnB.classList.toggle('hidden', true);")]),
+    # up to three Auto-fixes (the owner, 2026-11-05): the nut lobe's (c) shows beside (a) and (b)
+    'screws: the third Auto-fix never shows': ('screw_ui', PAGE, [
+        ("    fixBtnC.classList.toggle('hidden', !dimsFixC);", "    fixBtnC.classList.toggle('hidden', true);")]),
     # 3D Print Compensation (the owner, 2026-10-31): the account's value is clamped to each pulley's cap
     'comp: the account\'s value over the cap is kept': ('designs_ui', PAGE, [
         ('cctTokens.clampCompensation(raw, caps[i])', 'cctTokens.clampCompensation(raw)')]),

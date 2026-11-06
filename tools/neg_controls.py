@@ -184,7 +184,16 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "screws: a captured nut's screw wider than its key slot warns": (AP,   # the 11-03 live download
         "or screw.hole['diameter'] <= kw_w + 1e-9:\n        return none", "or True:\n        return none"),
     "screws: the key slot's second Auto-fix is offered": (AP,   # the owner, 2026-11-04: (a) or (b)
-        "                alt_set.update(slot_b)\n", "                pass\n"),
+        "                alts['b']['set'].update(slot_b)\n", "                pass\n"),
+    # small_step 0.18.3's nut_lobe_past_flange_flat; the owner, 2026-11-05: up to three Auto-fixes
+    "screws: a nut's lobe at the tooth tips under a printed flange warns": (AP,
+        "    if reach <= hub_od / 2 + 1e-6 or reach < r_od - 1e-6:\n        return [], []",
+        "    if True:\n        return [], []"),
+    "screws: a separate top flange leaves the nut's lobe alone": (AP,
+        "    if not fp['flange_3dprint'] or fp['top_separate'] or fp['nubs_enabled']:",
+        "    if not fp['flange_3dprint'] or fp['nubs_enabled']:"),
+    "auto-fix: a third fix is offered": (AP,
+        "    fix_b, fix_c = (more + [None, None])[:2]", "    fix_b, fix_c = (more + [None, None])[0], None"),
     "screws: a hub too short for its screw warns": (AP,   # the owner's option b, 2026-11-02
         "    if hub_h >= need - 1e-9:\n        return [], {}, []", "    if True:\n        return [], {}, []"),
     "random: only a short hub skips the STEP volume check": ("tests/test_nightly_random.py",   # option c, 2026-11-04
@@ -226,6 +235,11 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    if not got or have < small_step_min():", "    if not got:"),
     "release: the smoke test asks the new revision's small_step": ("tools/release.py",
         "    bad += small_step_check(name, version, base)\n", ""),
+    # small_step 0.18.4 prints the same maths on both builds: the Linux check is exact again
+    "linux check: a last digit is a difference by default": ("tools/linux_binary_check.py",
+        "    if not tolerant:\n        return None, 0.0\n", ""),
+    "linux check: no WSL is nothing compared, not a difference": ("tools/linux_binary_check.py",
+        "'no reason given'})\")\n        return 2", "'no reason given'})\")\n        return 1"),
     "health: names the running small_step": (AP,
         "small_step='.'.join(map(str, ss)) if any(ss) else None,", "small_step=None,"),
 }

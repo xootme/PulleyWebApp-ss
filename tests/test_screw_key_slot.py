@@ -33,6 +33,7 @@ def test_warns_with_two_fixes_to_choose(client):
                         'changes': ['set screw M5 → M4 (its hole fits the key slot)']}
     assert d['fix_b'] == {'set': {'hub1_retention': 'set_screw_std'},
                           'changes': ['set screw M5: captured nut → threaded hole']}
+    assert d['fix_c'] is None
 
 
 @pytest.mark.parametrize('q', [
