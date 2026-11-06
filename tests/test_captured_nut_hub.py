@@ -112,11 +112,23 @@ def test_the_panel_is_quiet_otherwise(client, q):
     assert not _lobed(_dims(client, q))
 
 
-def test_no_fix_when_the_hub_cannot_grow(client):
-    """The deep key's Ø25.5 hub is past a 16-tooth 5M pulley's root."""
+def test_the_threaded_hole_when_the_hub_cannot_grow(client):
+    """The deep key's Ø25.5 hub is past a 16-tooth 5M pulley's root: the other way out, a
+    threaded hole, is the one fix (the owner, 2026-11-05: one that can't apply leaves the next)."""
     d = _dims(client, {**DEEP_KEY, 'teeth': '16'})
     assert _lobed(d)
-    assert not any('captured nut' in c for c in (d.get('fix') or {}).get('changes') or [])
+    assert 'hub1_od' not in d['fix']['set'] and d['fix']['set']['hub1_retention'] == 'set_screw_std'
+    assert len(d['fixes']) == 1
+    assert not _lobed(_dims(client, {**DEEP_KEY, 'teeth': '16', 'hub_screw_hold': 'thread'}))
+
+
+def test_a_threaded_hole_is_the_other_way(client):
+    """(a) the wider hub, (b) a threaded hole, in the key slot's words (the owner, 2026-11-05)."""
+    d = _dims(client, DEEP_KEY)
+    a, b = d['fixes']
+    assert 'hub OD 20.2 → 25.5 mm (room for the captured nut)' in a['changes']
+    assert 'set screw #2-56: captured nut → threaded hole' in b['changes']
+    assert d['fixes'][1]['set']['hub1_retention'] == 'set_screw_std' and 'hub1_od' not in d['fixes'][1]['set']
 
 
 # ── the STEP worker ───────────────────────────────────────────────────────────

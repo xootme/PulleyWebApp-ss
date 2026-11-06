@@ -1330,32 +1330,103 @@ def _spline_fix(args, pfx, n, sp_obj, root_d, three_d):
     return fix, change
 
 
+def _spline_teeth_fix(args, pfx, n, sp_obj, reach, three_d):
+    """The other way out of a spline within 1 mm of the tooth root (the owner, 2026-11-05: up to
+    three): the fewest more teeth whose root leaves the 1 mm and holds the spline (_spline_fix
+    then asks at most a Hub OD, which comes with it). Returns ({element id: value}, [change
+    text]); empty when no tooth count up to the field's limit does."""
+    from exporters.flange_exporter import _pulley_radii
+    from geometry import labels
+    family, pitch = args.get('family', 'HTD'), args.get('pitch', '5M')
+    spec = PULLEY_SPECS[_resolve_key(family, pitch)]
+    _, _, teeth, _, _, cl_mm, _, pr_ex = _parse_stl_params(args, str(n))
+    who = f'Pulley {n}: ' if pfx else ''
+    key = f'{pfx}teeth'
+    for t in range(teeth + 1, int(labels.limits()['teeth'].max) + 1):
+        root_d = (getOuterDiameter(t, spec['pitch'], spec['pitch_line_diff'])
+                  - 2 * _pulley_radii(family, pitch, t, cl_mm, pr_ex)[2])
+        if reach > root_d - 2.0:
+            continue
+        hub_fix, hub_changes = _spline_fix(dict(args.items(), **{key: t}), pfx, n, sp_obj, root_d, three_d)
+        if set(hub_fix) - {f'hub{n}_od'}:
+            continue                                     # it still needs a smaller spline
+        return ({key: t, **hub_fix},
+                [f'{who}teeth {teeth} → {t} (room for the spline)'] + hub_changes)
+    return {}, []
+
+
+def _more_teeth_in_mesh(pitch_mm, t1, t2, centre, n_belt):
+    """The ways to the teeth in mesh Gates asks for on the smaller pulley (belt_specs, p. 104),
+    in order: the shortest longer centre (the next belts up, to the field's limit), then the
+    fewest more teeth on the smaller pulley at this centre (to the field's limit). Returns
+    [({element id: value}, [change text]), ...], each checked with the drive's own maths."""
+    from geometry import belt_specs as bs
+    from geometry import labels
+    from geometry.pulley_geometry import center_dist_from_belt_teeth
+    want = bs.MIN_TEETH_IN_MESH
+    out = []
+    c_max = labels.limits()['center_distance'].max
+    for nb in range(n_belt + 1, n_belt + 10000):
+        c = center_dist_from_belt_teeth(pitch_mm, t1, t2, nb)
+        if c is None:
+            continue
+        c = round(c, 2)
+        if c > c_max:
+            break
+        c_corr = correct_center_distance(pitch_mm, t1, t2, c)[2]
+        if bs.drive(pitch_mm, t1, t2, c_corr).teeth_in_mesh >= want:
+            out.append(({'center_distance': c},
+                        [f'centre distance {centre:g} → {c:g} mm ({want} teeth in mesh)']))
+            break
+    small = 1 if t1 <= t2 else 2
+    t_max = int(labels.limits()['teeth'].max)
+    t_small = t1 if small == 1 else t2
+    for t in range(t_small + 1, t_max + 1):
+        a, b = (t, t2) if small == 1 else (t1, t)
+        c_corr = correct_center_distance(pitch_mm, a, b, centre)[2]
+        if bs.drive(pitch_mm, a, b, c_corr).teeth_in_mesh >= want:
+            out.append(({'teeth' if small == 1 else 'p2_teeth': t},
+                        [f'pulley {small} teeth {t_small} → {t} ({want} teeth in mesh)']))
+            break
+    return out
+
+
 def _set_screw_slot(args, pfx, n, who, root_d):
     """A set-screw hole wider than both the hub wall it crosses and the bore
     radius it opens into breaks out of the hub inside and out at once: a slot,
     not a hole (Sprocket's ADR-036, the owner 2026-10-02; bug hunt). Both
     conditions: wider than the wall alone (an M3 in a spoke-clamped Ø16 hub) is
     a sound hole. Width is the hole's diameter, or across the flats of a hex
-    hole. Returns ([warning], {element id: value}, [change text]); the fix is a
-    Hub OD that closes the rim (and the spokes' hub, which the hub follows),
-    else the largest smaller screw of the same kind that fits, else none. Never
-    the bore, which must fit the shaft."""
+    hole. Returns ([warning], (a) {element id: value}, [change text], (b) {element
+    id: value}, [change text]); (a) is a Hub OD that closes the rim (and the spokes'
+    hub, which the hub follows), else the largest smaller screw of the same kind
+    that fits, else none; (b), beside a wider hub, is that smaller screw (the owner,
+    2026-11-05: up to three). Never the bore, which must fit the shaft."""
     from geometry import set_screw as _ss
+    none = [], {}, [], {}, []
     hub_od = _safe_float(args.get(f'{pfx}hub_od'), 0.0)
     if hub_od <= 0 or _safe_float(args.get(f'{pfx}hub_height'), 0.0) <= 0:
-        return [], {}, []
+        return none
     try:
         screw = _set_screw(args, pfx)
     except ValueError:
-        return [], {}, []
+        return none
     if screw is None:
-        return [], {}, []
+        return none
     r = _spoke_room(args, pfx)[1] / 2                     # the bore's reach, as a radius
     width = lambda s: s.hole.get('flats') or s.hole.get('diameter') or 0.0
     slot = lambda w, hub: w > hub / 2 - r + 1e-9 and w > r + 1e-9
     w = width(screw)
     if not slot(w, hub_od):
-        return [], {}, []
+        return none
+    smaller_fits = None                                   # the largest smaller screw of the same kind
+    if screw.size in _ss.METRIC + _ss.INCH:
+        group = _ss.METRIC if screw.size in _ss.METRIC else _ss.INCH
+        for size in reversed(group[:group.index(screw.size)]):
+            smaller = _ss.parse(dict(args.items(), **{f'{pfx}hub_screw_size': size}), pfx)
+            if smaller is not None and not slot(width(smaller), hub_od):
+                smaller_fits = size
+                break
     need = math.ceil(4 * (r + w) - 1e-9) / 2
     warning = (f'{who}a Ø{w:.2f} mm {screw.size} set-screw hole is wider than both the '
                f'{hub_od / 2 - r:.2f} mm of hub wall it crosses and the {r:.2f} mm bore radius it '
@@ -1370,16 +1441,15 @@ def _set_screw_slot(args, pfx, n, who, root_d):
             fix = {f'hub{n}_od': need}
             if spokes_on:
                 fix[f'spokes{n}_hub_od'] = need
+            fix_b, changes_b = ({f'hub{n}_screw_size': smaller_fits},
+                                [f'{who}set screw {screw.size} → {smaller_fits} (its hole fits this hub)']
+                                ) if smaller_fits else ({}, [])
             return [warning], fix, [f'{who}hub OD {hub_od:g} → {need:g} mm '
-                                    f'(closes the {screw.size} set-screw hole)']
-    if screw.size in _ss.METRIC + _ss.INCH:
-        group = _ss.METRIC if screw.size in _ss.METRIC else _ss.INCH
-        for size in reversed(group[:group.index(screw.size)]):
-            smaller = _ss.parse(dict(args.items(), **{f'{pfx}hub_screw_size': size}), pfx)
-            if smaller is not None and not slot(width(smaller), hub_od):
-                return [warning], {f'hub{n}_screw_size': size}, [
-                    f'{who}set screw {screw.size} → {size} (the hub can\'t close a larger one)']
-    return [warning], {}, []
+                                    f'(closes the {screw.size} set-screw hole)'], fix_b, changes_b
+    if smaller_fits:
+        return [warning], {f'hub{n}_screw_size': smaller_fits}, [
+            f'{who}set screw {screw.size} → {smaller_fits} (the hub can\'t close a larger one)'], {}, []
+    return none
 
 
 def _screw_hole_too_big(args, pfx, n, who):
@@ -1504,42 +1574,55 @@ def _hub_too_short(args, pfx, n, who, fix_size=None):
     hole + 1 mm), so the two files disagreed (the night random test's +1.98 %, a GT 5M 53T with
     an M5 on a 3.8 mm hub; the owner's option b, 2026-11-02). Every hold the page has (thread,
     captured nut, heat-set insert); a design from before screws had names isn't checked, as
-    with the other screw rules. Returns ([warning], {element id: value}, [change text]); the
-    fix is the height the rule asks for, of `fix_size` when the Auto-fix also changes the
-    screw (none when the hub is already tall enough for that one)."""
+    with the other screw rules. Returns ([warning], (a) {element id: value}, [change text],
+    (b) {element id: value}, [change text]); (a) is the height the rule asks for, of
+    `fix_size` when the Auto-fix also changes the screw (none when the hub is already tall
+    enough for that one); (b), when it doesn't, the largest smaller screw of the same kind
+    this height holds (the owner, 2026-11-05: up to three)."""
+    from cct_common import screws as _screws
+    from geometry import set_screw as _ss
+    none = [], {}, [], {}, []
     try:
         screw = _set_screw(args, pfx)
     except ValueError:
-        return [], {}, []
+        return none
     hub_h = _safe_float(args.get(f'{pfx}hub_height'), 0.0)
     if screw is None or hub_h <= 0 or _safe_float(args.get(f'{pfx}hub_od'), 0.0) <= 0:
-        return [], {}, []
+        return none
     need = round(2 * screw.major, 2)
     if hub_h >= need - 1e-9:
-        return [], {}, []
+        return none
     name = 'this screw' if screw.size == 'Custom' else screw.size
     warn = [f'{who}Hub height too short (need ≥ {need:g} mm for {name})']
     if fix_size and fix_size != screw.size:
-        from cct_common import screws as _screws
         need = round(2 * _screws.get(fix_size).major_diameter, 2)
         if hub_h >= need - 1e-9:
-            return warn, {}, []
-    return warn, {f'hub{n}_height': need}, [f'{who}hub height {hub_h:g} → {need:g} mm']
+            return warn, {}, [], {}, []
+        return warn, {f'hub{n}_height': need}, [f'{who}hub height {hub_h:g} → {need:g} mm'], {}, []
+    fix_b, changes_b = {}, []
+    group = _ss.METRIC if screw.size in _ss.METRIC else _ss.INCH if screw.size in _ss.INCH else ()
+    for size in reversed(group[:group.index(screw.size)] if group else ()):
+        if hub_h >= round(2 * _screws.get(size).major_diameter, 2) - 1e-9:
+            fix_b = {f'hub{n}_screw_size': size}
+            changes_b = [f'{who}set screw {screw.size} → {size} (fits the {hub_h:g} mm hub)']
+            break
+    return warn, {f'hub{n}_height': need}, [f'{who}hub height {hub_h:g} → {need:g} mm'], fix_b, changes_b
 
 
 def _captured_nut_hub(args, pfx, n, who, root_d):
     """A captured nut in a hub too narrow for it: no wall left round its screw
     behind a key slot — STEP can't make it (geometry/captured_nut_hub.py, the same check the STEP worker
-    refuses on). Returns ([warning], {element id: value},
-    [change text]); the fix is the Hub OD the nut needs (and the spokes' hub,
-    which the hub follows), else none: holding the screw another way is a
-    choice of screw type, not a number."""
+    refuses on). Returns ([warning], (a) {element id: value}, [change text], (b) {element id:
+    value}, [change text]); (a) is the Hub OD the nut needs (and the spokes' hub, which the
+    hub follows), else none; (b) a threaded hole for the same screw, in the key slot's
+    words (the owner, 2026-11-05: up to three)."""
     from geometry import captured_nut_hub as _cnh
+    none = [], {}, [], {}, []
     hub_od, hub_h, sd, sc, cn, fd, kw_w, kw_h = _parse_hub_params(args, pfx)
     try:
         ss = _set_screw(args, pfx)
     except ValueError:
-        return [], {}, []
+        return none
     bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
     nut, hole = (ss.nut, dict(ss.hole)) if ss else (None, None)   # what the STEP worker sends
     sp = _spline_of(args, pfx) if _hex_bore(args, pfx) else None
@@ -1547,21 +1630,25 @@ def _captured_nut_hub(args, pfx, n, who, root_d):
                          captured_nut=cn, screw_dia_mm=sd, flat_depth_mm=fd, keyway_w_mm=kw_w,
                          keyway_h_mm=kw_h, spline=sp, nut=nut, hole=hole, who=who)
     if not warn:
-        return [], {}, []
+        return none
+    threaded, threaded_changes = ({f'hub{n}_retention': 'set_screw_std'},
+                                  [f'{who}set screw {ss.size}: captured nut → threaded hole']
+                                  ) if ss is not None and ss.hold == 'nut' else ({}, [])
     kh = kw_h if kw_w > 0 and kw_h > 0 else 0.0
     need = math.ceil(_cnh.min_hub_od(bore_mm=bore_mm, screw_dia_mm=sd, nut=nut, keyway_h_mm=kh,
                                      hole=hole) * 2 - 1e-9) / 2
     if need > math.floor((root_d - 2 * SPLINE_WALL) * 2) / 2:
-        return warn, {}, []
+        return warn, {}, [], threaded, threaded_changes
     spokes_on = args.get(f'{pfx}spokes_enabled') == '1'
     if spokes_on:
         fit = _spoke_fit(dict(args.items(), **{f'{pfx}hub_od': need, f'{pfx}spokes_hub_od': need}), pfx)
         if not fit.possible or fit.fitted['hub_od'] < need - 1e-6:
-            return warn, {}, []
+            return warn, {}, [], threaded, threaded_changes
     fix = {f'hub{n}_od': need}
     if spokes_on:
         fix[f'spokes{n}_hub_od'] = need
-    return warn, fix, [f'{who}hub OD {hub_od:g} → {need:g} mm (room for the captured nut)']
+    return (warn, fix, [f'{who}hub OD {hub_od:g} → {need:g} mm (room for the captured nut)'],
+            threaded, threaded_changes)
 
 
 def _flange_rim_fix(args, pfx, n, who, need):
@@ -1680,6 +1767,24 @@ def _dimensions(args):
     # More Auto-fixes, where a warning has more than one way out (the owner: up to three,
     # 2026-11-05): (b) and (c) are fix_set without what each one's 'drop' names, plus its 'set'.
     alts = {k: {'drop': set(), 'drop_changes': [], 'set': {}, 'changes': []} for k in 'bc'}
+
+    def offer(slot, first, first_changes, alt, alt_changes):
+        """A warning's other way out: alts[slot] is fix_set without its (a), `first`, plus
+        `alt`. Two smaller screws for one hub: the smaller one."""
+        from cct_common import screws as _screws
+        a = alts[slot]
+        a['drop'] |= set(first)
+        a['drop_changes'] += first_changes
+        for k, v in alt.items():
+            old = a['set'].get(k)
+            if k.endswith('_screw_size') and old is not None and old != v:
+                keep, lose = sorted((old, v), key=lambda s: _screws.get(s).major_diameter)
+                a['changes'] = [c for c in a['changes'] if f'→ {lose} (' not in c]
+                alt_changes = [c for c in alt_changes if f'→ {lose} (' not in c]
+                v = keep
+            a['set'][k] = v
+        a['changes'] += [c for c in alt_changes if c not in a['changes']]
+
     for n, pfx in ((1, ''), (2, 'p2_')) if dual else ((1, ''),):
         who = f'Pulley {n}: ' if dual else ''
         _, _, teeth, _, _, cl_mm, _, pr_ex = _parse_stl_params(args, str(n))
@@ -1733,20 +1838,36 @@ def _dimensions(args):
             sp_fix, sp_changes = _spline_fix(args, pfx, n, sp_obj, root_d, three_d)
             fix_set.update(sp_fix)
             changes += sp_changes
+            if reach > root_d - 2.0:         # more teeth: (b), or the one fix (the owner, 2026-11-05)
+                t_fix, t_changes = _spline_teeth_fix(args, pfx, n, sp_obj, reach, three_d)
+                if sp_fix and t_fix:
+                    offer('b', sp_fix, sp_changes, t_fix, t_changes)
+                elif t_fix:
+                    fix_set.update(t_fix)
+                    changes += t_changes
 
         if three_d:
-            ss_warn, ss_fix, ss_changes = _set_screw_slot(args, pfx, n, who, od - 2 * tooth_ht)
-            cn_warn, cn_fix, cn_changes = _captured_nut_hub(args, pfx, n, who, od - 2 * tooth_ht)
-            hub_key = f'hub{n}_od'
-            if hub_key in ss_fix and hub_key in cn_fix:   # both widen the hub: the wider one does
-                if cn_fix[hub_key] > ss_fix[hub_key]:
-                    ss_fix, ss_changes = {}, []
-                else:
-                    cn_fix, cn_changes = {}, []
+            ss_warn, *ss_ab = _set_screw_slot(args, pfx, n, who, od - 2 * tooth_ht)
+            cn_warn, *cn_ab = _captured_nut_hub(args, pfx, n, who, od - 2 * tooth_ht)
             warnings += ss_warn + cn_warn
-            fix_set.update(ss_fix)
-            fix_set.update(cn_fix)
-            changes += ss_changes + cn_changes
+            hub_key = f'hub{n}_od'
+            both = hub_key in ss_ab[0] and hub_key in cn_ab[0]   # both widen the hub: the wider one does
+            win, lose = (cn_ab, ss_ab) if both and cn_ab[0][hub_key] > ss_ab[0][hub_key] else (ss_ab, cn_ab)
+            for this, other in ((win, lose), (lose, win)):
+                first, first_changes, alt, alt_changes = this
+                if both and this is lose:                # the winner's hub covers it: (b) only beside the winner's
+                    if alt and other[2]:
+                        offer('b', {}, [], alt, alt_changes)
+                    continue
+                fix_set.update(first)
+                changes += first_changes
+                if first and alt:                        # (a) here, (b) in alts (the owner, 2026-11-05)
+                    offer('b', first, first_changes, alt, alt_changes)
+                    if both and not other[2]:            # the hub the loser needed comes back with (b)
+                        offer('b', {}, [], other[0], other[1])
+                elif alt:                                # no (a): the other way is the one fix
+                    fix_set.update(alt)
+                    changes += alt_changes
             big_warn, big_fix, big_changes = _screw_hole_too_big(args, pfx, n, who)
             warnings += big_warn
             size_key = f'hub{n}_screw_size'
@@ -1769,18 +1890,17 @@ def _dimensions(args):
                     changes = [c for c in changes if not c.startswith(f'{who}set screw ')]
                 fix_set.update(slot_a)
                 changes += slot_a_changes
-                alts['b']['drop'] |= set(slot_a)
-                alts['b']['drop_changes'] += slot_a_changes
-                alts['b']['set'].update(slot_b)
-                alts['b']['changes'] += slot_b_changes
+                offer('b', slot_a, slot_a_changes, slot_b, slot_b_changes)
             elif slot_b:                     # no smaller screw fits: the threaded hole is the one fix
                 fix_set.update(slot_b)
                 changes += slot_b_changes
-            short_warn, short_fix, short_changes = _hub_too_short(args, pfx, n, who,
-                                                                  fix_set.get(f'hub{n}_screw_size'))
+            short_warn, short_fix, short_changes, short_b, short_b_changes = _hub_too_short(
+                args, pfx, n, who, fix_set.get(f'hub{n}_screw_size'))
             warnings += short_warn
             fix_set.update(short_fix)
             changes += short_changes
+            if short_fix and short_b:        # (b): the largest smaller screw this height holds
+                offer('b', short_fix, short_changes, short_b, short_b_changes)
 
         flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
         p['flanged'] = flanged
@@ -1852,6 +1972,13 @@ def _dimensions(args):
                                     f'(≈ the larger of 3 mm and the flange height) — {how}.')
                     fix_set.update(rim_fix)
                     changes += rim_changes
+                    off = {f'spokes{n}_enabled': False}      # (b), or the one fix (the owner, 2026-11-05)
+                    off_changes = [f'{who}spokes off (the flange sits on the pulley body)']
+                    if rim_fix:
+                        offer('b', rim_fix, rim_changes, off, off_changes)
+                    else:
+                        fix_set.update(off)
+                        changes += off_changes
             nub_warn, nub_fix, nub_changes = _nubs_in_flange_hole(args, pfx, n, who, fp)
             warnings += nub_warn
             fix_set.update(nub_fix)
@@ -1887,6 +2014,14 @@ def _dimensions(args):
                  'span_ratio': d.span / d.small_pd}
         tim = d.teeth_in_mesh
         if tim < bs.MIN_TEETH_IN_MESH:
+            # (a) the shortest longer centre, (b) the fewest more teeth on the smaller pulley,
+            # each to the teeth in mesh asked for (the owner, 2026-11-05: up to three)
+            mesh = _more_teeth_in_mesh(spec['pitch'], t1, t2, C, n_belt)
+            if mesh:
+                fix_set.update(mesh[0][0])
+                changes += mesh[0][1]
+                if len(mesh) > 1:
+                    offer('b', *mesh[0], *mesh[1])
             if tim in bs.TIM_FACTOR:
                 warnings.append(f'{tim} teeth in mesh on the smaller pulley (under '
                                 f'{bs.MIN_TEETH_IN_MESH}): the belt\'s torque rating is '
@@ -1904,6 +2039,14 @@ def _dimensions(args):
         if not (f1 or f2):
             warnings.append('Neither pulley has flanges: on a two-pulley drive Gates (p. 62) '
                             'flanges one pulley on both sides (Flanges, in 3D features).')
+            if three_d:                      # (a) the smaller pulley, (b) the other (the owner, 2026-11-05)
+                small, other = (1, 2) if t1 <= t2 else (2, 1)
+                first = {f'flange{small}_enabled': True}
+                first_changes = [f'flanges on pulley {small}' + (' (the smaller)' if t1 != t2 else '')]
+                fix_set.update(first)
+                changes += first_changes
+                offer('b', first, first_changes, {f'flange{other}_enabled': True},
+                      [f'flanges on pulley {other}'])
         elif d.span / d.small_pd >= bs.LONG_SPAN_RATIO and not (f1 and f2):
             warnings.append(f'The span is {d.span / d.small_pd:.1f} × the smaller pulley '
                             f'(over {bs.LONG_SPAN_RATIO:g}): Gates (p. 63) suggests flanging '
@@ -1911,11 +2054,24 @@ def _dimensions(args):
 
     # Up to three options, (a) first (cct_common.autofix, 0.58.0): one that can't apply, or
     # repeats another, leaves the next to move up. fix stays the first, as before.
+    from cct_common import screws as _screws
     from cct_common.autofix import fix_options
+
+    def other_way(a):
+        """fix_set less a's drop, plus its set; of two smaller screws, the smaller."""
+        kept = {k: v for k, v in fix_set.items() if k not in a['drop']}
+        kept_changes = [c for c in changes if c not in a['drop_changes']]
+        out, out_changes = dict(kept), list(a['changes'])
+        for k, v in a['set'].items():
+            if k.endswith('_screw_size') and k in kept and kept[k] != v:
+                keep, lose = sorted((kept[k], v), key=lambda s: _screws.get(s).major_diameter)
+                kept_changes = [c for c in kept_changes if f'→ {lose} (' not in c]
+                out_changes = [c for c in out_changes if f'→ {lose} (' not in c]
+                v = keep
+            out[k] = v
+        return {'set': out, 'changes': kept_changes + out_changes}
     fixes = fix_options([{'set': fix_set, 'changes': changes}]
-                        + [{'set': {**{k: v for k, v in fix_set.items() if k not in a['drop']}, **a['set']},
-                            'changes': [c for c in changes if c not in a['drop_changes']] + a['changes']}
-                           for a in alts.values() if a['set']])
+                        + [other_way(a) for a in alts.values() if a['set']])
     return {'pulleys': pulleys, 'drive': drive, 'warnings': warnings,
             'fix': fixes[0] if fixes else None, 'fixes': fixes}
 

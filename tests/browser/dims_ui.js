@@ -170,6 +170,21 @@ async function main() {
   w = await warnings();
   check('few teeth in mesh warns', w.some(x => x.includes('teeth in mesh')), w);
   check('no flanges on a two-pulley drive warns', w.some(x => x.includes('Neither pulley has flanges')), w);
+  // the drive's two ways to more teeth in mesh (the owner, 2026-11-05: up to three Auto-fixes)
+  const said = id => js(`document.querySelector('#dims-fixes:not(.hidden) #${id}')?.nextElementSibling?.textContent ?? null`);
+  const [sa, sb] = [await said('dims_fix'), await said('dims_fix_b')];
+  const drivePage = () => js("JSON.stringify(['teeth', 'p2_teeth', 'center_distance', 'belt_teeth', 'lock_ratio'].map(id => { const e = document.getElementById(id); return e.type === 'checkbox' ? e.checked : e.value; }))");
+  const before = JSON.parse(await drivePage());     // the centre as the page snapped it
+  check('teeth in mesh: (a) a longer centre, (b) more teeth on the smaller pulley',
+    /^centre distance [\d.]+ → [\d.]+ mm \(6 teeth in mesh\)/.test(sa || '') && (sa || '').includes(`centre distance ${Number(before[2])} →`)
+    && /^pulley 1 teeth 20 → \d+ \(6 teeth in mesh\)/.test(sb || ''), [sa, sb, before]);
+  const wantTeeth = ((sb || '').match(/teeth 20 → (\d+)/) || [])[1];
+  await js("document.getElementById('dims_fix_b').click()");
+  // the warning that stays (no flanges) shows its new list after the 2 s hold (cct_busy.js)
+  const meshQuiet = await waitFor("![...document.querySelectorAll('#dims-warnings li')].some(li => li.textContent.includes('teeth in mesh'))", 15000);
+  await settle();
+  check('…(b) gives pulley 1 those teeth, and 6 in mesh', (await js("document.getElementById('teeth').value")) === wantTeeth
+    && meshQuiet, [wantTeeth, await drivePage(), await warnings()]);
 
   // ── remembered open ──
   await js("document.getElementById('dims-details').open = true; rememberDimsOpen()");

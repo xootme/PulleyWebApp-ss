@@ -63,8 +63,9 @@ def test_pulley_2_is_named(client):
               p2_hub_height=10, p2_hub_keyway_w=5, p2_hub_keyway_h=2.6, p2_hub_screw_count=1,
               p2_hub_screw_size='M5', p2_hub_screw_hold='nut', hub_screw_size='M4')
     assert _slot(d) == ['Pulley 2: ' + WIDE]
-    assert d['fix']['set'] == {'hub2_screw_size': 'M4'}
-    assert d['fixes'][1]['set'] == {'hub2_retention': 'set_screw_std'}
+    hub2 = lambda f: {k: v for k, v in f['set'].items() if k.startswith('hub2')}   # noqa: E731
+    # (the drive's no-flanges warning brings its fixes too)
+    assert [hub2(f) for f in d['fixes']] == [{'hub2_screw_size': 'M4'}, {'hub2_retention': 'set_screw_std'}]
 
 
 def test_an_agent_gets_both_and_each_clears_it(client):

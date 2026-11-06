@@ -69,9 +69,10 @@ def test_pulley_2_is_named(client):
               p2_hub_screw_hold='nut', p2_hub_captured_nut=1, p2_flange_enabled=1, p2_flange_3dprint=1,
               p2_flange_top_separate=0)
     assert _lobe(d) == ['Pulley 2: ' + LOBE]
-    assert d['fix']['set'] == {'hub2_od': 19.5}
-    assert [f['set'] for f in d['fixes'][1:]] == [{'hub2_retention': 'set_screw_std'},
-                                                  {'flange2_top_separate': True}]
+    hub2 = lambda f: {k: v for k, v in f['set'].items() if k.startswith(('hub2', 'flange2'))}   # noqa: E731
+    # (the drive's own warnings, teeth in mesh and no flanges, bring their fixes too)
+    assert [hub2(f) for f in d['fixes']] == [{'hub2_od': 19.5}, {'hub2_retention': 'set_screw_std'},
+                                             {'flange2_top_separate': True}]
 
 
 def test_an_agent_gets_all_three_and_each_clears_it(client):

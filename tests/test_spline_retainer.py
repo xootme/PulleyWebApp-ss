@@ -318,8 +318,10 @@ def test_autofix_shrinks_a_spline_the_part_cannot_hold(client):
     inv = {**small, **INVOLUTE, 'spline_m': '1.25', 'spline_z': '30', **RING}
     f = _fix(client, inv)
     assert set(f['set']) == {'spline1_z', 'hub1_od'} and f['set']['spline1_z'] < 30, f
-    # nothing smaller fits: warnings only
-    assert not _fix(client, {**small, 'teeth': '16'})['set'].keys() - {'clearance_height'}
+    # nothing smaller fits: more teeth, the other way out, is the one fix (the owner, 2026-11-05)
+    f = _fix(client, {**small, 'teeth': '16'})
+    assert f['set'].keys() - {'clearance_height'} == {'teeth', 'hub1_od'} and f['set']['teeth'] > 16, f
+    assert 'spline1_preset' not in f['set']
 
 
 def test_a_blank_hub_field_is_no_hub(client):
