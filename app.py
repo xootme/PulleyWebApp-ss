@@ -5413,6 +5413,13 @@ register_bundle_routes(
     run_inline=queue_off,
 )
 
+# Cloud Run answers 500 for any response over 32 MiB sent with a Content-Length: one over
+# 16 MiB (a big drive's preview STL, a STEP, a zip) goes out in 1 MiB pieces without one
+# (cct_common 0.59.0; Worm lost a 47.7 MiB zip three times, 2026-11-06). After every route
+# and hook; a charged result still claims only after its last piece.
+from cct_common.streaming import stream_large_responses
+_stream_large = stream_large_responses(app)   # tests lower its .over / .piece
+
 
 if __name__ == '__main__':
     import argparse as _ap

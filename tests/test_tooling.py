@@ -139,6 +139,18 @@ def test_the_release_bumps_both_places(tmp_path, monkeypatch):
         assert b"9.9.9" in (tmp_path / path).read_bytes(), path
 
 
+@pytest.mark.parametrize("eol", [b"\n", b"\r\n"], ids=["LF", "CRLF"])
+def test_the_release_bumps_version_txt_in_either_line_ending(tmp_path, monkeypatch, eol):
+    """The night's worktree is LF; a checkout here is CRLF (autocrlf), and the bump said
+    "no version in version.txt" there after the 2.0.35 pull (2026-11-07)."""
+    import release
+    (tmp_path / "version.txt").write_bytes(b"2.0.35" + eol)
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setattr(release, "VERSION_FILES", [v for v in release.VERSION_FILES if v[0] == "version.txt"])
+    release.bump("2.0.36")
+    assert (tmp_path / "version.txt").read_bytes() == b"2.0.36" + eol
+
+
 def _release_with_ledgers(monkeypatch, after):
     """release() with Cloud Run, git and the smoke test stubbed: each service's ledger reads
     (2 accounts, 50 tokens) before its deploy and `after[name]` after it."""
@@ -258,6 +270,39 @@ def test_the_smoke_tests_minimum_is_the_released_one():
     from exporters.step_worker_ss import SMALL_STEP_MIN_VERSION
     assert release.small_step_min() == SMALL_STEP_MIN_VERSION
     assert "bad += small_step_check(name, version, base)" in inspect.getsource(release.smoke)
+
+
+def _stl(triangles, cut=0):
+    return (bytes(80) + triangles.to_bytes(4, "little") + bytes(50 * triangles))[:-cut or None]
+
+
+BIG = (33 * 2**20) // 50   # triangles: just over Cloud Run's 32 MiB cap
+
+
+@pytest.mark.parametrize("answer, want", [
+    ((200, {}, _stl(BIG)), []),
+    ((500, {}, b"Response size was too large"), ["large file: 500"]),
+    ((200, {}, _stl(1000)), ["not over Cloud Run's 32 MiB cap"]),
+    ((200, {}, _stl(BIG, cut=50)), ["bytes of a"]),
+], ids=["whole", "the cap's 500", "too small to prove it", "cut short"])
+def test_the_smoke_test_fetches_a_file_over_cloud_runs_cap(monkeypatch, capsys, answer, want):
+    """release.smoke fails pulley-test (so prod is left alone) unless a preview over 32 MiB
+    arrives whole (cct_common.streaming, 0.59.0; Worm's 47.7 MiB zip, 2026-11-06)."""
+    import release
+    asked = []
+    monkeypatch.setattr(release, "fetch", lambda url, tries=2: (asked.append(url), answer)[1])
+    bad = release.large_file_check("pulley-test", "https://example.test")
+    assert len(bad) == len(want) and all(w in b for w, b in zip(want, bad)), bad
+    assert asked[0].startswith("https://example.test/api/preview-stl?") and "&fresh=" in asked[0]
+    assert "pulley-test: a " in capsys.readouterr().out
+
+
+def test_the_smoke_test_checks_the_large_file_on_pulley_test():
+    import inspect
+    import release
+    src = inspect.getsource(release.smoke)
+    assert "    if name == 'pulley-test':   # before prod" in src
+    assert "        bad += large_file_check(name, base)\n" in src
 
 
 @pytest.fixture

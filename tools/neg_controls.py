@@ -215,7 +215,9 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "                if len(mesh) > 1:", "                if False:"),
     # one version number (baseline finding 5, the owner 2026-11-04): the release bumps version.txt too
     "release: version.txt is the app's version": ("tools/release.py",
-        "    ('version.txt', r\"^()(\\d+\\.\\d+\\.\\d+)()$\"),\n", ""),
+        "    ('version.txt', r\"^()(\\d+\\.\\d+\\.\\d+)(\\r?)$\"),   # \\r: a CRLF checkout (autocrlf) keeps its ending\n", ""),
+    "release: version.txt's line ending is kept": ("tools/release.py",
+        "    ('version.txt', r\"^()(\\d+\\.\\d+\\.\\d+)(\\r?)$\"),", "    ('version.txt', r\"^()(\\d+\\.\\d+\\.\\d+)()$\"),"),
     # cct_common 0.58.0: an agent's options carry the API's names (hub_retention was none)
     "auto-fix: a threaded hole is hub_screw_hold to an agent": ("agent.py",
         '            out[f"{pfx}hub_screw_hold"] = HOLD_OF_RETENTION[value]',
@@ -261,6 +263,14 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    if not got or have < small_step_min():", "    if not got:"),
     "release: the smoke test asks the new revision's small_step": ("tools/release.py",
         "    bad += small_step_check(name, version, base)\n", ""),
+    # past Cloud Run's 32 MiB cap (cct_common 0.59.0; Worm's 47.7 MiB zip, 2026-11-06)
+    "streaming: a large response goes out in pieces": (AP,
+        "_stream_large = stream_large_responses(app)", "_stream_large = stream_large_responses(Flask(__name__))"),
+    "release: pulley-test fetches a file over the cap": ("tools/release.py",
+        "        bad += large_file_check(name, base)\n", ""),
+    "release: a cut large file fails": ("tools/release.py", "    if len(body) != whole:", "    if False:"),
+    "release: a file under the cap proves nothing": ("tools/release.py",
+        "    if len(body) <= CLOUD_RUN_CAP:", "    if False:"),
     # Import through cct_common 0.57.0's import_meta (the owner approved pure STL, 2026-11-05)
     "import: a pure STL's key opens the account's saved design": (AP,
         "    if found['saved']:\n        if found['saved'].get('app')", "    if False:\n        if found['saved'].get('app')"),

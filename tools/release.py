@@ -15,7 +15,8 @@ CCT_Build_and_Deploy.md §3, unattended:
      carry untested commits, or fail);
   2. "Version x.y.z" (app.py and tests/browser/admin_ui.js) committed here and pushed to
      origin token-model; the owner's own working tree is never touched;
-  3. pulley-test deployed and smoke-tested; on failure prod is left alone;
+  3. pulley-test deployed and smoke-tested (with a preview over Cloud Run's 32 MiB cap); on
+     failure prod is left alone;
   4. pulley deployed and smoke-tested through cheapcadtools.com; on failure prod goes back
      to the revision(s) it served before;
   (3, 4: each service's ledger, its accounts and the sum of every balance as of just before
@@ -50,7 +51,7 @@ VERSION_FILES = [   # (file, pattern whose group 2 is the version)
     ('tests/browser/admin_ui.js', r"('Timing Pulleys )(\d+\.\d+\.\d+)(')"),
     # the desktop build's number (packaging/), APP_VERSION's since 2026-11-06: it said 1.2.1
     # while the app was 2.0.33 (baseline finding 5, the owner 2026-11-04)
-    ('version.txt', r"^()(\d+\.\d+\.\d+)()$"),
+    ('version.txt', r"^()(\d+\.\d+\.\d+)(\r?)$"),   # \r: a CRLF checkout (autocrlf) keeps its ending
 ]
 UA = 'CCT-PulleyRelease/1.0'
 LEDGER_SETTLE_S = 60   # the ledger is compared as of a minute before the deploy: a request under way then has committed
@@ -219,6 +220,45 @@ def small_step_check(name, version, base):
     return []
 
 
+CLOUD_RUN_CAP = 32 * 2**20   # Cloud Run answers 500 for a response over this sent with a Content-Length
+# A free preview over the cap: a 360 + 360 tooth HTD 3M drive, its belt at 1500 mm centres.
+BIG_PREVIEW = ('/api/preview-stl?family=HTD&pitch=3M&teeth=360&bore=8&belt_height=10&dual=true'
+               '&p2_teeth=360&p2_bore=8&center_distance=1500')
+
+
+def fetch(url, tries=2):
+    """(status, headers, body bytes) — retried once, as a fresh revision can drop a first fetch."""
+    for i in range(tries):
+        req = urllib.request.Request(url, headers={'User-Agent': UA})   # no gzip: the raw size
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                return r.status, r.headers, r.read()
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or i == tries - 1:
+                return e.code, e.headers, e.read()
+        except (urllib.error.URLError, TimeoutError) as e:
+            if i == tries - 1:
+                return 0, {}, str(e).encode()
+        time.sleep(15)
+
+
+def large_file_check(name, base):
+    """A file over Cloud Run's 32 MiB cap arrives whole (cct_common.streaming, 0.59.0): Worm lost
+    a user's 47.7 MiB zip three times on 2026-11-06 to the cap's 500. A binary STL says its own
+    length (84 + 50 bytes a triangle), so a cut body shows."""
+    code, headers, body = fetch(f'{base}{BIG_PREVIEW}&fresh={secrets.token_hex(8)}')
+    mib = len(body) / 2**20
+    say(f'{name}: a {mib:.1f} MiB preview: {code}, Content-Length {headers.get("Content-Length")}')
+    if code != 200:
+        return [f'large file: {code} for the {mib:.1f} MiB preview (Cloud Run\'s cap?)']
+    if len(body) <= CLOUD_RUN_CAP:
+        return [f'large file: the preview is {mib:.1f} MiB, not over Cloud Run\'s 32 MiB cap']
+    whole = 84 + 50 * int.from_bytes(body[80:84], 'little')
+    if len(body) != whole:
+        return [f'large file: {len(body)} bytes of a {whole}-byte STL']
+    return []
+
+
 def smoke(name, version, revision):
     """Returns the problems found (empty = passed)."""
     base, bad = SERVICES[name], []
@@ -237,6 +277,8 @@ def smoke(name, version, revision):
     code, _ = http(f'{base}/download/result/{secrets.token_hex(16)}/x.zip', tries=1)
     if code != 404:
         bad.append(f'expired result: {code} (want 404)')
+    if name == 'pulley-test':   # before prod, which is left alone if it fails
+        bad += large_file_check(name, base)
     if name == 'pulley':
         env = json.dumps(service(name)['spec']['template']['spec']['containers'][0].get('env', []))
         if 'STRIPE_SECRET_KEY' not in env:   # names only; values never printed
