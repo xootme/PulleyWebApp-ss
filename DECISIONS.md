@@ -1,5 +1,27 @@
 # Architectural Decision Records
 
+## ADR-024 — Auto-fix offers up to three options
+**Date:** 2026-11-05 · **Status:** Active (the key slot, the nut lobe, and the owner's options 1–6 of 2026-11-06)
+
+**Context:** The owner, 2026-11-05: "when possible provide up to three options to auto fix a
+problem (it gives options without overwelming)". A warning often has more than one sound way
+out (a wider hub or a smaller screw), and one Auto-fix button chose for the user.
+
+**Decision:** A warning with more than one sound way out offers each as its own Auto-fix, (a) to
+(c), never more, with each option's changes as visible text beside its button. An option that
+can't apply on this design is left out and the rest move up; with only one, the button is plain
+"Auto-fix". `/api/dimensions` answers `fixes` (0 to 3, through `cct_common.autofix.fix_options`:
+no empty or repeated option) and `fix` = `fixes[0]` as before; `/api/v1/check` gives every option
+its params. The page shows them with cct_common's `cctAutofix.show` (`cct_autofix.js`).
+
+**Where:** the key slot (2026-11-04, two), the captured nut's lobe under a printed top flange
+(2026-11-05, three), and the owner's approved options 1–6 (2026-11-06, 6d3cfff): a set-screw slot
+(a smaller screw), a captured nut with no wall (a threaded hole), a hub too short (a smaller
+screw), a flange on too little spoke rim (spokes off), a spline near the tooth root (more teeth),
+and two drive warnings that had no Auto-fix: neither pulley flanged (flanges on the smaller, or
+the other; 3D only) and under 6 teeth in mesh (a longer centre, or more teeth). Built on
+cct_common 0.58.0's shared Auto-fix (a615428, 0.58.1).
+
 ## ADR-023 — Belt data checked against the standards: belt heights fixed, the rest deferred
 **Date:** 2026-10-21 · **Status:** Active (fix 1 made; 2–5 and the G tooth form deferred by the owner)
 
