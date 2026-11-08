@@ -17,7 +17,9 @@
 //
 // Needs a running app (tokens off):
 //   QUEUE_DISABLED=1 python app.py --port 5198 --no-debug
-//   node tests/browser/roundtrip_ui.js http://127.0.0.1:5198 [--designs 20] [--seed 1] [--steps 30]
+//   node tests/browser/roundtrip_ui.js http://127.0.0.1:5198 [--designs 20] [--seed 1] [--steps 30] [--first 0]
+// --first: the first design's number, so tools/harnesses.py can give each lane a slice of the
+// same designs (seed × 1000 + its number, as one run makes them).
 const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
@@ -38,7 +40,7 @@ const get = url => new Promise((resolve, reject) => {
 
 const BASE = process.argv[2];
 const arg = (name, dflt) => { const i = process.argv.indexOf(name); return i > 0 ? +process.argv[i + 1] : dflt; };
-const DESIGNS = arg('--designs', 20), SEED = arg('--seed', 1), STEPS = arg('--steps', 30);
+const DESIGNS = arg('--designs', 20), SEED = arg('--seed', 1), STEPS = arg('--steps', 30), FIRST = arg('--first', 0);
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 // WebGL in software (SwiftShader), not the GPU: msi's GPU, run over ssh at night, lost contexts
 // until Chrome blocked WebGL for the page, failing whichever harness needed the 3D view next
@@ -212,7 +214,7 @@ async function main() {
   };
 
   const report = []; let exported = 0, refused = 0;
-  for (let d = 0; d < DESIGNS; d++) {
+  for (let d = FIRST; d < FIRST + DESIGNS; d++) {
     const seed = SEED * 1000 + d;
     await blank();
     await js(WALKER);

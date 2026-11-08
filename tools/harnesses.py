@@ -40,6 +40,9 @@ import nightly_test  # noqa: E402
 HARNESSES = ['roundtrip_ui', 'download_design_ui', 'turn_ui', 'help_ui', 'busy_ui', 'import_ui',
              'tokens_ui', 'designs_ui', 'tokens_off', 'admin_ui', 'bore_ui', 'dims_ui', 'screw_ui', 'undo_ui',
              'parity_ui', 'link_ui']
+# Harnesses cut into one slice a lane, each slice some of the same designs (--first, --designs):
+# roundtrip_ui's 20 took 21 min in one lane while the other lane finished the rest in 9 (11-06).
+SLICED = {'roundtrip_ui': 20}
 TIMEOUT_S = 30 * 60
 # Nothing a harness starts may reach a real service or account: whatever the shell has is dropped.
 SCRUB = ('RESEND', 'STRIPE', 'PAYPAL', 'SENDGRID', 'DATABASE_URL', 'GOOGLE_CLIENT', 'BACKUP_', 'ADMIN_EMAILS',
@@ -208,12 +211,26 @@ def run(label, cmd, env, results):
     results.append((label, passed, f'{note} ({secs:.0f} s)'))
 
 
-def harness(name, base, folder: Path, env, results):
-    """One harness; tokens_ui, designs_ui and admin_ui on a server of their own in a fresh folder."""
+def slices(name, n):
+    """(label, extra args) for each run of harness `name` across `n` lanes: a SLICED harness's
+    designs in up to n contiguous slices, any other harness whole."""
+    total = SLICED.get(name)
+    if not total or n < 2:
+        return [(name, [])]
+    k = min(n, total)
+    cuts = [total * i // k for i in range(k + 1)]
+    # no '/' in a label: it names the run's report folder and kept-failure file
+    return [(f'{name} {i + 1} of {k}', ['--first', str(cuts[i]), '--designs', str(cuts[i + 1] - cuts[i])])
+            for i in range(k)]
+
+
+def harness(name, base, folder: Path, env, results, label=None, args=()):
+    """One harness (or `label`, a slice of it with `args`); tokens_ui, designs_ui and admin_ui on a
+    server of their own in a fresh folder."""
     if name == 'tokens_off':
         return run(name, ['node', 'tests/browser/tokens_ui.js', base, str(folder), PY, 'off'], env, results)
     if name not in ('tokens_ui', 'designs_ui', 'admin_ui'):
-        return run(name, ['node', f'tests/browser/{name}.js', base], env, results)
+        return run(label or name, ['node', f'tests/browser/{name}.js', base, *args], env, results)
     own = Path(tempfile.mkdtemp(prefix=f'{name}-', dir=folder))
     extra = {'TOKENS_ENABLED': '1'}
     if name in ('tokens_ui', 'designs_ui'):
@@ -241,12 +258,16 @@ def harness(name, base, folder: Path, env, results):
 
 def run_all(names, n=None):
     """Every harness in `names`, `n` (else lanes()) at once. Returns [(name, passed, note)]."""
+    n = max(1, n or lanes())
+    runs = [(h, label, args) for h in names for label, args in slices(h, n)]
     todo = queue.Queue()
-    for h in names:
-        todo.put(h)
-    n = max(1, min(n or lanes(), len(names)))
+    for r in runs:
+        todo.put(r)
+    n = min(n, len(runs))
     results = []
-    print(f'harnesses: {len(names)}, {n} at once', flush=True)
+    print(f'harnesses: {len(names)}, {n} at once'
+          + (f' ({len(runs)} runs, {len(runs) - len(names)} more from slices)' if len(runs) > len(names) else ''),
+          flush=True)
     top = Path(tempfile.mkdtemp(prefix='pulley-harnesses-'))
 
     def lane(i):
@@ -261,10 +282,10 @@ def run_all(names, n=None):
                 return
             while True:
                 try:
-                    h = todo.get_nowait()
+                    h, label, args = todo.get_nowait()
                 except queue.Empty:
                     return
-                harness(h, base, folder, env, results)
+                harness(h, base, folder, env, results, label, args)
         finally:
             stop(server)
 
@@ -274,7 +295,7 @@ def run_all(names, n=None):
     for t in threads:
         t.join()
     while not todo.empty():                       # every lane's server failed
-        results.append((todo.get(), False, 'not run: no dev server answered'))
+        results.append((todo.get()[1], False, 'not run: no dev server answered'))
     shutil.rmtree(top, ignore_errors=True)
     return results
 
@@ -293,7 +314,7 @@ def main(argv=None):
     results = run_all(names, a.lanes)
     print('\n=== HARNESSES')
     order = {h: i for i, h in enumerate(HARNESSES)}
-    for label, passed, note in sorted(results, key=lambda r: order.get(r[0], 99)):
+    for label, passed, note in sorted(results, key=lambda r: (order.get(r[0].split()[0], 99), r[0])):
         print(f'{"PASS" if passed else "FAIL"}  {label:20s} {note}')
     bad = [r for r in results if not r[1]]
     print(f'{len(results) - len(bad)} of {len(results)} harnesses passed in {(time.time() - t0) / 60:.1f} min', flush=True)

@@ -268,6 +268,14 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    if not got or have < small_step_min():", "    if not got:"),
     "release: the smoke test asks the new revision's small_step": ("tools/release.py",
         "    bad += small_step_check(name, version, base)\n", ""),
+    # roundtrip_ui in a slice a lane (faster tests, the owner 2026-10-20 "(c)"; 21 of 21 min, 11-06)
+    "harnesses: the slices are every design": ("tools/harnesses.py",
+        "    cuts = [total * i // k for i in range(k + 1)]", "    cuts = [total * i // k for i in range(k)] + [total - 1]"),
+    "harnesses: each slice runs": ("tools/harnesses.py",
+        "    runs = [(h, label, args) for h in names for label, args in slices(h, n)]",
+        "    runs = [(h, h, []) for h in names]"),
+    "roundtrip_ui: a slice starts at its first design": ("tests/browser/roundtrip_ui.js",
+        "  for (let d = FIRST; d < FIRST + DESIGNS; d++) {", "  for (let d = 0; d < FIRST + DESIGNS; d++) {"),
     # past Cloud Run's 32 MiB cap (cct_common 0.59.0; Worm's 47.7 MiB zip, 2026-11-06)
     "streaming: a large response goes out in pieces": (AP,
         "_stream_large = stream_large_responses(app)", "_stream_large = stream_large_responses(Flask(__name__))"),

@@ -272,6 +272,47 @@ def test_the_smoke_tests_minimum_is_the_released_one():
     assert "bad += small_step_check(name, version, base)" in inspect.getsource(release.smoke)
 
 
+@pytest.mark.parametrize("lanes, want", [(1, 1), (2, 2), (3, 3), (4, 4)])
+def test_roundtrip_ui_is_sliced_across_the_lanes(lanes, want):
+    """roundtrip_ui's 20 designs took 21 of the night's 21 harness minutes in one lane (11-06):
+    each lane takes a slice, and the slices are every design exactly once."""
+    import harnesses
+    got = harnesses.slices("roundtrip_ui", lanes)
+    assert len(got) == want
+    designs = []
+    for label, args in got:
+        if want == 1:
+            assert (label, args) == ("roundtrip_ui", [])
+            designs = list(range(20))
+            continue
+        assert label.startswith("roundtrip_ui ") and label.endswith(f" of {want}")
+        assert "/" not in label and "\\" not in label        # it names the run's files
+        first, n = int(args[args.index("--first") + 1]), int(args[args.index("--designs") + 1])
+        designs += range(first, first + n)
+    assert designs == list(range(20))
+    assert harnesses.slices("help_ui", lanes) == [("help_ui", [])]
+
+
+def test_run_all_runs_each_slice(monkeypatch):
+    import harnesses
+    calls = []
+    monkeypatch.setattr(harnesses, "start_server", lambda folder, env, extra=None: (None, "http://lane"))
+    monkeypatch.setattr(harnesses, "stop", lambda proc: None)
+    monkeypatch.setattr(harnesses, "harness", lambda name, base, folder, env, results, label=None, args=():
+                        (calls.append((name, label, tuple(args))), results.append((label or name, True, "")))[1])
+    results = harnesses.run_all(["roundtrip_ui", "help_ui"], 2)
+    assert sorted(c[1] for c in calls) == ["help_ui", "roundtrip_ui 1 of 2", "roundtrip_ui 2 of 2"]
+    assert ("roundtrip_ui", "roundtrip_ui 2 of 2", ("--first", "10", "--designs", "10")) in calls
+    assert len(results) == 3
+
+
+def test_roundtrip_ui_takes_its_slice():
+    js = (ROOT / "tests" / "browser" / "roundtrip_ui.js").read_text(encoding="utf-8")
+    assert "FIRST = arg('--first', 0)" in js
+    assert "for (let d = FIRST; d < FIRST + DESIGNS; d++) {" in js
+    assert "const seed = SEED * 1000 + d;" in js        # a slice's designs are the whole run's
+
+
 def _stl(triangles, cut=0):
     return (bytes(80) + triangles.to_bytes(4, "little") + bytes(50 * triangles))[:-cut or None]
 
