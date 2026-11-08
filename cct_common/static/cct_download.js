@@ -59,11 +59,26 @@
 
   // The default: build the zip in one request and save it (the apps without a
   // job queue). The response is the zip itself.
+  //
+  // 0.60.1 (the owner, 2026-11-07, "1"): a zip whose body is lost after the
+  // server's 200, or makes no progress for STALL_MS once it has started, is
+  // posted once more. It costs no more: lost after a full send, the charge
+  // stood and the second post costs 0; lost before, the second rides on the
+  // first's charge (tokens.py), one charge in all. A post lost with no answer
+  // is never sent again (the server may still be building it), and the stall
+  // limit never cuts a zip that is still being built.
   async function submitSync(body, ui) {
     ui.status("Building your files…");
-    const r = await fetch(BUNDLE_URL, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    });
+    const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    const post = () => fetchOnce(BUNDLE_URL, STALL_MS, init, true);
+    let got;
+    try {
+      got = await post();
+    } catch (e) {
+      if (!e || !e.bodyLost || (e.name !== "TypeError" && !e.stalled)) throw e;
+      got = await post();
+    }
+    const r = got.response;
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
       const e = new Error(d.error || `Server returned ${r.status}`);
@@ -71,7 +86,7 @@
       e.kept = !!(r.headers && r.headers.get("X-CCT-Download-Failure"));   // the server kept its row (0.31.1)
       throw e;
     }
-    const blob = await r.blob();
+    const blob = got.blob;
     const m = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -84,6 +99,73 @@
     root.cctLastZip = saved;                          // what the harnesses check
     ui.close();
     return saved;
+  }
+
+  // A finished file's GET, the zip job's output_file link, tried at most twice
+  // (0.60.0; the owner, 2026-11-07: "fleet a" and "stall yes"). A bevel user
+  // lost a 429 KB zip that left the server whole: the browser lost it while
+  // reading the body, and only the fetch was ever asked again. Now either the
+  // fetch or the body read failing with no answer (fetch's TypeError) asks
+  // once more, and so does a read with no progress for STALL_MS, its timer
+  // reset on every piece, so a download still moving is never cut. A second
+  // fetch completes the same charge: charging.serve_delivery claims only after
+  // a full send. A lost second try throws as the first did ("Failed to fetch"
+  // for a stall), for the app's failure path as before.
+  //   const { response, blob } = await CCTDownload.fetchFile(url);
+  // blob is null and the body unread when the answer isn't 2xx.
+  const STALL_MS = 60000;
+
+  async function fetchFile(url, opts) {
+    const stallMs = (opts && opts.stallMs) || STALL_MS;
+    try {
+      return await fetchOnce(url, stallMs);
+    } catch (e) {
+      if (!e || (e.name !== "TypeError" && !e.stalled)) throw e;
+      return fetchOnce(url, stallMs);
+    }
+  }
+
+  // One fetch and its body read. afterAnswer: the stall timer starts only once
+  // the server has answered (the zip POST, which builds first). An error after
+  // the answer says so (bodyLost).
+  async function fetchOnce(url, stallMs, init, afterAnswer) {
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    let timer = null;
+    let stalled = false;
+    let answered = false;
+    const watch = () => {
+      if (!ctrl) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => { stalled = true; ctrl.abort(); }, stallMs);
+    };
+    try {
+      if (!afterAnswer) watch();
+      const r = await fetch(url, ctrl ? Object.assign({}, init, { signal: ctrl.signal }) : init);
+      if (!r.ok) return { response: r, blob: null };
+      answered = true;
+      watch();
+      let blob;
+      if (r.body && r.body.getReader) {
+        const reader = r.body.getReader();
+        const pieces = [];
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          pieces.push(value);
+          watch();
+        }
+        blob = new Blob(pieces, { type: (r.headers && r.headers.get("Content-Type")) || "" });
+      } else {
+        blob = await r.blob();
+      }
+      return { response: r, blob };
+    } catch (e) {
+      const lost = stalled ? Object.assign(new TypeError("Failed to fetch"), { stalled: true }) : e;
+      if (answered && lost && typeof lost === "object") lost.bodyLost = true;
+      throw lost;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   function open(opts) {
@@ -325,5 +407,5 @@
   }
   root.cctReportDownloadFailure = reportFailure;
 
-  root.CCTDownload = { open, allFiles, submitSync, reportFailure, submitFailure };
+  root.CCTDownload = { open, allFiles, submitSync, reportFailure, submitFailure, fetchFile, STALL_MS };
 })(typeof window !== "undefined" ? window : globalThis);

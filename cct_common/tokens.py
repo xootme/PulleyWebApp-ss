@@ -114,6 +114,11 @@ class Quote:
     # once it's delivered); None on a quote.
     account_id: Optional[str] = None
     key: Optional[str] = None
+    # 0.60.1: the rides this charge took (spend_rides ids), one for each
+    # unrefunded spend its price leaned on (a download of a design those
+    # spends unlocked). Settle them with settle_rides once it's known
+    # whether this download was sent in full.
+    rides: tuple = ()
 
 
 def format_tier(fmt: str) -> str:
@@ -155,6 +160,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS ledger_kind_ref
     ON ledger(kind, ref) WHERE ref IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ledger_unlock
     ON ledger(account_id, design_key, ts);
+CREATE TABLE IF NOT EXISTS spend_rides (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    spend_id    INTEGER NOT NULL,
+    created_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS spend_rides_spend ON spend_rides(spend_id);
+CREATE TABLE IF NOT EXISTS spend_settled (
+    spend_id    INTEGER PRIMARY KEY,
+    state       TEXT NOT NULL,
+    detail      TEXT,
+    ts          REAL NOT NULL
+);
 """
 
 
@@ -224,11 +241,12 @@ class TokenStore(SqliteDB):
                          (account_id,)).fetchone()
         return int(row[0])
 
-    def _held(self, db, account_id: str, key: str, now: float, prices: Optional[dict] = None):
+    def _held(self, db, account_id: str, key: str, now: float, prices: Optional[dict] = None,
+              window: Optional[int] = None):
         """Highest tier this account has paid for on this design inside the
         unlock window, ignoring refunded spends. Returns (tier, expires)."""
         prices = prices or self.tier_prices()
-        window = self.unlock_window_s
+        window = self.unlock_window_s if window is None else window
         rows = db.execute(
             """SELECT s.tier, s.ts FROM ledger s
                WHERE s.account_id = ? AND s.design_key = ? AND s.kind = 'spend'
@@ -244,10 +262,11 @@ class TokenStore(SqliteDB):
                 until = max(until, r["ts"] + window)
         return best, until
 
-    def _quote(self, db, account_id: str, key: str, fmt: str, now: float) -> Quote:
+    def _quote(self, db, account_id: str, key: str, fmt: str, now: float, prices: Optional[dict] = None,
+               window: Optional[int] = None) -> Quote:
         tier = format_tier(fmt)
-        prices = self.tier_prices()
-        held, until = self._held(db, account_id, key, now, prices)
+        prices = prices or self.tier_prices()
+        held, until = self._held(db, account_id, key, now, prices, window)
         paid = prices[held] if held else 0
         cost = max(0, prices[tier] - paid)
         return Quote(fmt=fmt.lower(), tier=tier, cost=cost,
@@ -318,6 +337,8 @@ class TokenStore(SqliteDB):
         return True
 
     # ── free vs purchased ─────────────────────────────────────────────────
+
+    _UNREAD = object()
 
     def paid_first_since(self) -> Optional[float]:
         """The rewards' switch date (0.37.0): spends from then use paid tokens
@@ -391,8 +412,9 @@ class TokenStore(SqliteDB):
         free = max(0, min(bal, free))
         return {"free": free, "paid": bal - free, "paid_spent": sum(n for _, _, n in spends), "spends": spends}
 
-    def _free_remaining(self, db, account_id: str) -> int:
-        since = self.paid_first_since()
+    def _free_remaining(self, db, account_id: str, since=_UNREAD) -> int:
+        """`since`: the switch date, read before a write's lock (0.61.4)."""
+        since = self.paid_first_since() if since is self._UNREAD else since
         if since is None:
             return self._free_first(db, account_id)
         return self._split(db, account_id, since)["free"]
@@ -420,8 +442,9 @@ class TokenStore(SqliteDB):
         """Remove the account's unspent free tokens as one ``expire`` row,
         leaving purchased tokens untouched. Returns how many were removed;
         0, with nothing written, if none were left."""
+        since = self.paid_first_since()                    # before the lock (charge says why)
         with self._write() as db:
-            n = self._free_remaining(db, account_id)
+            n = self._free_remaining(db, account_id, since)
             if n <= 0:
                 return 0
             db.execute(
@@ -478,11 +501,18 @@ class TokenStore(SqliteDB):
         session_id records which session spent; with daily_budget (a device
         token's limit) the charge raises BudgetReached instead of taking the
         session past that many tokens in 24 hours. Checked inside the same
-        write lock as the spend, so parallel requests can't slip past it."""
+        write lock as the spend, so parallel requests can't slip past it.
+
+        The prices and the unlock window are read before the lock (0.61.4):
+        a setting not in the cache is read on a second connection, and on
+        Postgres the requests waiting for the lock can hold every one the
+        pool has, so the charge waited 30 s and used the built-in prices."""
+        prices, window = self.tier_prices(), self.unlock_window_s
         with self._write() as db:
             now = self._clock()
-            q = self._quote(db, account_id, key, fmt, now)
+            q = self._quote(db, account_id, key, fmt, now, prices, window)
             spend_id = None
+            rides = self._ride(db, account_id, key, q.held_tier, now, window)
             if q.cost:
                 if daily_budget is not None and session_id is not None:
                     spent = self._session_spent(db, session_id, now)
@@ -497,10 +527,11 @@ class TokenStore(SqliteDB):
                     (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id,
                      self.app)).fetchone()[0]
         try:
-            yield replace(q, spend_id=spend_id, account_id=account_id, key=key)
+            yield replace(q, spend_id=spend_id, account_id=account_id, key=key, rides=rides)
         except BaseException:
             if spend_id is not None:
-                self.refund(spend_id, detail="export failed")
+                self.refund_undelivered(spend_id, detail="export failed")
+            self.settle_rides(rides, delivered=False)
             raise
         if spend_id is None:
             with self._write() as db:
@@ -508,6 +539,89 @@ class TokenStore(SqliteDB):
                     """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app)
                        VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?, ?)""",
                     (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id, self.app))
+
+    # ── rides: a download that leans on a spend not settled yet (0.60.1) ──
+    #
+    # A spend unlocks its design as soon as it's taken, so a second download
+    # of that design while the first is still being sent costs 0, or only
+    # the difference to a higher tier: it rides on the first spend. If the
+    # first send was then cut and refunded, the ride's file was free (two
+    # tabs, or a retry). So each charge records a ride on every unrefunded
+    # spend it leaned on. A ride sent in full settles those spends as
+    # delivered: the person has the file they unlocked, and a later "not
+    # delivered" refund of them is skipped. A cut ride changes nothing. A
+    # "not delivered" refund that comes while a ride is still going waits
+    # for it (refund_wanted) and happens if the ride is cut too.
+
+    def _ride(self, db, account_id: str, key: str, held_tier, now: float, window: int) -> tuple:
+        if not held_tier:
+            return ()
+        spends = db.execute(
+            """SELECT s.id FROM ledger s
+               WHERE s.account_id = ? AND s.design_key = ? AND s.kind = 'spend' AND s.tier = ?
+                 AND s.ts > ?
+                 AND NOT EXISTS (SELECT 1 FROM ledger r
+                                 WHERE r.kind = 'refund' AND r.ref = 'spend:' || s.id)
+                 AND NOT EXISTS (SELECT 1 FROM spend_settled d
+                                 WHERE d.spend_id = s.id AND d.state = 'delivered')""",
+            (account_id, key, held_tier, now - window)).fetchall()
+        return tuple(db.execute("INSERT INTO spend_rides (spend_id, created_at) VALUES (?, ?) RETURNING id",
+                                (r["id"], now)).fetchone()[0] for r in spends)
+
+    def settle_rides(self, rides, *, delivered: bool) -> None:
+        """A ride's download ended: sent in full (delivered) or not. Never raises."""
+        if not rides:
+            return
+        try:
+            self._settle_rides(tuple(rides), delivered)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("could not settle a ride")
+
+    def _settle_rides(self, rides: tuple, delivered: bool) -> None:
+        marks = ",".join("?" * len(rides))
+        wanted = []
+        with self._write() as db:
+            now = self._clock()
+            spends = [r["spend_id"] for r in db.execute(
+                f"DELETE FROM spend_rides WHERE id IN ({marks}) RETURNING spend_id", rides).fetchall()]
+            for sid in spends:
+                if delivered:
+                    db.execute("DELETE FROM spend_settled WHERE spend_id = ?", (sid,))
+                    db.execute("INSERT INTO spend_settled (spend_id, state, ts) VALUES (?, 'delivered', ?)",
+                               (sid, now))
+                    continue
+                busy = db.execute("SELECT 1 FROM spend_rides WHERE spend_id = ? LIMIT 1", (sid,)).fetchone()
+                row = db.execute("DELETE FROM spend_settled WHERE spend_id = ? AND state = 'refund_wanted' "
+                                 "RETURNING detail", (sid,)).fetchone() if not busy else None
+                if row:
+                    wanted.append((sid, row["detail"]))
+        for sid, detail in wanted:
+            self.refund(sid, detail=detail)
+
+    def refund_undelivered(self, spend_id: int, *, detail: Optional[str] = None) -> bool:
+        """Refund a spend whose file wasn't delivered, unless a ride on it was
+        (the person has the file it unlocked). While a ride on it is still
+        going, the refund waits for that ride. True if refunded now."""
+        with self._write() as db:
+            done = db.execute("SELECT 1 FROM spend_settled WHERE spend_id = ? AND state = 'delivered'",
+                              (spend_id,)).fetchone()
+            if done:
+                return False
+            if db.execute("SELECT 1 FROM spend_rides WHERE spend_id = ? LIMIT 1", (spend_id,)).fetchone():
+                db.execute("INSERT OR IGNORE INTO spend_settled (spend_id, state, detail, ts) "
+                           "VALUES (?, 'refund_wanted', ?, ?)", (spend_id, detail, self._clock()))
+                return False
+        return self.refund(spend_id, detail=detail)
+
+    def expire_rides(self, older_than: float) -> int:
+        """Settle rides that never ended (a server gone mid-send) as cut, so a
+        refund waiting on them happens. Returns how many."""
+        with self._read() as db:
+            old = tuple(r["id"] for r in db.execute("SELECT id FROM spend_rides WHERE created_at < ?",
+                                                     (older_than,)).fetchall())
+        self.settle_rides(old, delivered=False)
+        return len(old)
 
     def design_of_spend(self, spend_id: int) -> Optional[tuple]:
         """(account_id, design_key) a spend was for (None if there's no such spend)."""

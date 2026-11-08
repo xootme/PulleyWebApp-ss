@@ -96,6 +96,9 @@ DEFAULTS = {
     "referrals": False,
     # 0.57.0: pure STL files (the settings beside them, not after the triangles), off.
     "pure_stl": False,
+    # 0.61.0: named shares, Share in every tool's header (the owner's design of 2026-11-07), off
+    # (needs saved_designs and my_account_button).
+    "named_shares": False,
 }
 SINCE_KEYS = ("rewards",)
 REDOWNLOAD_WINDOWS = ("24h", "forever")
@@ -166,6 +169,11 @@ DESCRIPTIONS = {
                 "the tool and, for a signed-in account's download while saved designs are on, its saved design; "
                 "the settings go beside the STL as <name>.cct.json in a zip, and Import reads both. Off: today's "
                 "files, the settings appended after the triangles (which strict readers refuse).",
+    "named_shares": "Named shares: \"Share\" in every tool's header asks for a name and keeps the design in "
+                    "the account, private, reached from the My account menu's \"My shares\"; signed out, it "
+                    "signs in first and comes back to the design. A public link only when the person makes one "
+                    "(\"Get a public link\", with share links on). Needs saved designs and the My account "
+                    "button. Off: no Share button, today's header.",
 }
 
 _SCHEMA = """
@@ -254,7 +262,7 @@ def validate(key: str, value):
         if not any(out.values()):
             raise SettingsError("At least one pack must be on sale")
         return out
-    if key in ("saved_designs", "inline_checkout", "price_in_money", "newsletter_opt_in", "rewards", "account_page", "receipts", "printer_settings", "share_links", "bookmarks", "my_reports", "data_download", "projects", "my_account_button", "referrals", "pure_stl"):
+    if key in ("saved_designs", "inline_checkout", "price_in_money", "newsletter_opt_in", "rewards", "account_page", "receipts", "printer_settings", "share_links", "bookmarks", "my_reports", "data_download", "projects", "my_account_button", "referrals", "pure_stl", "named_shares"):
         if not isinstance(value, bool):
             raise SettingsError(f"{key.replace('_', ' ').capitalize()} is on or off")
         return value
@@ -479,4 +487,7 @@ def offer(path: Optional[str], *, cents_per_token: int, format_tier: dict) -> di
         # 0.47.0, only while on: the header's "My account", and whether the account page is there
         **({"my_account_button": True} if setting(path, "my_account_button") is True else {}),
         **({"account_page": True} if setting(path, "account_page") is True else {}),
+        # 0.61.0, only while on with what it needs: Share in the header, the My account menu
+        **({"named_shares": True} if setting(path, "named_shares") is True and setting(path, "saved_designs") is True
+           and setting(path, "my_account_button") is True else {}),
     }

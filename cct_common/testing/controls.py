@@ -42,14 +42,41 @@ cct_common.testing.affected:
   controls (each one's text once in its file: Bevel's
   test_every_control_has_a_scope) fails in every lane, as the break takes
   that text out. Every run has CCT_NEG_CONTROL set to the control's name,
-  and such a test skips when it is set; the whole suites leave out the test
-  files that import the app's controls module, too, so an app that forgot
-  the skip still can't catch a control with it (0.25.3: Worm's four SCOPE
-  catches were that test, the side supports' own tests none of them).
+  and such a test skips when it is set; the whole suites leave out the
+  tests that use the app's controls module, too, so an app that forgot the
+  skip still can't catch a control with it (0.25.3: Worm's four SCOPE
+  catches were that test, the side supports' own tests none of them). Since
+  0.61.3 that is the tests, not their files, where it can be seen: in a test
+  file that imports the module itself, only its test functions (and test
+  classes' methods) that name it are left out; the file's other tests still
+  run. The whole file is left out when the module is used anywhere else in
+  it (at module level, in a helper or fixture) or reached only through
+  another import. Before, the whole file always went: Planetary's
+  test_affected.py imported neg_controls for two listing tests, and a
+  control on test_all.py that only that file's checks caught was MISSED.
+  Keeping the listing tests in a file of their own is still the clearest.
+  The run says what it leaves out.
 - **In lanes.** Each lane breaks its own copy of the tree (git's files and
   .git, in a temporary folder), so CCT_TEST_CPUS controls run at once, each
   on one process; a control on the whole suite runs after them, one at a
-  time, on all the turn's workers."""
+  time, on all the turn's workers.
+- **A sync's changes** (0.61.2; Sprocket's night of 2026-11-06). The catcher
+  key also holds every function of the vendored packages (affected's
+  `vendored`, cct_common/ by default) that the catcher test ran, by the
+  record, hashed from the files themselves (an app may fold its vendored
+  tree into one snapshot key). A sync that changes one of them reruns the
+  control by day, catcher first, and the run names what changed: a MISSED
+  there is often the sync making the app's own code dead (Sprocket's Import
+  fallback after 0.58.1). A function the sync adds counts once the record
+  shows the catcher running it. A control saved before this keeps its old
+  key until it next runs. Measured on the apps' records: a one-release sync
+  reruns 0-7 controls, a five-release jump 7-85 (Bevel's 413).
+- **The command line** (0.61.1, Bevel's tools/neg_controls.py cli): --help
+  or -h prints the usage and exits 0 before anything is looked up or run,
+  and an option it doesn't know exits 2 with the usage. Before, both were
+  taken as "no filter" and ran every changed control (three apps typed
+  --help to read the options on 2026-11-05; Planetary's ran all 291)."""
+import argparse
 import ast
 import hashlib
 import json
@@ -206,20 +233,70 @@ def catcher_deps(catcher: str, graph: dict) -> list:
     return sorted(deps | set(CONFIG) | set(affected.EVERYTHING))
 
 
-def catcher_key(entry, key, catcher: str, snap: dict, graph: dict) -> str:
+def catcher_key(entry, key, catcher: str, snap: dict, graph: dict, vendored=None) -> str:
     """A control caught by `catcher` stays caught while this is the same: the
-    control, what it breaks, and its catcher's side (catcher_deps)."""
+    control, what it breaks, its catcher's side (catcher_deps) and, since
+    0.61.2, the vendored functions its catcher ran (vendored_deps; None: a
+    key saved before, without them)."""
     deps = [(f, snap.get(f)) for f in catcher_deps(catcher, graph)]
-    return hashlib.sha1(json.dumps([list(entry), snap.get(key), catcher, deps]).encode("utf-8")).hexdigest()
+    parts = [list(entry), snap.get(key), catcher, deps]
+    if vendored is not None:
+        parts.append([list(v) for v in vendored])
+    return hashlib.sha1(json.dumps(parts).encode("utf-8")).hexdigest()
 
 
-def is_current(saved, entry, key, files, snap: dict, graph: dict) -> bool:
+def vendored_ran(state: dict) -> dict:
+    """node id -> the vendored functions (path, outermost qualname) its test
+    ran, by the record of the last suite runs."""
+    out = {}
+    for kind in affected.KINDS:
+        for node, e in affected.test_record(state, kind).items():
+            fns = {(p, q.split(".<locals>")[0]) for p, q in e["ran"] if p.startswith(affected.VENDORED)}
+            if fns:
+                out.setdefault(node, set()).update(fns)
+    return out
+
+
+class _VendoredHashes:
+    """path -> {qualname: hash} of the vendored files as they are now, read once."""
+
+    def __init__(self):
+        self._files = {}
+
+    def __call__(self, path: str, qualname: str):
+        if path not in self._files:
+            try:
+                self._files[path] = affected.fn_hashes((affected.ROOT / path).read_bytes())
+            except OSError:
+                self._files[path] = {}
+        return self._files[path].get(qualname)          # None: no such function now
+
+
+def vendored_deps(catcher: str, ran: dict, hashes) -> list:
+    """[(path::qualname, hash now)] of the vendored functions `catcher` ran."""
+    return [(f"{p}{affected.FN}{q}", hashes(p, q)) for p, q in sorted(ran.get(catcher, ()))]
+
+
+def is_current(saved, entry, key, files, snap: dict, graph: dict, vendored=None) -> bool:
     """Whether the control's last catch still holds: by its catcher's key
-    (0.30.0), or, saved before that (a bare key), by the old rule's, every
-    test in its scope (control_key)."""
+    (0.30.0, with the vendored functions it ran since 0.61.2: `vendored`,
+    catcher -> vendored_deps), or, saved before that (a bare key), by the old
+    rule's, every test in its scope (control_key)."""
     if isinstance(saved, dict):
-        return bool(saved.get("catcher")) and saved.get("key") == catcher_key(entry, key, saved["catcher"], snap, graph)
+        catcher = saved.get("catcher")
+        if not catcher:
+            return False
+        vend = vendored(catcher) if (vendored is not None and "vendored" in saved) else None
+        return saved.get("key") == catcher_key(entry, key, catcher, snap, graph, vend)
     return saved is not None and saved == control_key(entry, files, key, snap)
+
+
+def sync_changes(saved, vendored) -> list:
+    """The vendored functions a saved catch ran that are different now."""
+    if not isinstance(saved, dict) or "vendored" not in saved or not saved.get("catcher") or vendored is None:
+        return []
+    now = dict(vendored(saved["catcher"]))
+    return sorted(f for f, h in saved["vendored"] if now.get(f) != h)
 
 
 def _state() -> dict:
@@ -325,13 +402,64 @@ def budget() -> float:
 
 
 def controls_users(source, graph: dict) -> list:
-    """The test files that import the app's controls module (`source`, the
-    file holding BREAKS), at any depth: left out of the whole suites."""
+    """What the whole suites leave out for the app's controls module
+    (`source`, the file holding BREAKS): for each test file importing it, at
+    any depth, the node ids of its tests that use it, or the file itself
+    when that can't be told (the module docstring, 0.61.3)."""
     try:
         rel = Path(source).resolve().relative_to(Path(affected.ROOT).resolve()).as_posix()
     except (TypeError, ValueError):                          # none given, or outside the repo
         return []
-    return affected.importers(rel, graph)
+    out = []
+    for test in affected.importers(rel, graph):
+        out.extend(_tests_using(test, rel) or [test])
+    return out
+
+
+def _tests_using(test: str, module: str) -> list:
+    """The node ids of `test`'s tests that name `module` (a repo path), when
+    the file imports it itself and uses it nowhere but inside test functions
+    and test classes' methods; [] otherwise (leave the whole file out: none
+    found also when it is reached only through another import)."""
+    try:
+        tree = ast.parse((Path(affected.ROOT) / test).read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        return []
+    dotted = module[:-3].replace("/", ".") if module.endswith(".py") else module.replace("/", ".")
+    stem = dotted.rsplit(".", 1)[-1]
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == stem or a.name == dotted or a.name.endswith("." + stem):
+                    names.add(a.asname or a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            mod = node.module
+            if mod == stem or mod == dotted or mod.endswith("." + stem):
+                names.update(a.asname or a.name for a in node.names)
+            elif any(a.name == stem for a in node.names) and (dotted == f"{mod}.{stem}" or dotted.endswith(f"{mod}.{stem}")
+                                                              or mod in (".", "")):
+                names.update(a.asname or a.name for a in node.names if a.name == stem)
+    uses = lambda n: any(isinstance(x, ast.Name) and x.id in names for x in ast.walk(n))   # noqa: E731
+    found = []
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
+            if uses(node):
+                found.append(f"{test}::{node.name}")
+            continue
+        if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test"):
+                    if uses(item):
+                        found.append(f"{test}::{node.name}::{item.name}")
+                elif uses(item):
+                    return []
+            continue
+        if uses(node):
+            return []                                        # module level, a helper or a fixture
+    return found
 
 
 def run_control(root: Path, path, old, new, files, workers, limit=None, name="", skip=(), found=None):
@@ -378,7 +506,7 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
         f.write_bytes(src.replace(old, new).encode("utf-8"))
         code = _run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider",
                      "-p", "cct_common.testing.select", "-n", str(workers if workers > 1 else 0), *marker,
-                     *(f"--ignore={s}" for s in skip), *args],
+                     *(f"--deselect={s}" if "::" in s else f"--ignore={s}" for s in skip), *args],
                     root, env, limit, log=log)
         if log and code not in (None, 0, 5):
             by = CAUGHT_BY.search(log.read_bytes().decode("utf-8", "replace").replace("\r\n", "\n"))
@@ -397,23 +525,47 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
 
 
 # -- the run -----------------------------------------------------------------
+def cli(argv) -> list:
+    """The runner's arguments from the command line's: the name filters, then
+    --all and --whole-suite. --help prints the usage and raises SystemExit(0),
+    an unknown option SystemExit(2), with nothing looked up or run."""
+    ap = argparse.ArgumentParser(
+        allow_abbrev=False,                                          # --al is no --all
+        description="Break one formula or check at a time; the tests meant to catch it must fail; then restore.")
+    ap.add_argument("names", nargs="*", help="run every control whose name holds one of these "
+                    "(none: those whose check changed since each was last caught)")
+    ap.add_argument("--all", action="store_true", help="run every control")
+    ap.add_argument("--whole-suite", action="store_true", help="each on the whole suites, not its scope")
+    a = ap.parse_args(list(argv))
+    return [*a.names, *(["--all"] if a.all else []), *(["--whole-suite"] if a.whole_suite else [])]
+
+
 def main(breaks: dict, argv, source=None) -> int:
     """Run the app's controls (name -> (path, old, new)); 0 when every one ran
     was caught. `source`: the file holding BREAKS (the caller's, unless given),
-    whose importers the whole suites leave out."""
+    whose importers the whole suites leave out. --help: the usage, 0; an
+    unknown option: the usage, 2; nothing run either way (cli)."""
     source = source or sys._getframe(1).f_globals.get("__file__")
     sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        argv = cli(argv)
+    except SystemExit as e:
+        return e.code if isinstance(e.code, int) else 2
     workers = test_cpus()
     every, whole = "--all" in argv, "--whole-suite" in argv
     only = [a for a in argv if not a.startswith("--")]
     snap, tstate = affected.snapshot(), affected.load_state()
     index, graph, lines = scope_index(tstate, snap), affected.import_graph(snap), affected.line_record(tstate)
     users = controls_users(source, graph)
+    if users:
+        print(f"the whole suites leave out what uses the controls module: {', '.join(users)}", flush=True)
     if not index:
         print(f"no record of what the tests run ({affected.STATE}): run the suites with the record first; "
               "until then each control's scope is every test file importing what it breaks", flush=True)
     state, lock, path_ = _state(), threading.Lock(), state_path()
-    todo, stale, meta = [], [], {}
+    ran, hashes = vendored_ran(tstate), _VendoredHashes()
+    vend = lambda catcher: vendored_deps(catcher, ran, hashes)      # noqa: E731
+    todo, stale, meta, synced = [], [], {}, []
     for name, entry in breaks.items():
         path, old, new = entry
         # Every control's pattern, named or not (0.56.9): a filtered by-day
@@ -430,10 +582,18 @@ def main(breaks: dict, argv, source=None) -> int:
         ck = control_key(entry, files, key, snap)
         saved = state.get(name)
         meta[name] = (entry, key, saved.get("catcher") if isinstance(saved, dict) else None)
-        if every or only or whole or not is_current(saved, entry, key, files, snap, graph):
+        if every or only or whole or not is_current(saved, entry, key, files, snap, graph, vend):
             todo.append((name, entry, files, how, ck))
+            changed = sync_changes(saved, vend)
+            if changed:
+                synced.append((name, changed))
     mode = "every control" if every else "those named" if only else "those whose check changed"
     print(f"{len(todo)} of {len(breaks)} controls to run ({mode}); {workers} CPUs", flush=True)
+    if synced:                                             # read these before the gate (0.61.2)
+        print(f"{len(synced)} of them because a sync changed what their catcher ran "
+              "(a MISSED there can be the sync making the app's own code dead):", flush=True)
+        for name, changed in synced:
+            print(f"  sync: {name}: {', '.join(changed[:4])}{' ...' if len(changed) > 4 else ''}", flush=True)
     t0 = time.time()
     scope_missed, missed = [], []
 
@@ -441,7 +601,9 @@ def main(breaks: dict, argv, source=None) -> int:
         with lock:
             if ok:                                         # its catcher's key; none seen, the old rule's
                 entry, key, _ = meta[name]
-                state[name] = {"key": catcher_key(entry, key, by, snap, graph), "catcher": by} if by else ck
+                v = vend(by) if by else None
+                state[name] = ({"key": catcher_key(entry, key, by, snap, graph, v), "catcher": by,
+                                "vendored": [list(x) for x in v]} if by else ck)
             else:
                 missed.append(name)
                 state.pop(name, None)

@@ -178,6 +178,9 @@ async function main() {
   await settled('signed in'); await js('window.cctTokens.ready');
   check('signed in: header shows email and 20 tokens',
         await js("document.querySelector('.cct-account-email')?.textContent === 'ui-test@example.com' && document.getElementById('cct-balance')?.textContent === '20 tokens'"));
+  // Named shares (cct_common 0.61.0) ship off: no Share button and no My account menu.
+  const shares = await js("[!!document.getElementById('cct-share'), !!document.getElementById('cct-account-menu')].join()");
+  check(`named_shares off: the header has no Share and no account menu (${shares})`, shares === 'false,false');
   // Clicking the balance opens the token dialog: count, expiry dates, the
   // sign-in note, and Buy tokens: the buy_url business setting (cct_common.settings),
   // the site's buy page, whether or not this run has a payment provider.

@@ -64,6 +64,21 @@ been sent in full:
 connection. A browser that then fails to save the file isn't charged again
 when it retries — one payment unlocks the design for 24 h.
 
+RIDES (0.60.1). That unlock starts when the tokens are taken, so a second
+download of the design while the first is still being sent costs 0: it
+rides on the first charge (tokens.py). Sent in full, the ride settles that
+charge as delivered, and the first send's "not completed" refund is
+skipped: one charge for the file the person has. A ride cut short changes
+nothing; a refund that comes while a ride is still going waits for it. A
+job's ride waits for its result like a job's charge (add_rides). Before
+this, two tabs, or a retry, made a file free whenever the first was cut.
+
+Counting result reads: a page that cancels a body read (CCTDownload.fetchFile
+after a lost or stalled read) can be followed by one more GET of the result
+that the browser makes itself (Chrome; Planetary's harness saw three result
+requests for the page's two, 2026-11-07). It claims nothing unless it is sent
+in full, so it costs nothing, but the server log and the failure rows count it.
+
 SAVED DESIGNS (0.34.0, the saved_designs business setting). With it on,
 every download the charge stands for is kept on the account
 (cct_common.saved_designs): a paid one once delivered as above, a free one
@@ -111,6 +126,11 @@ CREATE TABLE IF NOT EXISTS pending_deliveries (
     created_at   REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS pending_deliveries_created ON pending_deliveries(created_at);
+CREATE TABLE IF NOT EXISTS pending_rides (
+    delivery_key TEXT PRIMARY KEY,
+    rides        TEXT NOT NULL,
+    created_at   REAL NOT NULL
+);
 """
 
 # A job's charge waits this long for its file to be fetched before it is
@@ -217,6 +237,25 @@ class DesignStore(SqliteDB):
     def overdue_pending(self, older_than: float) -> list:
         with self._read() as db:
             rows = db.execute("SELECT delivery_key FROM pending_deliveries WHERE created_at < ?",
+                              (older_than,)).fetchall()
+        return [r["delivery_key"] for r in rows]
+
+    # ── a job's rides (tokens.py, 0.60.1) wait for its file the same way ──
+
+    def add_rides(self, delivery_key: str, rides, now: float | None = None) -> None:
+        with self._write() as db:
+            db.execute("INSERT INTO pending_rides (delivery_key, rides, created_at) VALUES (?, ?, ?)",
+                       (delivery_key, ",".join(str(int(r)) for r in rides), time.time() if now is None else now))
+
+    def claim_rides(self, delivery_key: str) -> tuple:
+        with self._write() as db:
+            row = db.execute("DELETE FROM pending_rides WHERE delivery_key = ? RETURNING rides",
+                             (delivery_key,)).fetchone()
+        return tuple(int(r) for r in row["rides"].split(",")) if row else ()
+
+    def overdue_rides(self, older_than: float) -> list:
+        with self._read() as db:
+            rows = db.execute("SELECT delivery_key FROM pending_rides WHERE created_at < ?",
                               (older_than,)).fetchall()
         return [r["delivery_key"] for r in rows]
 
@@ -591,17 +630,30 @@ class Charges:
                     return self._short_of_tokens(e)
                 resp.headers["X-CCT-Tokens-Charged"] = str(quote.cost)
                 resp.headers["X-CCT-Tokens-Balance"] = str(tokens.balance(acct))
-                if quote.spend_id is not None:
-                    # Paid only if the file is sent in full (module docstring).
-                    spend = quote.spend_id
-                    return on_delivery(
-                        resp, lambda: self.keep_delivered(quote),
-                        lambda: tokens.refund(spend, detail="download not completed"))
-                if self.saving():
-                    return on_delivery(resp, lambda: self.keep_delivered(quote), lambda: None)
-                return resp
+                return self.deliver(resp, quote)
             return wrapped
         return deco
+
+    def deliver(self, resp, quote):
+        """For a response that is the charged file itself: the charge stands
+        only if it is sent in full, and so do the spends its price rode on
+        (0.60.1); cut short, its own spend is refunded (module docstring)."""
+        if quote is None:
+            return resp
+        tokens = self.state.tokens
+        spend, rides = quote.spend_id, quote.rides
+        if spend is None and not rides and not self.saving():
+            return resp
+
+        def done():
+            tokens.settle_rides(rides, delivered=True)
+            self.keep_delivered(quote)
+
+        def cut():
+            if spend is not None:
+                tokens.refund_undelivered(spend, detail="download not completed")
+            tokens.settle_rides(rides, delivered=False)
+        return on_delivery(resp, done, cut)
 
     # ── background (async) STEP jobs ──────────────────────────────────────
 
@@ -637,6 +689,8 @@ class Charges:
         in full (serve_delivery) and is refunded if it never is."""
         if quote is None or not self.designs:
             return
+        if getattr(quote, "rides", ()):
+            self.designs.add_rides(delivery_key(url), quote.rides)
         if getattr(quote, "spend_id", None) is None:
             self.keep_delivered(quote)          # free: nothing waits on its fetch
             return
@@ -648,11 +702,11 @@ class Charges:
         True if a charge was refunded."""
         if not self.designs:
             return False
+        self.state.tokens.settle_rides(self.designs.claim_rides(key), delivered=False)
         spend = self.designs.claim_pending(key)
         if spend is None:
             return False
-        self.state.tokens.refund(spend, detail=detail)
-        return True
+        return self.state.tokens.refund_undelivered(spend, detail=detail)
 
     def serve_delivery(self, response, key: str | None = None):
         """For a result route: wrap the response serving key (default: this
@@ -665,6 +719,7 @@ class Charges:
         key = request.path if key is None else key
 
         def done():
+            self.state.tokens.settle_rides(self.designs.claim_rides(key), delivered=True)
             spend = self.designs.claim_pending(key)
             if spend is not None and self.saving():
                 found = self.state.tokens.design_of_spend(spend)
@@ -679,7 +734,10 @@ class Charges:
             return 0
         now = time.time() if now is None else now
         refunded = 0
+        for key in self.designs.overdue_rides(now - ttl_s):
+            self.state.tokens.settle_rides(self.designs.claim_rides(key), delivered=False)
         for key in self.designs.overdue_pending(now - ttl_s):
             if self.not_delivered(key, detail="download never fetched"):
                 refunded += 1
+        self.state.tokens.expire_rides(now - ttl_s)      # an in-request send that never ended
         return refunded

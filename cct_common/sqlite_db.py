@@ -19,7 +19,11 @@ Durability and concurrency (see PulleyWebApp-ss ADR-008 "data safety"):
   across workers or processes.
 - Postgres: every write transaction first takes one transaction-scoped
   advisory lock, so writes serialise exactly as they do on SQLite — the
-  same guarantee across servers. Connections come from a small pool per
+  same guarantee across servers. Each INSERT inside one runs in its own
+  savepoint (0.61.4): Postgres aborts the whole transaction on any error,
+  so a store that catches an IntegrityError (a credit already there, a
+  share code taken) and goes on would fail its next statement, where
+  SQLite only undoes the one INSERT. Connections come from a small pool per
   database URL, with server-side prepared statements off so it also works
   behind a transaction-mode pooler (Neon's pooled endpoint, PgBouncer).
 - integrity_check() and backup() are the SQLite startup check and the
@@ -101,6 +105,9 @@ def _row_factory(cursor):
     return lambda values: Row(values, names)
 
 
+_INSERT = re.compile(r"\s*INSERT\b", re.I)
+
+
 class _PgConnection:
     """Presents a psycopg connection with sqlite3's execute() and SQL dialect."""
 
@@ -109,7 +116,16 @@ class _PgConnection:
 
     def execute(self, sql: str, params=()):
         params = tuple(params) if params else ()
-        return self._conn.execute(_pg_sql(sql, bool(params)), params or None)
+        sql = _pg_sql(sql, bool(params))
+        if _INSERT.match(sql) and self._conn.info.transaction_status == _in_transaction():
+            with self._conn.transaction():          # nested: a savepoint, undone alone on an error
+                return self._conn.execute(sql, params or None)
+        return self._conn.execute(sql, params or None)
+
+
+def _in_transaction():
+    from psycopg import pq
+    return pq.TransactionStatus.INTRANS
 
 
 # One pool per (process, URL). gunicorn's preload_app imports the app — and

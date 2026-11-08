@@ -173,12 +173,10 @@ def register_bundle_routes(app, *, charges=None, default_name: str = "design",
                 return jsonify({"error": str(e)}), 400
             resp = Response(data, mimetype="application/zip",
                             headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
-            if quote is not None and quote.spend_id is not None:
-                # Paid only if the zip is sent in full (cct_common.charging).
-                from .charging import on_delivery
-                spend = quote.spend_id
-                return on_delivery(resp, lambda: charges.keep_delivered(quote),
-                                   lambda: charges.state.tokens.refund(spend, detail="download not completed"))
+            if quote is not None and (quote.spend_id is not None or quote.rides):
+                # Paid only if the zip is sent in full, and so are the spends
+                # its price rode on (cct_common.charging, 0.60.1).
+                return charges.deliver(resp, quote)
             if quote is not None:
                 charges.keep_delivered(quote)              # free: kept as it's sent (saved designs)
             return resp

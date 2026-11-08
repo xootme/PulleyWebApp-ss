@@ -81,6 +81,17 @@
 // the balance and Sign out, and the email moves onto that page; with it off,
 // the signed-in header is today's. "Sign out" hides below 480 px then.
 //
+// Named shares (0.61.0; the owner's design and words, 2026-11-07), while the
+// offer says named_shares (on only with saved designs and the My account
+// button): "Share" (#cct-share) in the header asks for a name (#cct-share-name)
+// and keeps the design on screen in the account, private: api/designs with
+// share. Signed in, "My account" is a menu (#cct-account-menu): My account
+// (with the account page on), My shares (account/designs?shares=1), Sign out.
+// Signed out, Share signs in first: the design is kept in this browser for an
+// hour (localStorage, the design's settings only) and the sign-in comes back
+// with ?cct_share=1, where the page puts the design back (cctApplyDesign) and
+// asks for the name. Shown only on a page with window.cctFullDesign.
+//
 // Printer settings (0.41.0), while api/account says printer: {units,
 // print_compensation_mm} (each null for "the tool's default"). They're
 // window.cctPrinterSettings, and the page's hook
@@ -242,9 +253,13 @@
     box.hidden = !T.enabled;
     if (!T.enabled) return;
     box.replaceChildren();                // drawn again when the offer arrives (0.47.0)
+    closeMenus.length = 0;
     if (T.unavailable) {
       box.append(el('span', 'cct-account-note', 'Accounts unavailable'));
-    } else if (!T.signedIn) {
+      return;
+    }
+    if (sharesOn()) box.append(shareButton());
+    if (!T.signedIn) {
       const mine = myAccount();
       const b = el('button', 'cct-btn cct-btn-primary', mine ? 'My account' : 'Sign in');
       b.type = 'button';
@@ -252,7 +267,10 @@
       box.append(b);
     } else {
       const page = myAccount() && accountPageOn();
-      if (page) {
+      const menu = sharesOn();
+      if (menu) {
+        box.append(accountMenu(page));
+      } else if (page) {
         const a = el('a', 'cct-btn cct-btn-primary cct-account-mine', 'My account');
         a.href = '/account/'; a.target = '_blank'; a.rel = 'noopener';
         box.append(a);
@@ -267,11 +285,133 @@
       bal.title = 'Your tokens — balance, expiry dates, buy more';
       bal.addEventListener('click', () => tokenDialog());
       box.append(bal);
+      if (menu) return;                                // Sign out is in the menu
       const out = el('button', 'cct-btn cct-btn-link' + (page ? ' cct-hide-narrow' : ''), 'Sign out');
       out.type = 'button';
       out.addEventListener('click', signOut);
       box.append(out);
     }
+  }
+
+  // ── named shares (0.61.0) ─────────────────────────────────────────────────
+
+  const sharesOn = () => !!(T.offer && T.offer.named_shares) && typeof window.cctFullDesign === 'function';
+  const SHARE_KEY = 'cct-share-pending';
+  const SHARE_TTL_MS = 3600 * 1000;
+
+  function shareButton() {
+    const b = el('button', 'cct-btn cct-share-btn');
+    b.type = 'button';
+    b.id = 'cct-share';
+    b.setAttribute('aria-label', 'Share');
+    b.append(el('span', 'cct-share-icon', '\u{1F517}'), el('span', 'cct-hide-narrow', ' Share'));
+    b.addEventListener('click', () => share());
+    return b;
+  }
+
+  // "My account" as a menu: My account (the account page), My shares, Sign out.
+  function accountMenu(page) {
+    const wrap = el('span', 'cct-account-menu');
+    const b = el('button', 'cct-btn cct-btn-primary', 'My account');
+    b.type = 'button';
+    b.id = 'cct-account-menu';
+    b.setAttribute('aria-haspopup', 'true');
+    b.setAttribute('aria-expanded', 'false');
+    const list = el('div', 'cct-menu');
+    list.setAttribute('role', 'menu');
+    list.hidden = true;
+    const link = (text, href) => {
+      const a = el('a', 'cct-menu-item', text);
+      a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      a.setAttribute('role', 'menuitem');
+      a.addEventListener('click', () => show(false));
+      return a;
+    };
+    if (page) list.append(link('My account', '/account/'));
+    list.append(link('My shares', api('account/designs?shares=1')));
+    const out = el('button', 'cct-menu-item', 'Sign out');
+    out.type = 'button';
+    out.setAttribute('role', 'menuitem');
+    out.addEventListener('click', () => { show(false); signOut(); });
+    list.append(out);
+    const show = (open) => { list.hidden = !open; b.setAttribute('aria-expanded', String(open)); };
+    b.addEventListener('click', (e) => { e.stopPropagation(); show(list.hidden); });
+    list.addEventListener('click', (e) => e.stopPropagation());
+    closeMenus.push(() => show(false));
+    wrap.append(b, list);
+    return wrap;
+  }
+  const closeMenus = [];
+  // The page's hooks may come after this script: draw the header again once it has loaded.
+  window.addEventListener('load', () => render(), { once: true });
+  document.addEventListener('click', () => closeMenus.forEach((f) => f()));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus.forEach((f) => f()); });
+
+  // Share: signed in, the name; signed out, sign in first and come back to it.
+  async function share() {
+    if (!sharesOn()) return null;
+    if (!T.signedIn) {
+      try {
+        localStorage.setItem(SHARE_KEY, JSON.stringify({
+          design: window.cctFullDesign(), page: location.pathname, at: Date.now() }));
+      } catch (e) { /* no storage: the address still carries what it carries */ }
+      const q = new URLSearchParams(location.search);
+      q.set('cct_share', '1');
+      await signIn(location.pathname + '?' + q, 'Sign in to share this design.');
+      return null;
+    }
+    return shareDialog();
+  }
+
+  function shareDialog() {
+    const body = el('div');
+    body.append(el('p', 'cct-dialog-text',
+      'Give it a name. It\'s kept in your account and only you can open it, from My account \u2192 My shares.'));
+    const label = el('label', 'cct-dialog-label', 'Name');
+    label.htmlFor = 'cct-share-name';
+    const input = el('input', 'cct-input');
+    input.type = 'text';
+    input.id = 'cct-share-name';
+    input.maxLength = 80;
+    try { input.value = typeof window.cctDesignName === 'function' ? (window.cctDesignName() || '') : ''; }
+    catch (e) { input.value = ''; }
+    const status = el('p', 'cct-dialog-status');
+    body.append(label, input, status);
+    let busy = false;
+    const save = async (close) => {
+      if (busy) return;
+      const name = input.value.trim();
+      if (!name) { status.textContent = 'Enter a name.'; return; }
+      busy = true;
+      status.textContent = '';
+      const r = await saveDesign({ name, share: true });
+      busy = false;
+      if (!r.ok) { status.textContent = r.error; return; }
+      close(true);
+      message('Share this design', 'Saved to My shares.');
+    };
+    return dialog('Share this design', body, [
+      { label: 'Cancel', value: null },
+      { label: 'Save', primary: true, onClick: save },
+    ], (close) => input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(close); }));
+  }
+
+  // ?cct_share=1: back from the sign-in Share started; the design it kept
+  // goes back on the page, then the name is asked.
+  async function resumeShare() {
+    const q = new URLSearchParams(location.search);
+    if (!q.has('cct_share')) return;
+    q.delete('cct_share');
+    history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+    let kept = null;
+    try { kept = JSON.parse(localStorage.getItem(SHARE_KEY) || 'null'); localStorage.removeItem(SHARE_KEY); }
+    catch (e) { kept = null; }
+    if (!T.signedIn || !sharesOn()) return;
+    if (kept && kept.page === location.pathname && Date.now() - kept.at < SHARE_TTL_MS
+        && typeof window.cctApplyDesign === 'function') {
+      await window.cctApplyDesign(kept.design);
+    }
+    await shareDialog();
   }
 
   // The offer's switches for the header (0.47.0).
@@ -352,9 +492,10 @@
   }
 
   // next (0.47.0): where to land after signing in; this page by default.
-  async function signIn(next) {
+  async function signIn(next, lead) {
     const back = next || location.pathname + location.search;
     const body = el('div');
+    if (lead) body.append(el('p', 'cct-dialog-text cct-dialog-lead', lead));   // 0.61.0: why (Share)
     const [list] = await Promise.all([providers(), loadOffer()]);
     if (list.length) {
       const next = encodeURIComponent(back);
@@ -792,7 +933,8 @@
 
   // Keep the design on screen in My designs without downloading it.
   // {ok: true} or {ok: false, error}.
-  async function saveDesign() {
+  // opts (0.61.0): { name, share } for Share's dialog.
+  async function saveDesign(opts) {
     if (!T.savedDesigns) return { ok: false, error: 'Saved designs aren\'t on.' };
     const did = await ensureDesign();
     if (!did) return { ok: false, error: 'Couldn\'t save this design — please try again.' };
@@ -800,7 +942,8 @@
       const r = await fetch(api('api/designs'), {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ design_id: did }),
+        body: JSON.stringify(Object.assign({ design_id: did },
+                                           opts && opts.share ? { name: opts.name, share: true } : {})),
       });
       const d = await r.json().catch(() => ({}));
       return r.ok ? { ok: true } : { ok: false, error: d.error || `Couldn't save it (${r.status}).` };
@@ -1009,6 +1152,11 @@
       : new Promise(res => window.addEventListener('load', res, { once: true }));
     Promise.all([ready, whenLoaded]).then(openSaved).catch(() => {});
   }
+  if (/[?&]cct_share=/.test(location.search)) {
+    const whenLoaded = document.readyState === 'complete' ? Promise.resolve()
+      : new Promise(res => window.addEventListener('load', res, { once: true }));
+    Promise.all([ready, whenLoaded, loadOffer()]).then(resumeShare).catch(() => {});
+  }
 
   window.cctTokens = {
     ready,
@@ -1023,9 +1171,10 @@
     get newsletter() { return T.newsletter; },
     get accountPage() { return T.accountPage; },
     get printer() { return T.printer; },
+    get namedShares() { return sharesOn(); },
     printCompensation: PRINT_COMPENSATION, clampCompensation,
     refresh, signIn, tokenDialog, prepare, withDesign, signal, watch, runExtras, handleRefusal,
     ensureDesign, quoteDesign, buyDialog, message, loadOffer, signupOffer, price, saveDesign, openSaved, openShared,
-    money, tokensText,
+    money, tokensText, share, shareDialog,
   };
 })();

@@ -64,6 +64,9 @@ HARNESS_GLOB = "tests/browser/*_ui.js"
 HARNESS_DIR = "tests/browser/"
 NAMING_SKIP: set = set()        # test files that name every file (the tool's own tests)
 FOLD: list = []                 # globs whose files hash as one key each (vendored trees): a change there reaches all
+# The vendored packages a sync replaces (0.61.2): a control reruns when a sync
+# changes a function of theirs that its catcher ran (controls.vendored_deps).
+VENDORED: tuple = ("cct_common/",)
 FOLDED = "fold:"                # snapshot key: a folded glob's files, together
 
 
@@ -77,13 +80,16 @@ STATE = record_dir() / "test_state.json"
 
 
 def configure(root, app: str, test_rules=(), harness_rules=(), everything=None,
-              harness_glob="tests/browser/*_ui.js", naming_skip=(), fold=()):
+              harness_glob="tests/browser/*_ui.js", naming_skip=(), fold=(), vendored=None):
     """The app's repo and rules. Call it before anything else here. `fold`:
     globs (fnmatch: `*` crosses folders) for vendored or third-party trees,
     whose files hash as one key per glob instead of thousands (Pulley's
     2,270 .deps/ files: 17 s a snapshot, 3.3 s folded); a change there
-    reaches every test and harness, as `everything` does (0.25.1)."""
+    reaches every test and harness, as `everything` does (0.25.1).
+    `vendored`: the folders a sync replaces (default ("cct_common/",); Gear
+    and GearBeltChain add "cct_gears/"), for the controls' sync rule (0.61.2)."""
     global ROOT, APP, TEST_RULES, HARNESS_RULES, EVERYTHING, HARNESS_GLOB, HARNESS_DIR, NAMING_SKIP, STATE, FOLD
+    global VENDORED
     ROOT, APP = Path(root).resolve(), app
     TEST_RULES, HARNESS_RULES = list(test_rules), list(harness_rules)
     if everything is not None:
@@ -91,6 +97,8 @@ def configure(root, app: str, test_rules=(), harness_rules=(), everything=None,
     HARNESS_GLOB, HARNESS_DIR = harness_glob, harness_glob.rpartition("/")[0] + "/"
     NAMING_SKIP = set(naming_skip)
     FOLD = list(fold)
+    if vendored is not None:
+        VENDORED = tuple(vendored)
     STATE = record_dir() / "test_state.json"
 
 
@@ -558,7 +566,19 @@ def describe(pick: Pick) -> str:
 
 
 def main(argv=None):
+    """Print what the change since the last record runs. --help: the usage
+    and 0; an unknown option: the usage and 2; nothing selected either way
+    (0.61.1, as controls.cli)."""
+    import argparse
     import sys
     argv = sys.argv[1:] if argv is None else argv
     sys.stdout.reconfigure(encoding="utf-8")
-    print(describe(select("--fast-only" in argv)))
+    ap = argparse.ArgumentParser(allow_abbrev=False,
+                                 description="What the change since the last record runs: tests and harnesses.")
+    ap.add_argument("--fast-only", action="store_true", help="the fast suite's tests only")
+    try:
+        a = ap.parse_args(list(argv))
+    except SystemExit as e:
+        return e.code if isinstance(e.code, int) else 2
+    print(describe(select(a.fast_only)))
+    return 0

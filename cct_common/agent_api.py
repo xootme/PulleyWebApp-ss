@@ -236,6 +236,11 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             raise AgentError("send a JSON object: {\"params\": {...}}")
+        # A body without params was answered with the default design, which an
+        # agent read as its own (baseline review 2026-11-01, finding 1; the
+        # owner, 2026-11-04: "yes"). {"params": {}} still asks for the defaults.
+        if "params" not in body:
+            raise AgentError("the body has no params: send {\"params\": {...}} ({} for the app's defaults)", ["params"])
         return body
 
     def _list(body, key, allowed):
@@ -251,7 +256,7 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
 
     def check_route():
         try:
-            query = coerce(desc, _body().get("params", {}))
+            query = coerce(desc, _body()["params"])
             return jsonify({"params": query, **agent_fixes(check(query), fix_params=fix_params)})
         except (AgentError, ValueError) as e:
             return _error(e)
@@ -262,7 +267,7 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
     def files_route():
         try:
             body = _body()
-            query = coerce(desc, body.get("params", {}))
+            query = coerce(desc, body["params"])
             parts = _list(body, "parts", all_parts)
             formats = _list(body, "formats", all_formats)
             listed = list(files(query, parts, formats))
@@ -279,7 +284,7 @@ def register_agent_api(app, desc: Description, *, check, files, quote=None, desi
     def quote_route():
         try:
             body = _body()
-            query = coerce(desc, body.get("params", {}))
+            query = coerce(desc, body["params"])
             formats = _list(body, "formats", all_formats)
             q = quote(query, formats) if quote else None
             return jsonify(q if q is not None else {"tokens": False, "cost": 0})

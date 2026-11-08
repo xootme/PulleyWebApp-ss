@@ -178,6 +178,7 @@ class SavedDesigns(SqliteDB):
             return None
         thumb, name, now = clean_thumb(thumb), clean_name(name), self._clock()
         downloaded = now if source == "download" else None
+        named = 1 if source == "share" and name else 0       # 0.61.0: the name Share was given
         with self._write() as db:
             row = db.execute("SELECT id FROM saved_designs WHERE account_id = ? AND app = ? AND design_key = ?",
                              (account_id, app, design_key)).fetchone()
@@ -185,9 +186,12 @@ class SavedDesigns(SqliteDB):
                 db.execute(
                     "UPDATE saved_designs SET params = ?, updated_at = ?, "
                     "last_download_at = COALESCE(?, last_download_at), thumb = COALESCE(?, thumb), "
-                    "name = CASE WHEN named = 1 THEN name ELSE COALESCE(?, name) END, "
-                    "source = CASE WHEN ? = 'save' THEN 'save' ELSE source END WHERE id = ?",
-                    (json.dumps(params, sort_keys=True), now, downloaded, thumb, name, source, row["id"]))
+                    "name = CASE WHEN ? = 1 THEN ? WHEN named = 1 THEN name ELSE COALESCE(?, name) END, "
+                    "named = CASE WHEN ? = 1 THEN 1 ELSE named END, "
+                    "source = CASE WHEN source = 'share' THEN 'share' WHEN ? IN ('save', 'share') THEN ? "
+                    "ELSE source END WHERE id = ?",
+                    (json.dumps(params, sort_keys=True), now, downloaded, thumb, named, name, name, named,
+                     source, source, row["id"]))
                 return row["id"]
             count = db.execute("SELECT COUNT(*) FROM saved_designs WHERE account_id = ?",
                                (account_id,)).fetchone()[0]
@@ -203,8 +207,8 @@ class SavedDesigns(SqliteDB):
             sid = secrets.token_hex(8)
             db.execute(
                 "INSERT INTO saved_designs (id, account_id, app, design_key, params, name, named, thumb, source, "
-                "created_at, updated_at, last_download_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
-                (sid, account_id, app, design_key, json.dumps(params, sort_keys=True), name, thumb, source,
+                "created_at, updated_at, last_download_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (sid, account_id, app, design_key, json.dumps(params, sort_keys=True), name, named, thumb, source,
                  now, now, downloaded))
         return sid
 
@@ -381,6 +385,9 @@ def register_saved_designs(app, charges) -> SavedDesigns:
     from .share_links import BANNER, GONE, NOTICE, Full as SharesFull, ShareLinks, link as share_link
     shares = ShareLinks(tokens.path)
 
+    def naming() -> bool:                    # 0.61.0: named shares, with what they need
+        return setting(tokens.path, "named_shares") is True and setting(tokens.path, "my_account_button") is True
+
     def sharing() -> bool:
         return on() and setting(tokens.path, "share_links") is True
 
@@ -407,6 +414,9 @@ def register_saved_designs(app, charges) -> SavedDesigns:
         tools = sorted({r["app"] for r in rows}, key=lambda a: title(a).lower())
         pick = request.args.get("app") or ""
         shown = [r for r in rows if not pick or r["app"] == pick]
+        mine = naming() and bool(request.args.get("shares"))     # 0.61.0: My shares, from the account menu
+        if mine:
+            shown = [r for r in shown if r["source"] == "share"]
         marks = marking()
         query = (request.args.get("q") or "").strip().lower() if marks else ""
         if marks:
@@ -456,12 +466,16 @@ def register_saved_designs(app, charges) -> SavedDesigns:
                 f"</form></div>{mark_box(r)}{project_box(r, groups)}{share_box(r, live, apps, title)}</div></div>")
         if cards:
             body = "<div class='grid'>" + "".join(cards) + "</div>"
+        elif mine:
+            body = "<p>Nothing shared yet. Press Share in any tool to keep a design here.</p>"
         elif rows and marks and (query or request.args.get("bookmarked")):
             body = "<p>No designs match.</p>"                 # 0.43.0: a search or filter found none
         else:
             body = ("<p>Nothing here yet. Every design you download is kept here, and so is any you save "
                     "from the Download window.</p>")
         from .account_page import KEPT_NOTICE
+        if mine:
+            return _doc("My shares", "<h1>My shares</h1>" + notice + body)
         return _doc("My designs", (
             "<h1>My designs</h1><div class='sub'>The designs you've downloaded or saved: open one to go on "
             "where you left off.</div>" + notice +
@@ -517,7 +531,7 @@ def register_saved_designs(app, charges) -> SavedDesigns:
                      "in the link</label>") if marking() and r.get("note") else ""
         return (f"<form class='share' method='post' action='designs/{sid}' "
                 f"onsubmit=\"return confirm({warn})\"><input type='hidden' name='action' value='share'>"
-                f"{with_note}<button type='submit'>Share</button></form>")
+                f"{with_note}<button type='submit'>{'Get a public link' if naming() else 'Share'}</button></form>")
 
     def update(saved_id):
         if not on():
@@ -609,13 +623,19 @@ def register_saved_designs(app, charges) -> SavedDesigns:
         if not acct:
             return jsonify({"error": "sign in required", "code": "SIGN_IN_REQUIRED"}), 401
         data = request.get_json(silent=True) or {}
+        share = data.get("share") is True                   # 0.61.0: Share's dialog, with its name
+        if share and not naming():
+            return jsonify({"error": "not found"}), 404
+        if share and not clean_name(data.get("name")):
+            return jsonify({"error": "Enter a name.", "code": "NAME"}), 400
         did = str(data.get("design_id") or "")
         design = charges.designs.get(did) if did else None
         if design is None:
             return jsonify({"error": "unknown design"}), 400
         thumb, name = charges.designs.meta(did)
         try:
-            sid = store.keep(acct, own, did, design, name=data.get("name") or name, thumb=thumb, source="save")
+            sid = store.keep(acct, own, did, design, name=data.get("name") or name, thumb=thumb,
+                             source="share" if share else "save")
         except Full as e:
             return jsonify({"error": str(e), "code": "FULL"}), 409
         if not sid:
