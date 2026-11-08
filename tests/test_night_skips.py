@@ -14,7 +14,7 @@ import pytest
 def test_unknown_skip():
     pytest.skip("small_step not found")
 
-@pytest.mark.skipif(True, reason="needs CCT_TEST_POSTGRES")
+@pytest.mark.skipif(True, reason="needs os.fork (Linux; run in WSL)")
 def test_listed_skip():
     pass
 

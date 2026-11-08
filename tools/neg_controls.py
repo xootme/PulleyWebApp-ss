@@ -250,6 +250,11 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "if (n === 1) { cancelLater(odTimer1); odTimer1 = later(",
         "if (n === 1) { clearTimeout(odTimer1); odTimer1 = setTimeout("),
     "night: a skip fails the night":("tests/conftest.py", "    if reason not in NIGHT_SKIPS:", "    if False:"),
+    # the test Postgres on msi (CCTCommon's run, 2026-11-07)
+    "tests: no test URL carries the Postgres password": ("tests/conftest.py",
+        "    return urlunsplit(parts._replace(netloc=f\"{userinfo.split(':', 1)[0]}@{hostport}\"))",
+        "    return url"),
+    "tests: a pool left on a test schema fails": ("tests/conftest.py", "    if left:\n", "    if False:\n"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
     # every balance kept through a deploy (the owner, 2026-10-31)
     "release: the ledger read again after the deploy": ("tools/release.py",

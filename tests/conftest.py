@@ -25,6 +25,42 @@ if not os.environ.get('PULLEY_LOG_DIR') or os.environ.get('PULLEY_LOG_DIR_FOR', 
     os.environ['PULLEY_LOG_DIR_FOR'] = _WORKER
 
 
+# The test Postgres (CCT_TEST_POSTGRES) loses its password to PGPASSWORD (libpq reads it there)
+# before any test module reads the URL: a test's URL is printed in its traceback, and msi's run
+# logs carried the password that way (CCTCommon, 2026-11-07). The xdist workers inherit both.
+def _password_to_env(url):
+    from urllib.parse import unquote, urlsplit, urlunsplit
+    parts = urlsplit(url)
+    if parts.password is None:
+        return url
+    os.environ['PGPASSWORD'] = unquote(parts.password)
+    userinfo, hostport = parts.netloc.rsplit('@', 1)
+    return urlunsplit(parts._replace(netloc=f"{userinfo.split(':', 1)[0]}@{hostport}"))
+
+
+if os.environ.get('CCT_TEST_POSTGRES', '').strip():
+    os.environ['CCT_TEST_POSTGRES'] = _password_to_env(os.environ['CCT_TEST_POSTGRES'].strip())
+
+
+@pytest.fixture(autouse=True)
+def _no_test_pool_left_open():
+    """After a test (its schema's teardown included), no connection pool of this process is
+    left on a test schema: a store or thread that outlives its test reopens its dropped schema,
+    up to 46 connections a worker in CCTCommon's run (2026-11-07)."""
+    yield
+    if not os.environ.get('CCT_TEST_POSTGRES'):
+        return
+    from cct_common import sqlite_db
+    with sqlite_db._POOLS_LOCK:
+        left = [url for (pid, url) in sqlite_db._POOLS if pid == os.getpid() and 'search_path%3D' in url]
+    for url in left:
+        sqlite_db.close_pool(url)
+    if left:
+        pytest.fail(f'left connection pools open (closed now): {", ".join(u.rsplit("%3D", 1)[-1] for u in left)}'
+                    ' (a store or thread outlived the test that made the schema; that test may be an earlier one)',
+                    pytrace=False)
+
+
 def pytest_xdist_auto_num_workers(config):
     """`-n auto` is the machine's share, never every CPU."""
     return test_cpus()
@@ -36,12 +72,12 @@ def pytest_xdist_auto_num_workers(config):
 # 2026-10-25).
 NIGHT_SKIPS = {
     'the session queue is compiled out (app.SESSION_QUEUE)': 'never: the queue is not in the app',
-    'needs CCT_TEST_POSTGRES': 'a test Postgres on the night host, CCT_TEST_POSTGRES set there',
-    'CCT_TEST_POSTGRES not set': 'a test Postgres on the night host, CCT_TEST_POSTGRES set there',
     'needs os.fork (Linux; run in WSL)': 'a Linux night host: test_fork_safe.py and tools/fork_probe.py run in WSL by hand',
 }
-# (test_cct_theme's checks run at night too: msi's clone, CCT_COMMON_CHECKOUT in remote.json; it
-# needs refreshing when the vendored commit moves, which Controller does on being told of a sync)
+# (The Postgres tests run at night since 2026-11-08: msi's test Postgres, CCT_TEST_POSTGRES set
+# there, psycopg in requirements-dev.txt. test_cct_theme's checks run there too, on msi's
+# cct_common clone, CCT_COMMON_CHECKOUT in remote.json, which nightly.py's refresh_hosts brings
+# to master before each night.)
 
 
 @pytest.hookimpl(hookwrapper=True)

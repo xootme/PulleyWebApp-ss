@@ -335,11 +335,14 @@ PG = os.environ.get('CCT_TEST_POSTGRES', '').strip()
 
 
 @pytest.fixture
-def pg_url():
+def pg_url(monkeypatch):
     """A Postgres URL on a schema made for this test alone (skipped unless
-    CCT_TEST_POSTGRES points at a server, e.g. the local cct-pg container)."""
+    CCT_TEST_POSTGRES points at a server, e.g. the local cct-pg container).
+    No server-use counting: its thread writes to the test's database once a
+    minute for good, reopening the dropped schema (msi, 2026-11-08)."""
     if not PG:
         pytest.skip('CCT_TEST_POSTGRES not set')
+    monkeypatch.setenv('CCT_SERVER_USE', '0')
     import psycopg
     from cct_common.sqlite_db import close_pool
     schema = 't_' + uuid.uuid4().hex[:12]
