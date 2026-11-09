@@ -28,10 +28,14 @@ the CAD software's marketplace".
 ## Cloudflare Worker (live since 2026-09-26)
 
 - `worker-cloudrun.js` — the live `cct-tools-router` script (Cloud Run + edge secret).
-- `worker-backup-2026-09-26.js` — the previous Render script.
-- `cf_deploy_worker.py new|rollback` — uploads either one through the Cloudflare API:
+- `worker-backup-2026-09-26.js` — the Render-era script from before Cloud Run. Not a rollback any
+  more: it has none of the tools after pulley, nor MCP.
+- `cf_deploy_worker.py new` uploads `worker-cloudrun.js` through the Cloudflare API:
   ```
   { gcloud --configuration=cheapcadtools secrets versions access latest --secret=CLOUDFLARE_API_TOKEN; echo;
     gcloud --configuration=cheapcadtools secrets versions access latest --secret=EDGE_SECRET; echo; } \
-    | python site/cf_deploy_worker.py rollback
+    | python site/cf_deploy_worker.py new
   ```
+- **Rollback:** Cloudflare dashboard → Workers → cct-tools-router → Deployments → the one before
+  (each Worker commit names its deployment), or check out the previous `worker-cloudrun.js` and
+  upload it with `new`. `cf_deploy_worker.py rollback` uploads the 09-26 Render script: never now.
