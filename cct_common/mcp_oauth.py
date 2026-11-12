@@ -160,7 +160,9 @@ class CCTOAuthProvider:
     # ── authorization: the approval page, then back via callback() ───────
     async def authorize(self, client, params) -> str:
         label = f"{(client.client_name or 'AI app').strip()[:40]} (AI connector)"
-        d = self.accounts.start_device_login(label=label)
+        from .measure import client_of             # its surface and AI app (0.62.0)
+        d = self.accounts.start_device_login(label=label, surface="mcp",
+                                             client=client_of(client.client_name, "mcp"))
         rid = self.store.add_request(client.client_id, {
             "state": params.state, "scopes": params.scopes or [SCOPE],
             "code_challenge": params.code_challenge, "redirect_uri": str(params.redirect_uri),

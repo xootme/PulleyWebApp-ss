@@ -172,7 +172,10 @@ _REWARD_COLUMNS = {"payer_key": "TEXT", "bonus_rule": "TEXT",
                    # 0.49.0: the referral tokens this order paid its sharer, and the share taken back
                    "referral_tokens": "INTEGER NOT NULL DEFAULT 0", "referral_back": "INTEGER NOT NULL DEFAULT 0",
                    # 0.52.0: the tokens taken back by refunds (NULL: none counted yet, see _tokens_back)
-                   "tokens_back": "INTEGER"}
+                   "tokens_back": "INTEGER",
+                   # 0.62.0 (cct_common.measure, while source_capture is on): where the order was
+                   # made (page, mcp, ...) and the ?ref= the buyer came by
+                   "surface": "TEXT", "ref": "TEXT"}
 
 
 def _tokens_back(order: dict) -> int:
@@ -205,11 +208,15 @@ class Payments(SqliteDB):
         self.tokens = tokens
         self.clock = clock
 
-    def record(self, provider: str, order_id: str, account_id: str, pack: Pack) -> None:
+    def record(self, provider: str, order_id: str, account_id: str, pack: Pack, *,
+               surface: Optional[str] = None, ref: Optional[str] = None) -> None:
+        """A new order. surface and ref: where it was made (0.62.0; None
+        while source_capture is off)."""
         with self._write() as db:
             db.execute("INSERT INTO payments (order_id, provider, account_id, pack_id, tokens, cents, "
-                       "status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'created', ?)",
-                       (order_id, provider, account_id, pack.id, pack.tokens, pack.cents, self.clock()))
+                       "status, created_at, surface, ref) VALUES (?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)",
+                       (order_id, provider, account_id, pack.id, pack.tokens, pack.cents, self.clock(),
+                        surface, ref))
 
     def get(self, provider: str, order_id: str) -> Optional[dict]:
         with self._read() as db:
@@ -767,9 +774,10 @@ def register_payment_routes(app, accounts, *, packs=None,
     # ── the buy page ──
     def buy_page():
         acct = current_account_id()
+        from .measure import page_tag      # the GA4 tag while analytics_tag is on (0.62.0)
         head = ("<!doctype html><html><head><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                f"<title>Buy tokens — {html.escape(app_name)}</title><style>"
+                f"<title>Buy tokens — {html.escape(app_name)}</title>{page_tag()}<style>"
                 "body{font-family:system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;"
                 "line-height:1.5;color:#222}h1{font-size:1.5rem}h2{font-size:1.1rem;margin-top:2rem}"
                 ".packs{display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0 1rem}"
@@ -868,6 +876,19 @@ function paypalButtons() {
         r.headers["Cache-Control"] = "no-store"
         return r
 
+    # ── where an order came from, and the purchase event (0.62.0, cct_common.measure) ──
+    def _source() -> dict:
+        from .measure import request_source
+        src = request_source(tokens.path)
+        return {"surface": src["surface"], "ref": src["ref"]}
+
+    def _purchased(resp, order: dict):
+        """The page sends GA4's purchase for an order it saw paid, while the
+        tag is on: the order id, its price, USD; nothing about the buyer."""
+        from .measure import queue_event
+        return queue_event(tokens.path, resp, "purchase", {
+            "transaction_id": order["order_id"], "value": round(order["cents"] / 100, 2), "currency": "USD"})
+
     # ── PayPal ──
     def paypal_create():
         acct, err = _signed_in()
@@ -883,7 +904,7 @@ function paypalButtons() {
         except Exception:
             current_app.logger.exception("PayPal create order failed")
             return _json_error("Couldn't reach PayPal. Please try again.", 502)
-        store.record("paypal", order_id, acct, pack)
+        store.record("paypal", order_id, acct, pack, **_source())
         return jsonify({"id": order_id})
 
     def paypal_capture(order_id):
@@ -905,8 +926,8 @@ function paypalButtons() {
             current_app.logger.exception("PayPal capture failed")
             return _json_error("Couldn't confirm the payment with PayPal. If you were charged, "
                                "your tokens will appear shortly.", 502)
-        return jsonify({"credited": order["tokens"], "balance": tokens.balance(acct),
-                        **_paid_words("paypal", order_id)})
+        return _purchased(jsonify({"credited": order["tokens"], "balance": tokens.balance(acct),
+                                   **_paid_words("paypal", order_id)}), order)
 
     def paypal_webhook():
         event = request.get_json(silent=True) or {}
@@ -976,7 +997,7 @@ function paypalButtons() {
         except Exception:
             current_app.logger.exception("Stripe payment intent failed")
             return _json_error("Couldn't reach the card payment service. Please try again.", 502)
-        store.record("stripe", intent["id"], acct, pack)
+        store.record("stripe", intent["id"], acct, pack, **_source())
         return jsonify({"id": intent["id"], "client_secret": intent["client_secret"]})
 
     def _intent_complete(intent: dict) -> bool:
@@ -998,8 +1019,9 @@ function paypalButtons() {
             intent = st.get_intent(intent_id)
             if intent.get("status") == "succeeded":
                 _intent_complete(intent)
-                return jsonify({"status": "paid", "credited": order["tokens"], "balance": tokens.balance(acct),
-                                **_paid_words("stripe", intent_id)})
+                return _purchased(jsonify({"status": "paid", "credited": order["tokens"],
+                                           "balance": tokens.balance(acct),
+                                           **_paid_words("stripe", intent_id)}), order)
         except PaymentError as e:
             current_app.logger.warning("Stripe intent %s: %s", intent_id, e)
             return _json_error(e)
@@ -1036,7 +1058,7 @@ function paypalButtons() {
         except Exception:
             current_app.logger.exception("Stripe checkout failed")
             return _json_error("Couldn't reach the card payment service. Please try again.", 502)
-        store.record("stripe", session["id"], acct, pack)
+        store.record("stripe", session["id"], acct, pack, **_source())
         return jsonify({"url": session["url"]})
 
     def stripe_return():
@@ -1052,8 +1074,10 @@ function paypalButtons() {
         from flask import redirect
         # Step 6: the buy page says what was added (and any bonus) while the rewards are on.
         from urllib.parse import quote
-        return redirect("/account/buy?paid=stripe" + (f"&session_id={quote(sid)}" if sid and _rewards_on() else ""),
+        resp = redirect("/account/buy?paid=stripe" + (f"&session_id={quote(sid)}" if sid and _rewards_on() else ""),
                         code=303)
+        done = store.get("stripe", sid) if order else None
+        return _purchased(resp, done) if done and done.get("completed_at") else resp
 
     def stripe_webhook():
         payload = request.get_data()

@@ -150,16 +150,19 @@ class OAuthStates(SqliteDB):
         self.clock = clock
         # Referrals (0.49.0): the share code this sign-up came from.
         self._ensure_columns("oauth_states", {"ref_code": "TEXT"})
+        # 0.62.0 (cct_common.measure): where it came from, while source_capture is on.
+        self._ensure_columns("oauth_states", {"source": "TEXT"})
 
     def begin(self, provider: str, browser_secret: str, next_path: str,
-              ref: Optional[str] = None) -> tuple[str, str]:
+              ref: Optional[str] = None, source: Optional[dict] = None) -> tuple[str, str]:
         state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(48)
         now = self.clock()
         with self._write() as db:
             db.execute("DELETE FROM oauth_states WHERE created_at < ?", (now - STATE_TTL_S,))
             db.execute("INSERT INTO oauth_states (state_hash, provider, verifier, browser_hash, "
-                       "next, created_at, ref_code) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                       (_hash(state), provider, verifier, _hash(browser_secret), next_path, now, ref))
+                       "next, created_at, ref_code, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       (_hash(state), provider, verifier, _hash(browser_secret), next_path, now, ref,
+                        json.dumps(source) if source else None))
         return state, verifier
 
     def take(self, state: str, provider: str, browser_secret: Optional[str]) -> dict:
@@ -259,9 +262,10 @@ def register_oauth_routes(app, accounts, *, clients: dict, finish: Callable, pag
         from .account_routes import _safe_next, home_path
         browser = secrets.token_urlsafe(32)
         from .referrals import carried
-        state, verifier = states.begin(provider, browser,
-                                       _safe_next(request.args.get("next"), home_path(accounts.path)),
-                                       carried(accounts.path, request.args.get("ref")))
+        from .measure import signup_source
+        nxt = _safe_next(request.args.get("next"), home_path(accounts.path))
+        state, verifier = states.begin(provider, browser, nxt, carried(accounts.path, request.args.get("ref")),
+                                       signup_source(accounts.path, nxt, accounts.device_source))
         cfg = PROVIDERS[provider]
         params = {"client_id": enabled[provider][0], "response_type": "code",
                   "redirect_uri": redirect_uri(provider), "scope": cfg["scope"], "state": state,
@@ -294,8 +298,9 @@ def register_oauth_routes(app, accounts, *, clients: dict, finish: Callable, pag
                 raise OAuthError(f"{label} didn't complete the sign-in. Please try again.")
             subject, email, verified = IDENTITY[provider](resp.json(), client_id, clock(), http)
             try:
+                source = json.loads(flow["source"]) if flow.get("source") else None
                 account_id = accounts.sign_in(provider, subject, email, email_verified=verified,
-                                              ip=client_ip(), ref=flow.get("ref_code"))
+                                              ip=client_ip(), ref=flow.get("ref_code"), source=source)
             except ValueError as e:
                 raise OAuthError(
                     f"{label} didn't confirm an email address for this account, and an account "
@@ -308,7 +313,7 @@ def register_oauth_routes(app, accounts, *, clients: dict, finish: Callable, pag
                      f"<p>{html.escape(str(e))}</p><p><a href='/'>Back</a></p>", 400)
             r.delete_cookie(STATE_COOKIE, path="/account/oauth/")
             return r
-        r = finish(account_id, flow["next"])
+        r = finish(account_id, flow["next"], method=provider)
         r.delete_cookie(STATE_COOKIE, path="/account/oauth/")
         return r
 

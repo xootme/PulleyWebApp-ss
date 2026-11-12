@@ -59,7 +59,11 @@ cct_common.testing.affected:
 - **In lanes.** Each lane breaks its own copy of the tree (git's files and
   .git, in a temporary folder), so CCT_TEST_CPUS controls run at once, each
   on one process; a control on the whole suite runs after them, one at a
-  time, on all the turn's workers.
+  time, on all the turn's workers. The lanes' folder (<APP>-neg-* in Temp)
+  goes at the end of the run, tried again for up to about 10 s while
+  Windows still holds it; one left anyway keeps its mark (cct-neg-run.json)
+  and a later run of the same app sweeps it once a day old (0.61.7;
+  Sprocket's gate of 2026-11-11 left its lanes on WinError 32).
 - **A sync's changes** (0.61.2; Sprocket's night of 2026-11-06). The catcher
   key also holds every function of the vendored packages (affected's
   `vendored`, cct_common/ by default) that the catcher test ran, by the
@@ -337,8 +341,12 @@ def copy_tree(dst: Path):
                     "-x", r"[\\/]\.git[\\/]", str(dst)], check=True, capture_output=True)
 
 
-REMOVE_TRIES, REMOVE_WAIT = 5, 1.0
+# 0.61.7: about 10 s, as cdp.js 0.61.6 gives a Chrome profile (5 tries 1 s
+# apart left Sprocket's lanes on 2026-11-11, as empty folders)
+REMOVE_TRIES, REMOVE_WAIT = 21, 0.5
 _sleep = time.sleep
+MARK = "cct-neg-run.json"         # in a run's lanes' folder: what the sweep may take
+STALE_S = 24 * 3600
 
 
 def _remove(folder):
@@ -362,6 +370,31 @@ def _remove(folder):
         if i + 1 < REMOVE_TRIES:
             _sleep(REMOVE_WAIT)
     say(f"warning: couldn't remove {folder} ({err}); left behind, the result stands")
+
+
+def sweep_lanes(now=None):
+    """At the start of a run: this app's lanes' folders a run left over a
+    day ago, their lanes' worktree entries with them. Only marked ones (the
+    folders before 0.61.7 stay for the owner's decision), never a fresh one
+    (another run of the app may be using it) nor another app's. One try
+    each, quietly: what won't go is tried again next time."""
+    now = time.time() if now is None else now
+    temp = Path(tempfile.gettempdir())
+    try:
+        names = [p for p in temp.iterdir() if p.name.startswith(f"{affected.APP}-neg-")]
+    except OSError:
+        return
+    for folder in names:
+        try:
+            started = float(json.loads((folder / MARK).read_text(encoding="utf-8"))["started"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if not now - started > STALE_S:
+            continue
+        for lane in [p for p in folder.iterdir() if p.is_dir()]:
+            subprocess.run(["git", "worktree", "remove", "--force", str(lane)], cwd=affected.ROOT,
+                           capture_output=True)
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def _run(cmd, cwd, env, limit, log=None):
@@ -632,13 +665,22 @@ def main(breaks: dict, argv, source=None) -> int:
                 scope_missed.append(f"{name} ({how}: its last catcher, {prior}, is outside it)")
         return found.get("by") or prior, f"its last catcher; {how}"
     # The lanes' folder goes after the result is printed, and its failing to
-    # go is a warning (_remove), never the run's exit code.
+    # go is a warning (_remove), never the run's exit code. One left keeps
+    # its mark for a later run's sweep (0.61.7).
+    sweep_lanes()
     tmp, roots = tempfile.mkdtemp(prefix=f"{affected.APP}-neg-"), []
+    mark = json.dumps({"started": time.time(), "pid": os.getpid()})
+    (Path(tmp) / MARK).write_text(mark, encoding="utf-8")
 
     def cleanup():
         for root in roots:
             _remove(root)
         _remove(tmp)
+        try:
+            if Path(tmp).exists():
+                (Path(tmp) / MARK).write_text(mark, encoding="utf-8")
+        except OSError:
+            pass
     try:
         lanes = min(workers, len(small))
         roots = [Path(tmp) / f"lane{i}" for i in range(max(1, lanes) if todo else 0)]

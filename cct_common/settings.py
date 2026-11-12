@@ -99,6 +99,10 @@ DEFAULTS = {
     # 0.61.0: named shares, Share in every tool's header (the owner's design of 2026-11-07), off
     # (needs saved_designs and my_account_button).
     "named_shares": False,
+    # 0.62.0 (the owner's "Measure first", 2026-11-11): where sign-ups, downloads and purchases come
+    # from, and the GA4 tag in the apps; off until the privacy text says so (CCT_WebSite's gate).
+    "source_capture": False,
+    "analytics_tag": False,
 }
 SINCE_KEYS = ("rewards",)
 REDOWNLOAD_WINDOWS = ("24h", "forever")
@@ -174,6 +178,15 @@ DESCRIPTIONS = {
                     "signs in first and comes back to the design. A public link only when the person makes one "
                     "(\"Get a public link\", with share links on). Needs saved designs and the My account "
                     "button. Off: no Share button, today's header.",
+    "source_capture": "Where sign-ups, downloads and purchases come from: a ?ref= on an app page is kept 30 days "
+                      "in the first-party cookie cct_src and stored on an account it signs up (with the sign-up's "
+                      "surface: page, mcp, device, and the AI app); every spend, download and refund records its "
+                      "surface and AI app, every order its surface and ref. Shown in the Accounts tab. Off: no "
+                      "cookie, nothing recorded. Turn on only once the privacy text says so.",
+    "analytics_tag": "The Google Analytics tag (GT-5DFRBV7T) on every tool's page and the account pages, on "
+                     "cheapcadtools.com only, never the admin pages: page views without their query strings "
+                     "(only ?ref= kept), and the events sign_up, login, purchase and download. Off: no tag. "
+                     "Turn on only once the privacy text says so.",
 }
 
 _SCHEMA = """
@@ -262,7 +275,8 @@ def validate(key: str, value):
         if not any(out.values()):
             raise SettingsError("At least one pack must be on sale")
         return out
-    if key in ("saved_designs", "inline_checkout", "price_in_money", "newsletter_opt_in", "rewards", "account_page", "receipts", "printer_settings", "share_links", "bookmarks", "my_reports", "data_download", "projects", "my_account_button", "referrals", "pure_stl", "named_shares"):
+    if key in ("saved_designs", "inline_checkout", "price_in_money", "newsletter_opt_in", "rewards", "account_page", "receipts", "printer_settings", "share_links", "bookmarks", "my_reports", "data_download", "projects", "my_account_button", "referrals", "pure_stl", "named_shares",
+               "source_capture", "analytics_tag"):
         if not isinstance(value, bool):
             raise SettingsError(f"{key.replace('_', ' ').capitalize()} is on or off")
         return value

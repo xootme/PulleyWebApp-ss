@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import secrets
 from typing import Callable, Optional
 
@@ -235,6 +236,12 @@ class AccountStore(SqliteDB):
                                               "budget_chosen": "INTEGER NOT NULL DEFAULT 0"})
         # Referrals (0.49.0): the share code an emailed sign-in link carries.
         self._ensure_columns("login_links", {"ref_code": "TEXT"})
+        # 0.62.0 (cct_common.measure): where a sign-up came from, kept with the
+        # sign-in link while source_capture is on; a device sign-in's surface
+        # and AI app, kept with it and its session (the label's reading).
+        self._ensure_columns("login_links", {"source": "TEXT"})
+        self._ensure_columns("device_codes", {"surface": "TEXT", "client": "TEXT"})
+        self._ensure_columns("sessions", {"surface": "TEXT", "client": "TEXT"})
 
     # ── identities ────────────────────────────────────────────────────────
 
@@ -269,7 +276,8 @@ class AccountStore(SqliteDB):
         self._given["signups_per_ip_per_day"] = value
 
     def sign_in(self, provider: str, subject: str, email: Optional[str], *,
-                email_verified: bool, ip: Optional[str] = None, ref: Optional[str] = None) -> str:
+                email_verified: bool, ip: Optional[str] = None, ref: Optional[str] = None,
+                source: Optional[dict] = None, outcome: Optional[dict] = None) -> str:
         """Account id for this sign-in identity, linking or creating as
         needed. A never-seen identity joins the account that already owns
         its email only if the provider verified that email; with no
@@ -279,7 +287,11 @@ class AccountStore(SqliteDB):
         the signup grant; take_signup_notice() then reports that once.
         A new account gets its welcome page once (take_welcome).
         ref: the share code this sign-up came from (0.49.0): a new account
-        is recorded as referred by its sharer, while referrals are on."""
+        is recorded as referred by its sharer, while referrals are on.
+        source: {ref, surface, client} a new account records as its
+        signup_ref, signup_surface and signup_client (0.62.0,
+        cct_common.measure; None while source_capture is off).
+        outcome: a dict to fill with "new": whether this made the account."""
         if provider not in PROVIDERS:
             raise ValueError(f"unknown provider: {provider!r}")
         subject = str(subject)
@@ -290,6 +302,8 @@ class AccountStore(SqliteDB):
             if row:
                 db.execute("UPDATE identities SET last_used_at = ? WHERE provider = ? AND subject = ?",
                            (now, provider, subject))
+                if outcome is not None:
+                    outcome["new"] = False
                 return row["account_id"]
         if not email or not email_verified:
             raise ValueError("a verified email address is required to create an account")
@@ -308,6 +322,10 @@ class AccountStore(SqliteDB):
             if withheld:
                 grant = 0
         account_id = self.tokens.get_or_create_account(email, signup_grant=grant)
+        if outcome is not None:
+            outcome["new"] = new
+        if new and source:
+            self.tokens.record_signup_source(account_id, source)
         if new:
             with self._write() as db:
                 db.execute("INSERT OR IGNORE INTO welcomes (account_id, created_at) "
@@ -356,7 +374,8 @@ class AccountStore(SqliteDB):
 
     # ── email sign-in links ───────────────────────────────────────────────
 
-    def create_login_link(self, email: str, *, ip: Optional[str] = None, ref: Optional[str] = None) -> str:
+    def create_login_link(self, email: str, *, ip: Optional[str] = None, ref: Optional[str] = None,
+                          source: Optional[dict] = None) -> str:
         """A one-time sign-in secret for this email (put it in the emailed
         link). Raises RateLimited past the per-email / per-IP limits.
         ref: the share code the sign-up came from, kept with the link while
@@ -375,9 +394,10 @@ class AccountStore(SqliteDB):
                 raise RateLimited()
             token = secrets.token_urlsafe(32)
             db.execute(
-                "INSERT INTO login_links (token_hash, email, ip, created_at, expires_at, ref_code) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (_hash(token), email, ip, now, now + LOGIN_LINK_TTL_S, ref))
+                "INSERT INTO login_links (token_hash, email, ip, created_at, expires_at, ref_code, source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (_hash(token), email, ip, now, now + LOGIN_LINK_TTL_S, ref,
+                 json.dumps(source) if source else None))
         return token
 
     def _claim_signup(self, ip: Optional[str]) -> bool:
@@ -416,7 +436,8 @@ class AccountStore(SqliteDB):
                 db.execute("DELETE FROM welcomes WHERE account_id = ?", (account_id,))
         return bool(row)
 
-    def redeem_login_link(self, token: str, *, ip: Optional[str] = None) -> Optional[str]:
+    def redeem_login_link(self, token: str, *, ip: Optional[str] = None,
+                          outcome: Optional[dict] = None) -> Optional[str]:
         """Account id if the link is valid (unused, unexpired), else None.
         Uses the link up. Creates the account on first sign-in (without
         the signup grant past the per-IP limit — see sign_in)."""
@@ -431,12 +452,15 @@ class AccountStore(SqliteDB):
             db.execute("UPDATE login_links SET used_at = ? WHERE token_hash = ?",
                        (now, row["token_hash"]))
             email, ref = row["email"], row["ref_code"]
-        return self.sign_in("email", email, email, email_verified=True, ip=ip, ref=ref)
+            source = json.loads(row["source"]) if row["source"] else None
+        return self.sign_in("email", email, email, email_verified=True, ip=ip, ref=ref,
+                            source=source, outcome=outcome)
 
     # ── sessions (browser cookies and add-in device tokens) ───────────────
 
     def create_session(self, account_id: str, *, kind: str = "web",
-                       label: Optional[str] = None, daily_budget=_DEFAULT) -> str:
+                       label: Optional[str] = None, daily_budget=_DEFAULT,
+                       surface: Optional[str] = None, client: Optional[str] = None) -> str:
         """daily_budget applies to device sessions only (add-ins, agents):
         the store's default unless given; None means no limit. Browser
         sessions never have one."""
@@ -450,10 +474,10 @@ class AccountStore(SqliteDB):
         with self._write() as db:
             db.execute(
                 """INSERT INTO sessions (token_hash, account_id, kind, label, created_at, last_used_at,
-                                         expires_at, daily_budget)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                         expires_at, daily_budget, surface, client)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (_hash(token), account_id, kind, (label or "")[:80], now, now,
-                 now + SESSION_TTL_S[kind], budget))
+                 now + SESSION_TTL_S[kind], budget, surface, client))
         return token
 
     def session_info(self, token: Optional[str]) -> Optional[dict]:
@@ -464,12 +488,12 @@ class AccountStore(SqliteDB):
         now = self._clock()
         with self._write() as db:
             row = db.execute(
-                """SELECT id, account_id, kind, label, daily_budget, expires_at, revoked_at
+                """SELECT id, account_id, kind, label, daily_budget, expires_at, revoked_at, surface, client
                    FROM sessions WHERE token_hash = ?""", (_hash(token),)).fetchone()
             if not row or row["revoked_at"] is not None or row["expires_at"] < now:
                 return None
             db.execute("UPDATE sessions SET last_used_at = ? WHERE id = ?", (now, row["id"]))
-        return {k: row[k] for k in ("id", "account_id", "kind", "label", "daily_budget")}
+        return {k: row[k] for k in ("id", "account_id", "kind", "label", "daily_budget", "surface", "client")}
 
     def session_account(self, token: Optional[str]) -> Optional[str]:
         """Account id for a live session token, else None."""
@@ -628,10 +652,15 @@ class AccountStore(SqliteDB):
         c = "".join(ch for ch in (code or "").upper() if ch in _USER_CODE_ALPHABET)
         return f"{c[:4]}-{c[4:]}" if len(c) == 8 else ""
 
-    def start_device_login(self, *, label: str = "", ip: Optional[str] = None) -> dict:
+    def start_device_login(self, *, label: str = "", ip: Optional[str] = None,
+                           surface: Optional[str] = None, client: Optional[str] = None) -> dict:
         """Begin an add-in sign-in. Returns the add-in's secret device_code
         (poll with it) and the user_code to show the person. Raises
-        RateLimited past DEVICE_STARTS_PER_IP_PER_HOUR."""
+        RateLimited past DEVICE_STARTS_PER_IP_PER_HOUR.
+        surface, client (0.62.0, cct_common.measure): what the starter is,
+        one of measure.SURFACES / CLIENTS; else read from the label."""
+        from .measure import device_source
+        surface, client = device_source(label or "CAD add-in", surface, client)
         now = self._clock()
         device_code = secrets.token_urlsafe(32)
         with self._write() as db:
@@ -644,10 +673,11 @@ class AccountStore(SqliteDB):
                 if not db.execute("SELECT 1 FROM device_codes WHERE user_code = ?", (user_code,)).fetchone():
                     break
             db.execute(
-                """INSERT INTO device_codes (device_hash, user_code, label, ip, created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO device_codes (device_hash, user_code, label, ip, created_at, expires_at,
+                                            surface, client)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (_hash(device_code), user_code, (label or "CAD add-in")[:80], ip, now,
-                 now + DEVICE_CODE_TTL_S))
+                 now + DEVICE_CODE_TTL_S, surface, client))
         return {"device_code": device_code, "user_code": user_code,
                 "expires_in": DEVICE_CODE_TTL_S, "interval": DEVICE_POLL_INTERVAL_S}
 
@@ -662,6 +692,20 @@ class AccountStore(SqliteDB):
         if not row:
             return None
         return {"user_code": code, "label": row["label"], "state": self._device_state(row)}
+
+    def device_source(self, user_code: str) -> Optional[tuple]:
+        """(surface, client) of a device sign-in, by its user code (a sign-up
+        made to approve it records them, 0.62.0); None if unknown."""
+        code = self.normalize_user_code(user_code)
+        if not code:
+            return None
+        with self._read() as db:
+            row = db.execute("SELECT label, surface, client FROM device_codes WHERE user_code = ?",
+                             (code,)).fetchone()
+        if not row:
+            return None
+        from .measure import device_source
+        return device_source(row["label"], row["surface"], row["client"])
 
     def _device_state(self, row) -> str:
         if row["denied_at"] is not None:
@@ -717,8 +761,10 @@ class AccountStore(SqliteDB):
                        (now, row["device_hash"]))
             account_id, label = row["account_id"], row["label"]
             budget = row["daily_budget"] if row["budget_chosen"] else _DEFAULT
+            from .measure import device_source
+            surface, client = device_source(label, row["surface"], row["client"])
         return "approved", self.create_session(account_id, kind="device", label=label,
-                                               daily_budget=budget)
+                                               daily_budget=budget, surface=surface, client=client)
 
     # ── deletion and housekeeping ─────────────────────────────────────────
 

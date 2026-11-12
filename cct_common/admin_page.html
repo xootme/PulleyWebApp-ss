@@ -301,6 +301,11 @@ const subsCols = [
   { key: 'email', label: 'Email' },
   { key: 'created_at', label: 'First subscribed', date: true, cell: r => date(r.created_at) },
   { key: 'last_sign_in', label: 'Last sign-in', date: true, cell: r => date(r.last_sign_in) },
+  // where it signed up (0.62.0, cct_common.measure): its surface and AI app, the ?ref= under
+  { key: 'signup', label: 'Signed up from', sort: r => [r.signup_surface, r.signup_client, r.signup_ref].join(' ') || null,
+    cell: r => { if (!r.signup_surface) return el('span', 'sub', '—');
+      const d = el('div'); d.append(el('div', '', r.signup_surface + (r.signup_client ? ` · ${r.signup_client}` : '')));
+      if (r.signup_ref) d.append(el('div', 'sub', `ref ${r.signup_ref}`)); return d; } },
   { key: 'balance', label: 'Tokens now', num: true, cell: r => {
       const d = el('div'); d.append(el('div', '', String(r.balance)),
                                      el('div', 'sub', `${r.free} free · ${r.purchased} bought`)); return d; } },

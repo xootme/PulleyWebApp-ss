@@ -38,7 +38,8 @@ Routes:
     GET    /account/oauth/<p>/start, /account/oauth/<p>/callback
 
 CAD add-in sign-in (device code; see AccountStore.start_device_login):
-    POST   /api/account/device/start {label}  -> device_code, user_code, verify_url, interval
+    POST   /api/account/device/start {label, surface?, client?}  -> device_code, user_code, verify_url, interval
+                                     (surface, client: cct_common.measure's names, 0.62.0)
     POST   /api/account/device/poll  {device_code} -> {"status": ...} (+ "token" once approved)
     GET    /account/device?code=...  the page where a signed-in person approves the code
     POST   /account/device           {code, decision}  approve / deny (browser form)
@@ -209,6 +210,10 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     from .shared_static import register_shared_static
     register_server_use(app, accounts, tool=app_name)
     register_shared_static(app)            # static/cct/: tokens.js and the other shared page files
+    # 0.62.0: the ?ref= cookie and {{ cct_analytics() }} for the app's pages (cct_common.measure)
+    from . import measure
+    analytics_app = tokens.app or app_name
+    measure.register(app, tokens.path, analytics_app)
     subject = email_subject or f"Sign in to {app_name}"
     body_fn = email_body or (lambda link: _default_email_body(app_name, link))
 
@@ -224,7 +229,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             "<!doctype html><html><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<meta name='referrer' content='no-referrer'>"
-            f"<title>{html.escape(title)}</title>"
+            f"<title>{html.escape(title)}</title>" + measure.tag(tokens.path, analytics_app) +
             "<style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;"
             "padding:0 1rem;line-height:1.5}button,.btn{font-size:1rem;padding:.6rem 1.4rem;"
             "cursor:pointer}.btn{display:inline-block;border:1px solid #888;border-radius:4px;"
@@ -267,11 +272,13 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         except ValueError:
             return jsonify({"error": "Enter a valid email address."}), 400
         try:
-            token = accounts.create_login_link(email, ip=_client_ip(), ref=data.get("ref"))
+            nxt = _safe_next(data.get("next"), home_path(tokens.path))
+            token = accounts.create_login_link(email, ip=_client_ip(), ref=data.get("ref"),
+                                               source=measure.signup_source(tokens.path, nxt,
+                                                                            accounts.device_source))
         except RateLimited:
             return jsonify({"error": "Too many sign-in emails requested. Try again in an hour.",
                             "code": "RATE_LIMITED"}), 429
-        nxt = _safe_next(data.get("next"), home_path(tokens.path))
         link = f"{request.host_url}account/login?token={token}"
         if nxt != "/":
             link += f"&next={quote(nxt, safe='/')}"
@@ -302,7 +309,7 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
                 "<p>This sign-in link has expired or was already used. "
                 "Links work once and last 15 minutes.</p>"
                 "<p><a href='/'>Request a new one</a></p>"), status=400)
-        return _finish_sign_in(account_id, request.form.get("next"))
+        return _finish_sign_in(account_id, request.form.get("next"), method="email")
 
     # ── Directory reviewers' sign-in ──────────────────────────────────────
     # Anthropic's and OpenAI's directory reviewers need a test account they
@@ -414,7 +421,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         except ValueError:
             return _page(f"Sign in to {app_name}", "<p>Enter a valid email address.</p>", 400)
         try:
-            token = accounts.create_login_link(email, ip=_client_ip())
+            token = accounts.create_login_link(email, ip=_client_ip(),
+                                               source=measure.signup_source(tokens.path, nxt,
+                                                                            accounts.device_source))
         except RateLimited:
             return _page(f"Sign in to {app_name}",
                          "<p>Too many sign-in emails requested. Try again in an hour.</p>", 429)
@@ -434,12 +443,14 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     def _news_app() -> str:
         return tokens.app or "site"
 
-    def _finish_sign_in(account_id: str, nxt: Optional[str]):
+    def _finish_sign_in(account_id: str, nxt: Optional[str], method: Optional[str] = None):
         """Start a browser session and go on to `nxt` — shared by the email
         link and OAuth. A new account gets a welcome page first, once: with
         the newsletter checkbox while newsletter_opt_in is on (0.36.0), and
         saying why when it was made without its free tokens (the per-network
-        daily limit)."""
+        daily limit). method ("email", "google", ...): the page then sends
+        GA4's sign_up or login while the tag is on (0.62.0); none for the
+        reviewers' test account."""
         nxt = _safe_next(nxt, home_path(tokens.path))
         # Only the browser's name ("Chrome on Windows"), never the raw user agent:
         # what the privacy policy says a session keeps (0.38.1).
@@ -470,6 +481,8 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             r = redirect(nxt, code=303)
         r.set_cookie(COOKIE_NAME, session, max_age=30 * 24 * 3600, httponly=True,
                      secure=secure_cookies, samesite="Lax", path="/")
+        if method:
+            measure.queue_event(tokens.path, r, "sign_up" if new else "login", {"method": method})
         return r
 
     def welcome_submit():
@@ -675,7 +688,8 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     def device_start():
         data = request.get_json(silent=True) or {}
         try:
-            d = accounts.start_device_login(label=str(data.get("label") or ""), ip=_client_ip())
+            d = accounts.start_device_login(label=str(data.get("label") or ""), ip=_client_ip(),
+                                            surface=data.get("surface"), client=data.get("client"))
         except RateLimited:
             return jsonify({"error": "Too many sign-in attempts. Try again in an hour.",
                             "code": "RATE_LIMITED"}), 429

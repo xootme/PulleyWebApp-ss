@@ -276,6 +276,27 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    runs = [(h, h, []) for h in names]"),
     "roundtrip_ui: a slice starts at its first design": ("tests/browser/roundtrip_ui.js",
         "  for (let d = FIRST; d < FIRST + DESIGNS; d++) {", "  for (let d = 0; d < FIRST + DESIGNS; d++) {"),
+    # measure first ships dark (cct_common 0.62.0): both switches off until the owner turns them on
+    "measure: the page carries the tag": ("templates/index.html",
+        '  {{ cct_analytics() if cct_analytics is defined else "" }}\n', "\n"),
+    "measure: no tag without accounts": ("templates/index.html",
+        '{{ cct_analytics() if cct_analytics is defined else "" }}', "{{ cct_analytics() }}"),
+    "measure: no hard-coded gtag": ("templates/index.html",
+        '  {{ cct_analytics() if cct_analytics is defined else "" }}\n',
+        '  <script async src="https://www.googletagmanager.com/gtag/js?id=GT-5DFRBV7T"></script>\n'
+        '  {{ cct_analytics() if cct_analytics is defined else "" }}\n'),
+    "measure: no gtag script with analytics_tag off": ("cct_common/measure.py",
+        '        if not tag_on(path):\n            return ""', '        if False:\n            return ""'),
+    "measure: no cct_src cookie with source_capture off": ("cct_common/measure.py",
+        "        if ref and capture_on(path):", "        if ref:"),
+    "measure: the app turns analytics_tag on": ("accounts_setup.py",
+        "    state.tokens, state.accounts, state.healthy = tokens, accounts, True\n",
+        "    state.tokens, state.accounts, state.healthy = tokens, accounts, True\n"
+        "    from cct_common.settings import settings_for; settings_for(tokens.path).set('analytics_tag', True, by='x')\n"),
+    "measure: the app turns source_capture on": ("accounts_setup.py",
+        "    state.tokens, state.accounts, state.healthy = tokens, accounts, True\n",
+        "    state.tokens, state.accounts, state.healthy = tokens, accounts, True\n"
+        "    from cct_common.settings import settings_for; settings_for(tokens.path).set('source_capture', True, by='x')\n"),
     # past Cloud Run's 32 MiB cap (cct_common 0.59.0; Worm's 47.7 MiB zip, 2026-11-06)
     "streaming: a large response goes out in pieces": (AP,
         "_stream_large = stream_large_responses(app)", "_stream_large = stream_large_responses(Flask(__name__))"),

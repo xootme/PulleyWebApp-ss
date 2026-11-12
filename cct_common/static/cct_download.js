@@ -356,6 +356,10 @@
       const t0 = Date.now();
       try {
         await submit(body, ui);
+        // GA4's download, while the tag is on (cct_common.measure, 0.62.0):
+        // the highest format ticked, and that it came from this window.
+        if (root.CCTAnalytics) root.CCTAnalytics.event("download", {
+          file_type: selection().top || "zip", link_location: "download-window" });
       } catch (e) {
         say(e.message || String(e));
         go.disabled = false;

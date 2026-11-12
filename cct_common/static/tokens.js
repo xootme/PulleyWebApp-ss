@@ -723,6 +723,8 @@
     let current = null, closePanel = null;
 
     const paid = async d => {
+      // The server left GA4's purchase for this order (cct_common.measure, 0.62.0): send it.
+      if (window.CCTAnalytics) window.CCTAnalytics.flush();
       _checkout = null;                 // the last pack and balance have moved on
       await refresh();
       say(thanks(d));
@@ -831,6 +833,7 @@
     history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
     try {
       const d = await postJson('/api/payments/stripe/intent/' + encodeURIComponent(id) + '/confirm');
+      if (window.CCTAnalytics) window.CCTAnalytics.flush();     // its purchase event (0.62.0)
       await refresh();
       if (d.status === 'paid') await message('Thank you', `${thanks(d).replace(/^Thank you — /, '')} Start the download again.`);
       else await message('Payment received', 'Your tokens will appear in a moment.');

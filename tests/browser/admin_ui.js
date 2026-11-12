@@ -105,16 +105,22 @@ async function main() {
   check('title names the app', await waitFor("document.querySelector('#title').textContent === 'Timing Pulleys — Admin'"),
         await js("document.querySelector('#title').textContent"));
   check('newest first by default', (await col('subs'))[0] === 'carol@example.com', await col('subs'));
+  // cct_common 0.62.0 (measure first) adds "Signed up from" after Last sign-in, and nothing else
+  const heads = await js("JSON.stringify([...document.querySelectorAll('#subs thead th')].map(t => t.firstChild ? t.firstChild.textContent : ''))");
+  check('the columns: Signed up from added, nothing else changed', heads === JSON.stringify(
+    ['Email', 'First subscribed', 'Last sign-in', 'Signed up from', 'Tokens now', 'Lifetime tokens', 'Last 5 uses', 'Rewards', '']), heads);
+  const signup = await js(`${rowOf('subs', 'bob@example.com')}.cells[3].textContent`);
+  check('Signed up from: none recorded while source_capture is off', signup === '—', signup);
   const bob = await js(`(() => { const r = ${rowOf('subs', 'bob@example.com')}; return {
-    now: [...r.cells[3].firstChild.children].map(d => d.textContent).join(' | '), life: r.cells[4].textContent,
-    uses: [...r.cells[5].querySelectorAll('li')].map(l => l.textContent),
-    refund: [...r.cells[7].querySelectorAll('button')].map(b => b.textContent) }; })()`);   // after Rewards (0.37.0)
+    now: [...r.cells[4].firstChild.children].map(d => d.textContent).join(' | '), life: r.cells[5].textContent,
+    uses: [...r.cells[6].querySelectorAll('li')].map(l => l.textContent),
+    refund: [...r.cells[8].querySelectorAll('button')].map(b => b.textContent) }; })()`);   // after Rewards (0.37.0)
   check('bob: tokens now split free / bought', bob.now === '58 | 8 free · 50 bought', bob.now);
   check('bob: lifetime is free + purchased', bob.life === '70', bob.life);
   check('bob: only the last 5 of 6 uses', bob.uses.length === 5, bob.uses);
   check('uses name the tool, tokens and format', /^pulleys · 2 tokens · \d{4}-\d\d-\d\d \d\d:\d\d \(SVG\)$/.test(bob.uses[0]), bob.uses[0]);
   check('bob (bought tokens) gets Refund unused tokens…', JSON.stringify(bob.refund) === '["Grant / adjust","Refund unused tokens…"]', bob.refund);
-  const alice = await js(`${rowOf('subs', 'alice@example.com')}.cells[7].textContent`);
+  const alice = await js(`${rowOf('subs', 'alice@example.com')}.cells[8].textContent`);
   check('alice (no purchases) gets no refund', alice === 'Grant / adjust', alice);
 
   await heading('subs', 'Email');
@@ -123,13 +129,13 @@ async function main() {
   await heading('subs', 'Email');
   check('again reverses it', (await col('subs'))[0] === 'plain@example.com', await col('subs'));
   await heading('subs', 'Lifetime tokens');
-  check('Lifetime sorts high first', JSON.stringify((await col('subs', 4)).slice(0, 2)) === '["120","70"]', await col('subs', 4));
+  check('Lifetime sorts high first', JSON.stringify((await col('subs', 5)).slice(0, 2)) === '["120","70"]', await col('subs', 5));
   await heading('subs', 'Last 5 uses');
   check('Last uses sorts most recent first', (await col('subs'))[0] === 'bob@example.com', await col('subs'));
-  check('…with no uses last', (await col('subs', 5)).slice(2).every(v => v === 'none'), await col('subs', 5));
+  check('…with no uses last', (await col('subs', 6)).slice(2).every(v => v === 'none'), await col('subs', 6));
   await heading('subs', 'Last 5 uses');
   check('reversed: oldest first', (await col('subs'))[0] === 'alice@example.com', await col('subs'));
-  check('…and no uses still last', (await col('subs', 5)).slice(2).every(v => v === 'none'), await col('subs', 5));
+  check('…and no uses still last', (await col('subs', 6)).slice(2).every(v => v === 'none'), await col('subs', 6));
   check('sorted column shows its arrow', (await js("document.querySelector('#subs th .arrow').parentNode.firstChild.textContent")) === 'Last 5 uses');
 
   await typeIn('#subs-q', 'ALI');
@@ -148,14 +154,14 @@ async function main() {
   await waitFor("/balance now/.test(document.querySelector('#grant-msg').textContent)");
   check('grant saved', (await js("document.querySelector('#grant-msg').textContent")) === 'Done — balance now 16.');
   await waitFor("!document.querySelector('#dlg-grant').open");
-  check('table shows the new balance', (await js(`${rowOf('subs', 'alice@example.com')}.cells[3].firstChild.firstChild.textContent`)) === '16');
-  check('a grant is lifetime tokens too', (await js(`${rowOf('subs', 'alice@example.com')}.cells[4].textContent`)) === '25');
+  check('table shows the new balance', (await js(`${rowOf('subs', 'alice@example.com')}.cells[4].firstChild.firstChild.textContent`)) === '16');
+  check('a grant is lifetime tokens too', (await js(`${rowOf('subs', 'alice@example.com')}.cells[5].textContent`)) === '25');
   await js(`${rowOf('subs', 'alice@example.com')}.querySelector('button').click()`);
   await js("document.querySelector('#grant-amount').value = '-6'; document.querySelector('#grant-reason').value = 'correction'; document.querySelector('#grant-go').click()");
   await waitFor("/balance now/.test(document.querySelector('#grant-msg').textContent)");
   check('adjust down', (await js("document.querySelector('#grant-msg').textContent")) === 'Done — balance now 10.');
   await waitFor("!document.querySelector('#dlg-grant').open");
-  check('an adjust down is not lifetime', (await js(`${rowOf('subs', 'alice@example.com')}.cells[4].textContent`)) === '25');
+  check('an adjust down is not lifetime', (await js(`${rowOf('subs', 'alice@example.com')}.cells[5].textContent`)) === '25');
 
   // ── bob's Refund unused tokens… (cct_common 0.52.0): its quote, then Cancel; nothing is refunded here ──
   await typeIn('#subs-q', 'bob');

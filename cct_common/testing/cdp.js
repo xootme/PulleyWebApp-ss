@@ -23,6 +23,8 @@
  *    erroring after (every pending send() rejects too), a send() with no
  *    answer in `sendMs`, an uncaught exception or unhandled rejection, and
  *    the event loop running out of work with no verdict (beforeExit).
+ *  - Every way out removes the run's Chrome profiles (0.61.6), and a
+ *    launch sweeps the app's own left over a day (see `profiles` below).
  * The runner's own rules (a last "ALL PASS" line, a timeout per harness)
  * stay in each app's tools/test_all.py.
  *
@@ -65,7 +67,7 @@
  * tests/test_cdp_harness.py drives every way out against a fake Chrome.
  */
 "use strict";
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -78,6 +80,7 @@ const chromes = new Set();      // every Chrome this run started, killed on a cr
 let ended = false;              // a verdict has been printed
 const KEPT = 50;                // failed loads kept, per page and for the run
 const SHOWN = 5;                // failed loads printed at a time
+const swept = new Set();        // the app names whose old profiles this run has swept
 const failedLoads = [];         // every page's, the newest last: a failing check prints them
 let failedShown = 0;            // how many of the run's a failing check has printed
 
@@ -88,13 +91,79 @@ const failedLine = (f, now) => {
   return `  failed load: ${f.method} ${f.url.slice(0, 200)}: ${why.join(", ")} (${((now - f.t) / 1000).toFixed(1)} s ago)`;
 };
 
+// Each run's Chrome profiles (0.61.6). Nothing removed them before: 18,000
+// <name>-cdp-* folders, 456 GB in Temp by 2026-11-11 (campaign
+// 2026-11-11-cdp-profile-leak). A profile goes when its page is closed, and
+// at the end of the run by any way out (finish, a crash, the exit hook);
+// one left anyway (the run killed) is swept by a later launch of the same
+// app once a day old. The sweep takes only folders with MARK in them, so
+// the ones made before it stay for the owner's decision.
+const profiles = new Map();     // profile folder -> { proc: its Chrome, mark }, until removed
+const MARK = "cct-cdp-run.json";
+const STALE_MS = 24 * 3600 * 1000;
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const running = (pid) => {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
+};
+
+// Chrome with its own processes (GPU, renderers, utilities). On Windows
+// they outlive a killed browser process and hold the profile's files (a
+// real Chrome's profile stayed, 16 MB, without this), so the whole tree
+// goes, while the browser still heads it.
+function stopChrome(proc) {
+  if (!proc || !proc.pid) return;
+  if (process.platform === "win32") {
+    try {
+      spawnSync("taskkill", ["/pid", String(proc.pid), "/T", "/F"], { stdio: "ignore", timeout: 5000 });
+    } catch { /* already gone */ }
+  }
+  try { proc.kill(); } catch { /* already gone */ }
+}
+
+// Synchronous, for the exit hook: Chrome is stopped first and given up to
+// 3 s to go, then the removal is tried again for up to RM_MS: Windows
+// frees a killed Chrome's files a moment after its processes end (EPERM
+// at 1.4 s, gone by 3.5 s, measured 2026-11-11). A folder that won't go
+// gets its mark back (the removal may have taken it first) and is left
+// for the sweep.
+const RM_MS = 10000;
+function removeProfile(profile) {
+  const { proc, mark } = profiles.get(profile) || {};
+  profiles.delete(profile);
+  stopChrome(proc);
+  if (proc && proc.pid) for (let i = 0; i < 30 && running(proc.pid); i++) sleepSync(100);
+  for (const t0 = Date.now(); ;) {
+    try { fs.rmSync(profile, { recursive: true, force: true }); break; } catch { /* held: again */ }
+    if (Date.now() - t0 > RM_MS) break;
+    sleepSync(200);
+  }
+  try { if (mark && fs.existsSync(profile)) fs.writeFileSync(path.join(profile, MARK), mark); } catch { /* gone */ }
+}
+process.on("exit", () => { for (const profile of [...profiles.keys()]) removeProfile(profile); });
+
+// At launch: this app's marked profiles over a day old. Another harness of
+// the same app may be running, so never a fresh one, and never another
+// app's prefix or an unmarked folder.
+function sweepProfiles(prefix, now = Date.now()) {
+  let names;
+  try { names = fs.readdirSync(os.tmpdir()); } catch { return; }
+  for (const n of names) {
+    if (!n.startsWith(prefix)) continue;
+    const dir = path.join(os.tmpdir(), n);
+    let started;
+    try { started = Number(JSON.parse(fs.readFileSync(path.join(dir, MARK), "utf8")).started); } catch { continue; }
+    if (!(now - started > STALE_MS)) continue;
+    try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }); } catch { /* next time */ }
+  }
+}
+
 // `detail` (a stack) goes first: the verdict is always the LAST line.
 function crashed(why, detail) {
   if (ended) return;
   ended = true;
   if (detail) console.log(String(detail));
   console.log(`FAIL  harness crashed: ${why}`);
-  for (const c of chromes) { try { c.kill(); } catch { /* already gone */ } }
+  for (const c of chromes) stopChrome(c);
   process.exit(2);
 }
 const firstLine = (e) => String((e && e.message) || e).split("\n")[0];
@@ -115,13 +184,18 @@ function forApp({
   // run's browser that is still shutting down on a fixed port. `settle`
   // overrides settleMs for this page's first settle (Worm's).
   async function openPage(url, { width = 1200, height = 900, settle = settleMs } = {}) {
+    if (!swept.has(name)) { swept.add(name); sweepProfiles(`${name}-cdp-`); }
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-cdp-`));
+    const mark = JSON.stringify({ started: Date.now(), pid: process.pid });
+    profiles.set(profile, { proc: null, mark });
+    fs.writeFileSync(path.join(profile, MARK), mark);
     const [command, ...prefix] = chrome || [CHROME];
     // SwiftShader gives headless Chrome a software WebGL for the 3D preview.
     const proc = spawn(command, [...prefix, "--headless=new", "--remote-debugging-port=0",
       `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
       "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"], { stdio: "ignore" });
     chromes.add(proc);
+    profiles.set(profile, { proc, mark });
     let closing = false;
     proc.on("error", (e) => crashed(`Chrome did not start (${command}): ${e.message}`));
     proc.on("exit", (code, signal) => {
@@ -345,7 +419,7 @@ function forApp({
     const close = () => {
       closing = true;
       try { ws.close(); } catch { /* already closed */ }
-      try { proc.kill(); } catch { /* already gone */ }
+      removeProfile(profile);           // stops Chrome, then its profile goes
     };
     await settled(`open ${url}`, settle);
     // Record every server answer of 500 or more in serverErrors.

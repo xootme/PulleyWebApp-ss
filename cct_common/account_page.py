@@ -55,7 +55,7 @@ DESIGNS_SHOWN = 4
 TOOL_TITLES = {
     "pulleys": "Timing Pulley Generator", "sprocket": "Sprocket Designer", "gear": "Gear Designer",
     "worm": "Worm Gear Designer", "bevel": "Bevel Gear Designer", "planetary": "Planetary Gear Designer",
-    "ebox": "E-Box Designer",
+    "ebox": "E-Box Designer", "gear-belt-chain": "Gear, Belt & Chain Planner",
 }
 PROVIDER_NAMES = {"paypal": "PayPal", "stripe": "Card"}
 TERMS_URL = "https://cheapcadtools.com/terms/"
@@ -78,7 +78,9 @@ REWARDS_HOW = (
 REFUND_BONUS = ("Free and bonus tokens can't be refunded. If a purchase is refunded or charged back, the bonus "
                 "tokens that came with it are taken back too, in the same share.")
 REFUND_FREE = "Free tokens can't be refunded."
-# Each tool's page on the site (the "fixed" email links it).
+# Each tool's page on the site (the "fixed" email links it). Only live
+# pages: a tool not on the site yet (ebox, gear-belt-chain) links the home
+# page until CCT_WebSite gives it one.
 TOOL_PAGES = {
     "pulleys": "/tools/pulleys/", "sprocket": "/tools/sprocket/", "gear": "/tools/gears/",
     "worm": "/tools/worm-gears/", "bevel": "/tools/bevel-gears/", "planetary": "/tools/planetary-gears/",
@@ -342,10 +344,11 @@ if (buy && buy.dataset.panel) buy.addEventListener('click', async e => {
 
 def _doc(title: str, inner: str, status: int = 200, extra: str = ""):
     from flask import Response
+    from .measure import page_tag          # the GA4 tag while analytics_tag is on (0.62.0)
     r = Response(
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        f"<meta name='referrer' content='no-referrer'><title>{html.escape(title)}</title>"
+        f"<meta name='referrer' content='no-referrer'><title>{html.escape(title)}</title>{page_tag()}"
         f"<link rel='stylesheet' href='/static/cct/cct_theme.css'><style>{_CSS}</style>{extra}</head>"
         f"<body>{inner}</body></html>", status=status, mimetype="text/html")
     r.headers["Cache-Control"] = "no-store"

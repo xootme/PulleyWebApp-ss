@@ -134,4 +134,4 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.61.4"
+__version__ = "0.62.0"

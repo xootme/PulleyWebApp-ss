@@ -230,6 +230,7 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
         with tokens._read() as db:
             rows = db.execute(
                 f"""SELECT a.id, a.email, a.created_at, {last_sql} AS last_sign_in,
+                       a.signup_ref, a.signup_surface, a.signup_client,
                        COALESCE((SELECT SUM(l.amount) FROM ledger l WHERE l.account_id = a.id), 0)
                            AS balance,
                        COALESCE((SELECT SUM(l.amount) FROM ledger l WHERE l.account_id = a.id
@@ -255,7 +256,10 @@ def register_admin(app, accounts, *, app_name: str = "CheapCADTools", app_versio
             out.append({"id": r["id"], "email": r["email"], "created_at": r["created_at"],
                         "last_sign_in": r["last_sign_in"], "balance": int(r["balance"]),
                         "free": free, "purchased": int(r["balance"]) - free,
-                        "lifetime": int(r["lifetime"]), "last_uses": last.get(r["id"], [])})
+                        "lifetime": int(r["lifetime"]), "last_uses": last.get(r["id"], []),
+                        # where it signed up (0.62.0, cct_common.measure; NULL before source_capture)
+                        "signup_ref": r["signup_ref"], "signup_surface": r["signup_surface"],
+                        "signup_client": r["signup_client"]})
         from .newsletter import Newsletter
         from .settings import setting
         news = Newsletter(tokens.path).counts()

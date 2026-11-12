@@ -519,6 +519,13 @@ class Charges:
         s = current_session() or {}
         return s.get("id"), s.get("daily_budget")
 
+    def _source(self) -> dict:
+        """surface and client for the ledger row (cct_common.measure, 0.62.0):
+        None for both while source_capture is off."""
+        from .measure import request_source
+        src = request_source(self.state.tokens.path)
+        return {"surface": src["surface"], "client": src["client"]}
+
     def _limit_reached(self, e: BudgetReached, session_id):
         """429 for a token past its daily limit — and, once a day per token,
         an email to the owner saying how to change it."""
@@ -553,7 +560,7 @@ class Charges:
         balance = tokens.balance(acct)
         if quote.cost > balance:
             return None, self._short_of_tokens(InsufficientTokens(quote.cost, balance))
-        return (acct, key, fmt, sid, budget), None
+        return (acct, key, fmt, sid, budget, self._source()), None
 
     def begin_design(self, design_id: str, fmt: str):
         """begin_async for a whole registered design at one tier (the
@@ -618,7 +625,7 @@ class Charges:
                 sid, budget = self._session()
                 try:
                     with tokens.charge(acct, key, fmt, detail=request.path,
-                                       session_id=sid, daily_budget=budget) as quote:
+                                       session_id=sid, daily_budget=budget, **self._source()) as quote:
                         resp = make_response(view(*args, **kwargs))
                         if resp.status_code >= 400:
                             raise _ExportFailed(resp)
@@ -677,9 +684,9 @@ class Charges:
         result's link, so the charge stands only once the file is fetched."""
         if context is None:
             return nullcontext()
-        acct, key, fmt, sid, budget = context
+        acct, key, fmt, sid, budget, *source = context
         return self.state.tokens.charge(acct, key, fmt, detail=detail,
-                                        session_id=sid, daily_budget=budget)
+                                        session_id=sid, daily_budget=budget, **(source[0] if source else {}))
 
     # ── delivery: a job's charge stands once its file is fetched ──────────
 

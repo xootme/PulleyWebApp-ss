@@ -208,6 +208,12 @@ class TokenStore(SqliteDB):
         # per-token spending and daily limits — and which tool. Older
         # databases lack them; rows from before have NULL.
         self._ensure_columns("ledger", {"session_id": "INTEGER", "app": "TEXT"})
+        # 0.62.0 (cct_common.measure, while source_capture is on): where a
+        # spend, download or refund came from (page, mcp, device, ... and the
+        # AI app), and where an account signed up. Rows from before have NULL.
+        self._ensure_columns("ledger", {"surface": "TEXT", "client": "TEXT"})
+        self._ensure_columns("accounts", {"signup_ref": "TEXT", "signup_surface": "TEXT",
+                                          "signup_client": "TEXT"})
         # The business settings live in the same database: open them now,
         # outside any transaction (settings.py says why). Prices, the grant
         # and the rest are then read where used, without writing.
@@ -293,6 +299,12 @@ class TokenStore(SqliteDB):
                     "INSERT INTO ledger (account_id, ts, kind, amount, ref) VALUES (?, ?, 'signup', ?, ?)",
                     (account_id, now, signup_grant, f"signup:{account_id}"))
             return account_id
+
+    def record_signup_source(self, account_id: str, source: dict) -> None:
+        """A new account's signup_ref, signup_surface and signup_client (0.62.0)."""
+        with self._write() as db:
+            db.execute("UPDATE accounts SET signup_ref = ?, signup_surface = ?, signup_client = ? WHERE id = ?",
+                       (source.get("ref"), source.get("surface"), source.get("client"), account_id))
 
     def account_by_email(self, email: str) -> Optional[str]:
         with self._read() as db:
@@ -489,7 +501,8 @@ class TokenStore(SqliteDB):
     @contextmanager
     def charge(self, account_id: str, key: str, fmt: str, *,
                detail: Optional[str] = None, session_id: Optional[int] = None,
-               daily_budget: Optional[int] = None) -> Iterator[Quote]:
+               daily_budget: Optional[int] = None, surface: Optional[str] = None,
+               client: Optional[str] = None) -> Iterator[Quote]:
         """Charge for one download around the code that generates it.
 
         Takes the tokens up front (raising InsufficientTokens, with nothing
@@ -502,6 +515,8 @@ class TokenStore(SqliteDB):
         token's limit) the charge raises BudgetReached instead of taking the
         session past that many tokens in 24 hours. Checked inside the same
         write lock as the spend, so parallel requests can't slip past it.
+        surface and client say where it came from (cct_common.measure; None
+        while source_capture is off); a refund carries its spend's.
 
         The prices and the unlock window are read before the lock (0.61.4):
         a setting not in the cache is read on a second connection, and on
@@ -522,10 +537,11 @@ class TokenStore(SqliteDB):
                 if bal < q.cost:
                     raise InsufficientTokens(q.cost, bal)
                 spend_id = db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app)
-                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app,
+                                           surface, client)
+                       VALUES (?, ?, 'spend', ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
                     (account_id, now, -q.cost, key, q.tier, q.fmt, detail, session_id,
-                     self.app)).fetchone()[0]
+                     self.app, surface, client)).fetchone()[0]
         try:
             yield replace(q, spend_id=spend_id, account_id=account_id, key=key, rides=rides)
         except BaseException:
@@ -536,9 +552,11 @@ class TokenStore(SqliteDB):
         if spend_id is None:
             with self._write() as db:
                 db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app)
-                       VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?, ?)""",
-                    (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id, self.app))
+                    """INSERT INTO ledger (account_id, ts, kind, amount, design_key, tier, fmt, detail, session_id, app,
+                                           surface, client)
+                       VALUES (?, ?, 'download', 0, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (account_id, self._clock(), key, q.tier, q.fmt, detail, session_id, self.app,
+                     surface, client))
 
     # ── rides: a download that leans on a spend not settled yet (0.60.1) ──
     #
@@ -665,11 +683,12 @@ class TokenStore(SqliteDB):
                 raise KeyError(spend_id)
             try:
                 db.execute(
-                    """INSERT INTO ledger (account_id, ts, kind, amount, ref, design_key, tier, fmt, detail, session_id, app)
-                       VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO ledger (account_id, ts, kind, amount, ref, design_key, tier, fmt, detail, session_id, app,
+                                           surface, client)
+                       VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (row["account_id"], self._clock(), -row["amount"], f"spend:{spend_id}",
                      row["design_key"], row["tier"], row["fmt"], detail, row["session_id"],
-                     row["app"]))
+                     row["app"], row["surface"], row["client"]))
             except INTEGRITY_ERRORS:
                 return False
         return True

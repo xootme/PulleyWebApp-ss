@@ -11,6 +11,10 @@
   <link rel="stylesheet" href="/static/cct/cct_theme.css">
   <link rel="stylesheet" href="/static/cct/cct_layout.css">
   <link rel="stylesheet" href="/static/style.css?v=48">
+  {#- The GA4 tag (cct_common 0.62.0 measure, analytics_tag; "" while it is off, as it ships).
+      register_account_routes adds cct_analytics, so with tokens off or the accounts
+      database unhealthy there is none, and no tag. -#}
+  {{ cct_analytics() if cct_analytics is defined else "" }}
 </head>
 <body>
 {#- Set-screw sizes: geometry/set_screw.py (cct_common.screws), ADR-013 -#}
