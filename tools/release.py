@@ -138,15 +138,44 @@ def serving(name):
     return out
 
 
+def new_revision(name, before, tries=30, wait=10):
+    """The revision this deploy made: the newest created, once the status has seen the deploy
+    (observedGeneration) and it isn't the one there before. Not latestReadyRevisionName
+    (GearBeltChain's two releases, 2026-11-09; Gear 3c27daf, Bevel 339456e): read straight after
+    a deploy it can still name the revision before; with the traffic pinned by a rollback the new
+    revision takes none, is retired at once, and latestReady never moves. Whether it works is the
+    smoke test's to say."""
+    rev = None
+    for i in range(tries):
+        d = service(name)
+        s = d.get('status', {})
+        rev = s.get('latestCreatedRevisionName')
+        if rev and rev != before and s.get('observedGeneration') == d.get('metadata', {}).get('generation'):
+            return rev
+        if i + 1 < tries:
+            time.sleep(wait)
+    raise Fail(f'{name}: no new revision after the deploy (still {rev}, before it {before})')
+
+
+def wait_serving(name, rev, tries=30, wait=10):
+    """Until all of the service's traffic is on rev."""
+    for i in range(tries):
+        if serving(name) == {rev: 100}:
+            return
+        if i + 1 < tries:
+            time.sleep(wait)
+    raise Fail(f"{name}: the traffic didn't move to {rev}: {serving(name)}")
+
+
 def deploy(name):
+    before = service(name).get('status', {}).get('latestCreatedRevisionName')
     gcloud('run', 'deploy', name, '--source', '.', '--region', REGION, '--quiet')
-    latest = service(name)['status']['latestReadyRevisionName']
-    if serving(name) != {latest: 100}:   # a rollback pins traffic; a release goes back to latest
+    rev = new_revision(name, before)
+    if serving(name) != {rev: 100}:   # a rollback pins traffic; a release goes back to latest
         gcloud('run', 'services', 'update-traffic', name, '--to-latest', '--region', REGION, '--quiet')
-        if serving(name) != {latest: 100}:
-            raise Fail(f'{name}: {latest} is not serving all traffic: {serving(name)}')
-    say(f'{name}: {latest} serving')
-    return latest
+        wait_serving(name, rev)
+    say(f'{name}: {rev} serving')
+    return rev
 
 
 def roll_back(name, before):

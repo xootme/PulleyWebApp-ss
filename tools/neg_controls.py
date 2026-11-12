@@ -256,6 +256,14 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    return url"),
     "tests: a pool left on a test schema fails": ("tests/conftest.py", "    if left:\n", "    if False:\n"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
+    # the deploy's own revision gets the traffic (GearBeltChain's two releases, 2026-11-09; Gear's 3c27daf)
+    "release: the deploy follows the newest created revision": ("tools/release.py",
+        "        rev = s.get('latestCreatedRevisionName')", "        rev = s.get('latestReadyRevisionName')"),
+    "release: the deploy waits for the status to see it": ("tools/release.py",
+        " and s.get('observedGeneration') == d.get('metadata', {}).get('generation'):", ":"),
+    "release: the new revision is not the one before": ("tools/release.py",
+        "        if rev and rev != before and s.get(", "        if rev and s.get("),
+    "release: the moved traffic is waited for": ("tools/release.py", "        wait_serving(name, rev)\n", "        pass\n"),
     # every balance kept through a deploy (the owner, 2026-10-31)
     "release: the ledger read again after the deploy": ("tools/release.py",
         "        bad = smoke(name, new, revs[name]) + ledger_kept(name, url, upto, held)",
