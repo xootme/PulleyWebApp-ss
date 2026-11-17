@@ -327,6 +327,13 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    state.tokens, state.accounts, state.healthy = tokens, accounts, True\n",
         "    state.tokens, state.accounts, state.healthy = tokens, accounts, True\n"
         "    from cct_common.settings import settings_for; settings_for(tokens.path).set('source_capture', True, by='x')\n"),
+    # the Worker sends each tool to its own service (Printed Bearing's launch, 2026-11-16)
+    "worker: printed bearings goes to its service": ("site/worker-cloudrun.js",
+        "      return toApp(request, env, PRINTEDBEARINGS, path.slice('/tools/printed-bearings'.length), url);",
+        "      return toApp(request, env, PULLEYS, path, url);"),
+    "worker: a bare slug gets its trailing slash": ("site/worker-cloudrun.js",
+        "      return Response.redirect(`${url.origin}/tools/printed-bearings/${url.search}`, 301);",
+        "      return fetch(request);"),
     # past Cloud Run's 32 MiB cap (cct_common 0.59.0; Worm's 47.7 MiB zip, 2026-11-06)
     "streaming: a large response goes out in pieces": (AP,
         "_stream_large = stream_large_responses(app)", "_stream_large = stream_large_responses(Flask(__name__))"),
