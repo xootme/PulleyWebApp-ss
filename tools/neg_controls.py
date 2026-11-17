@@ -287,8 +287,15 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     # measure first ships dark (cct_common 0.62.0): both switches off until the owner turns them on
     "measure: the page carries the tag": ("templates/index.html",
         '  {{ cct_analytics() if cct_analytics is defined else "" }}\n', "\n"),
-    "measure: no tag without accounts": ("templates/index.html",
-        '{{ cct_analytics() if cct_analytics is defined else "" }}', "{{ cct_analytics() }}"),
+    # Since 0.62.5 every Jinja environment has an empty cct_analytics from the import, so the
+    # template's guard breaking into a bare call fails nothing; the default is what keeps a page
+    # without accounts tag-free (the owner, 2026-11-15: "bevel a for all"). Removing the line
+    # would fail nothing here either (the guard stays), so the break makes the default a tag.
+    "measure: no tag without accounts": ("cct_common/__init__.py",
+        '    _JINJA_NAMESPACE.setdefault("cct_analytics", _no_analytics)',
+        '    _JINJA_NAMESPACE.setdefault("cct_analytics", lambda: \'<script async '
+        'src="https://www.googletagmanager.com/gtag/js?id=GT-5DFRBV7T"></script>\')',
+        {"catcher": "tests/test_measure_off.py::test_without_accounts_the_page_renders_with_neither"}),
     "measure: no hard-coded gtag": ("templates/index.html",
         '  {{ cct_analytics() if cct_analytics is defined else "" }}\n',
         '  <script async src="https://www.googletagmanager.com/gtag/js?id=GT-5DFRBV7T"></script>\n'

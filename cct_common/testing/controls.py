@@ -174,14 +174,21 @@ def broken_lines(src: str, offset: int, length: int) -> list:
     return [set(range(best.lineno, best.end_lineno + 1))]
 
 
+# A non-Python file no test names (a harness helper no test names or lists,
+# affected.naming): the whole suites are its scope, and a catch there reads
+# SCOPE (0.62.2).
+NO_SCOPE = "no test names it or lists its folder: the whole suite"
+
+
 def scope(path: str, old: str, index: dict, graph: dict, lines: dict | None = None):
     """(tests, how they were found, the snapshot key of what's broken): node
     ids, or test files when no test is on record as running it. An empty list
     is the whole fast suite. In a big function with a line record, the tests
     that ran the lines the break changes (broken_lines; 0.25.2)."""
     src = (affected.ROOT / path).read_text(encoding="utf-8")
-    if not path.endswith(".py"):
-        return affected.tests_naming([path]), "they name it", path
+    if not path.endswith(".py"):                 # a harness helper too (run_temp.js): those that name or list it
+        named = affected.tests_naming([path])
+        return (named, "they name it", path) if named else ([], NO_SCOPE, path)
     at = src.index(old)
     q = affected.enclosing(path, at)
     key = path + (affected.FN + q if q else affected.TOP)
@@ -259,6 +266,35 @@ def vendored_ran(state: dict) -> dict:
             if fns:
                 out.setdefault(node, set()).update(fns)
     return out
+
+
+# A test that checks a vendored copy's hash (a health test's cct_common_hash,
+# test_vendored_cct_common's released copy) fails on every edit inside the
+# vendored tree, whatever the edit does, so it is never a control's catcher
+# there (Controller's ruling, 2026-11-12; Planetary: 'import: a renamed file
+# read by what's in it' was saved as caught by test_health_names_the_versions,
+# and the import tests that catch it by hand never ran). By the record: the
+# tests that ran a vendored release.py's hash_files (content_hash, describe
+# and health_fields all go through it). 0.62.4.
+HASH_CHECK = ("release.py", "hash_files")
+
+
+def hash_checks(ran: dict) -> set:
+    """The node ids that ran a vendored release.py's hash_files (`ran`: vendored_ran)."""
+    return {node for node, fns in ran.items()
+            if any(p.endswith("/" + HASH_CHECK[0]) and q == HASH_CHECK[1] for p, q in fns)}
+
+
+def left_out(path: str, checks, catcher=None) -> list:
+    """The hash checks a control breaking `path` leaves out of its runs:
+    every one when `path` is inside a vendored tree, none when it is the
+    hash's own module (release.py: what they are there to catch) or outside
+    the vendored trees, and never the control's declared `catcher` (a test
+    file or a node id: `(path, old, new, {"catcher": ...})`, for a control
+    meant to be caught by one; Planetary's 'a copy edited in place')."""
+    if not path.startswith(affected.VENDORED) or path.endswith("/" + HASH_CHECK[0]):
+        return []
+    return sorted(n for n in checks if not (catcher and (n == catcher or n.split("::")[0] == catcher)))
 
 
 class _VendoredHashes:
@@ -397,10 +433,39 @@ def sweep_lanes(now=None):
         shutil.rmtree(folder, ignore_errors=True)
 
 
-def _run(cmd, cwd, env, limit, log=None):
-    """The command's exit code, or None when it ran past `limit` seconds (it,
-    and every process it started, stopped). Its output goes to `log`, a file,
-    when given."""
+STOPPED = "stopped"     # _run's answer for a run stopped at its first failure (0.62.1)
+POLL = 0.5              # s between looks at the catch file
+
+
+def read_caught(path):
+    """The catch file's {"by", "when"}, or None while there is none (whole)."""
+    try:
+        got = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    return got if isinstance(got, dict) and got.get("by") is not None else None
+
+
+def _stop(proc):
+    """The command and every process it started: the whole tree, a server a
+    test started included (taskkill /T; on POSIX its session's group)."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        import signal
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    proc.wait()
+
+
+def _run(cmd, cwd, env, limit, log=None, caught=None):
+    """The command's exit code; None when it ran past `limit` seconds; or,
+    with `caught` (a catch file's path, 0.62.1), STOPPED once that file
+    exists: the first failure is in, so the rest isn't waited for. Stopped
+    or past its time, it goes with every process it started. Its output
+    goes to `log`, a file, when given."""
     kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
     out = open(log, "wb") if log else subprocess.DEVNULL
     try:
@@ -409,16 +474,20 @@ def _run(cmd, cwd, env, limit, log=None):
     finally:
         if log:
             out.close()
-    try:
-        return proc.wait(timeout=limit)
-    except subprocess.TimeoutExpired:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
-        else:
-            import signal
-            os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait()
-        return None
+    end = None if limit is None else time.monotonic() + limit
+    while True:
+        left = None if end is None else max(0.0, end - time.monotonic())
+        step = left if caught is None else (POLL if left is None else min(POLL, left))
+        try:
+            return proc.wait(timeout=step)
+        except subprocess.TimeoutExpired:
+            pass
+        if caught is not None and read_caught(caught):
+            _stop(proc)
+            return STOPPED
+        if end is not None and time.monotonic() >= end:
+            _stop(proc)
+            return None
 
 
 def wide(files) -> bool:
@@ -529,6 +598,10 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
         fd, out = tempfile.mkstemp(prefix="cct-control-", suffix=".txt")
         os.close(fd)
         log = Path(out)
+    # The first failure, from the select plugin (0.62.1): the catcher whatever
+    # the app's -r or addopts, and the run stopped there.
+    caught = Path(tempfile.gettempdir()) / f"cct-caught-{os.getpid()}-{threading.get_ident()}-{time.time_ns()}.json"
+    env["CCT_CONTROL_CAUGHT"] = str(caught)
     if files == SLOW_SUITE:
         args, marker = ["tests"], ["-m", "slow"]
     elif any("::" in t for t in files):                     # these tests, in this order, fast or slow
@@ -540,20 +613,33 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
         code = _run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider",
                      "-p", "cct_common.testing.select", "-n", str(workers if workers > 1 else 0), *marker,
                      *(f"--deselect={s}" if "::" in s else f"--ignore={s}" for s in skip), *args],
-                    root, env, limit, log=log)
-        if log and code not in (None, 0, 5):
-            by = CAUGHT_BY.search(log.read_bytes().decode("utf-8", "replace").replace("\r\n", "\n"))
-            if by:
-                found["by"] = by.group(1)
+                    root, env, limit, log=log, caught=caught)
+        first = read_caught(caught)
+        if code == STOPPED:
+            if found is not None:
+                found.update(by=first["by"], stopped=True)
+        elif found is not None and code not in (None, 0, 5):   # finished on its own: never a killed run's log
+            if first:
+                found["by"] = first["by"]
+            elif log:
+                by = CAUGHT_BY.search(log.read_bytes().decode("utf-8", "replace").replace("\r\n", "\n"))
+                if by:
+                    found["by"] = by.group(1)
     finally:
         f.write_bytes(raw)
         listed.unlink(missing_ok=True)
+        try:
+            caught.unlink(missing_ok=True)
+        except OSError:
+            pass
         if log:
             try:
                 log.unlink(missing_ok=True)
             except OSError:                                 # still held: left in the temp folder
                 pass
     assert f.read_bytes() == raw
+    if code == STOPPED:
+        return True
     return None if code is None else code not in (0, 5)    # 5: no test ran, so none caught it
 
 
@@ -574,7 +660,9 @@ def cli(argv) -> list:
 
 
 def main(breaks: dict, argv, source=None) -> int:
-    """Run the app's controls (name -> (path, old, new)); 0 when every one ran
+    """Run the app's controls (name -> (path, old, new), or (path, old, new,
+    {"catcher": test}) for one meant to be caught by a vendored-hash check,
+    left_out; 0.62.4); 0 when every one ran
     was caught. `source`: the file holding BREAKS (the caller's, unless given),
     whose importers the whole suites leave out. --help: the usage, 0; an
     unknown option: the usage, 2; nothing run either way (cli)."""
@@ -598,9 +686,12 @@ def main(breaks: dict, argv, source=None) -> int:
     state, lock, path_ = _state(), threading.Lock(), state_path()
     ran, hashes = vendored_ran(tstate), _VendoredHashes()
     vend = lambda catcher: vendored_deps(catcher, ran, hashes)      # noqa: E731
+    checks, leave = hash_checks(ran), {}                            # name -> the hash checks it runs without
     todo, stale, meta, synced = [], [], {}, []
     for name, entry in breaks.items():
-        path, old, new = entry
+        path, old, new = entry[:3]                                  # (path, old, new[, {"catcher": test}])
+        declared = (entry[3] if len(entry) > 3 else {}).get("catcher")
+        entry = (path, old, new)
         # Every control's pattern, named or not (0.56.9): a filtered by-day
         # run skipped the others', and Pulley's night was first to see one stale.
         if (affected.ROOT / path).read_text(encoding="utf-8").count(old) != 1:   # the code moved on: refresh it
@@ -610,12 +701,18 @@ def main(breaks: dict, argv, source=None) -> int:
         if only and not any(o in name for o in only):
             continue
         files, how, key = ([], "--whole-suite", path) if whole else scope(path, old, index, graph, lines)
+        out = left_out(path, checks, declared)
+        if out:                                                     # never its catcher (0.62.4)
+            leave[name] = out
+            files = [f for f in files if f not in out]
         files = cheapest_first(files, tstate, {t for t in {f.split("::")[0] for f in files}
                                                if path in graph.get(t, ())})
         ck = control_key(entry, files, key, snap)
         saved = state.get(name)
-        meta[name] = (entry, key, saved.get("catcher") if isinstance(saved, dict) else None)
-        if every or only or whole or not is_current(saved, entry, key, files, snap, graph, vend):
+        prior = saved.get("catcher") if isinstance(saved, dict) else None
+        hash_caught = prior in out                                  # saved before 0.62.4: run it again
+        meta[name] = (entry, key, None if hash_caught else prior)
+        if every or only or whole or hash_caught or not is_current(saved, entry, key, files, snap, graph, vend):
             todo.append((name, entry, files, how, ck))
             changed = sync_changes(saved, vend)
             if changed:
@@ -627,16 +724,21 @@ def main(breaks: dict, argv, source=None) -> int:
               "(a MISSED there can be the sync making the app's own code dead):", flush=True)
         for name, changed in synced:
             print(f"  sync: {name}: {', '.join(changed[:4])}{' ...' if len(changed) > 4 else ''}", flush=True)
+    for name in [c[0] for c in todo if c[0] in leave]:     # a break in a vendored tree (0.62.4)
+        out = leave[name]
+        print(f"  hash: {name}: runs without the {len(out)} test{'s' * (len(out) > 1)} checking the "
+              f"vendored copy's hash ({', '.join(out[:2])}{' ...' if len(out) > 2 else ''})", flush=True)
     t0 = time.time()
     scope_missed, missed = [], []
 
-    def done(name, ck, ok, how, files, secs, by=None):
+    def done(name, ck, ok, how, files, secs, by=None, stopped=False):
         with lock:
             if ok:                                         # its catcher's key; none seen, the old rule's
                 entry, key, _ = meta[name]
                 v = vend(by) if by else None
                 state[name] = ({"key": catcher_key(entry, key, by, snap, graph, v), "catcher": by,
-                                "vendored": [list(x) for x in v]} if by else ck)
+                                "vendored": [list(x) for x in v], **({"stopped": True} if stopped else {})}
+                               if by else ck)
             else:
                 missed.append(name)
                 state.pop(name, None)
@@ -644,7 +746,8 @@ def main(breaks: dict, argv, source=None) -> int:
             path_.write_text(json.dumps(state, indent=0, sort_keys=True), encoding="utf-8")
         unit = "test" if any("::" in t for t in files) else "file"
         what = "the whole suite" if not files else f"{len(files)} {unit}{'s' * (len(files) > 1)}"
-        say(f"{'caught ' if ok else 'MISSED '} {name}  ({what}, {how}, {secs:.0f} s)")
+        stop = ", stopped at its first failure" if ok and stopped else ""
+        say(f"{'caught ' if ok else 'MISSED '} {name}  ({what}, {how}{stop}, {secs:.0f} s)")
 
     small = [c for c in todo if c[2] and not wide(c[2])]            # one lane's process each
     broad = [c for c in todo if c[2] and wide(c[2])]                # the turn's workers each, one at a time
@@ -663,7 +766,7 @@ def main(breaks: dict, argv, source=None) -> int:
         if files and prior.split("::")[0] not in {t.split("::")[0] for t in files}:
             with lock:
                 scope_missed.append(f"{name} ({how}: its last catcher, {prior}, is outside it)")
-        return found.get("by") or prior, f"its last catcher; {how}"
+        return found.get("by") or prior, f"its last catcher; {how}", found.get("stopped", False)
     # The lanes' folder goes after the result is printed, and its failing to
     # go is a warning (_remove), never the run's exit code. One left keeps
     # its mark for a later run's sweep (0.61.7).
@@ -700,12 +803,13 @@ def main(breaks: dict, argv, source=None) -> int:
                 t = time.time()
                 first = by_catcher(roots[i], name, path, old, new, files, how)
                 if first:
-                    done(name, ck, True, first[1], files, time.time() - t, first[0])
+                    done(name, ck, True, first[1], files, time.time() - t, first[0], first[2])
                     continue
                 found = {}
-                caught = run_control(roots[i], path, old, new, files, 1, limit, name=name, found=found)
+                caught = run_control(roots[i], path, old, new, files, 1, limit, name=name,
+                                     skip=leave.get(name, ()), found=found)
                 if caught:
-                    done(name, ck, True, how, files, time.time() - t, found.get("by"))
+                    done(name, ck, True, how, files, time.time() - t, found.get("by"), found.get("stopped", False))
                 else:
                     with lock:
                         later.append(c if caught is not None else (*c[:3], f"{how}; past its {limit:.0f} s", ck))
@@ -716,42 +820,48 @@ def main(breaks: dict, argv, source=None) -> int:
             th.join()
         def whole_suites(name, path, old, new):
             """The whole fast suite, then the whole slow suite, without the
-            controls' own check: the one that caught it, or None; and the test that did."""
+            controls' own check: the one that caught it, or None; the test that did; and
+            whether the run stopped at that first failure."""
             for suite, files in (("fast", []), ("slow", SLOW_SUITE)):
                 found = {}
-                if run_control(roots[0], path, old, new, files, workers, name=name, skip=users, found=found):
-                    return suite, found.get("by")
-            return None, None
+                if run_control(roots[0], path, old, new, files, workers, name=name,
+                               skip=[*users, *leave.get(name, ())], found=found):
+                    return suite, found.get("by"), found.get("stopped", False)
+            return None, None, False
 
         for c in broad:                                               # a wide scope: on the turn's workers
             name, (path, old, new), files, how, ck = c
             t = time.time()
             first = by_catcher(roots[0], name, path, old, new, files, how)
             if first:
-                done(name, ck, True, first[1], files, time.time() - t, first[0])
+                done(name, ck, True, first[1], files, time.time() - t, first[0], first[2])
                 continue
             found = {}
-            caught = run_control(roots[0], path, old, new, files, workers, limit, name=name, found=found)
+            caught = run_control(roots[0], path, old, new, files, workers, limit, name=name,
+                                 skip=leave.get(name, ()), found=found)
             if caught:
-                done(name, ck, True, how + f", on {workers} workers", files, time.time() - t, found.get("by"))
+                done(name, ck, True, how + f", on {workers} workers", files, time.time() - t, found.get("by"),
+                     found.get("stopped", False))
             else:
                 later.append(c if caught is not None else (*c[:3], f"{how}; past its {limit:.0f} s", ck))
         for name, (path, old, new), files, how, ck in big:            # the whole suites are its scope
             t = time.time()
             first = by_catcher(roots[0], name, path, old, new, files, how)
             if first:
-                done(name, ck, True, first[1], files, time.time() - t, first[0])
+                done(name, ck, True, first[1], files, time.time() - t, first[0], first[2])
                 continue
-            suite, by = whole_suites(name, path, old, new)
+            suite, by, stopped = whole_suites(name, path, old, new)
+            if suite and how == NO_SCOPE:                             # stated: no test of its own caught it
+                scope_missed.append(f"{name} ({how}: {path}; the whole {suite} suite caught it)")
             done(name, ck, suite is not None, how + (", its slow suite" if suite == "slow" else ""), files,
-                 time.time() - t, by)
+                 time.time() - t, by, stopped)
         for name, (path, old, new), files, how, ck in later:         # the whole suites, to tell a scope's gap
             t = time.time()
-            suite, by = whole_suites(name, path, old, new)
+            suite, by, stopped = whole_suites(name, path, old, new)
             if suite:
                 shown = ", ".join(files[:3]) + (f" and {len(files) - 3} more" if len(files) > 3 else "")
                 scope_missed.append(f"{name} ({how}: {shown}; the whole {suite} suite caught it)")
-            done(name, ck, suite is not None, f"its scope didn't catch it ({how})", [], time.time() - t, by)
+            done(name, ck, suite is not None, f"its scope didn't catch it ({how})", [], time.time() - t, by, stopped)
     except BaseException:
         cleanup()
         raise

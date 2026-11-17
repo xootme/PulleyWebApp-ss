@@ -69,6 +69,34 @@ NOTICES = {
             "CheapCADTools (Myerchin Enterprises Inc.), 12311 SE 23rd St., Bellevue, WA 98005, United States\n"
             "You're getting this because you have a CheapCADTools account. It's an account notice, not marketing."),
     },
+    # CCT_WebSite's privacy notice (measure-first-privacy-draft.md, "Notice email"), approved by the
+    # owner 2026-11-15 ("upload, email approved"), word for word; 0.62.8.
+    "privacy-2026-11": {
+        "title": "Privacy policy change",
+        "subject": "Changes to our privacy policy on [DATE]",
+        "body": (
+            "Hello,\n\n"
+            "On [DATE] we're updating the CheapCADTools Privacy Policy. What changes for you:\n\n"
+            "• Visitor statistics in our web tools. Our web tools will use Google Analytics, as our website "
+            "already does: which pages are visited, the type of device and browser, approximate location, and"
+            " when someone signs up, signs in, buys tokens or downloads a file. We never send Google your "
+            "email address, your name or your design's settings, and page addresses go without the settings "
+            "they carry. Our add-ins, and AI agents using our tools, send nothing to Google Analytics.\n"
+            "• Where new accounts come from. When you create an account we note the link or site that brought"
+            " you (kept in a cookie for 30 days) and where you signed up: on a web page, in an add-in, "
+            "through an AI agent or on another device, and which one. For each download and purchase we note "
+            "the same kind of thing. We use it only to count which pages, sites and partners bring new users.\n"
+            "• Backups. Our database provider keeps 7 days of backups, and we keep an encrypted daily copy "
+            "for 90 days, which can be restored for up to 90 days more after it is deleted. Data you delete "
+            "leaves the backups as they age out, within about 180 days.\n\n"
+            "You don't need to do anything. You can block or delete cookies in your browser; our web tools "
+            "need only the sign-in cookie to let you download. To see, download or delete what your account "
+            "holds, use your account page or write to support@cheapcadtools.com.\n\n"
+            "Privacy policy: https://cheapcadtools.com/privacy-policy/\n\n"
+            "CheapCADTools (Myerchin Enterprises Inc.), 12311 SE 23rd St., Bellevue, WA 98005, United States\n"
+            "You're getting this because you have a CheapCADTools account. It's an account notice, not "
+            "marketing."),
+    },
 }
 
 SCHEMA = """

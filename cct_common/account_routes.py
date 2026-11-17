@@ -681,6 +681,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
         request.environ[_SESSION_KEY] = None
         r = jsonify({"ok": True})
         r.delete_cookie(COOKIE_NAME, path="/")
+        # 0.62.6 (the owner, 2026-11-14): the first link that brought them
+        # (cct_common.measure's cct_src) goes with the account too
+        r.delete_cookie(measure.COOKIE, path="/")
         return r
 
     # ── CAD add-in sign-in (device code) ──────────────────────────────────

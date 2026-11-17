@@ -134,4 +134,25 @@ __all__ = [
     "embed_svg", "extract_svg",
 ]
 
-__version__ = "0.62.0"
+
+# {{ cct_analytics() }} in every Jinja environment made after cct_common is
+# imported, rendering nothing (0.62.5; the owner's pick A, 2026-11-14): an
+# app whose suite or dev run has TOKENS_ENABLED off never calls
+# register_account_routes, which puts the real tag there (measure.register),
+# and every page raised UndefinedError (Planetary, 2026-11-11). jinja2 copies
+# DEFAULT_NAMESPACE into each new Environment's globals, so an app's
+# jinja_env, made on first use, has it. An app's own
+# jinja_env.globals.setdefault("cct_analytics", ...) changes nothing either
+# way. Without jinja2 (the metadata API alone) there is nothing to define.
+def _no_analytics() -> str:
+    return ""
+
+
+try:
+    from jinja2.defaults import DEFAULT_NAMESPACE as _JINJA_NAMESPACE
+except ImportError:
+    pass
+else:
+    _JINJA_NAMESPACE.setdefault("cct_analytics", _no_analytics)
+
+__version__ = "0.62.8"

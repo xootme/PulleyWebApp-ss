@@ -24,7 +24,9 @@ the current files doesn't run again. A test file runs again when, since:
   test, so the record can't see it;
 - **a non-Python file it names changed** (help pages, pictures, JS, CSS,
   templates, …), or quotes the file's folders and a glob that matches it, or
-  that the app's test_rules give it; Markdown is left out;
+  that the app's test_rules give it; Markdown is left out. A file of the
+  harness folder (tests/browser/), changed, added, removed or renamed: the
+  tests that name it or list that folder, else every test (0.62.2);
 - **one of `everything` changed** (pytest.ini, the requirements: everything),
   or a file in a `fold` glob (a vendored tree, hashed as one key; 0.25.1).
 
@@ -479,24 +481,59 @@ def harnesses_for(files) -> list:
     return sorted(out)
 
 
-def tests_naming(files) -> list:
-    """The test files a non-Python change reaches: those that name the file;
-    or quote every folder it sits in and either a glob that matches it
-    ("*.html") or a second folder (static/help/…)."""
+def _names_harness_file(p: Path, src: str) -> bool:
+    """A test's source pins or lists a file of the harness folder: it names
+    the file ("run_temp.js", or its stem quoted: "tokens_ui"), or it lists
+    the folder (its last part quoted, as `ROOT / "tests" / "browser"` and
+    `Path(__file__).parent / "browser"`, or the folder's path opening a
+    string: "tests/browser/*.js", f"tests/browser/{h}.js")."""
+    folder = HARNESS_DIR.rstrip("/")
+    last = folder.rpartition("/")[2]
+    return (p.name in src or re.search(rf"""["']{re.escape(p.stem)}["']""", src) is not None
+            or re.search(rf"""["']{re.escape(last)}["']""", src) is not None
+            or re.search(rf"""["']{re.escape(folder)}/""", src) is not None)
+
+
+def naming(files) -> tuple:
+    """(the test files a non-Python change reaches, the files of the harness
+    folder no test names or lists). A file outside the harness folder: the
+    tests that name it, or quote every folder it sits in and either a glob
+    that matches it ("*.html") or a second folder (static/help/…). A file in
+    the harness folder (tests/browser/: run_temp.js, cdp.js, a *_ui.js), changed,
+    added, removed or renamed: the tests that name it or list the folder
+    (_names_harness_file; 0.62.2: Sprocket's 72b62a5 added run_temp.js and its
+    folder-listing test wasn't run); one no test names or lists reaches every
+    test (the caller's whole suite). The app's test_rules apply to both."""
     tests = [t for t in sorted((ROOT / "tests").glob("test_*.py")) if t.name not in NAMING_SKIP]
     text = {t: t.read_text(encoding="utf-8") for t in tests}
     globs = {t: re.findall(r"""["']([^"'\s]*\*[^"'\s]*)["']""", src) for t, src in text.items()}
-    out = set()
+    out, unnamed = set(), []
     for f in files:
         p = Path(f)
-        if p.suffix in (".py", ".md") or TOP in f or FN in f or f.startswith((HARNESS_DIR, FOLDED)):
+        if p.suffix in (".py", ".md") or TOP in f or FN in f or f.startswith(FOLDED):
             continue
+        harness = f.startswith(HARNESS_DIR)
         folders = [part for part in p.parent.parts if part not in (".", "")]
+        hit = set()
         for t, src in text.items():
-            inside = folders and all(f'"{d}"' in src for d in folders)
-            if p.name in src or inside and (len(folders) > 1 or any(fnmatch.fnmatch(p.name, g) for g in globs[t]))                     or any(fnmatch.fnmatchcase(f, pat) and re.search(rx, src) for pat, rx in TEST_RULES):
-                out.add(t.relative_to(ROOT).as_posix())
-    return sorted(out)
+            if harness:
+                names = _names_harness_file(p, src)
+            else:
+                inside = folders and all(f'"{d}"' in src for d in folders)
+                names = p.name in src or inside and (len(folders) > 1
+                                                     or any(fnmatch.fnmatch(p.name, g) for g in globs[t]))
+            if names or any(fnmatch.fnmatchcase(f, pat) and re.search(rx, src) for pat, rx in TEST_RULES):
+                hit.add(t.relative_to(ROOT).as_posix())
+        out |= hit
+        if harness and not hit:
+            unnamed.append(f)
+    return sorted(out), unnamed
+
+
+def tests_naming(files) -> list:
+    """The test files a non-Python change reaches (naming: those that name
+    it, or list its folder when it's in the harness folder)."""
+    return naming(files)[0]
 
 
 def all_harnesses() -> list:
@@ -530,9 +567,12 @@ def why_run(key: str, test: str, snap: dict, state: dict, graph: dict, named: di
         return f"it imports {sorted(tops)[0]}, whose module level changed"
     key_files = tuple(changed)
     if key_files not in named:
-        named[key_files] = tests_naming(changed)
-    if test in named[key_files]:
+        named[key_files] = naming(changed)
+    hits, unnamed = named[key_files]
+    if test in hits:
         return "it names a file that changed"
+    if unnamed:
+        return f"{unnamed[0]} changed and no test names it or lists its folder: the whole suite"
     return None
 
 

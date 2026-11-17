@@ -771,9 +771,11 @@ class AccountStore(SqliteDB):
     def delete_account(self, account_id: str) -> None:
         """Remove the personal data: email, identities, sessions, pending
         sign-in links, saved designs (0.34.0), newsletter choices (0.36.0) and
-        printer settings (0.41.0), referral records (0.49.1).
+        printer settings (0.41.0), referral records (0.49.1), where the
+        account came from (signup_ref, signup_surface, signup_client; 0.62.3).
         Ledger rows and receipts (0.40.0) stay (financial records) but point
-        at an account with no email left on it."""
+        at an account with no email left on it; orders keep where the
+        purchase started (the privacy policy's purchase records)."""
         now = self._clock()
         with self._write() as db:
             row = db.execute("SELECT email FROM accounts WHERE id = ?", (account_id,)).fetchone()
@@ -799,17 +801,24 @@ class AccountStore(SqliteDB):
             _referrals_forget(db, account_id)   # 0.49.1: kept only while both accounts are open
             db.execute("UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL",
                        (now, account_id))
-            db.execute("UPDATE accounts SET email = ? WHERE id = ?",
-                       (f"deleted:{account_id}", account_id))
+            # Where the account came from goes with the email (0.62.3; privacy
+            # policy section 8: removed within 30 days of a deletion).
+            db.execute("UPDATE accounts SET email = ?, signup_ref = NULL, signup_surface = NULL, "
+                       "signup_client = NULL WHERE id = ?", (f"deleted:{account_id}", account_id))
             db.execute("INSERT OR IGNORE INTO closed_emails (email_hash, closed_at) VALUES (?, ?)",
                        (_hash(row["email"]), now))
         from .newsletter_sync import kick
         kick(self.tokens.path, clock=self._clock)
 
     def purge_expired(self) -> None:
-        """Drop sign-in links older than a day and sessions dead for 30 days."""
+        """Drop sign-in links older than a day and sessions dead for 30 days;
+        clear where a deleted account came from (0.62.3: one deleted before
+        delete_account cleared it, or a row restored from a backup)."""
         now = self._clock()
         with self._write() as db:
+            db.execute("UPDATE accounts SET signup_ref = NULL, signup_surface = NULL, signup_client = NULL "
+                       "WHERE email LIKE 'deleted:%' AND (signup_ref IS NOT NULL OR signup_surface IS NOT NULL "
+                       "OR signup_client IS NOT NULL)")
             db.execute("DELETE FROM login_links WHERE created_at < ?", (now - 24 * 3600,))
             db.execute("DELETE FROM device_codes WHERE created_at < ?", (now - 24 * 3600,))
             db.execute("DELETE FROM signups WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))
