@@ -99,3 +99,24 @@ def test_the_help_says_so():
             'half its width, so it is at most 0.18 mm for a 10-tooth GT2 pulley and 0.40 mm for a 12-tooth '
             'HTD 5M.') in text
     assert print_comp.cap('GT', '2M', 10) == 0.18 and print_comp.cap('HTD', '5M', 12) == 0.40
+
+
+def test_the_help_and_the_agents_call_it_horizontal_expansion_too():
+    """The owner, 2026-11-16 (campaign 2026-11-16-horizontal-expansion-help): every help text that
+    describes 3D print compensation gives its other name, set in most slicers."""
+    import agent
+    text = re.sub(r'\s+', ' ', (ROOT / 'static' / '2d_advanced_help.html').read_text(encoding='utf-8'))
+    assert 'also called <em>horizontal expansion</em>, which most 3D printer slicers can set' in text
+    p = {q.name: q for q in agent._params({'GT': ['2M']}, ['M3'])}['print_extra']
+    assert 'also called horizontal expansion, which most 3D printer slicers can set' in p.help
+
+
+def test_the_hover_picture_says_to_set_it_in_one_place():
+    """The owner's caveat A, verbatim (2026-11-16, "2 A"), in the print_comp.svg hover picture only:
+    Pulley's positive value is a negative horizontal expansion in most slicers."""
+    svg = (ROOT / 'static' / 'help' / 'print_comp.svg').read_text(encoding='utf-8')
+    lines = re.findall(r'<text [^>]*>([^<]*)</text>', svg)
+    assert ('Set it in one place, not both: a positive value here makes holes larger, which is a negative '
+            'horizontal expansion in most slicers.') in ' '.join(lines)
+    help_text = (ROOT / 'static' / '2d_advanced_help.html').read_text(encoding='utf-8')
+    assert 'not both' not in help_text, 'the caveat is the picture\'s only'

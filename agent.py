@@ -34,7 +34,8 @@ def _params(families: dict, screw_sizes: list) -> list:
         P("teeth", "integer", "Number of teeth", min=8, max=500, default=20, group=size, per_part=True),
         P("bore", "number", "Round bore diameter (0: none; a spline or hex bar sets the bore itself)", unit="mm",
           min=0, max=300, default=8, group=size, per_part=True),
-        P("print_extra", "number", "3D-print compensation: tooth profile offset; for a splined or hex "
+        P("print_extra", "number", "3D-print compensation (also called horizontal expansion, which most "
+          "3D printer slicers can set): tooth profile offset; for a splined or hex "
           "bore the STL's bore grows by it (STEP, SVG, DXF stay nominal). 0 to 1.00 mm in every tool, "
           "and less for small teeth: each tooth keeps at least half its width", unit="mm",
           min=COMPENSATION_MIN_MM, max=COMPENSATION_MAX_MM, default=0, group=size, per_part=True),
@@ -229,7 +230,7 @@ def _fix_params(fix_set: dict) -> dict:
     import re
     out = {}
     for key, value in fix_set.items():
-        m = re.match(r"^(hub|spline|flange|spokes)([12])_(.+)$", key)
+        m = re.match(r"^(hub|spline|flange|spokes|bore)([12])_(.+)$", key)
         if not m:
             out[key] = value                                     # clearance_height, …
             continue
@@ -243,6 +244,8 @@ def _fix_params(fix_set: dict) -> dict:
             series, af = str(value).split(":")[:2]
             out.update({f"{pfx}spline_series": series, f"{pfx}spline_af": float(af),
                         f"{pfx}spline_rounded": False})
+        elif kind == "bore" and rest == "shape":               # the D-flat Auto-fix's round bore
+            out[f"{pfx}hub_flat_depth"] = 0.0
         elif kind == "hub" and rest == "retention":            # the page's menu is hub_screw_hold's
             out[f"{pfx}hub_screw_hold"] = HOLD_OF_RETENTION[value]
         else:

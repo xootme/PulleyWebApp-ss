@@ -122,7 +122,9 @@ def wall_point(d, at_r):
 
 def figure(title, variants, key_lines, note, out_name, inset=None):
     """variants: [(outline d, colour, dashed)], Standard first.
+    note: the line under the key, or a list of lines.
     inset: (cx, cy, half) in groove-up mm — a closer zoom shown under the main one."""
+    notes = [note] if isinstance(note, str) else list(note)
     zw, zh = ZW * ZS, ZH * ZS
     x0 = GAP + LOC + GAP
     s = LOC / (2 * R_CROP)
@@ -169,9 +171,10 @@ def figure(title, variants, key_lines, note, out_name, inset=None):
                      f'stroke="{colour}" stroke-width="2.5"{dash}/>'
                      f'<text x="{x0 + 34}" y="{y}" font-size="13" fill="#1e293b" {FONT}>{text}</text>')
     width = x0 + zw + GAP
-    height = max(ky + len(key_lines) * 21, loc_y + LOC + 24, bottom + 10) + 30
-    parts.append(f'<text x="{x0}" y="{height - 14:.0f}" font-size="12.5" fill="#475569" '
-                 f'{FONT}>{note}</text>')
+    height = max(ky + len(key_lines) * 21, loc_y + LOC + 24, bottom + 10) + 30 + 18 * (len(notes) - 1)
+    for i, line in enumerate(notes):
+        parts.append(f'<text x="{x0}" y="{height - 14 - 18 * (len(notes) - 1 - i):.0f}" font-size="12.5" '
+                     f'fill="#475569" {FONT}>{line}</text>')
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}"
      viewBox="0 0 {width:.0f} {height:.0f}" {FONT}>
 <rect width="{width:.0f}" height="{height:.0f}" fill="#fff"/>
@@ -219,7 +222,10 @@ def main():
            [(INK, True, "0 mm: the part as designed"),
             (CALLOUT, False, f"0.2 mm: every surface moves {t_std - t_pe:.2f} mm into the material "
                              f"(tips {t_std - t_pe:.2f}, groove bottom {b_std - b_pe:.2f})")],
-           f"Printed plastic bulges outward, so the outline is drawn smaller to print at size. {zoom}.",
+           [f"Printed plastic bulges outward, so the outline is drawn smaller to print at size. {zoom}.",
+            # the owner's caveat A, verbatim (2026-11-16, "2 A"), wrapped to the picture's width
+            "Set it in one place, not both: a positive value here makes holes larger,",
+            "which is a negative horizontal expansion in most slicers."],
            "print_comp.svg")
 
 

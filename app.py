@@ -1525,6 +1525,63 @@ def _screw_wider_than_key_slot(args, pfx, n, who):
             [f'{who}set screw {screw.size}: captured nut → threaded hole'])
 
 
+def _screw_wider_than_flat(args, pfx, n, who):
+    """A hub's first screw (it sits on the D-flat, at 0°) whose hole is wider than the flat's
+    chord: its rim would straddle the flat and the bore, and STEP refuses it (small_step's
+    screw_wider_than_flat and captured_screw_wider_than_flat, gap 57; a live download refused
+    four times on 2026-11-16, an M4 threaded hole on a 3 mm-wide flat). As the key slot's,
+    for every hold: the hole is the one the screw is drilled with (a hex by its corners).
+    Up to three ways out (the owner, 2026-11-05): (a) the largest smaller screw, same hold,
+    whose hole fits; (b) the shallowest flat wide enough for this hole (only if the shaft's own
+    flat is that deep: the page says to measure it); (c) a round bore, when this hole fits a
+    round bore. Returns ([warning], [({element id: value}, [change text]), ...]) in that order."""
+    import math
+    from cct_common import screws
+    from geometry import set_screw as _ss
+    _hub_od, hub_h, _sd, sc, _cn, fd, _kw_w, _kw_h = _parse_hub_params(args, pfx)
+    bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
+    bore_r = bore_mm / 2
+    if hub_h <= 0 or sc <= 0 or fd <= 0 or bore_r <= fd:
+        return [], []
+    try:
+        screw = _set_screw(args, pfx)
+    except ValueError:
+        return [], []
+    if screw is None:
+        return [], []
+    half_w = math.sqrt(max(0.0, bore_r ** 2 - (bore_r - fd) ** 2))
+    reach = screws.hole_reach(screw.hole)
+    if reach < half_w - screws.WELD_TOL:
+        return [], []
+    hold = {'thread': 'threaded', 'nut': 'captured-nut', 'insert': 'heat-set insert'}.get(screw.hold, '')
+    name = f'{hold} screw' if screw.size == 'Custom' else f'{screw.size} {hold} screw'
+    warn = [f"{who}The {name}'s hole (Ø{2 * reach:.2f} mm) is wider than the {2 * half_w:.2f} mm "
+            f"D-flat it goes through: its edge would sit half on the flat and half on the bore. "
+            f"Use a smaller screw, a deeper flat or a round bore."]
+    fixes = []
+    family = _ss.METRIC if screw.size in _ss.METRIC else _ss.INCH if screw.size in _ss.INCH else ()
+    for smaller in reversed(family[:family.index(screw.size)] if family else ()):   # next size down first
+        alt = _ss.parse(dict(args.items(), **{f'{pfx}hub_screw_size': smaller}), pfx)
+        if alt and screws.hole_reach(alt.hole) < half_w - screws.WELD_TOL:
+            fixes.append(({f'hub{n}_screw_size': smaller},
+                          [f'{who}set screw {screw.size} → {smaller} (its hole fits the D-flat)']))
+            break
+    need = reach + 0.05                                  # a 0.1 mm chord to spare
+    if need < bore_r:
+        deeper = math.ceil((bore_r - math.sqrt(bore_r ** 2 - need ** 2)) * 20 - 1e-9) / 20   # the field's 0.05 step
+        if fd < deeper < bore_r:
+            fixes.append(({f'hub{n}_flat_depth': deeper},
+                          [f'{who}flat depth {fd:g} → {deeper:g} mm (wide enough for the screw; '
+                           f'only if your shaft\'s flat is that deep)']))
+    round_ok = screws.hub_hole_too_big(
+        part='', size=screw.size, hold=screw.hold, bore_mm=bore_mm, hub_od_mm=_hub_od, round_bore=True,
+        hole_mm=_safe_float(args.get(f'{pfx}hub_screw_hole_dia'), 0.0), sizes=_ss.METRIC + _ss.INCH,
+        **{k: v for k, v in _ss.thread_settings(args).items()
+           if k in ('shape', 'engagement_percent', 'hex_flat_percent')}) is None
+    if round_ok:
+        fixes.append(({f'bore{n}_shape': 'round'}, [f'{who}bore D-flat → round']))
+    return warn, fixes[:3]
+
 def _nut_lobe_past_flange(args, pfx, n, who, r_od, fp):
     """A captured nut too big for a thin hub's wall grows the hub a lobe (or grows it round) to
     bore_r + 3·t_nut (geometry/captured_nut_hub.py); under a top flange printed with the pulley,
@@ -1894,6 +1951,20 @@ def _dimensions(args):
             elif slot_b:                     # no smaller screw fits: the threaded hole is the one fix
                 fix_set.update(slot_b)
                 changes += slot_b_changes
+            flat_warn, flat_fixes = _screw_wider_than_flat(args, pfx, n, who)
+            warnings += flat_warn
+            if flat_fixes:                   # (a) here, the others in alts (b, c)
+                first, first_changes = flat_fixes[0]
+                if size_key in first and size_key in fix_set:
+                    from cct_common import screws as _screws
+                    if _screws.get(fix_set[size_key]).major_diameter <= _screws.get(first[size_key]).major_diameter:
+                        first, first_changes = {}, []            # a smaller screw is already asked for
+                    else:
+                        changes = [c for c in changes if not c.startswith(f'{who}set screw ')]
+                fix_set.update(first)
+                changes += first_changes
+                for slot, (alt, alt_changes) in zip('bc', flat_fixes[1:]):
+                    offer(slot, first, first_changes, alt, alt_changes)
             short_warn, short_fix, short_changes, short_b, short_b_changes = _hub_too_short(
                 args, pfx, n, who, fix_set.get(f'hub{n}_screw_size'))
             warnings += short_warn
@@ -5363,6 +5434,27 @@ try:
 except Exception:
     app.logger.exception('download failures will not be kept: the store would not open')
 register_download_failure_log(app, _failure_store, app_name='pulleys', app_version=APP_VERSION)
+
+
+def _close_db_pools():
+    """This process's database pools, closed at exit, before Python's finalization. A pool still
+    open then is closed by its __del__, which joins its worker threads, and Python 3.14 refuses a
+    join at interpreter shutdown: a PythonFinalizationError traceback at every instance stop, which
+    failed 2.0.38's release smoke test on pulley-test (2026-11-17). atexit runs first, in the
+    gunicorn master and in each worker (they exit by sys.exit). A pool another process opened (the
+    preloaded master's, which a worker inherits) is left alone: its sockets are the master's."""
+    from cct_common import sqlite_db
+    with sqlite_db._POOLS_LOCK:
+        mine = [url for (pid, url) in sqlite_db._POOLS if pid == os.getpid()]
+    for url in mine:
+        try:
+            sqlite_db.close_pool(url)
+        except Exception:
+            pass                 # exiting anyway; the log may be gone already
+
+
+import atexit as _atexit
+_atexit.register(_close_db_pools)
 
 @app.route('/api/health')
 def api_health():

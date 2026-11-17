@@ -255,7 +255,22 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    return urlunsplit(parts._replace(netloc=f\"{userinfo.split(':', 1)[0]}@{hostport}\"))",
         "    return url"),
     "tests: a pool left on a test schema fails": ("tests/conftest.py", "    if left:\n", "    if False:\n"),
+    # its other name (the owner, 2026-11-16: horizontal expansion, set in most slicers)
+    "help: compensation is also horizontal expansion": ("static/2d_advanced_help.html",
+        "It is also called\n<em>horizontal expansion</em>, which most 3D printer slicers can set.", ""),
+    "agent: compensation is also horizontal expansion": ("agent.py",
+        '(also called horizontal expansion, which most "\n          "3D printer slicers can set)', ""),
+    "help: the picture says to set it in one place": ("static/help/print_comp.svg",
+        ">which is a negative horizontal expansion in most slicers.</text>", "></text>"),
     "release: +0.0.1": ("tools/release.py", "    return f'{a}.{b}.{c + 1}'", "    return f'{a}.{b + 1}.{c}'"),
+    # a set screw wider than its D-flat is warned of before STEP refuses it (gap 57; the owner's "5, I approve", 2026-11-16)
+    "dims: a screw wider than the D-flat warns": ("app.py",
+        "    if reach < half_w - screws.WELD_TOL:\n        return [], []\n",
+        "    if True:\n        return [], []\n"),
+    # the pools closed at exit, not by their __del__ at 3.14's finalization (2.0.38's night, 2026-11-17)
+    "app: database pools closed at exit": ("app.py",
+        "_atexit.register(_close_db_pools)\n", "pass\n",
+        {"catcher": "tests/test_db_pools_at_exit.py::test_the_close_runs_when_the_process_exits"}),
     # the deploy's own revision gets the traffic (GearBeltChain's two releases, 2026-11-09; Gear's 3c27daf)
     "release: the deploy follows the newest created revision": ("tools/release.py",
         "        rev = s.get('latestCreatedRevisionName')", "        rev = s.get('latestReadyRevisionName')"),
