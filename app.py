@@ -1530,7 +1530,10 @@ def _screw_wider_than_flat(args, pfx, n, who):
     chord: its rim would straddle the flat and the bore, and STEP refuses it (small_step's
     screw_wider_than_flat and captured_screw_wider_than_flat, gap 57; a live download refused
     four times on 2026-11-16, an M4 threaded hole on a 3 mm-wide flat). As the key slot's,
-    for every hold: the hole is the one the screw is drilled with (a hex by its corners).
+    the hole is the one the screw is drilled with (a hex by its corners). Not for a captured
+    nut that STEP builds across the flat (small_step's BoreStraddle: a plain D bore with no
+    key slot, the hole clear of the bore's far side): two published samples, an M4 and an M3
+    captured nut on 3 mm flats, warned in the 2026-11-17 release's smoke test.
     Up to three ways out (the owner, 2026-11-05): (a) the largest smaller screw, same hold,
     whose hole fits; (b) the shallowest flat wide enough for this hole (only if the shaft's own
     flat is that deep: the page says to measure it); (c) a round bore, when this hole fits a
@@ -1538,7 +1541,7 @@ def _screw_wider_than_flat(args, pfx, n, who):
     import math
     from cct_common import screws
     from geometry import set_screw as _ss
-    _hub_od, hub_h, _sd, sc, _cn, fd, _kw_w, _kw_h = _parse_hub_params(args, pfx)
+    _hub_od, hub_h, _sd, sc, _cn, fd, kw_w, _kw_h = _parse_hub_params(args, pfx)
     bore_mm = _parse_stl_params(args, '2' if pfx else '1')[3]
     bore_r = bore_mm / 2
     if hub_h <= 0 or sc <= 0 or fd <= 0 or bore_r <= fd:
@@ -1553,6 +1556,8 @@ def _screw_wider_than_flat(args, pfx, n, who):
     reach = screws.hole_reach(screw.hole)
     if reach < half_w - screws.WELD_TOL:
         return [], []
+    if screw.hold == 'nut' and kw_w <= 0 and reach < bore_r - 0.05:
+        return [], []                    # STEP builds the nut's stub across the flat
     hold = {'thread': 'threaded', 'nut': 'captured-nut', 'insert': 'heat-set insert'}.get(screw.hold, '')
     name = f'{hold} screw' if screw.size == 'Custom' else f'{screw.size} {hold} screw'
     warn = [f"{who}The {name}'s hole (Ø{2 * reach:.2f} mm) is wider than the {2 * half_w:.2f} mm "
