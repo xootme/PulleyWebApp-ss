@@ -119,6 +119,7 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
     "vendored: a copy edited in place fails": ("cct_common/forksafe.py", '    if hasattr(os, "register_at_fork"):',
                                                '    if hasattr(os, "register_at_fork") and True:',
                                                {"catcher": "tests/test_vendored.py::test_vendored_cct_common_is_released"}),
+    "lanes: no venv folder is copied": (".gitignore", ".venv*/\n", ".venv/\n"),
     "backup: its run is counted": ("db_offsite_backup.py",
                                    '        with job_use(_env("DATABASE_URL"), "cct-db-backup", "backup"):',
                                    '        with __import__("contextlib").nullcontext():'),

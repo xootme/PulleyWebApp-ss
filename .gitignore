@@ -1,6 +1,7 @@
 # ── Virtual Environment ──────────────────────────────────────────────────────
 venv/
-.venv/
+# every .venv* (.venv312, .venv314, ...): Python 3.12's -m venv writes no .gitignore of its own
+.venv*/
 env/
 
 # ── Third-party tool binaries (download separately, see tools/sfa/README.md) ─

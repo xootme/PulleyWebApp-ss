@@ -1,5 +1,17 @@
 # Architectural Decision Records
 
+## ADR-025 — The repo's .gitignore covers every venv
+**Date:** 2026-11-18 · **Status:** Active
+
+**Context:** A test lane is a copy of the tree: every file `git ls-files -co --exclude-standard`
+lists. Python 3.12's `-m venv` writes no `.gitignore` of its own, and the repo ignored only
+`venv/` and `.venv/`. On msi the 2026-11-17 gate's lanes got 15,663 of `.venv312`'s files without
+their `*.pyd` ones, the cadquery worker ran that broken python, numpy's import failed and STEP
+answered 400. On this PC the venvs carried their own `*` ignore, so lanes had none.
+
+**Decision:** `.gitignore` ignores `.venv*/`, so no venv reaches a lane whatever made it.
+`tests/test_venv_never_copied.py`; control "lanes: no venv folder is copied".
+
 ## ADR-024 — Auto-fix offers up to three options
 **Date:** 2026-11-05 · **Status:** Active (the key slot, the nut lobe, and the owner's options 1–6 of 2026-11-06)
 
