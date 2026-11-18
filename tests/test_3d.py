@@ -392,7 +392,9 @@ def _find_ss_binary():
     env = _os.environ.get('SMALL_STEP_BIN')
     if env and Path(env).is_file():
         return env
+    from exporters.small_step_pin import EXE
     for p in (
+        Path(EXE),                                          # the pinned build (exporters/small_step_pin.py)
         _ROOT / 'small_step' / 'target' / 'release' / 'small_step.exe',
         _ROOT / 'small_step' / 'target' / 'x86_64-pc-windows-gnu' / 'release' / 'small_step.exe',
         Path.home() / 'Documents' / 'small_step' / 'target' / 'x86_64-pc-windows-gnu' / 'release' / 'small_step.exe',

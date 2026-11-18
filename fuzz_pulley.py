@@ -59,11 +59,12 @@ from cct_common.step_check import PersistentStepWorker, check_wire_order, valida
 
 _HERE = Path(__file__).parent
 _SFA_EXE = _HERE / "tools" / "sfa" / "sfa-cl.exe"
-# Matches app.py's own fallback default (release build) -- the debug build
-# under this same target dir was found (by fuzzing this fuzz tool itself) to
-# predate small_step's --version flag entirely, so it fails step_worker_ss.py's
-# _check_binary_version on every call.
-_SS_BIN_DEFAULT = Path(r"C:\Users\cmyer\Documents\small_step\target\x86_64-pc-windows-gnu\release\small_step.exe")
+# app.py's own default: the pinned Windows build (exporters/small_step_pin.py). The debug build
+# under small_step's target dir was found (by fuzzing this fuzz tool itself) to predate
+# small_step's --version flag entirely, so it fails step_worker_ss.py's _check_binary_version.
+sys.path.insert(0, str(_HERE))
+from exporters.small_step_pin import EXE as _SS_PINNED  # noqa: E402
+_SS_BIN_DEFAULT = Path(_SS_PINNED)
 
 # OCCT worker (sibling repo's venv — see cct_common.step_check's own docstring)
 _OCC_PY = Path(r"C:\Users\cmyer\Documents\PulleyWebApp\.venv312\Scripts\python.exe")

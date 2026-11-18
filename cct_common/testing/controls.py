@@ -18,6 +18,12 @@ cct_common.testing.affected:
   commits to test files, past the night's limit. A control caught before
   0.30.0 has no catcher on record and keeps the old rule until it next runs.
   A filter runs every control whose name holds it; --all runs them all.
+  --rekey-bare also runs, once, every control saved that way (a bare key),
+  so each is re-saved with its catcher (0.62.9, the owner's "bare b": the
+  old runner counted any exit but 0 and 5 as a catch). The run's header
+  counts the bare-key reruns and the bare keys still current, and lists as
+  "stale state" the saved entries no control has now (a control removed or
+  renamed): they stay in the file, and are never run or counted.
   Every control is checked for STALE (its pattern not once in its file),
   filter or not (0.56.9).
 - **Which tests.** A control with a catcher on record runs it first, alone;
@@ -38,6 +44,16 @@ cct_common.testing.affected:
   it, the scope didn't: a test served from a cache another test filled) or
   MISSED. --whole-suite runs every control on the whole suites, fast first.
   A run that ran no test (pytest's exit 5) caught nothing.
+- **Not by a test that fails anyway** (0.62.12, the owner's "scope credit
+  a"; Pulley's nights of 11-15 to 11-17, where one test failing in every
+  lane copy was credited with four controls). Once per run, before any
+  control, the whole fast suite runs on an unbroken copy, every test, no
+  -x (the slow suite too, the first time a control or a catcher needs it).
+  Each test that fails there is listed ("fails unbroken: <test>"), left out
+  of every control's runs, scope and whole suites alike, and never saved as
+  a catcher; a saved catcher that fails there is dropped and its control
+  runs its scope instead, so an old false catch is repaired the first time
+  its control runs. A control only such a test would catch reads MISSED.
 - **Not by the controls' own check.** An app's test that checks its
   controls (each one's text once in its file: Bevel's
   test_every_control_has_a_scope) fails in every lane, as the break takes
@@ -643,6 +659,123 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
     return None if code is None else code not in (0, 5)    # 5: no test ran, so none caught it
 
 
+# -- 0.62.12: the tests that fail with no break (the owner's "scope credit a") --
+# Pulley's nights of 11-15 to 11-17: a test that failed in every lane copy for
+# its own reason was the whole suite's first failure whatever the break, so
+# four controls read caught (SCOPE) by it, and its saved catch was credited
+# again each night (run alone, it failed again). Once per run, the whole
+# suites run on an unbroken copy, every test, no -x; each test that fails
+# there is left out of every control's runs, and is never a catcher.
+UNBROKEN = "(none: the unbroken copy)"      # its runs' CCT_NEG_CONTROL, as a control's runs have one
+
+
+def unbroken(root: Path, suite: str, workers: int, skip=()) -> dict:
+    """The whole `suite` ("fast" or "slow") on the unbroken copy at `root`,
+    every test, no -x: {"failed", "seen": node ids (a file: it didn't
+    collect), "secs", "code": pytest's exit, None when it couldn't run}."""
+    note = Path(tempfile.gettempdir()) / f"cct-unbroken-{os.getpid()}-{threading.get_ident()}-{time.time_ns()}"
+    out = {"failed": set(), "seen": set(), "secs": 0.0, "code": None}
+    if not (root / "tests").is_dir():
+        return out
+    env = {k: v for k, v in os.environ.items() if k not in ("CCT_CONTROL_CAUGHT", "CCT_SELECT")}
+    env.update({"PYTHONDONTWRITEBYTECODE": "1", "CCT_NEG_CONTROL": UNBROKEN, "CCT_CONTROL_FAILS": str(note),
+                "PYTHONPATH": os.pathsep.join([str(root), str(root / "tests"), os.environ.get("PYTHONPATH", "")])})
+    if workers == 1:
+        env.update({v: "1" for v in THREAD_VARS})
+    t = time.time()
+    try:
+        out["code"] = _run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--continue-on-collection-errors",
+                            "-p", "cct_common.testing.select", "-n", str(workers if workers > 1 else 0),
+                            *(["-m", "slow"] if suite == "slow" else []),
+                            *(f"--deselect={s}" if "::" in s else f"--ignore={s}" for s in skip), "tests"],
+                           root, env, None)
+    finally:
+        out["secs"] = time.time() - t
+        for part in note.parent.glob(note.name + ".*.txt"):
+            try:
+                for line in part.read_text(encoding="utf-8").splitlines():
+                    kind, _, nodeid = line.partition(" ")
+                    if nodeid:
+                        out["failed" if kind == "fail" else "seen"].add(nodeid)
+                part.unlink()
+            except OSError:
+                pass
+    return out
+
+
+def _hit(test: str, failed) -> bool:
+    """`test` (a node id, or a file) failed: it, or its file (didn't collect)."""
+    return test in failed or test.split("::")[0] in failed
+
+
+def _ran(test: str, seen) -> bool:
+    """`test` ran: it, or (a file) any test of it."""
+    return test in seen or ("::" not in test and any(i.startswith(test + "::") for i in seen))
+
+
+class Unbroken:
+    """The whole suites' runs on an unbroken copy, each once, on first need."""
+
+    def __init__(self, root: Path, workers: int, skip=()):
+        self.root, self.workers, self.skip = root, workers, list(skip)
+        self.runs, self._lock = {}, threading.Lock()
+
+    def run(self, suite: str) -> dict:
+        with self._lock:
+            if suite not in self.runs:
+                r = self.runs[suite] = unbroken(self.root, suite, self.workers, self.skip)
+                if r["code"] not in (0, 1, 5):
+                    say(f"unbroken: the whole {suite} suite didn't run on the unbroken copy (pytest's exit "
+                        f"{r['code']}): no test is left out for failing there")
+                else:
+                    n = len(r["failed"])
+                    say(f"unbroken: the whole {suite} suite on an unbroken copy, {r['secs']:.0f} s: "
+                        f"{n} test{'s' * (n != 1)} fail{'s' * (n == 1)} with no break"
+                        + (" (left out of every control's runs, never a catcher)" if n else ""))
+                    for t in sorted(r["failed"]):
+                        say(f"fails unbroken: {t}")
+            return self.runs[suite]
+
+    def failed(self) -> set:
+        with self._lock:
+            return set().union(*(r["failed"] for r in self.runs.values()))
+
+    def fails(self, test: str) -> bool:
+        """Whether `test` fails with no break: the fast suite's run tells,
+        else the slow suite's, run on first need; one neither ran passes."""
+        for suite in ("fast", "slow"):
+            r = self.run(suite)
+            if _hit(test, r["failed"]):
+                return True
+            if _ran(test, r["seen"]):
+                return False
+        return False
+
+
+def run_clean(base, root, path, old, new, files, workers, limit=None, name="", skip=(), found=None):
+    """run_control without the tests that fail unbroken (`base`, an Unbroken;
+    None: as run_control). A scope left with none of its tests catches
+    nothing. A catch by a test found failing only now (a slow test, its suite
+    run on first need) is no catch: the run goes again without it."""
+    if base is None:
+        return run_control(root, path, old, new, files, workers, limit, name=name, skip=skip, found=found)
+    found = {} if found is None else found
+    while True:
+        out = base.failed()
+        run = files if not files or files == SLOW_SUITE else [t for t in files if not _hit(t, out)]
+        if files and not run:
+            return False
+        found.clear()
+        caught = run_control(root, path, old, new, run, workers, limit, name=name,
+                             skip=[*skip, *sorted(out)], found=found)
+        by = found.get("by")
+        if not caught or not by or not base.fails(by):
+            return caught
+        if _hit(by, out):                                   # left out, and still the first failure
+            found.clear()
+            return False
+
+
 # -- the run -----------------------------------------------------------------
 def cli(argv) -> list:
     """The runner's arguments from the command line's: the name filters, then
@@ -655,8 +788,22 @@ def cli(argv) -> list:
                     "(none: those whose check changed since each was last caught)")
     ap.add_argument("--all", action="store_true", help="run every control")
     ap.add_argument("--whole-suite", action="store_true", help="each on the whole suites, not its scope")
+    ap.add_argument("--rekey-bare", action="store_true",
+                    help="also run, once, every control whose catch was saved bare (before 0.62.1, no catcher)")
     a = ap.parse_args(list(argv))
-    return [*a.names, *(["--all"] if a.all else []), *(["--whole-suite"] if a.whole_suite else [])]
+    return [*a.names, *(["--all"] if a.all else []), *(["--whole-suite"] if a.whole_suite else []),
+            *(["--rekey-bare"] if a.rekey_bare else [])]
+
+
+def state_counts(state: dict, breaks) -> tuple:
+    """(bare, stale) of the saved state (0.62.9): bare, the live controls
+    whose catch was saved bare (a key, no catcher: before 0.62.1, or the old
+    rule's); stale, the entries that name no control now (one removed or
+    renamed). Stale entries are listed and left in the file, never run or
+    counted as bare (Worm's 3, Bevel's 19)."""
+    bare = sorted(n for n in breaks if n in state and not isinstance(state[n], dict))
+    stale = sorted(n for n in state if n not in breaks)
+    return bare, stale
 
 
 def main(breaks: dict, argv, source=None) -> int:
@@ -673,7 +820,7 @@ def main(breaks: dict, argv, source=None) -> int:
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 2
     workers = test_cpus()
-    every, whole = "--all" in argv, "--whole-suite" in argv
+    every, whole, rekey = "--all" in argv, "--whole-suite" in argv, "--rekey-bare" in argv
     only = [a for a in argv if not a.startswith("--")]
     snap, tstate = affected.snapshot(), affected.load_state()
     index, graph, lines = scope_index(tstate, snap), affected.import_graph(snap), affected.line_record(tstate)
@@ -688,6 +835,7 @@ def main(breaks: dict, argv, source=None) -> int:
     vend = lambda catcher: vendored_deps(catcher, ran, hashes)      # noqa: E731
     checks, leave = hash_checks(ran), {}                            # name -> the hash checks it runs without
     todo, stale, meta, synced = [], [], {}, []
+    bare, stale_state = state_counts(state, breaks)
     for name, entry in breaks.items():
         path, old, new = entry[:3]                                  # (path, old, new[, {"catcher": test}])
         declared = (entry[3] if len(entry) > 3 else {}).get("catcher")
@@ -712,13 +860,28 @@ def main(breaks: dict, argv, source=None) -> int:
         prior = saved.get("catcher") if isinstance(saved, dict) else None
         hash_caught = prior in out                                  # saved before 0.62.4: run it again
         meta[name] = (entry, key, None if hash_caught else prior)
-        if every or only or whole or hash_caught or not is_current(saved, entry, key, files, snap, graph, vend):
+        if every or only or whole or hash_caught or (rekey and name in bare) \
+                or not is_current(saved, entry, key, files, snap, graph, vend):
             todo.append((name, entry, files, how, ck))
             changed = sync_changes(saved, vend)
             if changed:
                 synced.append((name, changed))
     mode = "every control" if every else "those named" if only else "those whose check changed"
+    if rekey and not every:
+        mode += ", and every bare key"
     print(f"{len(todo)} of {len(breaks)} controls to run ({mode}); {workers} CPUs", flush=True)
+    chosen = {c[0] for c in todo}
+    bare_run = [n for n in bare if n in chosen]
+    current = [n for n in bare if n in meta and n not in chosen]      # looked at (filter, not STALE), kept
+    print(f"  {len(bare_run)} of them bare-key reruns (saved before 0.62.1, re-saved with their catcher); "
+          f"{len(current)} bare key{'s' * (len(current) != 1)} still current", flush=True)
+    if rekey:
+        print(f"  {len(bare_run)} bare-key controls rerun on --rekey-bare", flush=True)
+    if stale_state:                                        # 0.62.9: a removed control's entry
+        print(f"  stale state: {len(stale_state)} entr{'ies' if len(stale_state) != 1 else 'y'} name no control "
+              "now (left in the file, not counted)", flush=True)
+        for n in stale_state:
+            print(f"  stale state: {n}", flush=True)
     if synced:                                             # read these before the gate (0.61.2)
         print(f"{len(synced)} of them because a sync changed what their catcher ran "
               "(a MISSED there can be the sync making the app's own code dead):", flush=True)
@@ -760,8 +923,11 @@ def main(breaks: dict, argv, source=None) -> int:
         prior = meta[name][2]
         if not prior or whole:
             return None
+        if base is not None and base.fails(prior):                   # 0.62.12: never credited again
+            say(f"dropped: {name}: its saved catcher, {prior}, fails unbroken; its scope runs instead")
+            return None
         found = {}
-        if not run_control(root, path, old, new, [prior], 1, limit, name=name, found=found):
+        if not run_clean(base, root, path, old, new, [prior], 1, limit, name=name, found=found):
             return None
         if files and prior.split("::")[0] not in {t.split("::")[0] for t in files}:
             with lock:
@@ -784,11 +950,17 @@ def main(breaks: dict, argv, source=None) -> int:
                 (Path(tmp) / MARK).write_text(mark, encoding="utf-8")
         except OSError:
             pass
+    base = None
     try:
         lanes = min(workers, len(small))
         roots = [Path(tmp) / f"lane{i}" for i in range(max(1, lanes) if todo else 0)]
         for root in roots:
             copy_tree(root)
+        if todo:                                                      # 0.62.12: what fails with no break
+            roots.append(Path(tmp) / "unbroken")
+            copy_tree(roots[-1])
+            base = Unbroken(roots[-1], workers, users)
+            base.run("fast")
         q = queue.Queue()
         for c in small:
             q.put(c)
@@ -806,8 +978,8 @@ def main(breaks: dict, argv, source=None) -> int:
                     done(name, ck, True, first[1], files, time.time() - t, first[0], first[2])
                     continue
                 found = {}
-                caught = run_control(roots[i], path, old, new, files, 1, limit, name=name,
-                                     skip=leave.get(name, ()), found=found)
+                caught = run_clean(base, roots[i], path, old, new, files, 1, limit, name=name,
+                                   skip=leave.get(name, ()), found=found)
                 if caught:
                     done(name, ck, True, how, files, time.time() - t, found.get("by"), found.get("stopped", False))
                 else:
@@ -824,8 +996,10 @@ def main(breaks: dict, argv, source=None) -> int:
             whether the run stopped at that first failure."""
             for suite, files in (("fast", []), ("slow", SLOW_SUITE)):
                 found = {}
-                if run_control(roots[0], path, old, new, files, workers, name=name,
-                               skip=[*users, *leave.get(name, ())], found=found):
+                if base is not None:
+                    base.run(suite)                                    # all it leaves out, known first
+                if run_clean(base, roots[0], path, old, new, files, workers, name=name,
+                             skip=[*users, *leave.get(name, ())], found=found):
                     return suite, found.get("by"), found.get("stopped", False)
             return None, None, False
 
@@ -837,8 +1011,8 @@ def main(breaks: dict, argv, source=None) -> int:
                 done(name, ck, True, first[1], files, time.time() - t, first[0], first[2])
                 continue
             found = {}
-            caught = run_control(roots[0], path, old, new, files, workers, limit, name=name,
-                                 skip=leave.get(name, ()), found=found)
+            caught = run_clean(base, roots[0], path, old, new, files, workers, limit, name=name,
+                               skip=leave.get(name, ()), found=found)
             if caught:
                 done(name, ck, True, how + f", on {workers} workers", files, time.time() - t, found.get("by"),
                      found.get("stopped", False))
@@ -869,6 +1043,11 @@ def main(breaks: dict, argv, source=None) -> int:
           "the tree untouched (each lane broke its own copy)")
     for s in scope_missed:
         print(f"SCOPE   {s}: caught by the whole suite only; its tests should catch it")
+    unbroken_fails = sorted(base.failed()) if base is not None else []
+    if unbroken_fails:
+        print(f"fails unbroken: {len(unbroken_fails)} test{'s' * (len(unbroken_fails) != 1)} left out of every "
+              f"control's runs ({', '.join(unbroken_fails[:3])}{' ...' if len(unbroken_fails) > 3 else ''}): "
+              "they fail with no break; fix them, or a control only they would catch reads MISSED", flush=True)
     bad = stale + missed
     print("missed:", bad or "none", flush=True)
     cleanup()

@@ -32,6 +32,7 @@ Durability and concurrency (see PulleyWebApp-ss ADR-008 "data safety"):
 """
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import sqlite3
@@ -164,6 +165,34 @@ def close_pool(url: str) -> None:
         pool = _POOLS.pop((os.getpid(), url), None)
     if pool is not None:
         pool.close()
+
+
+def close_pools() -> int:
+    """Close every pool this process opened; the number closed. A pool a
+    forked worker inherited from gunicorn's master is the master's, and its
+    sockets are the master's too: it is left alone, never closed."""
+    me = os.getpid()
+    with _POOLS_LOCK:
+        mine = [_POOLS.pop(k) for k in [k for k in _POOLS if k[0] == me]]
+    for pool in mine:
+        try:
+            pool.close()
+        except Exception:                    # noqa: BLE001 — at exit, the next pool still gets closed
+            pass
+    return len(mine)
+
+
+# At exit, before the interpreter finalizes (0.62.10; Pulley's and Gear's
+# nights, 2026-11-16): a pool still open then is closed by its __del__ during
+# finalization, which joins its worker threads, and Python 3.14 refuses that
+# ("PythonFinalizationError: cannot join thread at interpreter shutdown", one
+# traceback per gunicorn worker per instance stop, at ERROR). An atexit
+# handler runs before finalization, where the join is allowed. Registered
+# here, at import, so it runs after the handlers registered later (atexit
+# goes last in, first out), such as server_use's last flush, which still
+# writes through the pool. A forked worker inherits the handler and closes
+# only its own pools.
+atexit.register(close_pools)
 
 
 # ── the store base class ──────────────────────────────────────────────────

@@ -203,14 +203,10 @@ def require_active_session(f):
     return decorated_function
 
 # ── small_step binary ─────────────────────────────────────────────────────────
-# On Render set SMALL_STEP_BIN env var to the compiled Linux binary path.
-# On Windows dev the release build is detected automatically as a fallback.
-_SS_BIN = os.environ.get(
-    'SMALL_STEP_BIN',
-    os.path.join(os.path.dirname(__file__),
-                 '..', 'small_step', 'target',
-                 'x86_64-pc-windows-gnu', 'release', 'small_step.exe'),
-)
+# On Cloud Run SMALL_STEP_BIN is the Linux binary (Dockerfile). On Windows dev, unset, it is
+# the pinned Windows build (exporters/small_step_pin.py).
+from exporters.small_step_pin import EXE as _SS_PINNED
+_SS_BIN = os.environ.get('SMALL_STEP_BIN', _SS_PINNED)
 _SS_BIN = os.path.normpath(_SS_BIN)
 _SS_AVAILABLE = os.path.isfile(_SS_BIN)
 
@@ -5440,26 +5436,6 @@ except Exception:
     app.logger.exception('download failures will not be kept: the store would not open')
 register_download_failure_log(app, _failure_store, app_name='pulleys', app_version=APP_VERSION)
 
-
-def _close_db_pools():
-    """This process's database pools, closed at exit, before Python's finalization. A pool still
-    open then is closed by its __del__, which joins its worker threads, and Python 3.14 refuses a
-    join at interpreter shutdown: a PythonFinalizationError traceback at every instance stop, which
-    failed 2.0.38's release smoke test on pulley-test (2026-11-17). atexit runs first, in the
-    gunicorn master and in each worker (they exit by sys.exit). A pool another process opened (the
-    preloaded master's, which a worker inherits) is left alone: its sockets are the master's."""
-    from cct_common import sqlite_db
-    with sqlite_db._POOLS_LOCK:
-        mine = [url for (pid, url) in sqlite_db._POOLS if pid == os.getpid()]
-    for url in mine:
-        try:
-            sqlite_db.close_pool(url)
-        except Exception:
-            pass                 # exiting anyway; the log may be gone already
-
-
-import atexit as _atexit
-_atexit.register(_close_db_pools)
 
 @app.route('/api/health')
 def api_health():

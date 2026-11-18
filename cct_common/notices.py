@@ -10,6 +10,10 @@ Notices tab.
   The first "Send to all" fixes the date: later passes use the same one.
 - Who: every open account (closed ones keep no email), each address once,
   except the directory reviewers' test account (REVIEW_LOGIN_EMAIL).
+  The first "Send to all" fixes the list too (0.62.11; the owner's "Fix the
+  notice count", 2026-11-17): the accounts made by then. Later sign-ups never
+  get the notice (they joined under the new terms), so after a complete
+  pass it reads left 0, and "sent" counts only those in the list.
 - "Send me a test": one copy to the signed-in admin's own address only.
 - "Send to all": only after typing SEND. The page then asks for batches of
   BATCH, about two a second (Resend's limit), so no request runs long and
@@ -159,18 +163,22 @@ class Notices(SqliteDB):
         except KeyError:
             raise NoticeError("No such notice.") from None
 
-    def _recipients(self, db) -> list:
-        """(account id, email) of every open account but the reviewers'. Each
-        address once: accounts' emails are unique (lower-cased) already."""
+    def _recipients(self, db, notice_id: str) -> list:
+        """(account id, email) of every open account but the reviewers', made
+        by the notice's first "Send to all" (0.62.11): before it, every open
+        account. Each address once: accounts' emails are unique (lower-cased)
+        already."""
         skip = reviewer_email()
-        rows = db.execute("SELECT id, email FROM accounts WHERE email NOT LIKE 'deleted:%' "
-                          "ORDER BY created_at, id").fetchall()
+        run = db.execute("SELECT started_at FROM notice_runs WHERE notice_id = ?", (notice_id,)).fetchone()
+        cut = "" if run is None else " AND created_at <= ?"
+        rows = db.execute("SELECT id, email FROM accounts WHERE email NOT LIKE 'deleted:%'" + cut +
+                          " ORDER BY created_at, id", () if run is None else (run["started_at"],)).fetchall()
         return [(r["id"], r["email"]) for r in rows if str(r["email"]).strip().lower() != skip]
 
     def status(self, notice_id: str) -> dict:
         self.notice(notice_id)
         with self._read() as db:
-            people = self._recipients(db)
+            people = self._recipients(db, notice_id)
             rows = {r["account_id"]: dict(r) for r in db.execute(
                 "SELECT account_id, status, error FROM notice_sends WHERE notice_id = ?", (notice_id,)).fetchall()}
             run = db.execute("SELECT date_text, started_by, started_at FROM notice_runs WHERE notice_id = ?",
@@ -265,4 +273,4 @@ class Notices(SqliteDB):
         now = self._clock()
         done = {r["account_id"]: r for r in db.execute(
             "SELECT account_id, status, pass_id, at FROM notice_sends WHERE notice_id = ?", (notice_id,)).fetchall()}
-        return [(a, e) for a, e in self._recipients(db) if a not in done or self._open(done[a], pass_id, now)]
+        return [(a, e) for a, e in self._recipients(db, notice_id) if a not in done or self._open(done[a], pass_id, now)]

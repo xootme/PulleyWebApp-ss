@@ -120,6 +120,12 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
                                                '    if hasattr(os, "register_at_fork") and True:',
                                                {"catcher": "tests/test_vendored.py::test_vendored_cct_common_is_released"}),
     "lanes: no venv folder is copied": (".gitignore", ".venv*/\n", ".venv/\n"),
+    # the Windows small_step by path + sha256 (campaign 2026-11-17-small-step-windows-pin)
+    "pin: the Windows small_step is the pinned bytes": ("exporters/small_step_pin.py",
+        "PIN = ('0.25.0', '6d493f1e", "PIN = ('0.25.0', '6d493f1f"),
+    "pin: the night runs the pinned small_step": ("tools/nightly_test.py",
+        "from exporters.small_step_pin import EXE as SMALL_STEP  # noqa: E402\n",
+        "SMALL_STEP = r'C:\\Users\\cmyer\\Documents\\small_step\\target\\x86_64-pc-windows-gnu\\release\\small_step.exe'\n"),
     "backup: its run is counted": ("db_offsite_backup.py",
                                    '        with job_use(_env("DATABASE_URL"), "cct-db-backup", "backup"):',
                                    '        with __import__("contextlib").nullcontext():'),
@@ -274,9 +280,10 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         "    if screw.hold == 'nut' and kw_w <= 0 and reach < bore_r - 0.05:\n",
         "    if False:\n",
         {"catcher": "tests/test_screw_wider_than_flat.py::test_the_published_d_flat_samples_check_clean"}),
-    # the pools closed at exit, not by their __del__ at 3.14's finalization (2.0.38's night, 2026-11-17)
-    "app: database pools closed at exit": ("app.py",
-        "_atexit.register(_close_db_pools)\n", "pass\n",
+    # the pools closed at exit, not by their __del__ at 3.14's finalization (2.0.38's night, 2026-11-17);
+    # cct_common's own hook since 0.62.10 (a vendored break: its catcher declared)
+    "app: database pools closed at exit": ("cct_common/sqlite_db.py",
+        "atexit.register(close_pools)\n", "pass\n",
         {"catcher": "tests/test_db_pools_at_exit.py::test_the_close_runs_when_the_process_exits"}),
     # the deploy's own revision gets the traffic (GearBeltChain's two releases, 2026-11-09; Gear's 3c27daf)
     "release: the deploy follows the newest created revision": ("tools/release.py",

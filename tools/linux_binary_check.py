@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / 'tests')]
 SAMPLES = Path(os.environ.get('CCT_SAMPLES_JSON',
                               r'C:\Users\cmyer\Documents\CCT_WebSite\site\data\samples.generated.json'))
-WINDOWS = r'C:\Users\cmyer\Documents\small_step\target\x86_64-pc-windows-gnu\release\small_step.exe'
+from exporters.small_step_pin import EXE as WINDOWS  # noqa: E402  (the pinned Windows build)
 
 
 def wsl_path(p: str) -> str:

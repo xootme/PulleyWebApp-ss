@@ -1,7 +1,9 @@
 """A server process closes its own database pools at exit, before Python's finalization: an open
 pool's __del__ joins its threads there, which Python 3.14 refuses, and the traceback it logged at
 every instance stop failed 2.0.38's release smoke test (pulley-test, 2026-11-17). A pool another
-process opened (gunicorn's preloaded master's) is not closed by a worker. No Postgres needed."""
+process opened (gunicorn's preloaded master's) is not closed by a worker. Since cct_common 0.62.10
+the close is cct_common.sqlite_db's own (close_pools, registered at its import), and the app's
+hook is gone; importing the app registers it. No Postgres needed."""
 import os
 import subprocess
 import sys
@@ -19,7 +21,7 @@ class Held:                      # stands in for a psycopg_pool pool
 
 
 def test_its_own_pools_are_closed_and_anothers_left():
-    import app as pulley
+    import app  # noqa: F401  (the app imports the pools' module)
     from cct_common import sqlite_db
     own, other = Held(), Held()
     own_key = (os.getpid(), 'postgresql://u@h/own')
@@ -27,7 +29,7 @@ def test_its_own_pools_are_closed_and_anothers_left():
     sqlite_db._POOLS[own_key] = own
     sqlite_db._POOLS[other_key] = other
     try:
-        pulley._close_db_pools()
+        assert sqlite_db.close_pools() >= 1          # this worker may hold a real one too
         assert own.closed and own_key not in sqlite_db._POOLS
         assert not other.closed and sqlite_db._POOLS[other_key] is other
     finally:

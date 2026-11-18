@@ -664,7 +664,11 @@ def register_account_page(app, accounts, *, buy_url) -> None:
                 "thicker than drawn, which makes holes and grooves tight. This moves every printed surface into "
                 "the material by the amount you set, so the part comes out at its true size: outsides come in "
                 "and holes and grooves open up. Typical FDM printers need 0.1 to 0.2 mm; use 0 for resin "
-                "printing or CNC machining.</span></div>"
+                "printing or CNC machining. "
+                # the owner, 2026-11-16 (0.62.9): its slicer name, then caveat A ("2 A")
+                "Most 3D printer slicers have the same kind of setting under another name, "
+                "&quot;horizontal expansion&quot;. Set it in one place, not both: a positive value here makes "
+                "holes larger, which is a negative horizontal expansion in most slicers.</span></div>"
                 "<p class='heads-up'><strong>STL files only.</strong> It changes only the STL a tool makes. "
                 "SVG, DXF and STEP files stay at their true size. Tools with this setting start with it; the "
                 "others ignore it. Leave it empty to use each tool's own default.</p>"

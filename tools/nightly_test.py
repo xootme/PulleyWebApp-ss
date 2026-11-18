@@ -27,8 +27,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # pip freeze), else the abandoned repo's, which the day runs used before.
 TEST_PYS = [ROOT / '.venv312' / 'Scripts' / 'python.exe',
             Path(r'C:\Users\cmyer\Documents\PulleyWebApp\.venv312\Scripts\python.exe')]
-# The Windows small_step build the STEP tests run (the app's bin/ holds only the Linux one).
-SMALL_STEP = r'C:\Users\cmyer\Documents\small_step\target\x86_64-pc-windows-gnu\release\small_step.exe'
+# The Windows small_step build the STEP tests run (the app's bin/ holds only the Linux one):
+# the pinned one, exporters/small_step_pin.py.
+sys.path.insert(0, str(ROOT))
+from exporters.small_step_pin import EXE as SMALL_STEP  # noqa: E402
 
 
 def main(args):
