@@ -25,12 +25,27 @@ def test_the_pin_is_a_version_and_a_sha256_in_its_folder():
     assert Path(pin.EXE) == pin.WINDOWS_DIR / pin.VERSION / 'small_step.exe'
 
 
-@pytest.mark.skipif(not Path(pin.EXE).is_file(), reason='SmallStep\'s target/windows is not on this host')
+def _run_exe():
+    """The Windows exe this run names in SMALL_STEP_BIN, if it is one that exists here."""
+    p = os.environ.get('SMALL_STEP_BIN', '')
+    return Path(p) if p.lower().endswith('.exe') and Path(p).is_file() else None
+
+
 def test_the_pinned_exe_is_the_pinned_bytes():
-    folder = Path(pin.EXE).parent
-    assert _sha(pin.EXE) == pin.SHA256
-    assert (folder / 'small_step.exe.sha256').read_text(encoding='utf-8').split()[0].lower() == pin.SHA256
-    assert pin.VERSION in (folder / 'version.txt').read_text(encoding='utf-8')
+    """Where SmallStep's versioned folder is here (this PC), the pinned exe, its sha256 file and
+    version.txt. A test host without it (msi: remote.json copies only the pinned exe, to
+    C:\\cct-tests\\bin) checks the bytes of the exe its run names instead, the one the night runs
+    (the 11-18 night). With neither, it skips for a reason NIGHT_SKIPS doesn't list: the night fails."""
+    if Path(pin.EXE).is_file():
+        folder = Path(pin.EXE).parent
+        assert _sha(pin.EXE) == pin.SHA256
+        assert (folder / 'small_step.exe.sha256').read_text(encoding='utf-8').split()[0].lower() == pin.SHA256
+        assert pin.VERSION in (folder / 'version.txt').read_text(encoding='utf-8')
+        return
+    exe = _run_exe()
+    if exe is None:
+        pytest.skip('neither SmallStep\'s target/windows nor a SMALL_STEP_BIN exe is on this host')
+    assert _sha(exe) == pin.SHA256, f'{exe} is not small_step {pin.VERSION} ({pin.SHA256[:12]}...)'
 
 
 def test_the_night_the_harnesses_and_the_fuzzer_default_to_the_pin():
