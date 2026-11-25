@@ -155,4 +155,4 @@ except ImportError:
 else:
     _JINJA_NAMESPACE.setdefault("cct_analytics", _no_analytics)
 
-__version__ = "0.62.12"
+__version__ = "0.63.0"

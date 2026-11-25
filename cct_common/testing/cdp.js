@@ -48,10 +48,16 @@
  *                  settle does (0.55.2)
  * Every request that failed (Network.loadingFailed: Chrome's net::ERR_... for
  * a fetch's bare "Failed to fetch") is kept, the last 50, in page.failedLoads
- * ({ method, url, errorText, canceled, blocked, cors, t }). The last few are
+ * ({ method, url, errorText, type, canceled, blocked, cors, t }). The last few are
  * printed with what a failed settle or waitIdle waits on, and after a failing
  * check, those not printed yet (0.56.5: Bevel's prefix_ui had a zip's GET die
  * with "Failed to fetch" and nothing to say why).
+ * An open or reload that isn't idle while the page's own document, script or
+ * stylesheet (its origin's; the document since 0.62.14) failed with a transport error the server never saw
+ * (REFUSED: net::ERR_NO_BUFFER_SPACE, ...) fails at once: "<open url | reload>:
+ * the OS refused the connection (out of ports?), not the page: <url>: <error>".
+ * No retry (0.62.13: Gear's 2026-11-18 night, Windows out of ephemeral ports,
+ * waited out a 120 s settle that could not come).
  *   settleMs       how long opening or reloading the page may take to settle (60 s)
  *   leave          the event setValue() fires after 'input', as leaving the
  *                  field does: "focusout" (Gear's refusal gate), "change"
@@ -83,6 +89,16 @@ const SHOWN = 5;                // failed loads printed at a time
 const swept = new Set();        // the app names whose old profiles this run has swept
 const failedLoads = [];         // every page's, the newest last: a failing check prints them
 let failedShown = 0;            // how many of the run's a failing check has printed
+
+// Chrome's errors for a connection the OS refused before the server saw it.
+const REFUSED = new Set(["net::ERR_NO_BUFFER_SPACE", "net::ERR_ADDRESS_IN_USE",
+                         "net::ERR_INSUFFICIENT_RESOURCES", "net::ERR_CONNECTION_REFUSED"]);
+const originOf = (u) => { try { return new URL(u).origin; } catch { return null; } };
+// What the page needs to settle: the document itself (0.62.14), its scripts and stylesheets.
+const OWN = new Set(["Document", "Script", "Stylesheet"]);
+// The first of the page's own (its origin's) refused since `since`.
+const refusedLoad = (loads, since, origin) => loads.find((f) => f.t >= since && REFUSED.has(f.errorText)
+  && OWN.has(f.type) && originOf(f.url) === origin);
 
 // "  failed load: GET <url>: net::ERR_CONNECTION_RESET (2.1 s ago)"
 const failedLine = (f, now) => {
@@ -268,6 +284,7 @@ function forApp({
       if (msg.method === "Network.loadingFailed") {
         const p = msg.params, r = open.get(p.requestId) || {};
         const f = { method: r.method || "?", url: r.url || `(request ${p.requestId})`, errorText: p.errorText || "",
+                    type: p.type || null,       // Chrome's resource type: Script, Stylesheet, Fetch, ...
                     canceled: !!p.canceled, blocked: p.blockedReason || null,
                     cors: (p.corsErrorStatus && p.corsErrorStatus.corsError) || null, t: Date.now() };
         loads.push(f);
@@ -303,13 +320,18 @@ function forApp({
         .result.result.value;
     // Wait until the page has applied every change (window.<idle>): the
     // debounce has fired, its requests are back and any 3D model has loaded.
-    const idleWithin = async (timeout) => {
+    // With `refused` ({ what, since }): not idle, and the page's own script or
+    // stylesheet refused by the OS since then, it throws at once (0.62.13).
+    const idleWithin = async (timeout, refused = null) => {
       const t0 = Date.now();
       await sleep(30);
       while (Date.now() - t0 < timeout) {
         // Not idle until this page's script has run: before that there is no
         // idle hook, and a draw is still to come.
         if (await evaluate(`!!window.${idle} && window.${idle}()`)) return true;
+        const f = refused && refusedLoad(loads, refused.since, originOf(url));
+        if (f) throw new Error(`${refused.what}: the OS refused the connection (out of ports?), not the page: `
+                               + `${f.url.slice(0, 200)}: ${f.errorText}`);
         await sleep(50);
       }
       return false;
@@ -350,14 +372,15 @@ function forApp({
     // loaded machine its harnesses went on before the page had its tables and
     // handlers). Not settled in time is a failure, never a page to test. The
     // first line says so; the next ones what it still waits on.
-    const settled = async (what, ms) => {
-      if (!await idleWithin(ms)) throw new Error(`${what}: the page never settled in ${ms / 1000} s\n${await waitingOn()}`);
+    const settled = async (what, ms, since) => {
+      if (!await idleWithin(ms, { what, since })) throw new Error(`${what}: the page never settled in ${ms / 1000} s\n${await waitingOn()}`);
     };
     // Reload and wait for the new document's first drawing. The old document is
     // marked, so its idle answer can't be taken for the new one's. The settle
     // timeout is reload(ms) or reload({ timeout }).
     const reload = async (opt) => {
       const timeout = typeof opt === "number" ? opt : (opt && opt.timeout) || settleMs;
+      const since = Date.now();
       await evaluate(`window.__oldDocument = true; location.reload()`);
       const t0 = Date.now();
       let fresh = false;
@@ -366,7 +389,7 @@ function forApp({
         if (!fresh) await sleep(30);
       }
       if (!fresh) throw new Error(`reload: still the old document after ${settleMs / 1000} s`);
-      await settled("reload", timeout);
+      await settled("reload", timeout, since);
     };
     // Set a control's value the way a user edit does (fires 'input'), then the
     // app's `leave` event as leaving the field does (Gear's 'focusout' only its
@@ -412,6 +435,7 @@ function forApp({
     await send("Runtime.enable");
     await send("Page.enable");
     await send("Network.enable");        // the requests still open, for a settle that fails
+    const navigated = Date.now();
     await send("Page.navigate", { url });
     await sleep(1500);
 
@@ -421,7 +445,7 @@ function forApp({
       try { ws.close(); } catch { /* already closed */ }
       removeProfile(profile);           // stops Chrome, then its profile goes
     };
-    await settled(`open ${url}`, settle);
+    await settled(`open ${url}`, settle, navigated);
     // Record every server answer of 500 or more in serverErrors.
     const watchServer = () => { watching = true; return send("Network.enable"); };
     // Handle a CDP event (e.g. Fetch.requestPaused, to hold a request back).

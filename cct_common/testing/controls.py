@@ -79,7 +79,11 @@ cct_common.testing.affected:
   goes at the end of the run, tried again for up to about 10 s while
   Windows still holds it; one left anyway keeps its mark (cct-neg-run.json)
   and a later run of the same app sweeps it once a day old (0.61.7;
-  Sprocket's gate of 2026-11-11 left its lanes on WinError 32).
+  Sprocket's gate of 2026-11-11 left its lanes on WinError 32). pytest's
+  output for a control (the file a catch is read from when the select
+  plugin names none) is in that folder too, outside the lanes (0.62.14):
+  in Temp itself, one a process the tests started still held was left
+  there, one per run (cct-control-*.txt: Pulley 137 by 2026-11-18).
 - **A sync's changes** (0.61.2; Sprocket's night of 2026-11-06). The catcher
   key also holds every function of the vendored packages (affected's
   `vendored`, cct_common/ by default) that the catcher test ran, by the
@@ -398,6 +402,7 @@ def copy_tree(dst: Path):
 REMOVE_TRIES, REMOVE_WAIT = 21, 0.5
 _sleep = time.sleep
 MARK = "cct-neg-run.json"         # in a run's lanes' folder: what the sweep may take
+LOGS = None                       # the run's lanes' folder while main runs: pytest's output files go there
 STALE_S = 24 * 3600
 
 
@@ -594,7 +599,9 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
     (0.30.0, Bevel's a1 trial). pytest's output goes to a file of its own
     outside the tree, removed when nothing holds it: a process the tests
     started can keep it open after pytest ends (Windows: WinError 32), which
-    stopped Bevel's trial after 47 catches."""
+    stopped Bevel's trial after 47 catches. In a run (main) the file is in
+    the run's lanes' folder (LOGS), which goes at the end or is swept later;
+    called on its own, in Temp."""
     if files and files != SLOW_SUITE:
         files = [t for t in files if (root / t.split("::")[0]).is_file()]
         if not files:
@@ -611,7 +618,7 @@ def run_control(root: Path, path, old, new, files, workers, limit=None, name="",
     args, marker = (files, ["-m", "slow or not slow"]) if files else (["tests"], [])
     listed, log = root / ".control_tests.txt", None
     if found is not None:
-        fd, out = tempfile.mkstemp(prefix="cct-control-", suffix=".txt")
+        fd, out = tempfile.mkstemp(prefix="cct-control-", suffix=".txt", dir=LOGS)
         os.close(fd)
         log = Path(out)
     # The first failure, from the select plugin (0.62.1): the catcher whatever
@@ -941,7 +948,12 @@ def main(breaks: dict, argv, source=None) -> int:
     mark = json.dumps({"started": time.time(), "pid": os.getpid()})
     (Path(tmp) / MARK).write_text(mark, encoding="utf-8")
 
+    global LOGS
+    LOGS = tmp                                                        # 0.62.14: pytest's output files
+
     def cleanup():
+        global LOGS
+        LOGS = None
         for root in roots:
             _remove(root)
         _remove(tmp)
