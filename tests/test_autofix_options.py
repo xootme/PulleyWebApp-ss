@@ -27,7 +27,9 @@ def _applied(q, fix_set):
             continue
         kind, n, rest = m.groups()
         pfx = 'p2_' if n == '2' else ''
-        if kind == 'hub' and rest == 'retention':
+        if kind == 'hub' and rest == 'retention' and v == 'none':      # no set screw
+            q[f'{pfx}hub_screw_count'] = 0
+        elif kind == 'hub' and rest == 'retention':
             q[f'{pfx}hub_screw_hold'] = HOLD[v]
         elif rest == 'enabled':
             q[f'{pfx}{kind}_enabled'] = 1 if v else 0
@@ -84,9 +86,10 @@ SHORT = {**H, 'family': 'HTD', 'pitch': '5M', 'teeth': 30, 'bore': 8, 'hub_od': 
 
 def test_a_short_hub_offers_the_height_or_a_smaller_screw(client):
     d = _dims(client, SHORT)
-    a, b = d['fixes']
+    a, b, c = d['fixes']
     assert _only(a, 'hub height') == ['hub height 8 → 10 mm']
     assert _only(b, 'set screw') == ['set screw M5 → M4 (fits the 8 mm hub)'] and 'hub1_height' not in b['set']
+    assert _only(c, 'set screw') == ['no set screw (keeps the 8 mm hub)'] and c['set']['hub1_retention'] == 'none'
     assert all(_clears(client, SHORT, f, 'too short') for f in d['fixes'])
 
 

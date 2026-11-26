@@ -246,6 +246,8 @@ def _fix_params(fix_set: dict) -> dict:
                         f"{pfx}spline_rounded": False})
         elif kind == "bore" and rest == "shape":               # the D-flat Auto-fix's round bore
             out[f"{pfx}hub_flat_depth"] = 0.0
+        elif kind == "hub" and rest == "retention" and value == "none":   # no set screw
+            out[f"{pfx}hub_screw_count"] = 0
         elif kind == "hub" and rest == "retention":            # the page's menu is hub_screw_hold's
             out[f"{pfx}hub_screw_hold"] = HOLD_OF_RETENTION[value]
         else:

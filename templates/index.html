@@ -1962,7 +1962,7 @@ window.onload = async () => {
   [1, 2].forEach(function(n) {
     const heightEl  = document.getElementById(`hub${n}_height`);
     const retention = document.getElementById(`hub${n}_retention`).value;
-    if (heightEl && isSetScrewValue(retention)) heightEl.min = screwMajor(n) * 2;
+    if (heightEl && isSetScrewValue(retention)) heightEl.min = minHubHeight(n);
     _syncScrewHole(n);
   });
   updateBeltBtn();
@@ -4858,6 +4858,16 @@ function activeScrew(n) {
 }
 // The screw's outer diameter, for the hub's wall and height rules.
 function screwMajor(n) { const sc = activeScrew(n); return (sc && sc.major) || 5; }
+// The least hub height for the screw, as the server's check (app._hub_height_needed): twice
+// its outer diameter, and for an entered hole (a heat-set insert's, a Custom screw's) not in a
+// captured nut also the hole + 1 mm small_step needs (the owner's "pulley hub-short 1").
+function minHubHeight(n) {
+  const sc = activeScrew(n);
+  let need = +(screwMajor(n) * 2).toFixed(2);
+  if (sc && sc.needsHole && sc.hold !== 'nut' && sc.holeDia > 0)
+    need = Math.max(need, Math.ceil(+((sc.holeDia + 1) * 100).toFixed(6) - 1e-9) / 100);
+  return need;
+}
 
 // Set-screw query parameters for pulley n (prefix '' or 'p2_').
 function screwParams(p, n, prefix) {
@@ -5492,13 +5502,13 @@ function onHubChange(n) {
   _lockRetentionForSpline(n);
   _updateHubMaxValues(n);
 
-  // Hub Height min = 2 × screw_dia when set screw retention (hub.md spec)
+  // Hub Height min = 2 × screw_dia (an entered hole: + 1 mm, if more) when set screw retention (hub.md spec)
   const heightEl  = document.getElementById(`hub${n}_height`);
   const retention = document.getElementById(`hub${n}_retention`).value;
   const isSetScrew = isSetScrewValue(retention);
   if (heightEl) {
     if (isSetScrew) {
-      heightEl.min = screwMajor(n) * 2;
+      heightEl.min = minHubHeight(n);
     } else {
       heightEl.min = 1;
     }
@@ -5584,7 +5594,7 @@ function _validateHub(n) {
     const screwSize = sel === 'Custom' ? 'this screw' : sel;
     const sd   = screwMajor(n);
     const minWallToBore = +(sd * 2).toFixed(2);
-    const minHubH       = +(sd * 2).toFixed(2);
+    const minHubH       = minHubHeight(n);
     const wall = (hubOD - bore) / 2;
     lines.push(`Wall: ${wall.toFixed(1)} mm · Min wall: ${minWallToBore} mm · Min height: ${minHubH} mm`);
     if (wall < minWallToBore)

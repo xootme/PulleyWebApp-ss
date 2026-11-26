@@ -173,6 +173,12 @@ async function main() {
   await setSel('#hub1_screw_hole_dia', '7.1');
   await setSel('#hub1_retention', 'set_screw_nut'); await setSel('#hub1_retention', 'set_screw_insert');
   check('…a new hold starts it over too', (await hole()) === '5.6', await hole());
+  // An insert hole wider than 2 × the screw − 1 mm: the hub needs the hole + 1 mm, as the
+  // server's check and small_step (the owner's "pulley hub-short 1", 2026-11-25)
+  await setSel('#hub1_screw_size', 'M2'); await setSel('#hub1_screw_hole_dia', '3.2');
+  check('insert: a wide hole needs its own + 1 mm of hub (M2 in 3.2: 4.2)',
+    (await text('#hub1_info')).includes('Min height: 4.2 mm')
+    && (await js("document.getElementById('hub1_height').min")) === '4.2', await text('#hub1_info'));
   await setSel('#hub1_screw_size', 'M5');
 
   // ── Custom ──

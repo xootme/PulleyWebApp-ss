@@ -50,12 +50,14 @@ def test_quiet_otherwise(client, q):
 
 
 def test_one_fix_when_no_smaller_screw_fits(client):
-    """A Custom screw has no smaller size: the threaded hole is the Auto-fix, alone."""
+    """A Custom screw has no smaller size: the threaded hole is the Auto-fix; the other way out
+    is the short hub's no set screw (the owner's "pulley hub-short 1", 2026-11-25)."""
     d = _dims(client, hub_screw_size='Custom', hub_screw_hole_dia=6)
     assert _slot(d) == ["The captured-nut screw's hole (Ø6.00 mm) is wider than the 5 mm key slot it goes "
                         "through: its edge would sit half in the slot and half on the bore. Use a smaller "
                         "screw or a threaded hole."]
-    assert d['fix']['set']['hub1_retention'] == 'set_screw_std' and len(d['fixes']) == 1    # (the hub's height too)
+    assert d['fix']['set']['hub1_retention'] == 'set_screw_std' and len(d['fixes']) == 2    # (the hub's height too)
+    assert d['fixes'][1]['set'] == {'hub1_retention': 'none'}
 
 
 def test_pulley_2_is_named(client):

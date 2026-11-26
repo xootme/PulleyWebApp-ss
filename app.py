@@ -1624,8 +1624,27 @@ def _nut_lobe_past_flange(args, pfx, n, who, r_od, fp):
     return warn, fixes
 
 
+HUB_HEIGHT_STEP = 0.5        # the Hub Height field's steps (index.html hub1_height step="0.5")
+
+
+def _hub_height_needed(screw):
+    """The least hub height a set screw's hole fits in (mm, 2 places, rounded up): twice its
+    major diameter (the page's rule), and for a plain radial hole (not a captured nut's) also
+    small_step's plan_hub, hole + 1 mm (its reach r: a round hole's D/2, a hex hole's corner
+    AF/√3; hub_height ≥ 2r + 1). Only a heat-set insert's entered hole, wider than 2 × major
+    − 1 mm, ever needs the second (the owner's "pulley hub-short 1", 2026-11-25: an M2 insert
+    in a 3.2 mm hole needs 4.2 mm, not 4); a shorter hub small_step used to grow unasked."""
+    need = round(2 * screw.major, 2)
+    if screw.hold != 'nut':
+        hole = screw.hole
+        r = (float(hole['flats']) / math.sqrt(3) if hole.get('shape') == 'hex'
+             else float(hole.get('diameter') or 0.0) / 2)
+        need = max(need, math.ceil(round((2 * r + 1.0) * 100, 6) - 1e-9) / 100)
+    return need
+
+
 def _hub_too_short(args, pfx, n, who, fix_size=None):
-    """A hub shorter than twice its set screw's major diameter: the page's own hub rule
+    """A hub too short for its set screw's hole (_hub_height_needed): the page's own hub rule
     (_validateHub, "Hub height too short (need ≥ 10 mm for M5)"), until 2026-11-02 shown only
     in the browser's hub panel. Shorter, the screw's hole breaks out of the hub's top and
     bottom in the STL, and small_step quietly builds a taller hub than asked (its plan_hub:
@@ -1633,13 +1652,14 @@ def _hub_too_short(args, pfx, n, who, fix_size=None):
     an M5 on a 3.8 mm hub; the owner's option b, 2026-11-02). Every hold the page has (thread,
     captured nut, heat-set insert); a design from before screws had names isn't checked, as
     with the other screw rules. Returns ([warning], (a) {element id: value}, [change text],
-    (b) {element id: value}, [change text]); (a) is the height the rule asks for, of
-    `fix_size` when the Auto-fix also changes the screw (none when the hub is already tall
-    enough for that one); (b), when it doesn't, the largest smaller screw of the same kind
-    this height holds (the owner, 2026-11-05: up to three)."""
-    from cct_common import screws as _screws
+    (b) {element id: value}, [change text], (c) {element id: value}, [change text]); (a) is
+    the height the rule asks for, up to the field's 0.5 mm steps, of `fix_size` when the
+    Auto-fix also changes the screw (none when the hub is already tall enough for that one);
+    (b), when it doesn't, the largest smaller screw of the same kind, held the same way, this
+    height holds (the owner, 2026-11-05: up to three); (c) no set screw (the owner's
+    "pulley hub-short 1", 2026-11-25)."""
     from geometry import set_screw as _ss
-    none = [], {}, [], {}, []
+    none = [], {}, [], {}, [], {}, []
     try:
         screw = _set_screw(args, pfx)
     except ValueError:
@@ -1647,24 +1667,33 @@ def _hub_too_short(args, pfx, n, who, fix_size=None):
     hub_h = _safe_float(args.get(f'{pfx}hub_height'), 0.0)
     if screw is None or hub_h <= 0 or _safe_float(args.get(f'{pfx}hub_od'), 0.0) <= 0:
         return none
-    need = round(2 * screw.major, 2)
+    need = _hub_height_needed(screw)
     if hub_h >= need - 1e-9:
         return none
     name = 'this screw' if screw.size == 'Custom' else screw.size
+
+    def as_size(size):                   # the same hub's screw in another size, held the same way
+        return _set_screw({**dict(args.items()), f'{pfx}hub_screw_size': size}, pfx)
+
+    def taller(need):
+        up = math.ceil(round(need / HUB_HEIGHT_STEP, 6) - 1e-9) * HUB_HEIGHT_STEP
+        return {f'hub{n}_height': up}, [f'{who}hub height {hub_h:g} → {up:g} mm']
+
     warn = [f'{who}Hub height too short (need ≥ {need:g} mm for {name})']
     if fix_size and fix_size != screw.size:
-        need = round(2 * _screws.get(fix_size).major_diameter, 2)
+        need = _hub_height_needed(as_size(fix_size))
         if hub_h >= need - 1e-9:
-            return warn, {}, [], {}, []
-        return warn, {f'hub{n}_height': need}, [f'{who}hub height {hub_h:g} → {need:g} mm'], {}, []
+            return warn, {}, [], {}, [], {}, []
+        return (warn, *taller(need), {}, [], {}, [])
     fix_b, changes_b = {}, []
     group = _ss.METRIC if screw.size in _ss.METRIC else _ss.INCH if screw.size in _ss.INCH else ()
     for size in reversed(group[:group.index(screw.size)] if group else ()):
-        if hub_h >= round(2 * _screws.get(size).major_diameter, 2) - 1e-9:
+        if hub_h >= _hub_height_needed(as_size(size)) - 1e-9:
             fix_b = {f'hub{n}_screw_size': size}
             changes_b = [f'{who}set screw {screw.size} → {size} (fits the {hub_h:g} mm hub)']
             break
-    return warn, {f'hub{n}_height': need}, [f'{who}hub height {hub_h:g} → {need:g} mm'], fix_b, changes_b
+    return (warn, *taller(need), fix_b, changes_b,
+            {f'hub{n}_retention': 'none'}, [f'{who}no set screw (keeps the {hub_h:g} mm hub)'])
 
 
 def _captured_nut_hub(args, pfx, n, who, root_d):
@@ -1966,13 +1995,15 @@ def _dimensions(args):
                 changes += first_changes
                 for slot, (alt, alt_changes) in zip('bc', flat_fixes[1:]):
                     offer(slot, first, first_changes, alt, alt_changes)
-            short_warn, short_fix, short_changes, short_b, short_b_changes = _hub_too_short(
-                args, pfx, n, who, fix_set.get(f'hub{n}_screw_size'))
+            (short_warn, short_fix, short_changes, short_b, short_b_changes,
+             short_c, short_c_changes) = _hub_too_short(args, pfx, n, who, fix_set.get(f'hub{n}_screw_size'))
             warnings += short_warn
             fix_set.update(short_fix)
             changes += short_changes
             if short_fix and short_b:        # (b): the largest smaller screw this height holds
                 offer('b', short_fix, short_changes, short_b, short_b_changes)
+            if short_fix and short_c and not alts['c']['set']:   # (c): no set screw, unless taken
+                offer('c', short_fix, short_changes, short_c, short_c_changes)
 
         flanged = three_d and args.get(f'{pfx}flange_enabled') == '1'
         p['flanged'] = flanged

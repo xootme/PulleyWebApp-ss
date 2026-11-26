@@ -69,3 +69,53 @@ def test_the_random_step_check_skips_only_a_short_hubs_volume(client):
                 p2_hub_height=4, p2_hub_screw_count=1, p2_hub_screw_size='M4', p2_hub_screw_hold='thread', hub_height=10)['warnings']
     assert _short_hub(two, 2, True) and not _short_hub(two, 1, True)      # pulley 1's hub is tall enough
     assert not _short_hub(_dims(client, hub_height=10)['warnings'], 1, False)
+
+
+# The owner's "pulley hub-short 1" (2026-11-25): small_step's plan_hub, hub ≥ hole reach × 2 + 1 mm,
+# is checked too, so no hub small_step would grow passes; the fix rounds up to the field's 0.5 mm
+# steps; (c) is no set screw.
+@pytest.mark.parametrize('q, need', [
+    ({'hub_screw_size': 'M2', 'hub_screw_hold': 'insert', 'hub_screw_hole_dia': 3.2, 'hub_height': 4.1}, 4.2),
+    ({'hub_screw_size': 'M2', 'hub_screw_hold': 'insert', 'hub_screw_hole_dia': 3.2, 'hub_height': 4.2}, None),
+    ({'hub_screw_size': 'M2', 'hub_screw_hold': 'insert', 'hub_screw_hole_dia': 2.5, 'hub_height': 3.9}, 4),
+    ({'hub_screw_size': 'M2', 'hub_screw_hold': 'thread', 'screw_hole_shape': 'hex', 'hub_height': 3.9}, 4),
+    ({'hub_screw_size': 'M2', 'hub_screw_hold': 'thread', 'screw_hole_shape': 'hex', 'hub_height': 4}, None),
+    ({'hub_screw_size': 'Custom', 'hub_screw_hole_dia': 0.8, 'hub_height': 1.7}, 1.8),
+    ({'hub_screw_size': 'Custom', 'hub_screw_hold': 'nut', 'hub_screw_hole_dia': 0.8, 'hub_height': 1.7}, None),
+], ids=['wide insert hole', 'wide insert hole, tall enough', 'narrow insert hole', 'hex threaded hole',
+        'hex threaded, tall enough', 'Custom under 1 mm', 'captured nut: not plan_hub\'s'])
+def test_the_hole_small_step_needs_room_for(client, q, need):
+    name = 'this screw' if q['hub_screw_size'] == 'Custom' else q['hub_screw_size']
+    assert _short(_dims(client, **q)) == ([f'Hub height too short (need ≥ {need:g} mm for {name})'] if need else [])
+
+
+def test_the_fix_is_on_the_fields_steps(client):
+    d = _dims(client, hub_screw_size='M2', hub_screw_hold='insert', hub_screw_hole_dia=3.2, hub_height=4.1)
+    assert d['fix']['set']['hub1_height'] == 4.5 and 'hub height 4.1 → 4.5 mm' in d['fix']['changes']
+    inch = _dims(client, hub_screw_size='#6-32', hub_height=5)
+    assert inch['fix']['set']['hub1_height'] == 7.5                  # needs 7.01
+
+
+def test_a_smaller_insert_is_offered_only_if_its_hole_fits_too(client):
+    """The hole is the one entered, whatever the size: a smaller insert in it needs the same."""
+    from test_autofix_options import _only
+    q = dict(hub_screw_size='M3', hub_screw_hold='insert', hub_screw_hole_dia=5.0, hub_height=5.5)
+    fixes = _dims(client, **q)['fixes']
+    assert not [f for f in fixes if _only(f, 'set screw M3 →')]
+    assert [f['set'].get('hub1_retention') for f in fixes][-1] == 'none'
+
+
+def test_no_set_screw_is_the_last_way_out(client):
+    from test_autofix_options import _applied, _only
+    a, b, c = _dims(client, hub_height=6)['fixes']                      # M5: (b) is an M3
+    assert c['set']['hub1_retention'] == 'none' and 'hub1_height' not in c['set']
+    assert _only(c, 'no set screw') == ['no set screw (keeps the 6 mm hub)']
+    assert not _short(_dims(client, **_applied({'hub_height': 6}, c['set'])))
+    # no smaller screw fits a 3.8 mm hub: no set screw moves up to (b)
+    assert [f['set'] for f in _dims(client)['fixes']] == [{'hub1_height': 10.0}, {'hub1_retention': 'none'}]
+
+
+def test_an_agent_reads_no_set_screw_as_no_screws():
+    from agent import _fix_params
+    assert _fix_params({'hub1_retention': 'none', 'hub2_retention': 'none'}) == {
+        'hub_screw_count': 0, 'p2_hub_screw_count': 0}

@@ -232,6 +232,15 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         '            out[f"{pfx}hub_{rest}"] = value'),
     "screws: a hub too short for its screw warns": (AP,   # the owner's option b, 2026-11-02
         "    if hub_h >= need - 1e-9:\n        return none", "    if True:\n        return none"),
+    # the owner's "pulley hub-short 1", 2026-11-25: small_step's hole + 1 mm, the field's steps, no set screw
+    "screws: a short hub counts small_step's hole + 1 mm": (AP,
+        "    if screw.hold != 'nut':\n        hole = screw.hole", "    if False:\n        hole = screw.hole"),
+    "auto-fix: a short hub's height is on the field's steps": (AP,
+        "        up = math.ceil(round(need / HUB_HEIGHT_STEP, 6) - 1e-9) * HUB_HEIGHT_STEP", "        up = need"),
+    "auto-fix: a short hub offers no set screw": (AP,
+        "            if short_fix and short_c and not alts['c']['set']:", "            if False:"),
+    "agent: no set screw is no screws": ("agent.py",
+        '        elif kind == "hub" and rest == "retention" and value == "none":', '        elif False:'),
     "random: only a short hub skips the STEP volume check": ("tests/test_nightly_random.py",   # option c, 2026-11-04
         "    return any(w.startswith(f'{who}Hub height too short') for w in warnings)",
         "    return any('Hub height too short' in w for w in warnings)"),
