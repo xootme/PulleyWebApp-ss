@@ -29,6 +29,9 @@ Routes:
                                      the printer_settings setting; also in GET /api/account)
     POST   /api/newsletter/brevo-webhook   Brevo's unsubscribe and contact-deleted events (0.39.0):
                                      a 0 row (source "brevo"); needs BREVO_WEBHOOK_SECRET
+    POST   /api/newsletter/subscribe       the website's box, no account needed (0.67.0;
+    GET    /newsletter/confirm?t=...       cct_common.newsletter_site), behind newsletter_opt_in
+    POST   /newsletter/confirm
     GET    /api/account/history      ledger rows, newest first
     GET    /account/                 the account page (0.38.0, the account_page setting;
                                      cct_common.account_page)
@@ -553,12 +556,19 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
             except ValueError:
                 continue
             acct = tokens.account_by_email(email)
+            from .newsletter import site_key
             if acct and news.state(acct)["subscribed"]:
                 news.record(acct, False, app="brevo", source="brevo")     # queues the delete
+            elif not acct and news.state(site_key(email))["subscribed"]:  # the website's box (0.67.0)
+                news.record(site_key(email), False, app="brevo", source="brevo")
             elif ev.get("event") not in ("contact_deleted", "contactDeleted"):
                 with news._write() as db:                                  # not ours: delete it all the same
                     enqueue(db, acct or "", email, "delete", accounts._clock())
                 kick(tokens.path, clock=accounts._clock)
+            if not acct:                       # no account: the address and its rows go (privacy policy)
+                from .newsletter_site import forget
+                with news._write() as db:
+                    forget(db, email)
         return jsonify({"ok": True})
 
     def printer_save():
@@ -931,6 +941,9 @@ def register_account_routes(app, accounts: AccountStore, *, email_sender,
     noindex(app)                                       # 0.46.1: shared views stay out of search engines
     app.add_url_rule("/account/welcome", view_func=welcome_submit, methods=["POST"])
     app.add_url_rule("/api/newsletter/brevo-webhook", view_func=brevo_webhook, methods=["POST"])
+    from .newsletter_site import register_site_routes             # 0.67.0: the website's box
+    register_site_routes(app, accounts, email_sender=email_sender, page=_page, client_ip=_client_ip,
+                         opt_in_on=_newsletter_on)
     app.add_url_rule("/api/account/printer", view_func=printer_save, methods=["POST"])
 
     @app.before_request

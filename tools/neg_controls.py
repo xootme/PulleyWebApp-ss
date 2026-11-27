@@ -334,6 +334,14 @@ BREAKS = {  # name: (file, old, new); old must occur exactly once
         '    _JINJA_NAMESPACE.setdefault("cct_analytics", lambda: \'<script async '
         'src="https://www.googletagmanager.com/gtag/js?id=GT-5DFRBV7T"></script>\')',
         {"catcher": "tests/test_measure_off.py::test_without_accounts_the_page_renders_with_neither"}),
+    # cct_common 0.67.0: the website's newsletter box on this app's account routes (vendored breaks)
+    "newsletter box: off, the sign-up is a 404": ("cct_common/newsletter_site.py",
+        '        if not opt_in_on():\n            return _cors(jsonify({"error": "not found"})), 404',
+        '        if False:\n            return _cors(jsonify({"error": "not found"})), 404',
+        {"catcher": "tests/test_newsletter_site_route.py::test_off_the_routes_are_404s_and_nothing_is_sent"}),
+    "newsletter box: CORS only the two www origins": ("cct_common/newsletter_site.py",
+        "        if origin in CORS_ORIGINS:", "        if origin:",
+        {"catcher": "tests/test_newsletter_site_route.py::test_cors_answers_only_the_two_www_origins"}),
     "measure: no hard-coded gtag": ("templates/index.html",
         '  {{ cct_analytics() if cct_analytics is defined else "" }}\n',
         '  <script async src="https://www.googletagmanager.com/gtag/js?id=GT-5DFRBV7T"></script>\n'

@@ -24,6 +24,11 @@ design, 2026-10-30: Controller task cctcommon-newsletter-opt-in).
 - Brevo follows this record (0.39.0, cct_common.newsletter_sync): each
   change queues adding or deleting the contact, in the same write.
   Brevo's own unsubscribe comes back as a 0 row with source "brevo".
+- The website's box (0.67.0, cct_common.newsletter_site), for people
+  without an account: their rows are keyed "site:<email>" (site_key), source
+  "site", label version 3 (SITE_LABEL_VERSION; never the account's box).
+  subscribers() counts them; an account made for the address later takes
+  its rows over (take_site).
 """
 from __future__ import annotations
 
@@ -42,9 +47,29 @@ LABELS = {
     # The owner's words, 2026-10-31, after trying the account page on pulley-test.
     2: "Once a Month Newsletter, we'll tell you about new and upcoming CAD apps, "
        "new features and bug fixes to existing apps.",
+    # The website's sign-up box (0.67.0), as CCT_WebSite recorded it, 2026-11-26.
+    3: "Once a month newsletter. New and upcoming CAD apps, new features and bug fixes to existing apps. "
+       "No account needed. We'll email you a link to confirm; nothing is sent until you click it. "
+       "Every newsletter has an unsubscribe link. Brevo sends it for us.",
 }
-LABEL_VERSION = max(LABELS)
-SOURCES = ("signup", "account", "brevo")
+LABEL_VERSION = 2                     # the accounts' checkbox
+SITE_LABEL_VERSION = 3                # the website's box, for people without an account
+SOURCES = ("signup", "account", "brevo", "site")
+SITE_PREFIX = "site:"
+
+
+def site_key(email: str) -> str:
+    """The consent rows' key for an address with no account (normalized)."""
+    return SITE_PREFIX + email
+
+
+def take_site(db, account_id: str, email: str) -> None:
+    """Inside a write: an account made for an address that subscribed in
+    the website's box takes its rows (and any waiting sync job) over."""
+    key = site_key(email)
+    db.execute("UPDATE newsletter_consents SET account_id = ? WHERE account_id = ?", (account_id, key))
+    db.execute("UPDATE newsletter_sync SET account_id = ? WHERE account_id = ? AND done_at IS NULL",
+               (account_id, key))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS newsletter_consents (
@@ -66,12 +91,13 @@ _LATEST = """SELECT n.* FROM newsletter_consents n
 
 
 def label_version(value) -> int:
-    """A label version the page sent back, if it's one of ours; else today's."""
+    """A label version an account's page sent back, if it's one of ours; else
+    today's. Never the website box's (SITE_LABEL_VERSION)."""
     try:
         v = int(value)
     except (TypeError, ValueError):
         return LABEL_VERSION
-    return v if v in LABELS else LABEL_VERSION
+    return v if v in LABELS and v != SITE_LABEL_VERSION else LABEL_VERSION
 
 
 class Newsletter(SqliteDB):
@@ -109,8 +135,12 @@ class Newsletter(SqliteDB):
                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
                            (account_id, now, int(subscribed), app or "site", source,
                             label_version, LABELS[label_version]))
-                email = db.execute("SELECT email FROM accounts WHERE id = ?", (account_id,)).fetchone()
-                enqueue(db, account_id, email["email"] if email else None, "add" if subscribed else "delete", now)
+                if account_id.startswith(SITE_PREFIX):          # the website's box (0.67.0)
+                    email = account_id[len(SITE_PREFIX):]
+                else:
+                    row = db.execute("SELECT email FROM accounts WHERE id = ?", (account_id,)).fetchone()
+                    email = row["email"] if row else None
+                enqueue(db, account_id, email, "add" if subscribed else "delete", now)
                 changed = True
         if changed:
             kick(self.path, clock=self._clock)          # Brevo follows, in the background
@@ -125,14 +155,23 @@ class Newsletter(SqliteDB):
         return {"subscribed": sum(by.values()), **{s: by.get(s, 0) for s in SOURCES}}
 
     def subscribers(self) -> list[dict]:
-        """Everyone subscribed now: email, since, app, label_version; oldest first."""
+        """Everyone subscribed now: email, since, app, label_version, and key
+        (the account id, or site:<email> for the website's box); oldest first."""
         with self._read() as db:
-            rows = db.execute(f"SELECT a.email, latest.at, latest.app, latest.label_version "
-                              f"FROM ({_LATEST}) latest JOIN accounts a ON a.id = latest.account_id "
+            rows = db.execute(f"SELECT latest.account_id AS key, a.email, latest.at, latest.app, "
+                              f"latest.label_version FROM ({_LATEST}) latest "
+                              "LEFT JOIN accounts a ON a.id = latest.account_id "
                               "WHERE latest.subscribed = 1 ORDER BY latest.at, latest.id").fetchall()
-        return [{"email": r["email"], "since": r["at"], "app": r["app"],
-                 "label_version": int(r["label_version"])} for r in rows
-                if not str(r["email"]).startswith("deleted:")]
+        out = []
+        for r in rows:
+            key = str(r["key"])
+            email = r["email"] if r["email"] is not None else (
+                key[len(SITE_PREFIX):] if key.startswith(SITE_PREFIX) else None)
+            if email is None or str(email).startswith("deleted:"):
+                continue
+            out.append({"email": email, "since": r["at"], "app": r["app"],
+                        "label_version": int(r["label_version"]), "key": key})
+        return out
 
 
 def _cell(value) -> str:

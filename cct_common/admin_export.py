@@ -71,8 +71,6 @@ FORBIDDEN_KEYS = frozenset({"email", "emails", "account", "account_id", "account
 DOWNLOAD_ACTIONS = ("step", "stl", "dxf", "svg", "report", "bundle", "export")
 _NAME = re.compile(r"[A-Za-z0-9_.:/-]{1,80}")
 _ID_SEGMENT = re.compile(r"(?=.*\d)[A-Za-z0-9_-]{16,}|[0-9a-fA-F-]{12,}")
-_GCS_UPLOAD = "https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o"
-_METADATA_TOKEN = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
 
 
 class LeakError(ValueError):
@@ -249,17 +247,10 @@ def _urlopen(req, timeout):
 
 
 def upload(bucket: str, name: str, data: bytes, *, opener: Callable = _urlopen) -> str:
-    """PUT the bytes as gs://<bucket>/<name>, as this job's own service account."""
-    import urllib.parse
-    import urllib.request
-    with opener(urllib.request.Request(_METADATA_TOKEN, headers={"Metadata-Flavor": "Google"}), 10) as r:
-        token = json.loads(r.read())["access_token"]
-    url = _GCS_UPLOAD.format(bucket=urllib.parse.quote(bucket, safe="")) + "?" + urllib.parse.urlencode(
-        {"uploadType": "media", "name": name})
-    req = urllib.request.Request(url, data=data, method="POST", headers={
-        "Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    with opener(req, 60) as r:
-        r.read()
+    """The bytes as gs://<bucket>/<name>, as this job's own service account
+    (cct_common.storage, 0.64.0: a busy Cloud Storage is retried twice)."""
+    from .storage import GCSStorage
+    GCSStorage(bucket, opener=opener).put(name, data, "application/json")
     return f"gs://{bucket}/{name}"
 
 

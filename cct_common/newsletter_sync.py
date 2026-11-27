@@ -22,6 +22,9 @@ task cctcommon-brevo-sync-for-the-newsletter-opt-in).
   who's subscribed here. Missing ones are added, extras deleted, and anyone
   Brevo blocklisted gets a 0 row (an unsubscribe whose webhook we missed).
   It also catches choices made in apps still on an older cct_common.
+  The website box's subscribers (0.67.0, keyed site:<email>) count as
+  subscribed, so they're added and never deleted as extras; one Brevo
+  blocklisted is unsubscribed and forgotten, as its webhook would.
 - While newsletter_opt_in is off (0.55.0; found by Pulley), reconcile()
   doesn't even read the list, so a list that already has contacts (imported
   another way) is never emptied because nobody here is subscribed. The
@@ -293,7 +296,7 @@ class NewsletterSync(SqliteDB):
         if not self.opt_in_on():
             log.warning("newsletter sync: %s, so the reconcile left Brevo's list %s as it is", OFF, list_id)
             return self._keep_result({"added": 0, "deleted": 0, "unsubscribed": 0, "skipped": OFF})
-        from .newsletter import Newsletter
+        from .newsletter import SITE_PREFIX, Newsletter
         news = Newsletter(self.path, clock=self._clock)
         try:
             theirs = brevo.contacts(list_id)
@@ -318,16 +321,21 @@ class NewsletterSync(SqliteDB):
                         round(RECONCILE_GUARD_SHARE * 100))
         for email, blocked in theirs.items():
             if blocked and email in ours:                     # unsubscribed in Brevo, webhook missed
-                news.record(ids[email], False, app="brevo", source="brevo")   # queues the delete
+                key = ours[email]["key"]
+                news.record(key, False, app="brevo", source="brevo")   # queues the delete
+                if key.startswith(SITE_PREFIX):                # no account: the address goes (0.67.0)
+                    from .newsletter_site import forget
+                    with self._write() as db:
+                        forget(db, email)
                 out["unsubscribed"] += 1
             elif email not in ours and not hold:          # "extra": waits while sign-up is off
                 with self._write() as db:
                     enqueue(db, ids.get(email, ""), email, "extra", now)
                 out["deleted"] += 1
-        for email in ours:
-            if email not in theirs and email in ids:
+        for email, s in ours.items():
+            if email not in theirs:                       # an account's, or the website box's (0.67.0)
                 with self._write() as db:
-                    enqueue(db, ids[email], email, "add", now)
+                    enqueue(db, s["key"], email, "add", now)
                 out["added"] += 1
         out.update(self.drain(limit=10_000))
         return self._keep_result(out)

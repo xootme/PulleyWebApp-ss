@@ -67,11 +67,14 @@ import json
 import secrets
 from typing import Callable, Optional
 
-from .newsletter import SCHEMA as _NEWSLETTER_SCHEMA
+from .newsletter import SCHEMA as _NEWSLETTER_SCHEMA, take_site as _news_take_site
+from .newsletter_site import SCHEMA as _SITE_SIGNUPS_SCHEMA, purge as _site_signups_purge
 from .printer_settings import SCHEMA as _PRINTER_SCHEMA
 from .receipts import SCHEMA as _RECEIPTS_SCHEMA, forget_email as _receipts_forget_email
 from .reports import SCHEMA as _REPORTS_SCHEMA, ensure_columns as _reports_columns, forget_account as _reports_forget
 from .data_export import SCHEMA as _EXPORTS_SCHEMA
+from .app_data import SCHEMA as _APP_DATA_SCHEMA, forget_account as _app_data_forget
+from .jobs import SCHEMA as _JOBS_SCHEMA
 from .projects import forget_account as _projects_forget
 from .referrals import forget_account as _referrals_forget
 from .saved_designs import SCHEMA as _SAVED_DESIGNS_SCHEMA
@@ -225,9 +228,11 @@ class AccountStore(SqliteDB):
                                          ("signups_per_ip_per_day", signups_per_ip_per_day)) if v is not SETTING}
         self._clock = clock or tokens._clock
         # Closing an account deletes its saved designs and newsletter choices.
-        # Receipts (0.40.0) lose the email with it.
+        # Receipts (0.40.0) lose the email with it. The apps' records and
+        # jobs (0.66.0) are here too, so any app's server can close it.
         super().__init__(tokens.path, _SCHEMA + _SAVED_DESIGNS_SCHEMA + _NEWSLETTER_SCHEMA + _RECEIPTS_SCHEMA
-                         + _PRINTER_SCHEMA + _REPORTS_SCHEMA + _EXPORTS_SCHEMA)
+                         + _PRINTER_SCHEMA + _REPORTS_SCHEMA + _EXPORTS_SCHEMA + _APP_DATA_SCHEMA
+                         + _JOBS_SCHEMA + _SITE_SIGNUPS_SCHEMA)
         _reports_columns(self)               # 0.44.0: deleting an account forgets it on its reports
         # Daily limits on add-in/agent tokens. Older databases lack these.
         self._ensure_columns("sessions", {"daily_budget": "INTEGER",
@@ -330,6 +335,7 @@ class AccountStore(SqliteDB):
             with self._write() as db:
                 db.execute("INSERT OR IGNORE INTO welcomes (account_id, created_at) "
                            "VALUES (?, ?)", (account_id, now))
+                _news_take_site(db, account_id, email)   # 0.67.0: subscribed in the website's box
                 if withheld:
                     db.execute("INSERT OR IGNORE INTO signup_notices (account_id, created_at) "
                                "VALUES (?, ?)", (account_id, now))
@@ -772,7 +778,9 @@ class AccountStore(SqliteDB):
         """Remove the personal data: email, identities, sessions, pending
         sign-in links, saved designs (0.34.0), newsletter choices (0.36.0) and
         printer settings (0.41.0), referral records (0.49.1), where the
-        account came from (signup_ref, signup_surface, signup_client; 0.62.3).
+        account came from (signup_ref, signup_surface, signup_client; 0.62.3),
+        what the apps keep for it (cct_common.app_data, 0.66.0: its records
+        and jobs now, its files in each app's storage queued for the purge).
         Ledger rows and receipts (0.40.0) stay (financial records) but point
         at an account with no email left on it; orders keep where the
         purchase started (the privacy policy's purchase records)."""
@@ -799,6 +807,7 @@ class AccountStore(SqliteDB):
             db.execute("DELETE FROM data_exports WHERE account_id = ?", (account_id,))
             _projects_forget(db, account_id)    # 0.46.0
             _referrals_forget(db, account_id)   # 0.49.1: kept only while both accounts are open
+            _app_data_forget(db, account_id, now)   # 0.66.0: every app's, from any app's server
             db.execute("UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL",
                        (now, account_id))
             # Where the account came from goes with the email (0.62.3; privacy
@@ -820,6 +829,15 @@ class AccountStore(SqliteDB):
                        "WHERE email LIKE 'deleted:%' AND (signup_ref IS NOT NULL OR signup_surface IS NOT NULL "
                        "OR signup_client IS NOT NULL)")
             db.execute("DELETE FROM login_links WHERE created_at < ?", (now - 24 * 3600,))
+            _site_signups_purge(db, now)          # 0.67.0: the website box's unconfirmed sign-ups, at 7 days
+            # ... and its subscribers who since made an account on a server
+            # still on an older cct_common: the account takes the rows over.
+            for r in db.execute("SELECT DISTINCT account_id FROM newsletter_consents "
+                                "WHERE account_id LIKE 'site:%'").fetchall():
+                site_email = r["account_id"][len("site:"):]
+                acct = db.execute("SELECT id FROM accounts WHERE email = ?", (site_email,)).fetchone()
+                if acct:
+                    _news_take_site(db, acct["id"], site_email)
             db.execute("DELETE FROM device_codes WHERE created_at < ?", (now - 24 * 3600,))
             db.execute("DELETE FROM signups WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))
             db.execute("DELETE FROM signup_notices WHERE created_at < ?", (now - SIGNUP_WINDOW_S,))

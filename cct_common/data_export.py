@@ -14,7 +14,8 @@ README_TEXT). Out of it: CAD files (they cost tokens; the settings rebuild
 them), anything an admin wrote (a grant's reason, the GitHub link),
 internal values (the payer key, session and link hashes), and anyone
 else's data. Projects (step 7) and referrals get their files when they're
-built.
+built. What the apps keep (cct_common.app_data, 0.66.0) is under apps/; an
+app's files in its storage come with the large export (0.67.0).
 """
 from __future__ import annotations
 
@@ -53,6 +54,10 @@ projects/               your projects: each one's name, note and designs (by the
 
 CAD files aren't included: open a design in its tool to download those.
 """
+# Only when the account has app records (Q-D4, the owner's "a"), after projects/.
+APPS_LINE = ("apps/                   what each CheapCADTools app keeps for you, such as "
+             "PCB Importer's boards: one .json file per item\n")
+_APPS_AFTER = "projects/               "
 
 
 def _iso(ts) -> Optional[str]:
@@ -107,8 +112,15 @@ class DataExport:
         put = lambda name, data: z.writestr(name, json.dumps(data, indent=2, ensure_ascii=False))  # noqa: E731
         now = accounts._clock()
         t = time.gmtime(now)
-        z.writestr("README.txt", README_TEXT.format(date=f"{time.strftime('%b', t)} {t.tm_mday}, {t.tm_year}",
-                                                    email=email))
+        with tokens._read() as db:            # 0.66.0: what the apps keep (cct_common.app_data)
+            app_records = _rows(db, "SELECT app, kind, name, body, created_at, modified_at FROM app_records "
+                                    "WHERE account_id = ? ORDER BY app, kind, name", (acct,))
+        readme = README_TEXT
+        if app_records:
+            at = readme.index("\n", readme.index(_APPS_AFTER)) + 1
+            readme = readme[:at] + APPS_LINE + readme[at:]
+        z.writestr("README.txt", readme.format(date=f"{time.strftime('%b', t)} {t.tm_mday}, {t.tm_year}",
+                                               email=email))
 
         from .accounts import DEAD_ACCOUNT_IDLE_S
         last = accounts.last_sign_in(acct)
@@ -216,5 +228,9 @@ class DataExport:
                                              "created": _iso(full["created_at"]), "updated": _iso(full["updated_at"]),
                                              "designs": [d["id"] for d in full["designs"]],
                                              "shared": bool(full["shared"])})
+        for r in app_records:                           # 0.66.0, one layout for every app (Q-D2)
+            put(f"apps/{r['app']}/{r['kind']}/{r['name']}.json", {
+                "created": _iso(r["created_at"]), "updated": _iso(r["modified_at"]),
+                "data": json.loads(r["body"])})
         z.close()
         return out.getvalue()
